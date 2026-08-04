@@ -15,8 +15,11 @@ CPU 0                           \ plain 6502 — Model B
 OSWRCH    = &FFEE
 OSBYTE    = &FFF4
 OSCLI     = &FFF7
-CRTC_ADDR = &FE00
-CRTC_DATA = &FE01
+CRTC_ADDR     = &FE00
+CRTC_DATA     = &FE01
+VIDEO_ULA_PAL = &FE21           \ palette register, write only
+SYS_VIA_IFR   = &FE4D
+IRQ1V         = &0204
 
 CHAR_BYTES = 16                 \ a character is 16 bytes: two 8-byte halves
 
@@ -90,6 +93,7 @@ ORG &1100
 .start
 
   JSR SetupScreen
+  JSR InstallIrq
 
   LDX #LO(loadcmd)              \ must follow the mode change: VDU 22
   LDY #HI(loadcmd)              \ clears what the OS thinks is its screen
@@ -189,11 +193,44 @@ ORG &1100
   RTS
 
 \ ============================================================
-\ WaitVSync — block until the start of the next field
+\ WaitVSync — block until the next field starts
+\
+\ Polling the System VIA IFR directly races the MOS: its own IRQ
+\ handler services vsync and clears the flag, so the poll can miss
+\ it. Instead we sit in front of IRQ1V, count fields, and chain on
+\ to the OS so its timers and keyboard scan keep working.
 \ ============================================================
 .WaitVSync
-  LDA #19
-  JSR OSBYTE
+  LDA vsyncCount
+.wv_loop
+  CMP vsyncCount
+  BEQ wv_loop
+  RTS
+
+\ ============================================================
+\ IrqHandler — front of the IRQ1V chain
+\ The MOS saves the interrupted A in &FC before dispatching, so A
+\ is free here as long as it is restored before chaining on.
+\ ============================================================
+.IrqHandler
+  LDA SYS_VIA_IFR
+  AND #2                        \ CA1 — vsync
+  BEQ ih_chain
+  INC vsyncCount
+.ih_chain
+  LDA &FC                       \ restore the interrupted accumulator
+  JMP (oldIrq1V)
+
+\ ============================================================
+\ InstallIrq — put IrqHandler at the head of IRQ1V
+\ ============================================================
+.InstallIrq
+  SEI
+  LDA IRQ1V   : STA oldIrq1V
+  LDA IRQ1V+1 : STA oldIrq1V+1
+  LDA #LO(IrqHandler) : STA IRQ1V
+  LDA #HI(IrqHandler) : STA IRQ1V+1
+  CLI
   RTS
 
 \ ============================================================
@@ -220,6 +257,8 @@ INCLUDE "src/level.asm"
 \ ---- absolute working storage ------------------------------
 .rowOfs    EQUW 0               \ row*640 accumulator for RedrawAll
 .sTmp      EQUW 0
+.vsyncCount EQUB 0              \ bumped by IrqHandler once per field
+.oldIrq1V  EQUW 0
 
 .code_end
 

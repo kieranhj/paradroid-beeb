@@ -356,10 +356,28 @@ needed for sub-character horizontal scrolling, which was the thing that looked e
 Source split into `screen.asm` (buffer addressing, `DrawHalf`, `MapChar`, `RedrawAll`),
 `scroll.asm` (the four scroll directions) and `level.asm` (deck decode, charset, palette, framing).
 
-**VSYNC synced.** R12/R13 form a 14-bit value across two writes; if the CRTC samples between them
-the display shows one frame at a half-updated address. `WaitVSync` (OSBYTE 19) at the top of the
-main loop puts both writes and the edge redraw in the blanking window, and paces scrolling to one
-step per frame.
+**VSYNC synced, no OS calls in the main loop.** R12/R13 form a 14-bit value across two writes; if
+the CRTC samples between them the display shows one frame at a half-updated address. `WaitVSync` at
+the top of the main loop puts both writes and the edge redraw in the blanking window, and paces
+scrolling to one step per frame.
+
+Two OS calls were replaced with direct hardware:
+
+- **Palette** — writes `&FE21` instead of `VDU 19`. The register takes
+  `(logical << 4) | (physical EOR 7)`, and the logical field is a content-addressable match: in a
+  4-colour mode only bits 7 and 5 are compared, so bits 6 and 4 must be written in **every**
+  combination or the colour comes out split. `SetPalette` writes all 16 entries, mapping each back
+  with `logical = ((n AND 8) >> 2) OR ((n AND 2) >> 1)` — four entries per logical colour.
+- **VSYNC** — `IrqHandler` sits at the head of `IRQ1V`, counts fields and chains on to the OS, so
+  its timers and keyboard scan keep working. Polling `&FE4D` bit 1 directly would race the MOS,
+  whose own handler clears that flag when it services vsync.
+
+Verified: palette output identical to the `VDU 19` version, and horizontal scrolling still measures
+exactly 10 steps in 10 frames.
+
+*Still an OS call:* `keydown` uses OSBYTE `&81`, once per key per frame. Replacing it means driving
+the System VIA keyboard matrix directly, which contends with the MOS's own scan in its IRQ handler
+— worth doing alongside the eventual full IRQ takeover rather than piecemeal.
 
 **Verified:** both axes scroll coherently with no shear or row-bleed. Step rate measured over 10
 frames with the key held:

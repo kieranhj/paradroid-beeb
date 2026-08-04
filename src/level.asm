@@ -5,24 +5,43 @@
 \ ============================================================
 \ SetPalette — physical colours for this deck's logical 0-3
 \ ============================================================
+\ Writes the video ULA palette register directly rather than going
+\ through VDU 19, so nothing here touches the OS.
+\
+\ &FE21 takes (logical << 4) | (physical EOR 7). The logical field is
+\ a content-addressable match, and in a 4-colour mode only bits 7 and
+\ 5 of the byte are compared — bits 6 and 4 must be written in every
+\ combination or the colour comes out split. So all 16 entries are
+\ written, each mapped back to its logical colour:
+\
+\     logical = ((n AND 8) >> 2) OR ((n AND 2) >> 1)
+\
+\ which gives four entries per logical colour, covering 0-15 exactly.
 .SetPalette
   LDA deck
-  ASL A : ASL A                 \ deck * 4
-  STA bcTmp
-  LDX #0
+  ASL A : ASL A                 \ deck * 4 -> index into deckPalette
+  STA palBase
+  LDX #15
 .sp_loop
-  LDA #19 : JSR OSWRCH
-  TXA     : JSR OSWRCH          \ logical colour
+  TXA                           \ logical colour for this entry
+  AND #8
+  LSR A : LSR A
+  STA palTmp
   TXA
-  CLC : ADC bcTmp
+  AND #2
+  LSR A
+  ORA palTmp
+  CLC : ADC palBase
   TAY
-  LDA deckPalette,Y : JSR OSWRCH
-  LDA #0  : JSR OSWRCH
-  LDA #0  : JSR OSWRCH
-  LDA #0  : JSR OSWRCH
-  INX
-  CPX #4
-  BNE sp_loop
+  LDA deckPalette,Y             \ physical colour, 0-7
+  EOR #7                        \ the ULA wants it inverted
+  STA palTmp
+  TXA
+  ASL A : ASL A : ASL A : ASL A \ logical selector in the top nibble
+  ORA palTmp
+  STA VIDEO_ULA_PAL
+  DEX
+  BPL sp_loop
   RTS
 
 \ ============================================================
@@ -474,3 +493,5 @@
 .dvHi      EQUB 0
 .quot      EQUB 0
 .cdRow     EQUB 0
+.palBase   EQUB 0
+.palTmp    EQUB 0
