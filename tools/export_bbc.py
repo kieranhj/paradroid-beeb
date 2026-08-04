@@ -9,24 +9,38 @@ Emits into src/data/:
 
 MODE 1 conversion
 -----------------
-C64 characters are 8x8, 1 bit per pixel, 8 bytes each.
+The play area runs in C64 MULTICOLOUR character mode - $D016 bit 4 set, via
+the self-modifying _d016Mode routine at $6F1B, which patches its own LDA
+operand between $D0 (multicolour, play area) and $C0 (hires, text screens).
 
-BBC MODE 1 is 2 bits per pixel, 4 pixels per byte. Pixel n of a byte takes
-bit (7-n) as its high colour bit and bit (3-n) as its low bit. Storing the
-foreground as *logical colour 1* therefore sets only the low bit, and the
-conversion collapses to a nibble split:
+In multicolour mode a character byte is four 2-bit pixel pairs, each drawn
+two screen pixels wide:
 
-    left  4 pixels of scanline -> (b >> 4) & 0x0F
-    right 4 pixels of scanline ->  b       & 0x0F
+    00 -> $D021 background      10 -> $D023
+    01 -> $D022                 11 -> colour RAM (per cell)
 
-Using logical colour 1 (rather than baking in a colour) means each deck's
-colour scheme is applied at runtime with VDU 19 / the palette registers,
-exactly as the C64 recoloured via its CharColor table.
+So a character is 4 logical pixels wide carrying 4 colours, not 8 pixels of
+1bpp. This maps onto BBC MODE 1 exactly: MODE 1 is also 4 colours, also 320
+pixels across, and one C64 multicolour pixel becomes two MODE 1 pixels.
+
+MODE 1 packs 4 pixels per byte; pixel n takes bit (7-n) as its high colour
+bit and bit (3-n) as its low bit. Each C64 pixel is emitted twice:
+
+    left  byte of a scanline = C64 pixels 0,0,1,1
+    right byte of a scanline = C64 pixels 2,2,3,3
+
+Logical colours 0-3 are preserved as-is, so a deck's colour scheme is a
+palette change at runtime, mirroring how the C64 varied $D021/$D022/$D023.
 
 BBC screen memory groups 4 pixels x 8 scanlines into 8 consecutive bytes, so
-a full 8x8 character occupies 16 contiguous bytes: the left half's 8 scanlines
-followed by the right half's 8. Characters are stored here in that same order,
-which makes plotting one a straight 16-byte copy to the screen.
+a character occupies 16 contiguous bytes: the left half's 8 scanlines then
+the right half's 8. Characters are stored in that order, making a plot a
+straight 16-byte copy to the screen.
+
+Caveat: on the C64 the 11 pixel value comes from colour RAM and so can vary
+per cell. MODE 1's four logical colours are global, so per-cell variation of
+that one colour is lost. The play area looks uniform, so a per-deck palette
+should cover it.
 
 Requires: Python 3. No third-party dependencies.
 """
@@ -43,6 +57,22 @@ OUT_DIR = PROJECT / 'src' / 'data'
 
 CHARSET_ADDR = 0x7800
 CHARSET_CHARS = 256
+
+CHARCOLOR = 0x0800      # one byte per character code; upper nibble = slot
+RECORDS = 0x6A44        # 12-byte colour slot records, one per scheme
+REC_LEN = 12
+DECKSCHEME = 0xF160     # deck -> scheme index
+
+# Play-area shared colours. Only the low nibble of each $D02x is used.
+D021 = 14               # background - light blue, the lavender floor
+D022 = 1                # multicolour 01 - white
+D023 = 6                # multicolour 10 - blue
+
+DECK = 1                # deck whose colour scheme the charset is built for
+
+# Rough luminance of the C64 palette, for mapping colours we cannot keep.
+LUMA = [0, 255, 79, 161, 94, 128, 62, 191,
+        99, 62, 122, 80, 120, 178, 100, 159]
 
 TILEDEF_ADDR = 0xE800
 TILEDEF_COUNT = 32
@@ -70,16 +100,89 @@ def emit_bytes(f, data, per_line=16):
         f.write('  EQUB ' + ','.join('&%02X' % b for b in chunk) + '\n')
 
 
-def convert_charset(mem):
-    """C64 1bpp charset -> MODE 1, logical colour 1, 16 bytes per char."""
-    out = bytearray()
-    for c in range(CHARSET_CHARS):
-        src = CHARSET_ADDR + c * 8
-        rows = mem[src:src + 8]
-        # left half: 8 scanlines, then right half: 8 scanlines
-        out.extend(((b >> 4) & 0x0F) for b in rows)
-        out.extend((b & 0x0F) for b in rows)
+def mode1_byte(pixels):
+    """Pack four logical colours (0-3) into one MODE 1 byte, left to right.
+
+    MODE 1 pixel n: high colour bit at (7-n), low bit at (3-n).
+    """
+    out = 0
+    for n, c in enumerate(pixels):
+        if c & 2:
+            out |= 1 << (7 - n)
+        if c & 1:
+            out |= 1 << (3 - n)
     return out
+
+
+def deck_colours(mem, deck):
+    """The 12 colour slots in force for a deck, and its cell-colour lookup."""
+    scheme = mem[DECKSCHEME + deck]
+    rec = list(mem[RECORDS + scheme * REC_LEN:RECORDS + (scheme + 1) * REC_LEN])
+
+    def cell_colour(code):
+        slot = mem[CHARCOLOR + code] >> 4
+        return rec[slot] if slot < REC_LEN else 0
+
+    return scheme, rec, cell_colour
+
+
+def build_logical_map(mem, cell_colour):
+    """Pick which C64 colours become MODE 1 logical 0-3, by how much each is
+    used across the tile set. Logical 0 is always the background."""
+    from collections import Counter
+    freq = Counter()
+    for tile in range(32):
+        for i in range(16):
+            code = mem[TILEDEF_ADDR + tile * 16 + i]
+            colour = cell_colour(code)
+            if colour & 8:                       # multicolour cell
+                freq[D022] += 1
+                freq[D023] += 1
+                freq[colour & 7] += 1
+            else:                                # hires cell
+                freq[colour] += 1
+    freq.pop(D021, None)
+
+    chosen = [D021] + [c for c, _ in freq.most_common(3)]
+    while len(chosen) < 4:
+        chosen.append(0)
+    return chosen, freq
+
+
+def convert_charset(mem, cell_colour, logical):
+    """C64 charset -> MODE 1, 16 bytes per char, mode chosen per character.
+
+    Multicolour is selected per cell by bit 3 of the colour RAM nibble, so a
+    character is converted as hires (8 px, background + its cell colour) or
+    as multicolour (4 double-width px, 4 colours) depending on the deck.
+    """
+    def logical_of(c64):
+        if c64 in logical:
+            return logical.index(c64)
+        return min(range(4), key=lambda i: abs(LUMA[logical[i]] - LUMA[c64]))
+
+    out = bytearray()
+    stats = {'hires': 0, 'multi': 0}
+    for c in range(CHARSET_CHARS):
+        rows = mem[CHARSET_ADDR + c * 8:CHARSET_ADDR + c * 8 + 8]
+        colour = cell_colour(c)
+        if colour & 8:
+            stats['multi'] += 1
+            pal = [logical_of(D021), logical_of(D022),
+                   logical_of(D023), logical_of(colour & 7)]
+            px = [[pal[(b >> (6 - p * 2)) & 3] for p in range(4)] for b in rows]
+            # each C64 pixel occupies two MODE 1 pixels
+            left = [mode1_byte([p[0], p[0], p[1], p[1]]) for p in px]
+            right = [mode1_byte([p[2], p[2], p[3], p[3]]) for p in px]
+        else:
+            stats['hires'] += 1
+            fg, bg = logical_of(colour), logical_of(D021)
+            px = [[fg if (b >> (7 - p)) & 1 else bg for p in range(8)] for b in rows]
+            left = [mode1_byte(p[0:4]) for p in px]
+            right = [mode1_byte(p[4:8]) for p in px]
+        out.extend(left)
+        out.extend(right)
+    return out, stats
 
 
 def main():
@@ -91,13 +194,29 @@ def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     # ---- charset -------------------------------------------------------
-    chars = convert_charset(mem)
+    scheme, rec, cell_colour = deck_colours(mem, DECK)
+    logical, freq = build_logical_map(mem, cell_colour)
+    chars, stats = convert_charset(mem, cell_colour, logical)
+
+    names = ['black', 'white', 'red', 'cyan', 'purple', 'green', 'blue',
+             'yellow', 'orange', 'brown', 'lt red', 'dk grey', 'grey',
+             'lt green', 'lt blue', 'lt grey']
+    print('  deck %d -> scheme %d -> slots %s'
+          % (DECK, scheme, ' '.join('%X' % c for c in rec)))
+    print('  cells: %d hires, %d multicolour' % (stats['hires'], stats['multi']))
+    print('  MODE 1 logical colours:')
+    for i, c in enumerate(logical):
+        print('    %d = C64 %-8s (used %d times)' % (i, names[c], freq.get(c, 0)))
+
     path = OUT_DIR / 'charset.asm'
     with open(path, 'w') as f:
         f.write(BANNER.format(
             name='charset.asm',
-            desc='%d chars x 16 bytes, MODE 1, foreground = logical colour 1'
-                 % CHARSET_CHARS))
+            desc='%d chars x 16 bytes, MODE 1, deck %d colour scheme %d'
+                 % (CHARSET_CHARS, DECK, scheme)))
+        f.write('\\ Logical colours: ' +
+                ', '.join('%d=%s' % (i, names[c]) for i, c in enumerate(logical)) +
+                '\n')
         f.write('\nALIGN &100\n.charset\n')
         emit_bytes(f, chars)
         f.write('.charset_end\n')

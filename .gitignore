@@ -13,6 +13,9 @@ bin/
 *.prg
 *.zip
 extracted/
+# ref/ holds screenshots of the original running, used to check the port
+# against. Same copyright position; keep them locally.
+ref/
 
 # ---- Generated artefacts ----
 # paradroid_ce_annotated.asm is produced by annotate.py from paradroid_ce.lst

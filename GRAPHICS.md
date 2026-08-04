@@ -72,8 +72,53 @@ Extracts the title screen and transfer minigame board layout.
 
 ## 2. Character Sets (Tilesets)
 
+> **CORRECTION (Layer 3a).** This document originally described the character
+> sets as 1 bit per pixel throughout, and section 9 assumed a MODE 2 target.
+> The play area actually runs in **C64 multicolour character mode**: `$D016`
+> bit 4 is set, via the self-modifying `_d016Mode` routine at `$6F1B` which
+> patches its own `LDA` operand between `$D0` (multicolour) and `$C0` (hires,
+> used for text screens). `$D022`/`$D023` are written throughout, and they
+> mean nothing in hires mode.
+>
+> In multicolour mode a character byte is four 2-bit pixel pairs, each drawn
+> two screen pixels wide:
+>
+> | bits | source | in the artwork |
+> |---|---|---|
+> | `00` | `$D021` background | floor |
+> | `01` | `$D022` | grid lines |
+> | `10` | `$D023` | shadow |
+> | `11` | colour RAM, per cell | highlight |
+>
+> **But multicolour is selected PER CELL, not per screen.** Bit 3 of the
+> colour RAM nibble picks the mode for that cell alone: `0`-`7` renders hires
+> (8 pixels, background + that colour), `8`-`15` renders multicolour. The two
+> are freely mixed on one screen. For deck 1 the split is **930 hires cells to
+> 190 multicolour** — mostly hires, with multicolour used for shading. This is
+> why the ALERT lettering keeps single-pixel letter spacing, which a
+> 4-pixel-wide multicolour character could not produce.
+>
+> The mode is driven per character code by `CharColor` ($0800), whose upper
+> nibble is a palette slot; `NewCharColors` ($3577) rewrites the lower nibble
+> per deck from a 12-slot record at $6A44 selected by `deckColorScheme`
+> ($F160). So **a character's mode changes between decks** — only slot 5 is
+> multicolour in every scheme, only slot 11 is hires in every scheme.
+>
+> `tools/analyse_charmode.py` dumps the slot/mode analysis.
+> `tools/rip_deck_mixed.py` renders a deck as the C64 actually displays it —
+> compare with `ref/start screen.png`. The plain 1bpp renders from
+> `rip_graphics.py` and `rip_levels.py` show roughly the right silhouettes,
+> which is why the error was not obvious, but they are not what the game
+> displays.
+>
+> The port targets MODE 1, not MODE 2 — see `PLAN.md`. Multicolour maps onto
+> MODE 1 exactly: both are 4 colours at 320 pixels across, and one C64
+> multicolour pixel becomes two MODE 1 pixels. Byte counts in section 9 below
+> are therefore wrong; the correct figure is 16 bytes per character
+> (256 chars = 4096 bytes).
+
 The C64 version uses three custom character sets within VIC-II bank 1
-($4000-$7FFF). Each character is 8x8 pixels, 1 bit per pixel (8 bytes).
+($4000-$7FFF). Each character is 8 bytes.
 The $D018 register switches between them at different scanlines via the
 raster IRQ chain.
 

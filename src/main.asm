@@ -96,13 +96,26 @@ ORG &1100
   DEX
   BNE cursoff
 
-\ ---- logical colour 1 -> cyan ------------------------------
+\ ---- palette ------------------------------------------------
+\ The C64 mixes hires and multicolour cells on the same screen —
+\ bit 3 of the colour RAM nibble picks per cell. Logical colours
+\ are assigned by tools/export_bbc.py from actual usage across
+\ the tile set for this deck's scheme:
+\   0 = floor      2 = shadow
+\   1 = highlight  3 = grid lines
+\ Regenerate the charset if you change deck: the assignment is
+\ deck specific and baked into charset.asm.
+  LDX #0
+.palloop
   LDA #19 : JSR OSWRCH
-  LDA #1  : JSR OSWRCH
-  LDA #6  : JSR OSWRCH
+  TXA     : JSR OSWRCH          \ logical colour
+  LDA palette,X : JSR OSWRCH    \ physical colour
   LDA #0  : JSR OSWRCH
   LDA #0  : JSR OSWRCH
   LDA #0  : JSR OSWRCH
+  INX
+  CPX #4
+  BNE palloop
 
 \ ---- CRTC: 320x200 based at &4000 --------------------------
   CRTC 6,  25
@@ -219,6 +232,13 @@ ORG &1100
 .loadcmd
   EQUS "LOAD PARADAT"
   EQUB 13
+
+\ BBC physical colours for MODE 1 logical 0-3.
+.palette
+  EQUB 4                        \ 0 floor     <- C64 light blue -> blue
+  EQUB 7                        \ 1 highlight <- C64 white
+  EQUB 0                        \ 2 shadow    <- C64 red -> black
+  EQUB 5                        \ 3 grid      <- C64 yellow -> magenta
 
 \ ============================================================
 \ LoadDeck — decode the current deck and redraw from the origin

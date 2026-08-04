@@ -22,6 +22,11 @@ CHARSET_ADDR = 0x7800
 TILEDEF_ADDR = 0xE800
 
 
+def unpack_mode1(b):
+    """One MODE 1 byte -> its four pixel colours, left to right."""
+    return [(((b >> (7 - n)) & 1) << 1) | ((b >> (3 - n)) & 1) for n in range(4)]
+
+
 def read_equb(path):
     """Pull every EQUB byte out of a generated .asm file, in order."""
     out = bytearray()
@@ -75,25 +80,71 @@ def main():
         print('FAIL charset: got %d bytes, expected %d' % (len(chars), 256 * 16))
         failures += 1
     else:
-        bad = []
+        # Decoding back to C64 form needs the per-character mode, which comes
+        # from the deck's colour scheme - same inputs the exporter used, but
+        # travelled in the opposite direction.
+        from export_bbc import deck_colours, build_logical_map, DECK, D021
+        _, _, cell_colour = deck_colours(mem, DECK)
+        logical, _ = build_logical_map(mem, cell_colour)
+
+        def logical_of(c64):
+            return logical.index(c64) if c64 in logical else None
+
+        bad, nhi, nmc, skipped = [], 0, 0, 0
         for c in range(256):
             base = c * 16
             left, right = chars[base:base + 8], chars[base + 8:base + 16]
+            colour = cell_colour(c)
+            multi = bool(colour & 8)
+            bgl = logical_of(D021)
+
+            if multi:
+                nmc += 1
+                pal = [D021, 1, 6, colour & 7]          # 00,01,10,11
+                lut = {}
+                for v, c64 in enumerate(pal):
+                    li = logical_of(c64)
+                    if li is not None:
+                        lut.setdefault(li, v)
+                if len(lut) < 4:
+                    skipped += 1                        # colours collided
+                    continue
+            else:
+                nhi += 1
+                fgl = logical_of(colour)
+                if fgl is None or fgl == bgl:
+                    skipped += 1                        # fg indistinguishable
+                    continue
+
             for y in range(8):
-                # each nibble must be a clean logical-colour-1 pattern
-                if left[y] & 0xF0 or right[y] & 0xF0:
-                    bad.append((c, y, 'high nibble set'))
-                    break
-                recovered = ((left[y] & 0x0F) << 4) | (right[y] & 0x0F)
+                px = unpack_mode1(left[y]) + unpack_mode1(right[y])
+                if multi:
+                    if px[0] != px[1] or px[2] != px[3] \
+                            or px[4] != px[5] or px[6] != px[7]:
+                        bad.append((c, y, 'multicolour pixels not doubled'))
+                        break
+                    vals = [lut.get(px[i]) for i in (0, 2, 4, 6)]
+                    if None in vals:
+                        break
+                    recovered = (vals[0] << 6) | (vals[1] << 4) \
+                        | (vals[2] << 2) | vals[3]
+                else:
+                    recovered = 0
+                    for p in range(8):
+                        if px[p] == fgl:
+                            recovered |= 1 << (7 - p)
                 original = mem[CHARSET_ADDR + c * 8 + y]
                 if recovered != original:
                     bad.append((c, y, '%02X != %02X' % (recovered, original)))
                     break
+
         if bad:
             print('FAIL charset: %d chars differ, first 5: %r' % (len(bad), bad[:5]))
             failures += 1
         else:
             print('OK   charset   256 chars round-trip to the original $7800 bytes')
+            print('              %d hires, %d multicolour, %d skipped '
+                  '(colours collide, not decodable)' % (nhi, nmc, skipped))
 
     # ---- tile definitions: must be byte-identical ------------------
     tiles = read_equb(DATA_DIR / 'tiledefs.asm')

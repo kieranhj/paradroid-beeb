@@ -13,9 +13,10 @@ decisions taken so far, and current status.
 | Display | MODE 1, 320×200, 4 colours, 16K screen wrap based at `&4000` |
 | Assembler | [BeebASM](https://github.com/stardot/beebasm) |
 
-MODE 1 was chosen because it maps the C64 original 1:1. The map graphics are 1bpp hires line art at
-the full 320px width, and the sprites are multicolour with 2-screen-pixel logical pixels — so tiles
-and sprites convert mechanically from the ripped C64 data with no artwork redrawn.
+MODE 1 was chosen because it maps the C64 original 1:1 at 320 pixels across with four colours. The
+C64 mixes hires and multicolour cells on the same screen — multicolour is selected per cell by bit
+3 of the colour RAM nibble — and MODE 1 accommodates both, having no attribute constraints. Artwork
+converts mechanically from the ripped data with nothing redrawn.
 
 ## Approach
 

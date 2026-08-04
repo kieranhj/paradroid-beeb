@@ -13,23 +13,26 @@ Living document. Revised as each layer lands.
 
 ### Why MODE 1
 
-The C64 map graphics are 1bpp hires line art at the full 320px width (see `tools/output/tiles.png`),
-and the sprites are multicolour with 2-screen-pixel-wide logical pixels. MODE 1 maps both 1:1:
+**Both the tiles and the sprites are C64 multicolour** — 2-screen-pixel-wide logical pixels, four
+colours. MODE 1 is also four colours at 320 pixels across, so one C64 multicolour pixel is exactly
+two MODE 1 pixels:
 
 | | C64 | MODE 1 |
 |---|---|---|
-| Map character | 8×8 px, 1bpp | 8×8 px, 1:1 |
+| Map character | 4 MC px = 8 screen px | 8 px, 1:1 |
 | Tile (4×4 chars) | 32×32 px | 32×32 px, 1:1 |
-| Multicolour sprite pixel | 2 screen px | exactly 2 px |
+| Multicolour pixel | 2 screen px | exactly 2 px |
+| Colours per cell | 4 | 4 |
 | Display | 320×200 | 320×200 |
 
 Consequence: tiles, sprites, title screen and transfer board all convert **mechanically** from the
-ripped C64 data. No artwork is redrawn. The cost is a 4-colour budget where 5 are wanted
-(background + map colour + 3 sprite tones); resolved by sharing the map colour with a sprite tone,
-or by reprogramming the palette at the HUD split.
+ripped C64 data. No artwork is redrawn, and the colour count is exact rather than merely adequate.
 
-MODE 2 was rejected: 8 colours the game barely uses, in exchange for redrawing every tile at half
+MODE 2 was rejected: 8 colours the game does not need, in exchange for redrawing every tile at half
 width and breaking the 32×32 tile aspect ratio.
+
+> An earlier version of this section described the map as 1bpp hires and the 4-colour budget as
+> "tight". Both were wrong — see Layer 1.
 
 ## Source material: which Paradroid?
 
@@ -108,13 +111,68 @@ artwork). `tools/verify_bbc.py` round-trips them back and diffs against the list
 | `tiledefs.asm` | 512 B | 32 tiles × 4×4 char codes, byte-identical |
 | `levels.asm` | 3335 B | 16 deck maps RLE + offsets + metadata, byte-identical |
 
-**Key result — the 1bpp→MODE 1 conversion is a nibble split.** MODE 1 puts pixel *n*'s low colour
-bit in bit `3-n`, so storing the foreground as **logical colour 1** makes the conversion:
+> **Corrected twice.** First version: treated the charset as 1bpp hires, converted with a nibble
+> split — wrong, `ref/start screen.png` shows four colours per cell. Second version: called the
+> whole charset multicolour — also wrong, because ALERT keeps single-pixel letter spacing, which
+> a 4-pixel-wide multicolour character cannot produce. The truth is that both modes are in use.
+
+**The C64 mixes hires and multicolour cells on the same screen.** `$D016` bit 4 enables
+multicolour text mode globally (the `_d016Mode` routine at `$6F1B` is self-modifying, patching its
+own `LDA` operand between `$D0` and `$C0`), but in that mode the choice is made **per cell** by
+bit 3 of the colour RAM nibble:
+
+| colour RAM | cell renders as |
+|---|---|
+| `0`–`7` | hires — 8 pixels, background + that colour |
+| `8`–`15` | multicolour — 4 double-width pixels, 4 colours |
+
+**For deck 1 the split is 930 hires cells to 190 multicolour** — the play area is mostly hires,
+with multicolour used for shading. That is why the ALERT lettering stays crisp while the floor
+and walls carry four colours.
+
+The mode is driven per character code, and it is **deck dependent**:
 
 ```
-left  4 pixels of a scanline = (b >> 4) & 0x0F
-right 4 pixels of a scanline =  b       & 0x0F
+CharColor[code]  upper nibble = palette slot (0-11)
+NewCharColors    rewrites the lower nibble per deck from a 12-slot record
+                 at $6A44, chosen by deckColorScheme ($F160)
+BuildLevel       writes that byte to colour RAM; the VIC uses the low nibble
 ```
+
+Only slot 5 is multicolour in every scheme and only slot 11 is hires in every scheme; the rest
+vary, so **a character's mode genuinely changes between decks**. `tools/analyse_charmode.py`
+dumps this; `tools/rip_deck_mixed.py` renders a deck the way the C64 displays it.
+
+A multicolour character byte is four 2-bit pixel pairs, each two screen pixels wide:
+
+| bits | source | in the artwork |
+|---|---|---|
+| `00` | `$D021` background | floor |
+| `01` | `$D022` | |
+| `10` | `$D023` | |
+| `11` | colour RAM, per cell | |
+
+**MODE 1 handles both modes**, because it has no attribute constraints: 4 colours freely per pixel
+at 320 across. A hires cell converts to 8 MODE 1 pixels of background + one colour; a multicolour
+cell converts to 4 doubled pixels using all four. Either way a character is **16 bytes**, so
+`plot_char` is unchanged.
+
+MODE 1 pixel *n* takes bit `7-n` as its high colour bit and bit `3-n` as its low.
+
+**Logical colour assignment.** MODE 1's four colours are global, but the C64 draws on a 12-slot
+per-deck palette. `export_bbc.py` counts how often each C64 colour is actually used across the
+tile set and assigns logical 0 = background plus the three most-used; anything left over maps to
+the nearest by luminance. For deck 1 that gives:
+
+| logical | C64 | role | uses |
+|---|---|---|---|
+| 0 | light blue | floor | background |
+| 1 | white | highlight | 272 |
+| 2 | red | shadow | 220 |
+| 3 | yellow | grid lines | 78 |
+
+Three foregrounds is enough for deck 1. **This needs checking per deck** — a deck needing four or
+more distinct foregrounds would lose one to the nearest-luminance fallback.
 
 Two consequences worth carrying forward:
 - **Per-deck recolour is free.** Colour is not baked into the tiles; a deck's scheme is a palette
@@ -123,12 +181,26 @@ Two consequences worth carrying forward:
   consecutive bytes, so an 8×8 char is the left half's 8 scanlines then the right half's.
   Plotting one is a flat 16-byte copy, no shifting or masking. `plot_char` is 12 instructions.
 
-*Option not taken:* since the conversion is a nibble split, tiles could be stored in C64 1bpp form
-(2K instead of 4K) and expanded during the blit. Worth revisiting only if the tile charset ever
-needs to compete for space with sprite data.
+*Known loss:* the C64 gives each cell its own colour from a 12-slot palette; MODE 1's four logical
+colours are global. Deck 1 only needs three foregrounds so nothing is lost there, but decks needing
+more will have colours merged.
 
-**Verified:** `verify_bbc.py` passes 5/5 — charset round-trips to the original `$7800` bytes with
-no high nibble ever set; tile defs, RLE, deck offsets and metadata all byte-identical.
+**Open item — the charset is currently built for one deck.** Because a character's mode *and*
+colour depend on the deck scheme, `charset.asm` is generated for deck 1 only. Options when we need
+all 16:
+- **Generate at deck-load time** (preferred). Ship the C64 charset (2K) plus `CharColor` (256 B)
+  and the 8 scheme records (96 B) — about 2.4K — and build the 4K MODE 1 charset on entering a
+  deck. Deck-accurate, and *less* data than one converted charset.
+- Ship 16 converted charsets: 64K. Not viable.
+- Force one mode per character for all decks: simplest, diverges from the original.
+
+*Option not taken:* tiles could be stored in C64 form (2K instead of 4K) and expanded during the
+blit. Worth revisiting only if the tile charset ever needs to compete for space with sprite data.
+
+**Verified:** `verify_bbc.py` passes 5/5 — the charset round-trips to the original `$7800` bytes
+*and* asserts every pixel pair is correctly doubled; tile defs, RLE, deck offsets and metadata all
+byte-identical. `tools/rip_tiles_mc.py` renders the tile set as multicolour for direct comparison
+against `ref/start screen.png`.
 
 ### Layer 2 — Static deck render ✅ DONE
 `BuildLevel` RLE-decodes a deck into a tile map; `DrawScreen` renders the viewport from it.
