@@ -1,0 +1,21 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build",
+            "type": "shell",
+            "command": "powershell",
+            "args": ["-NoProfile", "-File", "${workspaceFolder}/build.ps1"],
+            "group": { "kind": "build", "isDefault": true },
+            "problemMatcher": []
+        },
+        {
+            "label": "Build and Run",
+            "type": "shell",
+            "command": "powershell",
+            "args": ["-NoProfile", "-File", "${workspaceFolder}/build.ps1", "-Run"],
+            "group": "build",
+            "problemMatcher": []
+        }
+    ]
+}

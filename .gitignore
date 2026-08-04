@@ -1,0 +1,24 @@
+# ---- Build output ----
+*.SSD
+*.ssd
+*.dsd
+
+# ---- Third-party tools (fetch locally, see README) ----
+bin/
+
+# ---- Original game code and data ----
+# Copyright Andrew Braybrook / Hewson Consultants. Supply these locally;
+# they are inputs to the tools in tools/, not part of this project.
+*.lst
+*.prg
+*.zip
+extracted/
+
+# ---- Generated artefacts ----
+# paradroid_ce_annotated.asm is produced by annotate.py from paradroid_ce.lst
+paradroid_ce_annotated.asm
+# tools/output/ is produced by the rip_*.py scripts
+tools/output/
+
+# ---- Local editor / agent settings ----
+.claude/settings.local.json
