@@ -1,0 +1,263 @@
+\ ============================================================
+\ screen.asm — 10K play buffer, CRTC hardware scrolling
+\ ============================================================
+\ Play area: 320 x 128 px = 10 x 4 tiles, matching the C64's
+\ 9.5 x 4 rounded up so both axes wrap cleanly.
+\
+\ 320 x 128 = 10240 bytes = exactly 16 rows of 640, and the BBC
+\ supports a 10K wrap natively (the MODE 4/5 setting): System VIA
+\ addressable latch lines 4 and 5 both high select subtract &2800
+\ with restart &5800.
+\
+\ The buffer is a CIRCULAR STRIP, not a flat grid. Display cell
+\ (row, unit) lives at:
+\
+\     BUF_BASE + ((scrollS + row*640 + unit*8) MOD 10240)
+\
+\ Scrolling is then just moving scrollS and filling in whatever
+\ became exposed:
+\   horizontal, 4 px  — scrollS +/- 8    -> 16 cells to redraw
+\   vertical,   8 px  — scrollS +/- 640  -> 80 cells to redraw
+\
+\ A CRTC unit in MODE 1 is one byte per scanline = 4 pixels, and
+\ characters are stored as two 8-byte halves, so a 4-pixel column
+\ is exactly one stored half-character. No pre-shifted data.
+\ ============================================================
+
+BUF_BASE   = &5800
+BUF_SIZE   = 10240              \ 16 rows x 640
+BUF_END    = BUF_BASE + BUF_SIZE
+PLAY_UNITS = 80                 \ CRTC units across (4 px each) = 320 px
+PLAY_ROWS  = 16                 \ character rows = 128 px
+UNIT_BYTES = 8
+ROW_BYTES  = 640
+
+VIA_PORTB  = &FE40
+
+\ ============================================================
+\ SetupScreen — MODE 1 geometry with a 10K wrap at &5800
+\ ============================================================
+.SetupScreen
+  LDA #22 : JSR OSWRCH          \ MODE 1 (OS sets 20K / 16K wrap)
+  LDA #1  : JSR OSWRCH
+
+  LDA #23 : JSR OSWRCH          \ cursor off
+  LDA #1  : JSR OSWRCH
+  LDX #8
+  LDA #0
+.ss_cursoff
+  JSR OSWRCH
+  LDA #0
+  DEX
+  BNE ss_cursoff
+
+  LDA #4 : LDX #1 : JSR OSBYTE  \ cursor keys return codes
+
+\ Re-point the wraparound at the 10K / &5800 window. The latch takes
+\ PB0-PB2 = line index, PB3 = value, so &08 OR n sets line n high.
+  LDA #&08 OR 4                 \ C0 = 1
+  STA VIA_PORTB
+  LDA #&08 OR 5                 \ C1 = 1  -> subtract &2800, restart &5800
+  STA VIA_PORTB
+
+  CRTC 1,  PLAY_UNITS           \ 80 units = 320 px displayed
+  CRTC 6,  PLAY_ROWS            \ 16 character rows = 128 px
+  CRTC 7,  30                   \ vsync position, re-centres the short frame
+
+  LDA #0                        \ start at the bottom of the buffer
+  STA scrollS
+  STA scrollS+1
+  JSR SetCRTCStart
+  RTS
+
+\ ============================================================
+\ SetCRTCStart — program R12/R13 from scrollS
+\ CRTC start = physical address / 8.
+\ ============================================================
+.SetCRTCStart
+  CLC                           \ addr = BUF_BASE + scrollS
+  LDA scrollS   : ADC #LO(BUF_BASE) : STA sTmp
+  LDA scrollS+1 : ADC #HI(BUF_BASE) : STA sTmp+1
+
+  LDX #3                        \ addr / 8
+.sc_shift
+  LSR sTmp+1
+  ROR sTmp
+  DEX
+  BNE sc_shift
+
+  LDA #12 : STA CRTC_ADDR
+  LDA sTmp+1 : STA CRTC_DATA
+  LDA #13 : STA CRTC_ADDR
+  LDA sTmp   : STA CRTC_DATA
+  RTS
+
+\ ============================================================
+\ AddBuf / SubBuf — advance bufp by A*1 units, wrapping the strip
+\ bufp is always a real address in [BUF_BASE, BUF_END).
+\ ============================================================
+.WrapBufFwd
+  LDA bufp+1                    \ past the end? subtract the buffer size
+  CMP #HI(BUF_END)
+  BCC wbf_done
+  BNE wbf_sub
+  LDA bufp
+  CMP #LO(BUF_END)
+  BCC wbf_done
+.wbf_sub
+  SEC
+  LDA bufp   : SBC #LO(BUF_SIZE) : STA bufp
+  LDA bufp+1 : SBC #HI(BUF_SIZE) : STA bufp+1
+.wbf_done
+  RTS
+
+.WrapBufBack
+  LDA bufp+1                    \ before the start? add the buffer size
+  CMP #HI(BUF_BASE)
+  BCS wbb_done
+  CLC
+  LDA bufp   : ADC #LO(BUF_SIZE) : STA bufp
+  LDA bufp+1 : ADC #HI(BUF_SIZE) : STA bufp+1
+.wbb_done
+  RTS
+
+\ ============================================================
+\ DrawHalf — write one 4-pixel column cell
+\   halfX = map position in half-characters (16 bit)
+\   cellY = map character row
+\   bufp  = destination
+\ ============================================================
+.DrawHalf
+  LDA halfX                     \ character = halfX >> 1
+  LSR halfX+1
+  ROR A
+  STA cellX
+  LDA halfX+1
+  STA cellX+1
+  ASL halfX+1                   \ restore halfX+1 (only the low bit of
+  LDA halfX                     \ halfX matters for the half select)
+  AND #1
+  STA halfSel
+
+  JSR MapChar                   \ -> A = character code
+
+  TAX                           \ index through the used-character remap
+  LDA charRemap,X
+  PHA
+  AND #&0F
+  ASL A : ASL A : ASL A : ASL A
+  STA chp
+  PLA
+  LSR A : LSR A : LSR A : LSR A
+  CLC : ADC #HI(charset)
+  STA chp+1
+
+  LDA halfSel                   \ right half is 8 bytes further on
+  BEQ dh_copy
+  CLC
+  LDA chp : ADC #8 : STA chp
+  BCC dh_copy
+  INC chp+1
+.dh_copy
+  LDY #7
+.dh_loop
+  LDA (chp),Y
+  STA (bufp),Y
+  DEY
+  BPL dh_loop
+  RTS
+
+\ ============================================================
+\ MapChar — character code at map cell (cellX, cellY)
+\   tile      = tilemap[(cellY>>2)*64 + (cellX>>2)]
+\   character = tiledefs[tile*16 + (cellY AND 3)*4 + (cellX AND 3)]
+\ ============================================================
+.MapChar
+  LDA cellY                     \ row base: tilemap + (cellY>>2)*64
+  LSR A : LSR A
+  STA mcTmp
+  AND #3
+  ASL A : ASL A : ASL A : ASL A : ASL A : ASL A
+  STA maprow
+  LDA mcTmp
+  LSR A : LSR A
+  CLC : ADC #HI(tilemap)
+  STA maprow+1
+
+  LDA cellX+1                   \ tile column = cellX >> 2
+  LSR A
+  LDA cellX
+  ROR A
+  LSR A
+  TAY
+  LDA (maprow),Y                \ tile number
+
+  PHA                           \ tdp = tiledefs + tile*16
+  AND #&0F
+  ASL A : ASL A : ASL A : ASL A
+  STA tdp
+  PLA
+  LSR A : LSR A : LSR A : LSR A
+  CLC : ADC #HI(tiledefs)
+  STA tdp+1
+
+  LDA cellY                     \ (cellY AND 3)*4 + (cellX AND 3)
+  AND #3
+  ASL A : ASL A
+  STA mcTmp
+  LDA cellX
+  AND #3
+  CLC : ADC mcTmp
+  TAY
+  LDA (tdp),Y
+  RTS
+
+\ ============================================================
+\ RedrawAll — fill the whole viewport from the current position
+\ ============================================================
+.RedrawAll
+  LDA #0 : STA rCount
+  LDA mapYr : STA cellY
+
+.ra_row
+  CLC                           \ row start = BUF_BASE + scrollS + row*640
+  LDA scrollS   : ADC rowOfs   : STA bufp
+  LDA scrollS+1 : ADC rowOfs+1 : STA bufp+1
+  CLC
+  LDA bufp   : ADC #LO(BUF_BASE) : STA bufp
+  LDA bufp+1 : ADC #HI(BUF_BASE) : STA bufp+1
+  JSR WrapBufFwd
+
+  LDA mapHX   : STA halfX
+  LDA mapHX+1 : STA halfX+1
+  LDA #0 : STA uCount
+
+.ra_unit
+  JSR DrawHalf
+  INC halfX
+  BNE ra_nohx
+  INC halfX+1
+.ra_nohx
+  CLC                           \ next 4-pixel column
+  LDA bufp : ADC #UNIT_BYTES : STA bufp
+  BCC ra_nohi
+  INC bufp+1
+.ra_nohi
+  JSR WrapBufFwd
+  INC uCount
+  LDA uCount
+  CMP #PLAY_UNITS
+  BNE ra_unit
+
+  CLC                           \ next character row
+  LDA rowOfs   : ADC #LO(ROW_BYTES) : STA rowOfs
+  LDA rowOfs+1 : ADC #HI(ROW_BYTES) : STA rowOfs+1
+  INC cellY
+  INC rCount
+  LDA rCount
+  CMP #PLAY_ROWS
+  BEQ ra_done
+  JMP ra_row
+.ra_done
+  LDA #0 : STA rowOfs : STA rowOfs+1
+  RTS

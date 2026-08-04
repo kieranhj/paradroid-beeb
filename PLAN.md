@@ -323,10 +323,68 @@ which everything else depends on.
 cycles), so about 4 steps/second. `plot_char` dominates at ~256 cycles for its 16-byte copy;
 unrolling the loop to drop `DEY`/`BPL` would take that to ~176. This is the number 3b has to beat.
 
-#### 3b — Hardware scroll + edge redraw
-CRTC R12/R13 for the 4-px horizontal step, and redraw only the leading column/row as it comes into
-view — 25 characters instead of 1000, ~8,500 cycles, a fifth of a frame. Needs the map buffer to be
-wider than the viewport so there is somewhere to draw into.
+#### 3b — Hardware scroll + edge redraw ✅ DONE
+
+**Play area verified against the C64: 9.5 × 4 tiles.** `DrawScreen` writes to `$4940` — `$140` past
+the `$4800` screen base, so character row 8 — and draws 17 rows × 39 columns. That includes the
+C64's one-character fine-scroll margin, so the *visible* area is 38 × 16 chars = 304 × 128 px.
+
+**Rounded up to 10 × 4 tiles = 320 × 128** (KC's suggestion), because 10240 bytes is exactly 16 rows
+of 640 and the BBC supports a 10K wrap natively — System VIA addressable latch lines 4 and 5 both
+high select subtract `&2800`, restart `&5800`. Both axes then wrap cleanly. Rounding up rather than
+down also avoids narrowing the play area.
+
+**The buffer is a circular strip, not a flat grid.** Display cell *(row, unit)* lives at
+`BUF_BASE + ((scrollS + row*640 + unit*8) MOD 10240)`.
+
+The BBC CRTC gives a *one-dimensional* scroll through linear memory: a character leaving the left
+reappears one row up on the right. Drawn as a flat 2D grid that is corruption — verified in the
+emulator, and it scales with the offset (at 80 px, the right quarter shows the wrong rows). Treated
+as a circular strip it is simply where the next column legitimately lives, and the cost collapses:
+
+| step | scrollS | cells to redraw |
+|---|---|---|
+| horizontal, 4 px | ± 8 | 16 |
+| vertical, 8 px | ± 640 | 80 |
+
+versus ~640 characters for a full redraw.
+
+**A MODE 1 CRTC unit is one byte per scanline = 4 pixels, and characters are already stored as two
+8-byte halves — so a 4-pixel column is exactly one stored half-character.** No pre-shifted data is
+needed for sub-character horizontal scrolling, which was the thing that looked expensive.
+
+Source split into `screen.asm` (buffer addressing, `DrawHalf`, `MapChar`, `RedrawAll`),
+`scroll.asm` (the four scroll directions) and `level.asm` (deck decode, charset, palette, framing).
+
+**VSYNC synced.** R12/R13 form a 14-bit value across two writes; if the CRTC samples between them
+the display shows one frame at a half-updated address. `WaitVSync` (OSBYTE 19) at the top of the
+main loop puts both writes and the edge redraw in the blanking window, and paces scrolling to one
+step per frame.
+
+**Verified:** both axes scroll coherently with no shear or row-bleed. Step rate measured over 10
+frames with the key held:
+
+| | steps in 10 frames | cost |
+|---|---|---|
+| horizontal, 16 cells | **10** | 1 frame/step — vsync-locked |
+| vertical, 80 cells | **4** | ~2.5 frames/step — overruns the frame |
+
+**`SetCell` loop replaced with lookup tables** (`rowMulLo/Hi`, `unitMulLo/Hi`). It previously added
+640 in a loop — for `DrawRow` a constant 15 iterations × 80 cells, ~1200 redundant 16-bit adds.
+
+*Result: less than predicted.* Vertical went from 4 to **5 steps per 10 frames** (2.5 → 2.0
+frames/step); horizontal unchanged at 10. So `SetCell` was **not** the dominant cost — that
+diagnosis was wrong.
+
+**Where the time actually goes.** `OSBYTE 19` quantises to whole frames, so a step costs 1 frame if
+the work fits and 2 if it spills over by any amount. Vertical is sitting just above the boundary —
+the remaining gap is small, and crossing it jumps straight from 5 to 10 steps.
+
+The likely culprit is `MapChar`, which per cell recomputes the tile-map row base (shifts, adds, a
+16-bit pointer build) and then the tile-definition pointer. For `DrawRow` `cellY` is *constant*, so
+the row base is identical for all 80 cells and recomputed 80 times. Hoisting it — and the tile
+pointer, which only changes every 4 cells — should get under one frame. Still deferred, but now
+pointed at the right routine.
 
 #### 3c — Decide the scroll model
 Wide virtual buffer, CRTC R12/R13 hardware scroll, keyboard-driven. **Decide the scroll model here
