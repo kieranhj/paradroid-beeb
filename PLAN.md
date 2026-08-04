@@ -31,6 +31,29 @@ or by reprogramming the palette at the HUD split.
 MODE 2 was rejected: 8 colours the game barely uses, in exchange for redrawing every tile at half
 width and breaking the 32×32 tile aspect ratio.
 
+## Source material: which Paradroid?
+
+The listing this port is built from (`paradroid_ce.lst`) is a disassembly of **Paradroid Redux**, a
+community-extended version — **not** the 1985 Hewson original. Everything downstream of it inherits
+that: `ANNOTATION.md`, `GRAPHICS.md`, and all data extracted by `tools/` (sprites, charsets, the 16
+deck maps, tile definitions, side view, title screen, transfer board).
+
+Practically this means the port currently reproduces *Redux*. Not a problem for Layers 0–4, which
+are pipeline and rendering work where any version would do. It could matter later:
+
+| Layer | Possible divergence |
+|---|---|
+| 2 — deck render | Redux may have altered or added deck maps |
+| 6 — droids | droid roster, stats, AI tuning |
+| 7 — combat | scoring tables, alert behaviour |
+| 10 — transfer | circuit-puzzle rules or board layout |
+
+**If a clean reference is needed:** obtain the original release's `.prg` and disassemble it
+separately, then diff the data tables against the Redux extraction. Not required yet — noted so
+that an unexpected difference from remembered C64 behaviour is diagnosed rather than debugged.
+
+Decide explicitly before Layer 6 whether the target is Redux fidelity or original fidelity.
+
 ## Memory budget
 
 | Region | Size | Contents |

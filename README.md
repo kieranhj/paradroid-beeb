@@ -68,7 +68,12 @@ GRAPHICS.md     Graphics extraction reference for the BBC conversion
 
 The C64 game's code and data are **not** included in this repository — they remain the copyright of
 Andrew Braybrook and Hewson Consultants. To run the extraction tools you need to supply
-`paradroid_ce.lst` (a disassembly listing of Paradroid CE) in the project root.
+`paradroid_ce.lst` in the project root.
+
+> **Which version?** That listing is a disassembly of **Paradroid Redux**, a community-extended
+> version, *not* the 1985 Hewson original. Everything ported so far — level data, tile definitions,
+> sprites, game logic — comes from Redux. If a divergence from the original matters, the original
+> release's `.prg` can be obtained and disassembled separately for a clean reference listing.
 
 With that in place:
 

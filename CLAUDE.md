@@ -5,8 +5,15 @@ Guidance for Claude Code when working in this repository.
 ## Project Overview
 
 A port of the C64 game *Paradroid* (Andrew Braybrook, 1985) to the **BBC Micro Model B**, in
-6502 assembly for the **BeebASM** assembler. The original C64 disassembly has been
-reverse-engineered and annotated; the port itself is at an early stage.
+6502 assembly for the **BeebASM** assembler. A C64 disassembly has been reverse-engineered and
+annotated; the port itself is at an early stage.
+
+**Source-of-truth caveat:** `paradroid_ce.lst` — and therefore `ANNOTATION.md`, `GRAPHICS.md`, and
+everything extracted by `tools/` — is a disassembly of **Paradroid Redux**, a community-extended
+version, *not* the 1985 Hewson original. All ported data and logic currently derives from Redux.
+Where behaviour or data might have been changed by Redux, say so rather than describing it as "the
+original". The original release's `.prg` can be disassembled separately if a clean reference is
+needed.
 
 **`PLAN.md` is the live planning document.** Read it before starting work — it records decisions
 taken, per-layer status, and hardware facts confirmed by measurement. Update it as layers land.
