@@ -168,7 +168,44 @@ lives at `&3393`, above `&3000`, so it exercises the clear-on-mode-change bug ab
 *Note:* deck 1 masked that bug entirely. Its RLE sits at `&2DC0`, below `&3000`, so it rendered
 identically before and after the fix. Screenshot comparison alone would not have caught it.
 
-### Layer 3 — Scroll spike ← *the decision point*
+### Layer 3 — Scroll ← *the decision point*, split into chunks
+
+#### 3a — Map browser ✅ DONE
+Scroll the viewport by one character with Z/X/K/M; switch decks with UP/DOWN. Full-screen redraw
+per step, no hardware scroll. Proves `DrawScreen` renders correctly from an arbitrary map origin,
+which everything else depends on.
+
+- `DrawScreen` generalised to a `(charX, charY)` origin. Map is 256 × 64 characters, viewport
+  40 × 25, so the origin ranges 0–216 × 0–39.
+- Row base is cheap because `tilemap` is page-aligned and 1K:
+  `lo = (tileRow AND 3) << 6`, `hi = HI(tilemap) + (tileRow >> 2)`.
+- Keys read with OSBYTE `&81`. Confirmed codes: Z `-98`, X `-67`, K `-71`, M `-102`,
+  UP `-58`, DOWN `-42`. `*FX 4,1` stops the cursor keys doing cursor editing.
+- Deck keys are **edge triggered**. A blocking wait-for-release deadlocks: hold UP before
+  releasing DOWN and it spins forever, swallowing the press.
+- Code moved to `&1100` (see memory budget) — 2K reclaimed.
+- `CentreOnDeck` frames a deck on load. Decks sit at varying offsets in the 64×16 grid and are
+  padded with empty tiles, so a (0,0) origin lands in blank space. Uses the **centroid** of
+  non-empty tiles rather than the bounding box, because several decks are two clusters far apart
+  and the midpoint of the extremes then falls in the gap. Division is by repeated subtraction —
+  the quotient cannot exceed 63, and this runs once per deck change. Derived from the map itself,
+  not the per-deck metadata tables, which hold side-view positions rather than map extents.
+
+  *Honest limit:* on deck 0 the centroid lands within 2 characters of the bounding box, because
+  its two clusters happen to balance near the same point. No single 40×25 viewport frames a
+  34-tile-wide deck well; the centroid is kept because it degrades more gracefully — one outlying
+  tile skews a bounding box badly and a centroid barely at all.
+
+**Measured: a full-screen redraw costs ~466,000 cycles ≈ 11 frames** (30 scroll steps in 14M
+cycles), so about 4 steps/second. `plot_char` dominates at ~256 cycles for its 16-byte copy;
+unrolling the loop to drop `DEY`/`BPL` would take that to ~176. This is the number 3b has to beat.
+
+#### 3b — Hardware scroll + edge redraw
+CRTC R12/R13 for the 4-px horizontal step, and redraw only the leading column/row as it comes into
+view — 25 characters instead of 1000, ~8,500 cycles, a fifth of a frame. Needs the map buffer to be
+wider than the viewport so there is somewhere to draw into.
+
+#### 3c — Decide the scroll model
 Wide virtual buffer, CRTC R12/R13 hardware scroll, keyboard-driven. **Decide the scroll model here
 and record it in this document.** Everything downstream depends on the map buffer layout.
 

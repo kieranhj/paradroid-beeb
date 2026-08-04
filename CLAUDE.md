@@ -59,6 +59,11 @@ the exit code, not the presence of stderr output.
   Solid colour 0/1/2/3 = `&00`/`&0F`/`&F0`/`&FF`.
 - **Horizontal scroll granularity is 4 pixels**, not 8. CRTC addresses in 8-byte units and a
   MODE 1 character cell is 16 bytes (8 px × 2bpp × 8 rows), so one CRTC step is half a cell.
+- **Code can start at `&1100`, not DFS's `PAGE` of `&1900`.** `&1100–&18FF` is DFS random-access
+  file buffer space, untouched by simple `*LOAD` / OSFILE loads. Worth 2K.
+- `VDU 22` makes the OS clear `&3000–&7FFF` (what it still thinks is its screen). Data loaded
+  above `&3000` is wiped before it can be read — hence the split `PARA` / `PARADAT` disc files,
+  with `PARADAT` `*LOAD`ed after the mode change.
 
 ## Memory budget
 
@@ -66,7 +71,7 @@ the exit code, not the presence of stderr output.
 |---|---|---|
 | ZP (`&00–&8F`, `&A8–&AF`) | ~150 B | hot variables. C64 used ~206 B; the excess demotes to page 4 |
 | `&0400–&0CFF` | ~2.2 K | reclaimed OS workspace: BASIC, sound/printer buffers, UDK, UDC |
-| `&0E00–&3FFF` | 12.5 K | main code + resident data (DFS must be displaced after load) |
+| `&1100–&3FFF` | 11.75 K | main code + resident data — **code can start at `&1100`, not `&1900`** |
 | `&4000–&7E7F` | 16 K | MODE 1 screen |
 | SWRAM bank 0 | 16 K | converted tiles, sprites, level RLE, metadata |
 | SWRAM bank 1 | 16 K | paged code: transfer minigame, console screens, side view |
