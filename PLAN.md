@@ -795,6 +795,8 @@ has ever caught a drawing bug in this project:
 | 8 steps up (through the row borrow), even `mapHX` | 0 / 10240 |
 | mixed right / up / down, **odd** `mapHX`, `scrollS` wrapped mid-row | 0 / 10240 |
 | as above, re-run after deferring the draw (exercises the down-wrap `scanRow`) | 0 / 10240 |
+| diagonal right+down, **`line` = 3** — the split row is live | 0 / 10240 |
+| diagonal left+up, **`line` = 3** | 0 / 10240 |
 
 Step rate measured at **1 scanline per frame**, vsync-locked, on both axes.
 
@@ -831,7 +833,30 @@ Deferring meant K and M could both record into one draw slot, with a scanline nu
 strip position that no longer exists, so **up and down are now mutually exclusive** in the main loop.
 Net movement with both held is zero anyway.
 
-##### `DrawRow` is gone, and with it its defect
+##### Anything that writes a whole cell into display row 0 must respect the split
+
+Reported by KC: diagonal scrolling leaves mess behind.
+
+`DrawColumn` writes all 8 scanlines of every row it touches, including display row 0 — which is the
+split row. Scanlines `0..line-1` there belong to map row `mapYr+16`, and a column redraw was
+overwriting them with `mapYr`. Those scanlines are **invisible at the time**, so nothing shows until
+`line` wraps and that row rotates round to the bottom of the window — which is why it looked like
+mess being left behind rather than a column being drawn wrong.
+
+`DrawColumn` now re-writes scanlines `0..line-1` of its display-row-0 cell from `mapYr+16` after the
+main loop, via `DrawHalfPart`. One cell, up to 7 bytes.
+
+**`RedrawAll` had the same blind spot**, which is why the diff oracle had only ever been valid at
+`line = 0`. It now applies the same repair across all 80 units, so a full redraw is correct at any
+scroll position — and the incremental scrolling can be diffed against it at any value of `line`,
+which is where these bugs actually live.
+
+*Testing trap, cost an hour:* the first run of that diff reported 72 bytes differing on exactly the
+split scanlines, and the natural reading was that the fix had not worked. It had — the **oracle**
+was being sampled mid-redraw. `RedrawAll` plus its split pass runs longer than the 400,000 cycles
+being allowed to settle, so the dump caught display row 0 rewritten by the main loop but not yet
+repaired by the split pass. Allow 1,500,000 cycles after releasing SPACE. Confirmed by breakpointing
+`ra_nosplit` and reading the buffer there: correct at the end of the routine, wrong in the middle.
 
 Vertical scrolling no longer redraws whole rows, so `DrawRow`, `FetchChar` and `SetTilePtr` have
 been deleted. The defect recorded above — three separate bugs in that one routine's incremental

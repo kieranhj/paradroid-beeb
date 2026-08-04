@@ -177,6 +177,26 @@
   RTS
 
 \ ============================================================
+\ DrawHalfPart — scanlines 0..scanY-1 of one 4-pixel column cell
+\ The part of the split row that is ABOVE the visible top edge and
+\ therefore belongs to map row mapYr+16, not mapYr. Anything that
+\ writes a whole cell into display row 0 has to put this back.
+\ ============================================================
+.DrawHalfPart
+  LDA scanY
+  BEQ dhp_none                  \ line 0: the row is not split
+  JSR HalfPtr
+  LDY #0
+.dhp_loop
+  LDA (chp),Y
+  STA (bufp),Y
+  INY
+  CPY scanY
+  BNE dhp_loop
+.dhp_none
+  RTS
+
+\ ============================================================
 \ HalfPtr — chp = charset bytes for the cell at (halfX, cellY)
 \ ============================================================
 .HalfPtr
@@ -305,4 +325,25 @@
   JMP ra_row
 .ra_done
   LDA #0 : STA rowOfs : STA rowOfs+1
+
+\ The loop above wrote 16 whole rows from mapYr, which is only right
+\ when line = 0. Otherwise display row 0 is split, and its scanlines
+\ 0..line-1 belong to map row mapYr+16. Putting that back here means
+\ a full redraw is a true repair at ANY scroll position — which also
+\ makes it a valid oracle to diff the incremental scrolling against
+\ at any value of line, not just 0.
+  LDA line
+  BEQ ra_nosplit
+  LDA #0
+  STA rCount
+  STA scanY
+  CLC
+  LDA mapYr : ADC #PLAY_ROWS : STA cellY
+.ra_split
+  JSR DrawScanline
+  INC scanY
+  LDA scanY
+  CMP line
+  BNE ra_split
+.ra_nosplit
   RTS

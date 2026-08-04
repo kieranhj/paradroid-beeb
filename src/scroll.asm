@@ -111,6 +111,26 @@ ENDMACRO
   LDA rCount
   CMP #PLAY_ROWS
   BNE dc_loop
+
+\ Display row 0 is the SPLIT row: scanlines line..7 are the top of
+\ the view and belong to map row mapYr, which the loop above just
+\ wrote — but scanlines 0..line-1 belong to map row mapYr+16 and
+\ have just been clobbered. They are invisible now, so the damage
+\ does not show until `line` wraps and this row rotates round to the
+\ bottom of the window. That is the mess a diagonal scroll leaves.
+  LDA line
+  BEQ dc_done
+  STA scanY
+  LDA #0
+  STA rCount
+  JSR SetCell                   \ back to display row 0, same column
+  CLC
+  LDA mapHX   : ADC uCount : STA halfX
+  LDA mapHX+1 : ADC #0     : STA halfX+1
+  CLC
+  LDA mapYr : ADC #PLAY_ROWS : STA cellY
+  JSR DrawHalfPart
+.dc_done
   RTS
 
 \ `DrawRow` lived here. Vertical scrolling now moves a scanline at
