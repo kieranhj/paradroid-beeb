@@ -185,14 +185,65 @@ Two consequences worth carrying forward:
 colours are global. Deck 1 only needs three foregrounds so nothing is lost there, but decks needing
 more will have colours merged.
 
-**Open item — the charset is currently built for one deck.** Because a character's mode *and*
-colour depend on the deck scheme, `charset.asm` is generated for deck 1 only. Options when we need
-all 16:
-- **Generate at deck-load time** (preferred). Ship the C64 charset (2K) plus `CharColor` (256 B)
-  and the 8 scheme records (96 B) — about 2.4K — and build the 4K MODE 1 charset on entering a
-  deck. Deck-accurate, and *less* data than one converted charset.
-- Ship 16 converted charsets: 64K. Not viable.
-- Force one mode per character for all decks: simplest, diverges from the original.
+**The charset is built at deck-load time** ✅, since a character's mode *and* colour both depend on
+the deck scheme. Shipping 16 converted charsets would have cost 64K.
+
+| shipped | size | |
+|---|---|---|
+| `chardata.asm` | 1489 B | C64 bitmaps, palette slots, code→index remap |
+| `colours.asm` | 432 B | 8 scheme records, deck→scheme, per-deck colour maps |
+| generated at runtime | 2192 B | the MODE 1 charset |
+
+Two things keep this small. Only the **137 characters the tiles actually reference** are converted
+(of 256, spanning `$00`–`$F0`), via a 256-byte remap table that `plot_char` indexes through — so
+the charset is 2192 bytes rather than 4K. And the per-deck C64→logical colour maps are precomputed
+offline, so the 6502 needs no search.
+
+`BuildLUTs` builds eight 16-entry nibble→byte tables per deck — four hires, four multicolour.
+**Both modes consume one source nibble per output byte** (hires: 4 pixels; multicolour: 2 pixels
+each doubled), so the conversion inner loop is identical for both and only the table pointer
+differs.
+
+*Bug found by verification:* a few characters carry a palette slot ≥ 12, past the end of a 12-byte
+scheme record. The 6502 was indexing into the *next* record while Python clamped to 0, giving 12
+differing bytes in character `$16`. The C64 reads out of range here too — `clr0_top_d020` is 12
+bytes and it indexes 14 — so the original's behaviour is incidental; both sides now clamp.
+
+**`$D023` is 0 (black), not 6.** The only character-mode writes to `$D022`/`$D023` are in
+`DrawSideview` (`$308A`/`$308F`), setting `$F1`/`$F0`; the other writes to that area are `+3`/`+4`/
+`+$C`, which are the *sprite* multicolour registers. Having `$D023` wrong corrupted every
+multicolour cell on every deck.
+
+**`$D021` is still an assumption.** It comes from `bgColor`, which `SetIntroColors` loads from slot
+3 of the deck record — but slot 3 does not match the lavender floor in `ref/start screen.png`, so
+gameplay sets it somewhere not yet found. 14 (light blue) is taken from the screenshot. Marked
+`[assumed]` in `export_bbc.py`; **re-derive before trusting deck colours.**
+
+**Multicolour ALERT lettering is faithful, not a bug.** Row 0 of tile 22 (`$63`–`$66`) is the
+lettering and sits on slot 7, which is multicolour under 8 of the 16 deck schemes — 4 pixels wide,
+so the single-pixel letter gaps cannot exist and the letters join. The C64 does exactly the same;
+`tools/compare_tile.py` renders a tile side by side, C64 against port, to settle such questions.
+Decided to stay faithful for now rather than force those characters to hires.
+
+**Physical colours must be assigned per deck, greedily.** A fixed C64→BBC table cannot work:
+several C64 colours share a nearest BBC match, so two logical colours collapse onto one physical
+and whatever is drawn in the second becomes invisible. Light blue (the floor) and blue (shadow
+detail) both mapped to BBC blue, which silently erased detail on **12 of the 16 decks** — including
+the ALERT panel's frame, which is what made the lettering look wrong. `assign_palette` now picks
+nearest-*unused* per deck, with preferences honoured while free (floor → blue, grid → magenta,
+shadow → black).
+
+This is the second time a bug hid in the stage *after* conversion. The conversion was correct in
+both cases; the damage happened in colour assignment.
+
+**Verified:**
+- `verify_bbc.py --charset <dump> <deck>` diffs the charset the BBC built against a Python
+  conversion computed by a different route (direct, versus the 6502's lookup tables). Decks 1 and 2
+  both match all 2192 bytes.
+- `verify_bbc.py` asserts all 16 decks have four distinct physical colours, so the collision above
+  cannot silently return.
+- `tools/analyse_alert.py` checks per deck that the ALERT lettering stays hires and distinct from
+  the background.
 
 *Option not taken:* tiles could be stored in C64 form (2K instead of 4K) and expanded during the
 blit. Worth revisiting only if the tile charset ever needs to compete for space with sprite data.

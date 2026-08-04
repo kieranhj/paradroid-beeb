@@ -67,84 +67,100 @@ def check_tilemap(mem, dump_path, deck):
     return 0
 
 
+def check_charset(mem, dump_path, deck):
+    """Diff the charset the BBC built at deck-load time against Python.
+
+    The 6502 builds it from nibble lookup tables; this recomputes it directly
+    from the C64 bitmaps and the deck's colour scheme, so agreement means two
+    independent implementations match.
+    """
+    from export_bbc import (deck_colours, build_logical_map, convert_charset,
+                            CHARSET_ADDR, TILEDEF_ADDR, TILEDEF_SIZE)
+
+    used = sorted({mem[TILEDEF_ADDR + i] for i in range(32 * TILEDEF_SIZE)})
+    _, _, cell_colour = deck_colours(mem, deck)
+    logical, _ = build_logical_map(mem, cell_colour)
+    full, _ = convert_charset(mem, cell_colour, logical)
+
+    expected = bytearray()
+    for code in used:
+        expected.extend(full[code * 16:code * 16 + 16])
+
+    actual = open(dump_path, 'rb').read()
+    if len(actual) != len(expected):
+        print('FAIL charset: dump is %d bytes, expected %d'
+              % (len(actual), len(expected)))
+        return 1
+
+    diffs = [i for i, (e, a) in enumerate(zip(expected, actual)) if e != a]
+    if diffs:
+        print('FAIL charset: %d of %d bytes differ' % (len(diffs), len(expected)))
+        for i in diffs[:8]:
+            print('       char index %d (code $%02X) byte %d: expected %02X, got %02X'
+                  % (i // 16, used[i // 16], i % 16, expected[i], actual[i]))
+        return 1
+
+    print('OK   charset   deck %d: %d bytes (%d chars) match the Python '
+          'conversion' % (deck, len(expected), len(used)))
+    return 0
+
+
 def main():
     mem, _ = parse_listing(LST_FILE)
     failures = 0
 
     if len(sys.argv) > 2 and sys.argv[1] == '--tilemap':
         return check_tilemap(mem, sys.argv[2], int(sys.argv[3]))
+    if len(sys.argv) > 2 and sys.argv[1] == '--charset':
+        return check_charset(mem, sys.argv[2], int(sys.argv[3]))
 
-    # ---- charset: decode MODE 1 back to 1bpp -----------------------
-    chars = read_equb(DATA_DIR / 'charset.asm')
-    if len(chars) != 256 * 16:
-        print('FAIL charset: got %d bytes, expected %d' % (len(chars), 256 * 16))
+    # ---- character source data ------------------------------------
+    used = sorted({mem[TILEDEF_ADDR + i] for i in range(32 * 16)})
+    src = read_equb(DATA_DIR / 'chardata.asm')
+    exp_src = bytearray()
+    for code in used:
+        exp_src.extend(mem[CHARSET_ADDR + code * 8:CHARSET_ADDR + code * 8 + 8])
+    exp_slot = bytearray(mem[0x0800 + code] >> 4 for code in used)
+    exp_remap = bytearray(256)
+    for i, code in enumerate(used):
+        exp_remap[code] = i
+    n = len(used)
+    got_src, got_slot, got_remap = src[:n * 8], src[n * 8:n * 9], src[-256:]
+
+    if bytes(got_src) != bytes(exp_src):
+        print('FAIL chardata: C64 bitmaps differ from ')
+        failures += 1
+    elif bytes(got_slot) != bytes(exp_slot):
+        print('FAIL chardata: palette slots differ from CharColor')
+        failures += 1
+    elif bytes(got_remap) != bytes(exp_remap):
+        print('FAIL chardata: code->index remap is wrong')
         failures += 1
     else:
-        # Decoding back to C64 form needs the per-character mode, which comes
-        # from the deck's colour scheme - same inputs the exporter used, but
-        # travelled in the opposite direction.
-        from export_bbc import deck_colours, build_logical_map, DECK, D021
-        _, _, cell_colour = deck_colours(mem, DECK)
-        logical, _ = build_logical_map(mem, cell_colour)
+        print('OK   chardata  %d chars: bitmaps, slots and remap all correct' % n)
 
-        def logical_of(c64):
-            return logical.index(c64) if c64 in logical else None
+    # ---- per-deck colour data -------------------------------------
+    col = read_equb(DATA_DIR / 'colours.asm')
+    if bytes(col[:96]) != bytes(mem[0x6A44:0x6A44 + 96]):
+        print('FAIL colours: scheme records differ from ')
+        failures += 1
+    elif bytes(col[96:112]) != bytes(mem[0xF160:0xF160 + 16]):
+        print('FAIL colours: deck->scheme table differs from ')
+        failures += 1
+    else:
+        print('OK   colours   8 scheme records and 16 deck->scheme entries match')
 
-        bad, nhi, nmc, skipped = [], 0, 0, 0
-        for c in range(256):
-            base = c * 16
-            left, right = chars[base:base + 8], chars[base + 8:base + 16]
-            colour = cell_colour(c)
-            multi = bool(colour & 8)
-            bgl = logical_of(D021)
-
-            if multi:
-                nmc += 1
-                pal = [D021, 1, 6, colour & 7]          # 00,01,10,11
-                lut = {}
-                for v, c64 in enumerate(pal):
-                    li = logical_of(c64)
-                    if li is not None:
-                        lut.setdefault(li, v)
-                if len(lut) < 4:
-                    skipped += 1                        # colours collided
-                    continue
-            else:
-                nhi += 1
-                fgl = logical_of(colour)
-                if fgl is None or fgl == bgl:
-                    skipped += 1                        # fg indistinguishable
-                    continue
-
-            for y in range(8):
-                px = unpack_mode1(left[y]) + unpack_mode1(right[y])
-                if multi:
-                    if px[0] != px[1] or px[2] != px[3] \
-                            or px[4] != px[5] or px[6] != px[7]:
-                        bad.append((c, y, 'multicolour pixels not doubled'))
-                        break
-                    vals = [lut.get(px[i]) for i in (0, 2, 4, 6)]
-                    if None in vals:
-                        break
-                    recovered = (vals[0] << 6) | (vals[1] << 4) \
-                        | (vals[2] << 2) | vals[3]
-                else:
-                    recovered = 0
-                    for p in range(8):
-                        if px[p] == fgl:
-                            recovered |= 1 << (7 - p)
-                original = mem[CHARSET_ADDR + c * 8 + y]
-                if recovered != original:
-                    bad.append((c, y, '%02X != %02X' % (recovered, original)))
-                    break
-
-        if bad:
-            print('FAIL charset: %d chars differ, first 5: %r' % (len(bad), bad[:5]))
-            failures += 1
-        else:
-            print('OK   charset   256 chars round-trip to the original $7800 bytes')
-            print('              %d hires, %d multicolour, %d skipped '
-                  '(colours collide, not decodable)' % (nhi, nmc, skipped))
+    # Every deck must map its four logical colours to four DISTINCT physical
+    # ones. A fixed C64->BBC table cannot guarantee this - several C64 colours
+    # share a nearest BBC match - and when two collapse, whatever is drawn in
+    # the second becomes invisible against the first.
+    pal = col[112:176]
+    clash = [d for d in range(16) if len(set(pal[d * 4:d * 4 + 4])) < 4]
+    if clash:
+        print('FAIL colours: decks %s have colliding physical colours' % clash)
+        failures += 1
+    else:
+        print('OK   colours   all 16 decks have 4 distinct physical colours')
 
     # ---- tile definitions: must be byte-identical ------------------
     tiles = read_equb(DATA_DIR / 'tiledefs.asm')

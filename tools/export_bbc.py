@@ -64,15 +64,71 @@ REC_LEN = 12
 DECKSCHEME = 0xF160     # deck -> scheme index
 
 # Play-area shared colours. Only the low nibble of each $D02x is used.
-D021 = 14               # background - light blue, the lavender floor
+# D022/D023 are set by DrawSideview ($308A/$308F) as $F1/$F0 and persist into
+# gameplay; the other writes to that area are +3/+4/+$C, which are the sprite
+# multicolour registers rather than the character ones.
+# D021 is NOT confirmed: it comes from bgColor, which SetIntroColors loads
+# from slot 3 of the deck record - but slot 3 does not match the lavender
+# floor in ref/start screen.png, so gameplay evidently sets it elsewhere.
+# 14 (light blue) is taken from the screenshot and should be re-derived.
+D021 = 14               # background - light blue, the lavender floor  [assumed]
 D022 = 1                # multicolour 01 - white
-D023 = 6                # multicolour 10 - blue
+D023 = 0                # multicolour 10 - black
 
 DECK = 1                # deck whose colour scheme the charset is built for
 
 # Rough luminance of the C64 palette, for mapping colours we cannot keep.
 LUMA = [0, 255, 79, 161, 94, 128, 62, 191,
         99, 62, 122, 80, 120, 178, 100, 159]
+
+# BBC MODE 1 physical colours, as RGB.
+BBC_RGB = [
+    (0, 0, 0),        # 0 black
+    (255, 0, 0),      # 1 red
+    (0, 255, 0),      # 2 green
+    (255, 255, 0),    # 3 yellow
+    (0, 0, 255),      # 4 blue
+    (255, 0, 255),    # 5 magenta
+    (0, 255, 255),    # 6 cyan
+    (255, 255, 255),  # 7 white
+]
+
+# The C64 palette, for nearest-colour matching.
+C64_RGB = [
+    (0x00, 0x00, 0x00), (0xFF, 0xFF, 0xFF), (0x88, 0x39, 0x32), (0x67, 0xB6, 0xBD),
+    (0x8B, 0x3F, 0x96), (0x55, 0xA0, 0x49), (0x40, 0x31, 0x8D), (0xBF, 0xCE, 0x72),
+    (0x8B, 0x54, 0x29), (0x57, 0x42, 0x00), (0xB8, 0x69, 0x62), (0x50, 0x50, 0x50),
+    (0x78, 0x78, 0x78), (0x94, 0xE0, 0x89), (0x78, 0x69, 0xC4), (0x9F, 0x9F, 0x9F),
+]
+
+# Aesthetic preferences, honoured when the colour is still free: the floor
+# goes to blue rather than a glaring cyan, the grid lines to magenta, and
+# shadows to black rather than a glaring BBC red.
+PREFERRED = {14: 4, 7: 5, 2: 0}
+
+
+def assign_palette(logical):
+    """Pick a distinct BBC physical colour for each of the four logical ones.
+
+    A fixed C64->BBC table cannot work: several C64 colours share a nearest
+    BBC match, so two logical colours collapse onto one physical and whatever
+    is drawn in the second becomes invisible. Assigning greedily per deck,
+    nearest-unused first, guarantees four distinct colours.
+    """
+    out, taken = [], set()
+    for c64 in logical:
+        want = PREFERRED.get(c64)
+        if want is not None and want not in taken:
+            out.append(want)
+            taken.add(want)
+            continue
+        r, g, b = C64_RGB[c64]
+        best = min((p for p in range(8) if p not in taken),
+                   key=lambda p: (BBC_RGB[p][0] - r) ** 2
+                   + (BBC_RGB[p][1] - g) ** 2 + (BBC_RGB[p][2] - b) ** 2)
+        out.append(best)
+        taken.add(best)
+    return out
 
 TILEDEF_ADDR = 0xE800
 TILEDEF_COUNT = 32
@@ -193,34 +249,79 @@ def main():
     mem, filled = parse_listing(LST_FILE)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    # ---- charset -------------------------------------------------------
-    scheme, rec, cell_colour = deck_colours(mem, DECK)
-    logical, freq = build_logical_map(mem, cell_colour)
-    chars, stats = convert_charset(mem, cell_colour, logical)
+    # ---- character source + per-deck colour data -----------------------
+    # The MODE 1 charset is built on the BBC at deck-load time, because a
+    # character's mode AND colour both depend on the deck's colour scheme.
+    # Ship the C64 bitmaps plus the colour metadata instead of 16 converted
+    # charsets, and convert only the characters the tiles actually use.
+    used = sorted({mem[TILEDEF_ADDR + i] for i in range(32 * TILEDEF_SIZE)})
+    remap = [0] * 256
+    for i, code in enumerate(used):
+        remap[code] = i
 
+    src = bytearray()
+    slots = bytearray()
+    for code in used:
+        src.extend(mem[CHARSET_ADDR + code * 8:CHARSET_ADDR + code * 8 + 8])
+        slots.append(mem[CHARCOLOR + code] >> 4)
+
+    path = OUT_DIR / 'chardata.asm'
+    with open(path, 'w') as f:
+        f.write(BANNER.format(
+            name='chardata.asm',
+            desc='C64 bitmaps for the %d characters the tiles use, plus their '
+                 'palette slots and a code->index remap' % len(used)))
+        f.write('\nNUM_CHARS = %d\n' % len(used))
+        f.write('\n.charSrc\n')
+        emit_bytes(f, src)
+        f.write('\n.charSlot\n')
+        emit_bytes(f, slots)
+        f.write('\nALIGN &100\n.charRemap\n')
+        emit_bytes(f, remap)
+    print('  chardata.asm  %5d bytes (%d of 256 chars used by tiles)'
+          % (len(src) + len(slots) + 256, len(used)))
+
+    # Per-deck colour data. colourMap is deck*16 + C64 colour -> MODE 1
+    # logical 0-3, precomputed here so the 6502 needs no search.
     names = ['black', 'white', 'red', 'cyan', 'purple', 'green', 'blue',
              'yellow', 'orange', 'brown', 'lt red', 'dk grey', 'grey',
              'lt green', 'lt blue', 'lt grey']
-    print('  deck %d -> scheme %d -> slots %s'
-          % (DECK, scheme, ' '.join('%X' % c for c in rec)))
-    print('  cells: %d hires, %d multicolour' % (stats['hires'], stats['multi']))
-    print('  MODE 1 logical colours:')
-    for i, c in enumerate(logical):
-        print('    %d = C64 %-8s (used %d times)' % (i, names[c], freq.get(c, 0)))
+    colour_map = bytearray()
+    deck_pal = bytearray()
+    for d in range(16):
+        scheme, rec, cell_colour = deck_colours(mem, d)
+        logical, freq = build_logical_map(mem, cell_colour)
+        for c64 in range(16):
+            if c64 in logical:
+                colour_map.append(logical.index(c64))
+            else:
+                colour_map.append(min(range(4),
+                                      key=lambda i: abs(LUMA[logical[i]] - LUMA[c64])))
+        deck_pal.extend(assign_palette(logical))
+        if d == DECK:
+            print('  deck %d -> scheme %d -> logical %s'
+                  % (d, scheme, ', '.join('%d=%s' % (i, names[c])
+                                          for i, c in enumerate(logical))))
 
-    path = OUT_DIR / 'charset.asm'
+    schemes = bytearray()
+    for s in range(8):
+        schemes.extend(mem[RECORDS + s * REC_LEN:RECORDS + (s + 1) * REC_LEN])
+
+    path = OUT_DIR / 'colours.asm'
     with open(path, 'w') as f:
         f.write(BANNER.format(
-            name='charset.asm',
-            desc='%d chars x 16 bytes, MODE 1, deck %d colour scheme %d'
-                 % (CHARSET_CHARS, DECK, scheme)))
-        f.write('\\ Logical colours: ' +
-                ', '.join('%d=%s' % (i, names[c]) for i, c in enumerate(logical)) +
-                '\n')
-        f.write('\nALIGN &100\n.charset\n')
-        emit_bytes(f, chars)
-        f.write('.charset_end\n')
-    print('  charset.asm   %5d bytes (%d chars)' % (len(chars), CHARSET_CHARS))
+            name='colours.asm',
+            desc='colour slot records, deck->scheme, and per-deck C64->MODE 1 '
+                 'logical colour maps'))
+        f.write('\n.schemes\n')
+        emit_bytes(f, schemes)
+        f.write('\n.deckScheme\n')
+        emit_bytes(f, mem[DECKSCHEME:DECKSCHEME + 16])
+        f.write('\n.deckPalette\n')
+        emit_bytes(f, deck_pal)
+        f.write('\nALIGN &100\n.colourMap\n')
+        emit_bytes(f, colour_map)
+    print('  colours.asm   %5d bytes' % (len(schemes) + 16 + len(deck_pal) + 256))
 
     # ---- tile definitions ----------------------------------------------
     tiles = mem[TILEDEF_ADDR:TILEDEF_ADDR + TILEDEF_COUNT * TILEDEF_SIZE]

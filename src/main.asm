@@ -36,6 +36,13 @@ MAX_X      = MAP_CHAR_W - SCR_COLS   \ 216
 MAX_Y      = MAP_CHAR_H - SCR_ROWS   \ 39
 NUM_DECKS  = 16
 
+\ Shared C64 play-area colours. Only the low nibble of each $D02x
+\ register is used; these index the per-deck colourMap.
+D021_COLOUR = 14                \ background — the floor
+D022_COLOUR = 1                 \ multicolour 01 — white
+D023_COLOUR = 0                 \ multicolour 10 — black
+REC_LEN     = 12                \ colour slots per scheme record
+
 \ ---- negative INKEY codes, as unsigned bytes ---------------
 KEY_Z      = &9E                \ -98
 KEY_X      = &BD                \ -67
@@ -68,6 +75,12 @@ dirty    = &8A                  \ redraw needed
 prevUp   = &8B                  \ deck keys, previous state (edge detect)
 prevDn   = &8C
 
+\ BuildCharset pointers. It runs before BuildLevel and DrawScreen,
+\ so it can borrow their zero page rather than claim more.
+bcSrc    = src                  \ read pointer into charSrc     (2)
+bcDst    = mapptr               \ write pointer, left halves    (2)
+bcDst2   = tdp                  \ write pointer, right halves   (2)
+
 MACRO CRTC reg, val
   LDA #reg : STA CRTC_ADDR : LDA #val : STA CRTC_DATA
 ENDMACRO
@@ -96,26 +109,7 @@ ORG &1100
   DEX
   BNE cursoff
 
-\ ---- palette ------------------------------------------------
-\ The C64 mixes hires and multicolour cells on the same screen —
-\ bit 3 of the colour RAM nibble picks per cell. Logical colours
-\ are assigned by tools/export_bbc.py from actual usage across
-\ the tile set for this deck's scheme:
-\   0 = floor      2 = shadow
-\   1 = highlight  3 = grid lines
-\ Regenerate the charset if you change deck: the assignment is
-\ deck specific and baked into charset.asm.
-  LDX #0
-.palloop
-  LDA #19 : JSR OSWRCH
-  TXA     : JSR OSWRCH          \ logical colour
-  LDA palette,X : JSR OSWRCH    \ physical colour
-  LDA #0  : JSR OSWRCH
-  LDA #0  : JSR OSWRCH
-  LDA #0  : JSR OSWRCH
-  INX
-  CPX #4
-  BNE palloop
+\ (palette is set per deck, in LoadDeck)
 
 \ ---- CRTC: 320x200 based at &4000 --------------------------
   CRTC 6,  25
@@ -233,21 +227,280 @@ ORG &1100
   EQUS "LOAD PARADAT"
   EQUB 13
 
-\ BBC physical colours for MODE 1 logical 0-3.
-.palette
-  EQUB 4                        \ 0 floor     <- C64 light blue -> blue
-  EQUB 7                        \ 1 highlight <- C64 white
-  EQUB 0                        \ 2 shadow    <- C64 red -> black
-  EQUB 5                        \ 3 grid      <- C64 yellow -> magenta
+\ Physical colours come from deckPalette in colours.asm, indexed
+\ deck*4 + logical colour.
 
 \ ============================================================
 \ LoadDeck — decode the current deck and redraw from the origin
 \ ============================================================
 .LoadDeck
   LDA deck
+  JSR BuildCharset              \ charset is deck specific — see below
+  JSR SetPalette
+  LDA deck
   JSR BuildLevel
   JSR CentreOnDeck
   JSR DrawScreen
+  RTS
+
+\ ============================================================
+\ SetPalette — physical colours for this deck's logical 0-3
+\ ============================================================
+.SetPalette
+  LDA deck
+  ASL A : ASL A                 \ deck * 4
+  STA bcTmp
+  LDX #0
+.sp_loop
+  LDA #19 : JSR OSWRCH
+  TXA     : JSR OSWRCH          \ logical colour
+  TXA
+  CLC : ADC bcTmp
+  TAY
+  LDA deckPalette,Y : JSR OSWRCH
+  LDA #0  : JSR OSWRCH
+  LDA #0  : JSR OSWRCH
+  LDA #0  : JSR OSWRCH
+  INX
+  CPX #4
+  BNE sp_loop
+  RTS
+
+\ ============================================================
+\ BuildCharset — convert the C64 characters to MODE 1 for a deck
+\   A = deck number
+\
+\ A character's MODE and COLOUR both depend on the deck: the C64
+\ picks hires or multicolour per cell from bit 3 of the colour
+\ RAM nibble, which NewCharColors rewrites per deck from a
+\ 12-slot record. Shipping 16 converted charsets would cost 64K,
+\ so we ship the C64 bitmaps plus the colour metadata (~1.9K)
+\ and convert on entering a deck.
+\
+\ Both modes consume a nibble of the source byte per output byte:
+\ hires  — 4 pixels, background or the cell colour
+\ multi  — 2 pixels, each doubled, from a 4-entry palette
+\ so the inner loop is identical and only the lookup table
+\ differs. LUTs are rebuilt per deck by BuildLUTs.
+\ ============================================================
+.BuildCharset
+  STA bcDeck
+  TAY
+  LDA deckScheme,Y              \ recOfs = scheme * 12
+  ASL A : ASL A
+  STA bcTmp
+  ASL A
+  CLC : ADC bcTmp
+  STA bcRecOfs
+
+  LDA bcDeck                    \ colourMap is indexed deck*16 + colour
+  ASL A : ASL A : ASL A : ASL A
+  STA bcCmapBase
+
+  CLC : LDA bcCmapBase : ADC #D021_COLOUR : TAX
+  LDA colourMap,X : STA bcBg
+  CLC : LDA bcCmapBase : ADC #D022_COLOUR : TAX
+  LDA colourMap,X : STA bcD022L
+  CLC : LDA bcCmapBase : ADC #D023_COLOUR : TAX
+  LDA colourMap,X : STA bcD023L
+
+  JSR BuildLUTs
+
+  LDA #LO(charSrc) : STA bcSrc
+  LDA #HI(charSrc) : STA bcSrc+1
+  LDA #LO(charset) : STA bcDst
+  LDA #HI(charset) : STA bcDst+1
+  CLC
+  LDA bcDst   : ADC #8 : STA bcDst2
+  LDA bcDst+1 : ADC #0 : STA bcDst2+1
+  LDA #0 : STA bcIndex
+
+.bc_char
+  LDX bcIndex                   \ colour = schemes[recOfs + slot]
+  LDA charSlot,X
+  CMP #REC_LEN                  \ a few characters carry a slot beyond the
+  BCS bc_slot_oob               \ 12-byte record — the C64 reads past the end
+  CLC : ADC bcRecOfs            \ of clr0_top_d020 into adjacent variables, so
+  TAX                           \ its behaviour there is incidental. Clamp to
+  LDA schemes,X                 \ a defined value instead.
+  JMP bc_got_colour
+.bc_slot_oob
+  LDA #0
+.bc_got_colour
+  STA bcColour
+  AND #8
+  BEQ bc_hires
+
+  LDA bcColour                  \ multicolour: LUT from the 11 colour
+  AND #7
+  CLC : ADC bcCmapBase
+  TAX
+  LDA colourMap,X
+  ASL A : ASL A : ASL A : ASL A
+  CLC : ADC #64                 \ multicolour LUTs follow the hires ones
+  STA bcLutOfs
+  JMP bc_rows
+
+.bc_hires
+  LDA bcColour                  \ hires: LUT from the cell colour
+  CLC : ADC bcCmapBase
+  TAX
+  LDA colourMap,X
+  ASL A : ASL A : ASL A : ASL A
+  STA bcLutOfs
+
+.bc_rows
+  LDY #7
+.bc_row
+  LDA (bcSrc),Y
+  PHA
+  LSR A : LSR A : LSR A : LSR A \ high nibble -> left half
+  CLC : ADC bcLutOfs
+  TAX
+  LDA LUTs,X
+  STA (bcDst),Y
+  PLA
+  AND #&0F                      \ low nibble -> right half
+  CLC : ADC bcLutOfs
+  TAX
+  LDA LUTs,X
+  STA (bcDst2),Y
+  DEY
+  BPL bc_row
+
+  CLC                           \ next character
+  LDA bcSrc    : ADC #8  : STA bcSrc
+  LDA bcSrc+1  : ADC #0  : STA bcSrc+1
+  CLC
+  LDA bcDst    : ADC #16 : STA bcDst
+  LDA bcDst+1  : ADC #0  : STA bcDst+1
+  CLC
+  LDA bcDst2   : ADC #16 : STA bcDst2
+  LDA bcDst2+1 : ADC #0  : STA bcDst2+1
+
+  INC bcIndex
+  LDA bcIndex
+  CMP #NUM_CHARS
+  BEQ bc_done
+  JMP bc_char
+.bc_done
+  RTS
+
+\ ============================================================
+\ BuildLUTs — nibble -> MODE 1 byte tables for this deck
+\
+\ LUTs+0..63   hires,       4 tables of 16, indexed by cell colour
+\ LUTs+64..127 multicolour, 4 tables of 16, indexed by the 11 colour
+\
+\ A MODE 1 byte is a nibble of high colour bits then a nibble of
+\ low bits, so each entry is built as H<<4 | L.
+\ ============================================================
+.BuildLUTs
+  LDA #0
+  STA bcLutOfs
+  STA bcF
+
+  LDA bcBg                      \ background masks are constant
+  AND #2 : BEQ bl_g0
+  LDA #&0F : BNE bl_g1
+.bl_g0
+  LDA #0
+.bl_g1
+  STA bcGH
+  LDA bcBg
+  AND #1 : BEQ bl_g2
+  LDA #&0F : BNE bl_g3
+.bl_g2
+  LDA #0
+.bl_g3
+  STA bcGL
+
+.bl_f                           \ ---- hires tables ----
+  LDA bcF
+  AND #2 : BEQ bl_f0
+  LDA #&0F : BNE bl_f1
+.bl_f0
+  LDA #0
+.bl_f1
+  STA bcFH
+  LDA bcF
+  AND #1 : BEQ bl_f2
+  LDA #&0F : BNE bl_f3
+.bl_f2
+  LDA #0
+.bl_f3
+  STA bcFL
+
+  LDY #0
+.bl_n
+  TYA : AND bcFH : STA bcTmp    \ set pixels take the foreground
+  TYA : EOR #&0F : AND bcGH     \ clear pixels take the background
+  ORA bcTmp
+  ASL A : ASL A : ASL A : ASL A
+  STA bcTmp2
+  TYA : AND bcFL : STA bcTmp
+  TYA : EOR #&0F : AND bcGL
+  ORA bcTmp
+  ORA bcTmp2
+  STA bcTmp
+  TYA : CLC : ADC bcLutOfs : TAX
+  LDA bcTmp
+  STA LUTs,X
+  INY
+  CPY #16
+  BNE bl_n
+
+  LDA bcLutOfs : CLC : ADC #16 : STA bcLutOfs
+  INC bcF
+  LDA bcF : CMP #4
+  BNE bl_f
+
+  LDA #0                        \ ---- multicolour tables ----
+  STA bcP3
+.bl_p
+  LDA bcBg    : STA bcPal
+  LDA bcD022L : STA bcPal+1
+  LDA bcD023L : STA bcPal+2
+  LDA bcP3    : STA bcPal+3
+
+  LDY #0
+.bl_mn
+  TYA : LSR A : LSR A : TAX     \ first C64 pixel
+  LDA bcPal,X : STA bcA
+  TYA : AND #3 : TAX            \ second C64 pixel
+  LDA bcPal,X : STA bcB
+
+  LDA #0 : STA bcTmp2           \ H: each pixel doubled
+  LDA bcA : AND #2 : BEQ bl_h1
+  LDA #%1100 : ORA bcTmp2 : STA bcTmp2
+.bl_h1
+  LDA bcB : AND #2 : BEQ bl_h2
+  LDA #%0011 : ORA bcTmp2 : STA bcTmp2
+.bl_h2
+  LDA bcTmp2 : ASL A : ASL A : ASL A : ASL A : STA bcTmp2
+
+  LDA #0 : STA bcTmp            \ L
+  LDA bcA : AND #1 : BEQ bl_l1
+  LDA #%1100 : ORA bcTmp : STA bcTmp
+.bl_l1
+  LDA bcB : AND #1 : BEQ bl_l2
+  LDA #%0011 : ORA bcTmp : STA bcTmp
+.bl_l2
+  LDA bcTmp2 : ORA bcTmp
+  STA bcTmp
+  TYA : CLC : ADC bcLutOfs : TAX
+  LDA bcTmp
+  STA LUTs,X
+  INY
+  CPY #16
+  BNE bl_mn
+
+  LDA bcLutOfs : CLC : ADC #16 : STA bcLutOfs
+  INC bcP3
+  LDA bcP3 : CMP #4
+  BEQ bl_mcdone
+  JMP bl_p
+.bl_mcdone
   RTS
 
 \ ============================================================
@@ -546,7 +799,9 @@ ORG &1100
 \   A = character code, scr = destination (preserved)
 \ ============================================================
 .plot_char
-  PHA                           \ chp = charset + A*16
+  TAX                           \ only characters the tiles use are
+  LDA charRemap,X               \ converted, so map the code to an index
+  PHA                           \ chp = charset + index*16
   AND #&0F
   ASL A : ASL A : ASL A : ASL A
   STA chp
@@ -562,6 +817,30 @@ ORG &1100
   DEY
   BPL pc_copy
   RTS
+
+\ ---- BuildCharset working storage ---------------------------
+\ Rebuilt once per deck change, so absolute addressing is fine.
+.LUTs      SKIP 128             \ 4 hires + 4 multicolour nibble tables
+.bcDeck    EQUB 0
+.bcRecOfs  EQUB 0               \ scheme record offset (scheme * 12)
+.bcCmapBase EQUB 0              \ deck * 16, base into colourMap
+.bcBg      EQUB 0               \ logical colour of the background
+.bcD022L   EQUB 0
+.bcD023L   EQUB 0
+.bcColour  EQUB 0               \ this character's C64 cell colour
+.bcLutOfs  EQUB 0
+.bcIndex   EQUB 0
+.bcF       EQUB 0
+.bcP3      EQUB 0
+.bcFH      EQUB 0
+.bcFL      EQUB 0
+.bcGH      EQUB 0
+.bcGL      EQUB 0
+.bcA       EQUB 0
+.bcB       EQUB 0
+.bcTmp     EQUB 0
+.bcTmp2    EQUB 0
+.bcPal     SKIP 4
 
 \ ---- CentreOnDeck working storage ---------------------------
 \ Zero page &70-&8C is full. These are touched once per deck
@@ -586,19 +865,32 @@ ALIGN &100
   SKIP MAP_COLS * MAP_ROWS
 .tilemap_end
 
+\ ---- MODE 1 charset, built at deck-load time ----------------
+\ Page aligned so plot_char can index it with shifts. Only the
+\ characters the tiles reference are converted, so this is
+\ NUM_CHARS*16 rather than 4K. Sits below the loaded data.
+ALIGN &100
+.charset
+  SKIP 137 * CHAR_BYTES         \ NUM_CHARS, defined in chardata.asm
+.charset_end
+
 \ ============================================================
 \ Generated data — loaded separately, after the mode change
 \ ============================================================
-ORG &2000
+ORG &2600
 .data_start
-INCLUDE "src/data/charset.asm"
+INCLUDE "src/data/chardata.asm"
+INCLUDE "src/data/colours.asm"
 INCLUDE "src/data/tiledefs.asm"
 INCLUDE "src/data/levels.asm"
 .data_end
 
+ASSERT charset_end - charset == NUM_CHARS * CHAR_BYTES
+
 PRINT "code    ", ~start, "-", ~code_end
 PRINT "tilemap ", ~tilemap, "-", ~tilemap_end
 PRINT "data    ", ~data_start, "-", ~data_end
+PRINT "charset ", ~charset, "-", ~charset_end, " (", NUM_CHARS, " chars)"
 
 SAVE "PARA",    start,      code_end, start
 SAVE "PARADAT", data_start, data_end
