@@ -62,11 +62,16 @@
 \ — an intermittent glitch along the top of the play area.
   CRTC 8,  0
 
-\ Start in the cycle-2 configuration; the rupture IRQ takes over
-\ from the next VSync and drives both cycles from then on.
-  CRTC 4,  CYCLE2_R4
-  CRTC 6,  PLAY_ROWS
-  CRTC 7,  CYCLE2_R7
+\ Start in the TAIL cycle's shape. The picture rolls until the IRQ
+\ takes over, but the first VSync then arrives with C4 exactly
+\ where the steady state expects it — 8 rows into a 13-row cycle —
+\ so the rupture locks on the first field instead of thrashing for
+\ several. Handing it a normal 39-row frame instead means VSync
+\ arrives at C4 = 34 and the handler writes R4 = 12 behind it.
+  CRTC 4,  TAIL_R4
+  CRTC 5,  0
+  CRTC 6,  0
+  CRTC 7,  TAIL_R7
 
   LDA #0                        \ start at the bottom of the buffer
   STA scrollS
@@ -101,9 +106,15 @@
   DEX
   BNE sc_shift
 
+\ `line` is parked here too, and under the same SEI. The address and
+\ the sub-row offset are one position between them — latched at
+\ different points in the frame (fire 1 and, formerly, VSync), so
+\ letting the IRQ see one updated and not the other shows a frame
+\ at a position that never existed.
   SEI
   LDA sTmp+1 : STA crtcHi
   LDA sTmp   : STA crtcLo
+  LDA line   : STA pline
   CLI
   RTS
 
@@ -143,6 +154,32 @@
 \   bufp  = destination
 \ ============================================================
 .DrawHalf
+  JSR HalfPtr
+  LDY #7
+.dh_loop
+  LDA (chp),Y
+  STA (bufp),Y
+  DEY
+  BPL dh_loop
+  RTS
+
+\ ============================================================
+\ DrawHalfScan — one SCANLINE of one 4-pixel column cell
+\ As DrawHalf, but copies only scanline scanY. Both source and
+\ destination are 8-byte units indexed the same way, so the
+\ scanline number is the offset in each.
+\ ============================================================
+.DrawHalfScan
+  JSR HalfPtr
+  LDY scanY
+  LDA (chp),Y
+  STA (bufp),Y
+  RTS
+
+\ ============================================================
+\ HalfPtr — chp = charset bytes for the cell at (halfX, cellY)
+\ ============================================================
+.HalfPtr
   LDA halfX+1                   \ cellX = halfX >> 1, without disturbing halfX
   LSR A
   STA cellX+1
@@ -167,18 +204,12 @@
   STA chp+1
 
   LDA halfSel                   \ right half is 8 bytes further on
-  BEQ dh_copy
+  BEQ hp_done
   CLC
   LDA chp : ADC #8 : STA chp
-  BCC dh_copy
+  BCC hp_done
   INC chp+1
-.dh_copy
-  LDY #7
-.dh_loop
-  LDA (chp),Y
-  STA (bufp),Y
-  DEY
-  BPL dh_loop
+.hp_done
   RTS
 
 \ ============================================================

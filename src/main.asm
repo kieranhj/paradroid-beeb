@@ -32,9 +32,14 @@ MAP_CHAR_H = MAP_ROWS * 4       \ 64 character rows
 \ DEBUG_RASTER tints the background at entry to each rupture
 \ interrupt, so the scanline each one lands on is visible:
 \   magenta  from the VSync IRQ
-\   green    from the cycle 1 IRQ (top of frame)
-\   normal   from the cycle 2 IRQ (play area restored)
-\ The boundaries between bands ARE the interrupt points.
+\   green    from fire 1 (panel cycle setup)
+\   normal   from fire 2 (play cycle setup)
+\   blue     from fire 3 (play area off-display)
+\ The boundaries between bands ARE the interrupt points. It also
+\ SUPPRESSES the R8 blanking, since a blanked band shows black
+\ whatever the palette says — which is exactly what is needed to
+\ calibrate T1_TUNE, because fires 2 and 3 sit inside the regions
+\ that blanking would otherwise hide.
 DEBUG_RASTER = FALSE
 
 \ DEBUG_DRAW tints the background cyan for exactly as long as the
@@ -58,18 +63,69 @@ UNIT_BYTES = 8
 ROW_BYTES  = 640
 VIA_PORTB  = &FE40
 
-\ ---- vertical rupture: two CRTC cycles per frame ------------
+\ ---- vertical rupture: three CRTC cycles per frame ----------
+\ Three, not two, so that smooth vertical scrolling can borrow
+\ scanlines with R5 without the panel moving. R5 appends extra
+\ scanlines to the END of a cycle, so with only two cycles the
+\ variable adjust necessarily lands between VSync and the panel
+\ and the panel slides up to 7 scanlines while scrolling. With a
+\ third (tail) cycle carrying VSync, both variable adjusts sit
+\ after the panel, where they cancel.
+\
+\ P = start of the panel cycle. Frame layout:
+\
+\   panel   P            7 rows,  5 displayed, R5 = 8-line
+\   play    P+64-line   18 rows, 17 displayed, R5 = line
+\   tail    P+208       13 rows,  0 displayed, R5 = 0, VSync at row 8
+\                       ------
+\                       38 rows x 8 + 8 adjust = 312 scanlines
+\
+\ Visible play area: P+64 to P+192, and VSync at P+272 — the same
+\ geometry Layer 3c had, so nothing moves and no RAM changes.
 PANEL_ADDR  = &4800             \ below &5800, clear of the play buffer
 PANEL_ROWS  = 5                 \ rows of title
-PANEL_GAP   = 3                 \ blank rows below it, as on the C64
 PANEL_BYTES = PANEL_ROWS * ROW_BYTES
 PANEL_START = PANEL_ADDR / 8    \ what R12/R13 wants
 
-CYCLE1_ROWS = PANEL_ROWS + PANEL_GAP
-CYCLE1_R4   = CYCLE1_ROWS - 1
-CYCLE2_ROWS = 39 - CYCLE1_ROWS
-CYCLE2_R4   = CYCLE2_ROWS - 1
-CYCLE2_R7   = CYCLE2_ROWS - 5   \ VSync 5 rows before the cycle ends
+PANEL_CYC_ROWS = 7
+PLAY_CYC_ROWS  = 18
+TAIL_CYC_ROWS  = 13
+PANEL_R4 = PANEL_CYC_ROWS - 1   \ 6
+PLAY_R4  = PLAY_CYC_ROWS - 1    \ 17
+TAIL_R4  = TAIL_CYC_ROWS - 1    \ 12
+TAIL_R7  = 8                    \ VSync at P+208+64 = P+272
+
+\ 18 rows but only 16 displayed, so row 16 turns display off by
+\ ordinary means. Displaying more would leave R6 > R4, where the
+\ VADJ scanlines themselves are displayed — behaviour we would then
+\ be depending on.
+\
+\ R6 CANNOT BE 17, and this is a hard limit rather than a choice.
+\ The display window must fit inside ONE hardware wrap: the address
+\ translator subtracts its mode amount once, when MA12 goes high
+\ (IC 39), and does not iterate. 17 rows is 10880 bytes over a
+\ 10240-byte wrap span, so at high scrollS the bottom rows need a
+\ second subtract, do not get one, and fetch from &8000 upwards —
+\ ROM. It shows as garbage across the bottom row, and only past
+\ scrollS = 9608, which is why it looked intermittent.
+\
+\ The strip period must equal the wrap span, and 10240 bytes with
+\ 80-unit rows is exactly 16 rows, so 16 is the ceiling. Smooth
+\ vertical scrolling therefore costs one character row of play
+\ area: 16 rows are displayed, 15 are visible, and the 16th carries
+\ the sub-row fraction at both ends.
+PLAY_R6       = PLAY_ROWS       \ 16 displayed — see above
+PLAY_VIS_ROWS = PLAY_ROWS - 1   \ 15 visible = 120 px
+
+ASSERT (PLAY_ROWS * PLAY_UNITS) * UNIT_BYTES <= BUF_SIZE
+
+ASSERT PANEL_CYC_ROWS + PLAY_CYC_ROWS + TAIL_CYC_ROWS == 38
+
+\ Screen blank via CRTC R8's display-skew bits: 3 = "non-display",
+\ which gates the chip's own display enable rather than delaying it,
+\ so the transition is clean mid-frame. Interlace bits stay 0.
+R8_ON    = &00
+R8_BLANK = &30
 
 \ System VIA T1 in CONTINUOUS mode drives the rupture stages.
 \
@@ -79,25 +135,60 @@ CYCLE2_R7   = CYCLE2_ROWS - 5   \ VSync 5 rows before the cycle ends
 \ accumulates. T1 continuous auto-reloads from its latch at
 \ underflow, so the period is exact however late we are serviced.
 \
-\ One period = 8 char rows. VSync is 5 rows before cycle 2 ends,
-\ so the first fire lands 3 rows into cycle 1; cycle 1 is 8 rows,
-\ so the second lands 3 rows into cycle 2. Both sit ~4 rows clear
-\ of the deadline (C4 reaching the old R4 of 7). Later fires in
-\ the frame are ignored.
-\ Two periods, because a single one cannot put all three fires
-\ where they are needed. The windows are:
-\   cycle 1 setup   frame rows 0-7   (before C4 reaches 7)
-\   cycle 2 setup   frame rows 8-15  (before C4 reaches 7)
-\   edge redraw     frame rows 24-26 (after the play area stops
-\                   displaying at 23, and early enough for the
-\                   ~22 row redraw to finish before row 8 again)
+\ Three fires per frame, at wildly different spacings, so the latch
+\ is rewritten one fire ahead each time: T1 reloads its counter from
+\ the latch at underflow, so a latch write takes effect one reload
+\ later. T1 is restarted only at VSync, so all three fires in a
+\ frame share ONE jitter offset instead of accumulating three.
 \
-\ VSync is row 34, so 8 rows lands fire 1 at row 3 and fire 2 at
-\ row 11. Changing the latch during fire 1 retimes fire 3 — the
-\ counter has already reloaded by then, so the new value takes
-\ effect one reload later — putting it at row 25.
-T1_PERIOD_A  = 8 * 512 - 2      \ fires N+2 us after start
-T1_PERIOD_B  = 13 * 512 - 2     \ fire 3 at row 24, the earliest safe point
+\ Positions relative to P (start of the panel cycle), in scanlines:
+\
+\   fire 1  P+44   panel cycle regs, R5 = 8-line, blank, park play
+\   fire 2  P+64   play cycle R4, unblank — the visible TOP edge
+\   fire 3  P+184  play cycle R5, blank, release the main loop —
+\                  the visible BOTTOM edge, 15 rows below the top
+\
+\ Fire 1's window is only [P+40, P+48]: it cannot blank before P+40
+\ or it clips the panel, and it must write R4 = 6 before C4 reaches
+\ 6 at P+48. Fires 2 and 3 must land inside horizontal blanking —
+\ MODE 1 displays 80 of 128 character times, so ~24 us of the 64 us
+\ line is available and a write in the displayed part cuts that
+\ scanline part-way across.
+\
+\ VSync (P+272) -> fire 1 (P+312+44) is 84 scanlines.
+SL = 64                         \ 1 scanline = 64 us = 64 T1 ticks
+\ -4 scanlines: the VSync CA1 interrupt is serviced about 4 scanlines
+\ after the vsync edge, so every fire needs shifting back by that.
+\ Was -6, which put fire 2's unblank at P+62 instead of P+64 and so
+\ exposed two scanlines of the NEXT map row above the top of the
+\ view. Erring late is harmless — it just starts the view a couple
+\ of scanlines further down the map — but erring early shows content
+\ that belongs at the bottom of the window at the top of it.
+\ -22 us: the sub-scanline phase. Measured with T1_PROBE below — the
+\ R8 write was landing 9 us into the 40 us displayed part of the
+\ scanline, which cuts that scanline part-way across. MODE 1 shows
+\ 80 of 128 character times, so blanking is us 40-63; -22 us puts
+\ fire 1's write at us 51, fire 2 at ~53 and fire 3 at ~55 (they
+\ differ by the length of RuptTimer's dispatch). All three land in
+\ horizontal blanking, so a whole scanline is either shown or not.
+T1_TUNE = -4 * SL - 22
+
+\ PHASE PROBE, normally 0. Set to 24 * SL to drag fire 1 back into
+\ the panel's displayed rows, giving the time straight back to fire
+\ 2 so fires 2 and 3 stay put and only the blank moves. The blank
+\ then cuts the solid panel box, and the horizontal position of the
+\ step IS the sub-scanline phase of every fire — read it off, adjust
+\ T1_TUNE, and the step becomes a clean full-width line when the
+\ write has moved into horizontal blanking.
+\
+\ This is the only way found to measure the phase. Screenshots of
+\ the play area edges cannot show it: one scanline is 2 pixels in
+\ the framebuffer, and the crop scales differently per build.
+T1_PROBE = 0
+
+T1_I1 = 84 * SL - 2 + T1_TUNE - T1_PROBE
+T1_I2 = 20 * SL - 2 + T1_PROBE  \ fire 1 -> fire 2, P+44 -> P+64
+T1_I3 = PLAY_VIS_ROWS * 8 * SL - 2   \ fire 2 -> fire 3, the visible height
 
 SYS_VIA_T1CL = &FE44
 SYS_VIA_T1CH = &FE45
@@ -207,11 +298,24 @@ ENDIF
   \   ScrollUp    row 0,  displayed at frame row 8  — most urgent
   \   Scroll L/R  a column, spanning rows 8-23
   \   ScrollDown  row 15, displayed at frame row 23 — most slack
-  LDX #KEY_K                    \ scroll up, 8 px
+\ Up and down are mutually exclusive. Both directions record into
+\ one deferred-draw slot, and if both ran the second would overwrite
+\ the first — with a scanline number belonging to a strip position
+\ that no longer exists. Net movement of both held is zero anyway.
+  LDX #KEY_K                    \ scroll up, 1 scanline
   JSR keydown
   BNE ml_notK
+  LDX #KEY_M
+  JSR keydown
+  BEQ ml_vdone                  \ both down: neither
   JSR ScrollUp
+  JMP ml_vdone
 .ml_notK
+  LDX #KEY_M                    \ scroll down, 1 scanline
+  JSR keydown
+  BNE ml_vdone
+  JSR ScrollDown
+.ml_vdone
 
   LDX #KEY_Z                    \ scroll left, 4 px
   JSR keydown
@@ -224,12 +328,6 @@ ENDIF
   BNE ml_notX
   JSR ScrollRight
 .ml_notX
-
-  LDX #KEY_M                    \ scroll down, 8 px
-  JSR keydown
-  BNE ml_notM
-  JSR ScrollDown
-.ml_notM
 
   \ Park the CRTC address ONCE, with every axis accounted for, and
   \ before any drawing — the IRQ latches it at frame row 3, only a
@@ -392,9 +490,11 @@ ENDIF
   LDA deck
   JSR BuildLevel
   JSR CentreOnDeck
-  LDA #0                        \ start the strip at the buffer base
-  STA scrollS
-  STA scrollS+1
+  LDA #0                        \ start the strip at the buffer base,
+  STA scrollS                   \ on a character row boundary — RedrawAll
+  STA scrollS+1                 \ writes whole rows, so buffer row 0 must
+  STA line                      \ not be a split row
+  STA iline
   JSR SetCRTCStart
   JSR RedrawAll
   RTS

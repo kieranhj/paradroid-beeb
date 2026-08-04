@@ -1,113 +1,159 @@
 \ ============================================================
-\ rupture.asm — vertical rupture: static panel + scrolled play area
+\ rupture.asm — three CRTC cycles per frame
 \ ============================================================
-\ Two CRTC cycles per TV frame. Reprogramming R4 mid-frame ends a
-\ cycle early; the next cycle reloads VMA from R12/R13, so each
-\ cycle has its own screen start.
+\ panel (static) / play (scrolled) / tail (VSync, nothing shown).
+\ Reprogramming R4 mid-frame ends a cycle early; the next cycle
+\ reloads VMA from R12/R13, so each cycle has its own screen start.
+\ Geometry and timing constants live in main.asm — see the note
+\ there for the frame layout and why there are three cycles.
 \
-\   cycle 1  static panel     R4=7   8 rows   R6=5   R7=255
-\   cycle 2  scrolled play    R4=30  31 rows  R6=16  R7=26
-\                                    -------
-\                                    39 rows = 312 scanlines
+\ Smooth vertical scrolling rides on this: R5 gives the play cycle
+\ `line` extra scanlines and takes them back from the panel cycle,
+\ so the play cycle starts `line` scanlines earlier and the picture
+\ scrolls by less than a character row. The scanlines either side
+\ of the intended 128 are real and wrong, so R8 blanks them.
 \
-\ Cycle 1 shows 5 rows of panel then 3 blank rows — the gap the
-\ C64 has between its status panel and the play area.
+\ WHEN EACH REGISTER MUST BE WRITTEN — they are not all the same,
+\ and getting this wrong is silent:
 \
-\ VSync lands at frame row 8+26 = 34, which is MODE 1's default
-\ R7, so the TV sees an identically phased frame and stays locked.
-\
-\ Timing is generous: one tick = 1us, a scanline is 64 and a char
-\ row 512. The interrupts only have to land somewhere inside their
-\ cycle before C4 reaches the target R4 — there are whole char
-\ rows of slack, unlike single-scanline rupture work.
+\   R4   inside its own cycle, before C4 reaches the new value.
+\        Not earlier: the previous cycle would trip over it.
+\   R7   inside the PREVIOUS cycle. Writing it at the row it is
+\        meant to fire on is too late — that row's compare has
+\        already happened, VSync never comes, and the CRTC
+\        free-runs on whatever the last cycle shape was.
+\   R6   inside the PREVIOUS cycle. The vertical display enable is
+\        a flip-flop cleared when the row counter reaches R6; once
+\        cleared, raising R6 does not bring it back for that cycle.
+\   R12/13  inside the PREVIOUS cycle — latched at cycle start.
+\   R5   any time before the cycle's END, where it is sampled.
 \ ============================================================
 
-\ Constants live in main.asm — see the note there.
+\ Blanking is suppressed under DEBUG_RASTER so the timing bands
+\ stay visible — see main.asm.
+IF DEBUG_RASTER
+  R8_OFF = R8_ON
+ELSE
+  R8_OFF = R8_BLANK
+ENDIF
+
+\ NEVER write R5 near the END of a cycle. The vertical adjust
+\ counts up and compares against R5; changing R5 once the count has
+\ passed the new value means the match never happens and the adjust
+\ runs on until the 5-bit counter wraps — ~29 extra scanlines. That
+\ is why the play cycle's R5 is written at fire 3 and not at fire 2:
+\ fire 2 sits within a scanline of the panel cycle's adjust ending,
+\ and landing the wrong side of it stretched the panel cycle from
+\ 64 scanlines to 85. R5's legal window is the whole cycle, so
+\ there is no reason to write it anywhere near the edge.
 
 \ ============================================================
-\ RuptInit — arm the T2 interrupt used to stage the cycles
+\ RuptInit
 \ ============================================================
 .RuptInit
   LDA #0
   STA ruptState
+  STA line
+  STA iline
   RTS
 
 \ ============================================================
-\ RuptVSync — called from the IRQ on CA1
-\ We are inside cycle 2, five rows from its end. Point R12/R13 at
-\ the panel so the next cycle boundary starts cycle 1 there.
+\ RuptVSync — IRQ on CA1, at P+272, row 8 of the tail cycle
 \ ============================================================
 .RuptVSync
 IF DEBUG_RASTER
   LDA #5 : JSR DbgSetBg         \ magenta from here down
 ENDIF
+\ The tail cycle's own R4 and R5. It is 8 rows in, so R4 = 12 is
+\ still ahead of C4. Its R6 and R7 were set at fire 3, last cycle.
+  LDA #4  : STA CRTC_ADDR : LDA #TAIL_R4 : STA CRTC_DATA
+  LDA #5  : STA CRTC_ADDR : LDA #0       : STA CRTC_DATA
+
+\ R6 for the PANEL cycle, which starts in 40 scanlines. The tail
+\ displays nothing, so raising it now costs nothing there.
+  LDA #6  : STA CRTC_ADDR : LDA #PANEL_ROWS : STA CRTC_DATA
+
+\ Unblank for the panel, which starts in 40 scanlines. Safe to do
+\ now: the tail displays nothing either way.
+  LDA #8  : STA CRTC_ADDR : LDA #R8_ON   : STA CRTC_DATA
+
+\ R12/R13 for the panel cycle, latched when it starts at P+312.
   LDA #12 : STA CRTC_ADDR : LDA #HI(PANEL_START) : STA CRTC_DATA
   LDA #13 : STA CRTC_ADDR : LDA #LO(PANEL_START) : STA CRTC_DATA
 
-\ Restart T1 so the stage timing is phase-locked to VSync. Writing
-\ T1C-H transfers the latch into the counter and starts it; in
-\ continuous mode it then reloads itself, so the second stage is
-\ exactly one period later however late this handler ran.
-  LDA #LO(T1_PERIOD_A) : STA SYS_VIA_T1LL
-  LDA #HI(T1_PERIOD_A) : STA SYS_VIA_T1CH
+\ Restart T1 (writing T1C-H transfers the latch and starts it), then
+\ immediately re-latch with the NEXT interval, which the counter
+\ picks up when it reloads at fire 1.
+  LDA #LO(T1_I1) : STA SYS_VIA_T1LL
+  LDA #HI(T1_I1) : STA SYS_VIA_T1CH
+  LDA #LO(T1_I2) : STA SYS_VIA_T1LL
+  LDA #HI(T1_I2) : STA SYS_VIA_T1LH
+
   LDA #0
   STA ruptState
   RTS
 
 \ ============================================================
-\ RuptTimer — called from the IRQ on T2
+\ RuptTimer — IRQ on T1
 \ ============================================================
 .RuptTimer
   LDA ruptState
-  BEQ rt_cycle1
+  BEQ rt_panel
   CMP #1
-  BEQ rt_cycle2
+  BEQ rt_play
   CMP #2
-  BEQ rt_drawok
-  RTS                           \ later fires in the frame: nothing to do
+  BNE rt_none
+  JMP rt_drawok
+.rt_none
+  RTS                           \ any later fire: nothing to do
 
-\ ---- play area has finished displaying ----------------------
-\ T1 free-runs at 8 rows, so its fires land at frame rows 3, 11,
-\ 19 and 27. The play area occupies rows 8-23, so row 19 is still
-\ 4 rows short of the end — releasing the main loop there let the
-\ raster catch the bottom rows mid-redraw. Row 27 is the first
-\ fire clear of the display.
-\
-\ The deadline is cycle 2 starting again at row 8 of the next
-\ frame, so this leaves 20 rows — ample even for the 80-cell
-\ vertical redraw, which measures about 14.
-.rt_drawok
-  LDA #1
-  STA drawFlag
-  LDA #3
-  STA ruptState
-  RTS
-
-.rt_cycle1
-
-\ ---- just inside cycle 1: the static panel -------------------
+\ ---- fire 1, P+44: inside the panel cycle -------------------
+.rt_panel
 IF DEBUG_RASTER
   LDA #2 : JSR DbgSetBg         \ green from here down
 ENDIF
-  LDA #4  : STA CRTC_ADDR : LDA #CYCLE1_R4  : STA CRTC_DATA
-  LDA #6  : STA CRTC_ADDR : LDA #PANEL_ROWS : STA CRTC_DATA
-  LDA #7  : STA CRTC_ADDR : LDA #255        : STA CRTC_DATA
+\ Blank first. From here to fire 2 the play cycle may already have
+\ started (it does, by up to 7 scanlines) and what it shows in that
+\ sliver is the wrong map row.
+  LDA #8  : STA CRTC_ADDR : LDA #R8_OFF     : STA CRTC_DATA
 
+\ Take the sub-row offset from the same park as R12/R13, at the same
+\ moment R12/R13 is read, so the two can never come from different
+\ frames. Holds for the rest of this frame: fire 3 uses it too.
+  LDA pline
+  STA iline
+
+  LDA #4  : STA CRTC_ADDR : LDA #PANEL_R4 : STA CRTC_DATA
+
+\ No VSync in the panel or play cycles. The panel's own display
+\ ended 4 scanlines ago, so R6 is free to become the play cycle's.
+  LDA #7  : STA CRTC_ADDR : LDA #255      : STA CRTC_DATA
+  LDA #6  : STA CRTC_ADDR : LDA #PLAY_R6  : STA CRTC_DATA
+
+\ R5 for the panel cycle, sampled at its end 12 scanlines from now.
+\ Computed straight into the data register — sTmp belongs to
+\ SetCRTCStart, which this interrupt can land in the middle of.
+  LDA #5  : STA CRTC_ADDR
+  SEC
+  LDA #8
+  SBC iline
+  STA CRTC_DATA
+
+\ R12/R13 for the play cycle, latched when it starts at P+64-line.
   LDA #12 : STA CRTC_ADDR : LDA crtcHi : STA CRTC_DATA
   LDA #13 : STA CRTC_ADDR : LDA crtcLo : STA CRTC_DATA
 
-\ Retime the third fire. The counter has already reloaded with
-\ period A, so this latch write takes effect one reload later:
-\ fire 2 stays at row 11, fire 3 moves to row 25.
-  LDA #LO(T1_PERIOD_B) : STA SYS_VIA_T1LL
-  LDA #HI(T1_PERIOD_B) : STA SYS_VIA_T1LH
+  LDA #LO(T1_I3) : STA SYS_VIA_T1LL
+  LDA #HI(T1_I3) : STA SYS_VIA_T1LH
 
   LDA #1
   STA ruptState
   RTS
 
-\ ---- just inside cycle 2: the scrolled play area -------------
-.rt_cycle2
+\ ---- fire 2, P+64: the visible top edge ---------------------
+\ Must land in horizontal blanking — see T1_TUNE.
+.rt_play
+  LDA #8  : STA CRTC_ADDR : LDA #R8_ON     : STA CRTC_DATA
 IF DEBUG_RASTER
   LDA deck                      \ restore this deck's real background
   ASL A : ASL A
@@ -115,10 +161,39 @@ IF DEBUG_RASTER
   LDA deckPalette,Y
   JSR DbgSetBg
 ENDIF
-  LDA #4 : STA CRTC_ADDR : LDA #CYCLE2_R4 : STA CRTC_DATA
-  LDA #6 : STA CRTC_ADDR : LDA #PLAY_ROWS : STA CRTC_DATA
-  LDA #7 : STA CRTC_ADDR : LDA #CYCLE2_R7 : STA CRTC_DATA
+\ R4 only. The play cycle's R5 goes at fire 3, well clear of the
+\ panel cycle's vertical adjust, which ends within a scanline of
+\ here. R4 is safe either side of that boundary: written during an
+\ adjust it just sits waiting for the next cycle.
+  LDA #4  : STA CRTC_ADDR : LDA #PLAY_R4 : STA CRTC_DATA
+
   LDA #2
+  STA ruptState
+  RTS
+
+\ ---- fire 3, P+192: the visible bottom edge -----------------
+\ The play area stops displaying exactly here, so this is both the
+\ bottom blank and the earliest safe moment to release the main
+\ loop. Deadline for the redraw is the play cycle starting again,
+\ 184 scanlines away.
+.rt_drawok
+  LDA #8  : STA CRTC_ADDR : LDA #R8_OFF    : STA CRTC_DATA
+IF DEBUG_RASTER
+  LDA #4 : JSR DbgSetBg         \ blue from here down
+ENDIF
+\ R5 for the PLAY cycle, whose adjust is 8 scanlines away — close
+\ enough to be this frame's, far enough not to be a knife edge.
+  LDA #5  : STA CRTC_ADDR : LDA iline     : STA CRTC_DATA
+
+\ R6 and R7 for the TAIL cycle, which starts in 2 rows. R7 must be
+\ set here and not at VSync: by the time the tail reaches row 8 the
+\ compare that generates VSync has already been made.
+  LDA #6  : STA CRTC_ADDR : LDA #0        : STA CRTC_DATA
+  LDA #7  : STA CRTC_ADDR : LDA #TAIL_R7  : STA CRTC_DATA
+
+  LDA #1
+  STA drawFlag
+  LDA #3
   STA ruptState
   RTS
 
@@ -218,5 +293,8 @@ ENDIF
 
 .ruptState EQUB 0               \ which rupture stage the next T1 fire is
 .drawFlag  EQUB 0               \ set when the play area is off-display
-.crtcHi    EQUB 0               \ play-area start for cycle 2, latched by the IRQ
-.crtcLo    EQUB 0
+.crtcHi    EQUB 0               \ play-area start for the play cycle,
+.crtcLo    EQUB 0               \ latched by the IRQ
+.line      EQUB 0               \ sub-row scroll offset, 0-7 — the live value
+.pline     EQUB 0               \ parked with crtcHi/Lo by SetCRTCStart
+.iline     EQUB 0               \ latched from pline at fire 1, used all frame

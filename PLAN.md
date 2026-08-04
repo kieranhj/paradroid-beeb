@@ -436,7 +436,7 @@ calls `DrawHalf`/`MapChar` at all, and reuses their zero page. Vertical went 5 �
 with nothing between. Vertical was never 2× too slow — it was a few thousand cycles over the line,
 which is why the small first fix moved nothing and the second moved everything.
 
-#### ⚠ KNOWN DEFECT — `DrawRow` corrupts the row it draws
+#### ~~⚠ KNOWN DEFECT — `DrawRow` corrupts the row it draws~~ — MOOT, routine deleted in 3d
 
 **Broader than first recorded.** It was characterised as "unit 39 onward, after an *odd* offset".
 Both halves of that are wrong: a diagonal-scroll diff found it corrupting **units 2–78 with
@@ -559,11 +559,9 @@ consecutive fields render identically with interlace off.
 the deck. Fixable by reprogramming the palette at the cycle boundary — we are already in the IRQ
 there — but that needs the panel's colour needs settled first.
 
-#### 3d — Decide the scroll model
-Wide virtual buffer, CRTC R12/R13 hardware scroll, keyboard-driven. **Decide the scroll model here
-and record it in this document.** Everything downstream depends on the map buffer layout.
+#### Scroll model — decided (reference)
 
-Horizontal granularity is **4 pixels**, not 8. CRTC R12/R13 addresses in 8-byte units, and a MODE 1
+Wide virtual buffer, CRTC R12/R13 hardware scroll. Horizontal granularity is **4 pixels**, not 8. CRTC R12/R13 addresses in 8-byte units, and a MODE 1
 character cell is 16 bytes (8 px × 2bpp = 2 bytes/row × 8 rows), so one CRTC increment is half a
 cell:
 
@@ -583,6 +581,271 @@ To compare:
 copy of the map offset by 2 px, and alternate which buffer is displayed to halve the granularity.
 Significant added complexity, and a Model B has no room for the second buffer — revisit only if the
 target moves back to the Master.
+
+#### 3d — Smooth vertical scroll, 1-scanline granularity ✅ DONE
+
+Vertical steps drop from 8 scanlines to 1. Reference: `llm-beeb-wiki`
+`techniques/smooth-vertical-scroll` and its source, Talbot-Watkins's retrosoftware tutorial.
+
+**The lever is R5 (vertical total adjust).** R5 appends 0–31 extra scanlines to the end of a CRTC
+cycle. Give the playfield cycle `R5 = line` and take those scanlines back from the cycle above it
+(`8 - line`), and the frame total stays at 312 so the TV never unlocks. The playfield cycle then
+*starts* `line` scanlines earlier, so at any fixed physical scanline the raster is `line` lines
+further into the buffer — the picture has scrolled down by `line`.
+
+Two consequences fall straight out of that, and they are the whole cost of the technique:
+
+- **The first `line` scanlines of the playfield cycle are real, displayed, and wrong** — as is the
+  tail. Both must be blanked, and it is the blanking, not R5, that pins the visible edges to fixed
+  scanlines. Blank via **CRTC R8's display-skew bits** (`&30` = display disabled, `&00` = on): the
+  chip's own display enable, so there is no ULA serialiser artefact at the transition.
+- **The playfield needs 17 rows of data resident and we have 16.**
+
+##### The 17th row, and why it costs nothing
+
+`BUF_SIZE` = the 10K hardware wrap is load-bearing — that equality is what makes the display wrap.
+It cannot grow: the only other wrap span divisible by 640 is 20K, which would swallow `&3000-&47FF`
+where the level data and panel live.
+
+We do not need a 17th row. Display row 16 wraps to buffer row 0, and the two only ever show
+**disjoint scanlines** of it, so buffer row 0 holds two map rows at once:
+
+| buffer row 0 | holds |
+|---|---|
+| scanlines `line..7` | map row `mapYr` — the top of the view |
+| scanlines `0..line-1` | map row `mapYr+16` — the bottom sliver |
+
+Work a step through and it collapses to something uniform, with no special case where the buffer
+wraps a row:
+
+| | action |
+|---|---|
+| down 1 scanline | write scanline `line` of buffer row 0 from map row `mapYr+16`, *then* advance `line`/`mapYr`/`scrollS` |
+| up 1 scanline | retreat `line`/`mapYr`/`scrollS`, *then* write scanline `line` of buffer row 0 from map row `mapYr` |
+
+When `line` wraps and `scrollS` moves a row, the row that was split becomes a full row — and the 7
+scanlines it needs are already correct. The one scanline just written completes it.
+
+**A scanline strip is 80 bytes against 640 for `DrawRow`.** Per 8 scanlines travelled that is the
+same copying, spread evenly instead of lumped into one frame — the opposite of the current problem,
+where a vertical step is the worst spike in the frame.
+
+##### Frame layout — three cycles, not two
+
+Two cycles would leave the variable adjust between VSync and the panel, sliding the panel up to 7
+scanlines while scrolling. Three cycles put both variable adjusts *after* the panel, where they
+cancel:
+
+| Cycle | Content | rows (R4) | R6 | R7 | R5 | R12/R13 |
+|---|---|---|---|---|---|---|
+| panel | static | 7 (6) | 5 | 255 | `8 - line` | `&4800 / 8` |
+| play | scrolled | 18 (17) | **16** | 255 | `line` | `(&5800 + scrollS) / 8` |
+| tail | nothing, holds VSync | 13 (12) | 0 | 8 | 0 | — |
+| | | **38 ✓** | | | **+8 ✓** | |
+
+`38 × 8 + 8 = 312`, confirmed by counting VSyncs: **1000 fields in 39,936,000 cycles, exactly.**
+With `P` = start of the panel cycle: the play cycle starts at `P+64-line`, the visible top edge is at
+`P+64` and the bottom at `P+184`, and VSync lands at `P+272`.
+
+**18 cycle rows rather than 17 is deliberate.** It makes row 16 non-displayed, so display-enable
+turns off by ordinary means and we never depend on the murky "R6 > R4" behaviour where the VADJ
+scanlines themselves are displayed.
+
+##### The play area is 15 rows, not 16 — and that is a hard limit
+
+`R6 = 17` was the original design: 16 rows plus the wrapped sliver. It cannot work, and the reason is
+worth keeping.
+
+**The display window must fit inside ONE hardware wrap.** The address translator subtracts its
+mode-dependent amount once, when MA12 goes high (IC 39, see `hardware/address-translation`) — it
+does not iterate. 17 rows is 10880 bytes over a 10240-byte wrap span, so past `scrollS = 9608` the
+bottom rows need a second subtract, do not get one, and fetch from `&8000` upwards. ROM, displayed
+as garbage across the bottom row — and only at some scroll positions, which is why it read as
+intermittent.
+
+Confirmed exactly: at `scrollS = 10200` the model predicts garbage from unit 5 of the bottom row
+onward, and that is where it starts.
+
+The strip period must equal the wrap span, and 10240 bytes with 80-unit rows is exactly 16 rows. So
+**16 displayed rows is the ceiling, and smooth vertical scrolling costs one character row of play
+area**: 16 displayed, 15 visible (120 px), the 16th carrying the sub-row fraction at both ends.
+Nothing else changes — the split-row scheme is untouched, because the scanlines it writes are
+precisely the ones falling outside the visible window.
+
+*Parked ways to get 128 px back, neither cheap:* the 20K wrap (`&3000`, 32 rows) has room for a
+17-row window, but the whole of `&3000-&7FFF` becomes screen and the strip sweeps the panel; or
+switch the addressable-latch wrap bits per cycle in the IRQ, which is feasible — we are already in
+there four times a frame — but needs thought about where the panel then lives.
+
+##### R5 write ordering
+
+R5 is sampled at each cycle's *end*, so it must read a different value at three points in the frame.
+Each write has to land in the gap between the sample it must not disturb and the one it serves:
+
+| must read | at | so write it |
+|---|---|---|
+| `0` | `P+312` (tail end) | at VSync, `P+272` |
+| `8 - line` | `P+56` (panel end) | at fire 1, `P+44` |
+| `line` | `P+200` (play end) | at fire 2, `P+64` |
+
+R4/R6/R7 are **not** latched, so each cycle's values must be written *inside* that cycle, after it
+starts and before `C4` reaches the new R4. That is why the tail cycle's own registers are written at
+VSync (tail row 8) rather than earlier.
+
+##### IRQ schedule
+
+| Event | Position | Actions | Tolerance |
+|---|---|---|---|
+| VSync (CA1) | `P+272` | R8←on; R5←0; tail R4/R6/R7; R12/R13←panel; `iline←line`; restart T1 | ~40 rows |
+| T1 fire 1 | `P+44` | R8←blank; R5←`8-iline`; panel R4/R6/R7; R12/R13←play | 8 scanlines |
+| T1 fire 2 | `P+64` | R8←on; R5←`iline`; play R4/R6/R7 | **1 scanline** |
+| T1 fire 3 | `P+192` | R8←blank; `drawFlag`←1 | **1 scanline** |
+
+T1 stays free-running continuous and is restarted only at VSync, so the three fires share one
+jitter offset rather than accumulating three. Intervals are set by writing the latch one fire ahead,
+as in Layer 3c.
+
+Fires 2 and 3 must land in **horizontal blanking** — MODE 1 displays 80 of 128 character times, so
+there are ~24 µs of blanking to hit and a write landing in the displayed portion cuts that scanline
+part-way across. `T1_TUNE` exists to be calibrated against `DEBUG_RASTER`, exactly as the reference
+implementation carries an empirically tuned constant for the same reason.
+
+Nice side effect: `drawFlag` now fires at `P+192`, the exact scanline the play area stops
+displaying, rather than the row-24 estimate — 15 rows of draw window, and no longer a guess.
+
+##### When each CRTC register may be written — they are not the same
+
+This cost two wrong builds. The rules that actually hold:
+
+| Register | Write it | Symptom of getting it wrong |
+|---|---|---|
+| R4 | inside its own cycle, before C4 reaches the new value | previous cycle trips over it |
+| R7 | inside the **previous** cycle | that row's compare has already happened, **VSync never fires**, and the CRTC free-runs on the last cycle shape — the play area repeats down a rolling screen |
+| R6 | inside the **previous** cycle | vertical display enable is a flip-flop cleared on match; raising R6 afterwards does not bring the cycle's display back |
+| R12/R13 | inside the **previous** cycle | latched at cycle start |
+| R5 | anywhere before the cycle's end — but see below | |
+
+**The R5 trap, and it is a nasty one.** The vertical adjust counts up and compares against R5.
+Change R5 once the count has passed the new value and the match never happens: the adjust runs on
+until the 5-bit counter wraps, adding ~29 scanlines. Fire 2 sits within a scanline of the panel
+cycle's adjust ending, and landing the wrong side of that boundary stretched the panel cycle from 64
+scanlines to 85 — which presented as the play area starting 21 scanlines late and being 21 short.
+
+The fix is not tighter timing, it is **not writing R5 anywhere near a cycle boundary**. Its legal
+window is the whole cycle, so the play cycle's R5 moved to fire 3 and fire 2 now writes only R4 —
+which is safe on both sides of the boundary, because written during an adjust it simply waits for
+the next cycle.
+
+##### Calibration — `T1_TUNE = -6 * SL - 22`
+
+Two components, measured separately.
+
+**The scanline part, `-4 * SL`.** The VSync CA1 interrupt is serviced about **4 scanlines** after the
+vsync edge, so every fire needs shifting back by that much. The timer chain itself is exact —
+breakpoint bisection puts fire 1 at 78.3–79.3 scanlines after VSync handler entry against a design
+figure of 78 — so the whole error is in where VSync itself sits.
+
+This started at `-6`, which put fire 2's unblank at `P+62` instead of `P+64` and exposed two
+scanlines of the *next* map row above the top of the view. **Erring late is harmless** — it just
+starts the view a couple of scanlines further down the map — **but erring early shows content that
+belongs at the bottom of the window at the top of it.** Bias late if in doubt.
+
+Note the scanline component cannot be measured from screenshots to better than ±2: one scanline is
+2 framebuffer pixels and the panel gives only ~2.0–2.05 px/scanline depending on how its edges are
+read. It was KC spotting two wrong lines on b-em that pinned it, not any measurement here.
+
+**The sub-scanline part, `-22` µs.** An R8 write takes effect immediately, so one landing in the
+displayed part of a scanline cuts that scanline part-way across. MODE 1 displays 80 of 128 character
+times, so the write has to land in µs 40–63 of the line before the one whose display should change.
+
+Measuring the phase needed a trick, because the play area's edges cannot show it — one scanline is
+2 framebuffer pixels, and jsbeeb crops each screenshot to its own content bounding box so builds are
+not even to the same scale. **`T1_PROBE`** drags fire 1 back into the panel's *displayed* rows and
+hands the time straight to fire 2, so fires 2 and 3 stay put and only the blank moves. The blank
+then cuts the solid panel box, and the horizontal position of the step is the phase, read straight
+off a screenshot: the step sat at 9 µs into the 40 µs of display. `-22` µs puts fire 1's write at
+µs 51, fire 2 at ~53 and fire 3 at ~55 — they differ by the length of `RuptTimer`'s dispatch, which
+is well inside the 24 µs window. The probe then shows a clean full-width cut, which is the
+confirmation.
+
+Keep `T1_PROBE` — it is the only phase measurement that has worked, and any change to the IRQ
+prologue will need it again.
+
+##### Build order
+
+Each step verified in the emulator before the next:
+
+- **(b)** three-cycle rupture, `line` fixed at 0 — measured panel 40 scanlines, gap 24, play area
+  128: identical to Layer 3c ✅
+- **(c)** `line` swept 0–7 by poking the variable from the emulator — no debug keys needed. Content
+  moves one scanline per step, both edges rock steady ✅
+- **(d)** split-row scanline writer wired to K/M ✅
+
+Step (a) — proving the R8 skew blank standalone — was skipped on KC's call. It would not have caught
+either bug: R8 behaved exactly as documented, and both faults were in R5/R6/R7 timing.
+
+##### Verified
+
+Buffer diffed byte-for-byte against `RedrawAll` at the same position, which is the only check that
+has ever caught a drawing bug in this project:
+
+| test | result |
+|---|---|
+| 8 steps down, even `mapHX` | 0 / 10240 differing |
+| 8 steps up (through the row borrow), even `mapHX` | 0 / 10240 |
+| mixed right / up / down, **odd** `mapHX`, `scrollS` wrapped mid-row | 0 / 10240 |
+| as above, re-run after deferring the draw (exercises the down-wrap `scanRow`) | 0 / 10240 |
+
+Step rate measured at **1 scanline per frame**, vsync-locked, on both axes.
+
+*Testing trap worth remembering:* an earlier run of this harness reported 16 differing bytes, all on
+one scanline of the split row. That was not a bug — `run_for_cycles` had stopped the emulator
+mid-`DrawScanline` and the snapshot caught a half-written strip. Always idle a few frames after
+releasing a key before dumping.
+
+##### The position pair must be latched atomically — and drawn after, not before
+
+Reported by KC: scrolling **up**, the screen jumped a row for one frame every 8 scanlines; scrolling
+**down**, a couple of wrong lines showed at the top. One root cause, and the asymmetry is the clue.
+
+The scroll routines drew their scanline strip *inline*, before `SetCRTCStart` parked the address.
+The strip costs ~75 scanlines, which pushed the park past VSync — where `iline` was being latched.
+`line` and `scrollS` are one position between them, and they were being consumed by different
+frames: the display would show an address from one frame with a sub-row offset from the next, a
+position that never existed.
+
+`ScrollUp` changes both *before* its draw, so at every row borrow the pair split — a one-frame row
+jump. `ScrollDown` changes them *after*, so only the freshly written scanline was exposed at the top.
+Same bug, two faces.
+
+Two fixes, both worth having:
+
+- **The scanline draw is deferred to `DoRedraws`**, like the columns, so the park happens first. This
+  also removes a subtler artefact: drawing before the park writes content for the *next* frame's
+  position into a scanline the *current* frame still displays.
+- **`SetCRTCStart` parks `line` alongside `crtcHi`/`crtcLo` under the same `SEI`**, and fire 1 latches
+  `iline` from that park rather than VSync reading the live value. The pair is now consumed at one
+  instant, so a long frame can only ever be a frame late — never inconsistent.
+
+Deferring meant K and M could both record into one draw slot, with a scanline number belonging to a
+strip position that no longer exists, so **up and down are now mutually exclusive** in the main loop.
+Net movement with both held is zero anyway.
+
+##### `DrawRow` is gone, and with it its defect
+
+Vertical scrolling no longer redraws whole rows, so `DrawRow`, `FetchChar` and `SetTilePtr` have
+been deleted. The defect recorded above — three separate bugs in that one routine's incremental
+state tracking — is moot rather than fixed. `DrawColumn` still uses the general
+`DrawHalf`/`MapChar` path and is unaffected.
+
+##### Open questions
+
+- **Granularity.** 1 scanline vertical against 4 pixels horizontal is a lopsided pair. Stepping
+  vertical by 2 or 4 scanlines costs nothing extra (identical machinery) and may feel better.
+- **Source-pointer cache.** A scanline strip still does 40 character lookups for 80 bytes copied, so
+  lookups dominate. Caching the current source row's 40 pointers (80 bytes, rebuilt every 8
+  scanlines) makes a strip a straight indexed copy. That is the difference between smooth scrolling
+  costing *less* than today's row draw and costing ~2.5× more at full speed.
 
 ### Layer 4 — Sprite blitter
 MODE 1 software sprites, 24×21, background save/restore, pre-shifted variants. One player droid
