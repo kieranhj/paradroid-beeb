@@ -19,6 +19,9 @@ extracted/
 paradroid_ce_annotated.asm
 # tools/output/ is produced by the rip_*.py scripts
 tools/output/
+# src/data/ is produced by tools/export_bbc.py — converted game artwork and
+# level data, so copyright as above. Regenerate it; do not commit it.
+src/data/
 
 # ---- Local editor / agent settings ----
 .claude/settings.local.json

@@ -97,10 +97,38 @@ then the active play area. The play area needs far fewer than 25 char rows, so R
 further and hand back more of `&4000–&7E7F`. Quantify once the HUD split is designed; it may
 relieve the sprite-data budget without touching the mode choice.
 
-### Layer 1 — Graphics data pipeline
-Extend the Python rippers to emit BeebASM source: `$7800` charset converted 1bpp→MODE 1 2bpp,
-the 32 tile definitions, level RLE, deck metadata, palette mapping. **Proves:** conversion is
-correct — display the tile sheet on screen and compare against `tools/output/tiles.png`.
+### Layer 1 — Graphics data pipeline ✅ DONE
+`tools/export_bbc.py` emits BeebASM sources into `src/data/` (gitignored — converted game
+artwork). `tools/verify_bbc.py` round-trips them back and diffs against the listing.
+`src/main.asm` renders all 32 tile definitions as an 8×4 sheet.
+
+| Output | Size | Contents |
+|---|---|---|
+| `charset.asm` | 4096 B | 256 chars × 16 bytes, MODE 1 |
+| `tiledefs.asm` | 512 B | 32 tiles × 4×4 char codes, byte-identical |
+| `levels.asm` | 3335 B | 16 deck maps RLE + offsets + metadata, byte-identical |
+
+**Key result — the 1bpp→MODE 1 conversion is a nibble split.** MODE 1 puts pixel *n*'s low colour
+bit in bit `3-n`, so storing the foreground as **logical colour 1** makes the conversion:
+
+```
+left  4 pixels of a scanline = (b >> 4) & 0x0F
+right 4 pixels of a scanline =  b       & 0x0F
+```
+
+Two consequences worth carrying forward:
+- **Per-deck recolour is free.** Colour is not baked into the tiles; a deck's scheme is a palette
+  change (`VDU 19` / palette register), mirroring how the C64 recoloured via its `CharColor` table.
+- **A character is 16 contiguous bytes** — BBC screen memory groups 4 px × 8 scanlines into 8
+  consecutive bytes, so an 8×8 char is the left half's 8 scanlines then the right half's.
+  Plotting one is a flat 16-byte copy, no shifting or masking. `plot_char` is 12 instructions.
+
+*Option not taken:* since the conversion is a nibble split, tiles could be stored in C64 1bpp form
+(2K instead of 4K) and expanded during the blit. Worth revisiting only if the tile charset ever
+needs to compete for space with sprite data.
+
+**Verified:** `verify_bbc.py` passes 5/5 — charset round-trips to the original `$7800` bytes with
+no high nibble ever set; tile defs, RLE, deck offsets and metadata all byte-identical.
 
 ### Layer 2 — Static deck render
 Port `BuildLevel` (RLE → tile buffer) and enough of `DrawScreen` to paint one deck. **Proves:**
