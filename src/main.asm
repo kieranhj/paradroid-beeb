@@ -37,6 +37,14 @@ MAP_CHAR_H = MAP_ROWS * 4       \ 64 character rows
 \ The boundaries between bands ARE the interrupt points.
 DEBUG_RASTER = FALSE
 
+\ DEBUG_DRAW tints the background cyan for exactly as long as the
+\ main loop spends redrawing the edge strip, so the band shows
+\ which scanlines that work occupies. It must all fit between the
+\ play area going off-display (frame row 27) and being drawn again
+\ (row 8 of the next frame) — if the cyan reaches into the play
+\ area, the redraw is overrunning its window.
+DEBUG_DRAW   = FALSE
+
 \ ---- screen geometry ---------------------------------------
 \ These live here rather than in screen.asm/rupture.asm because
 \ beebasm resolves constant assignments in file order, and both
@@ -76,11 +84,25 @@ CYCLE2_R7   = CYCLE2_ROWS - 5   \ VSync 5 rows before the cycle ends
 \ so the second lands 3 rows into cycle 2. Both sit ~4 rows clear
 \ of the deadline (C4 reaching the old R4 of 7). Later fires in
 \ the frame are ignored.
-T1_PERIOD    = 8 * 512 - 2      \ fires N+2 us after start
+\ Two periods, because a single one cannot put all three fires
+\ where they are needed. The windows are:
+\   cycle 1 setup   frame rows 0-7   (before C4 reaches 7)
+\   cycle 2 setup   frame rows 8-15  (before C4 reaches 7)
+\   edge redraw     frame rows 24-26 (after the play area stops
+\                   displaying at 23, and early enough for the
+\                   ~22 row redraw to finish before row 8 again)
+\
+\ VSync is row 34, so 8 rows lands fire 1 at row 3 and fire 2 at
+\ row 11. Changing the latch during fire 1 retimes fire 3 — the
+\ counter has already reloaded by then, so the new value takes
+\ effect one reload later — putting it at row 25.
+T1_PERIOD_A  = 8 * 512 - 2      \ fires N+2 us after start
+T1_PERIOD_B  = 13 * 512 - 2     \ fire 3 at row 24, the earliest safe point
 
 SYS_VIA_T1CL = &FE44
 SYS_VIA_T1CH = &FE45
 SYS_VIA_T1LL = &FE46
+SYS_VIA_T1LH = &FE47            \ latch only — does not reload the counter
 SYS_VIA_ACR  = &FE4B
 SYS_VIA_IER  = &FE4E
 USR_VIA_IER  = &FE6E
@@ -171,12 +193,25 @@ ORG &1100
 \ Main loop
 \ ============================================================
 .mainloop
-  \ Sync to vsync before touching the CRTC. R12/R13 form a 14-bit
-  \ value across two writes: if the chip samples between them the
-  \ display shows one frame at a half-updated address. Doing the
-  \ writes and the edge redraw in the blanking window avoids that,
-  \ and paces scrolling to one step per frame.
+  \ Released once the play area is off-display, not at VSync. The
+  \ edge redraw and the R12/R13 park both have to land before the
+  \ play area is drawn again.
   JSR WaitVSync
+IF DEBUG_DRAW
+  LDA #6 : JSR DbgSetBg         \ cyan while the redraw runs
+ENDIF
+
+  \ Ordered by how soon the raster reaches what each one redraws.
+  \ A diagonal move does two redraws in one window, so the tightest
+  \ has to go first:
+  \   ScrollUp    row 0,  displayed at frame row 8  — most urgent
+  \   Scroll L/R  a column, spanning rows 8-23
+  \   ScrollDown  row 15, displayed at frame row 23 — most slack
+  LDX #KEY_K                    \ scroll up, 8 px
+  JSR keydown
+  BNE ml_notK
+  JSR ScrollUp
+.ml_notK
 
   LDX #KEY_Z                    \ scroll left, 4 px
   JSR keydown
@@ -190,17 +225,17 @@ ORG &1100
   JSR ScrollRight
 .ml_notX
 
-  LDX #KEY_K                    \ scroll up, 8 px
-  JSR keydown
-  BNE ml_notK
-  JSR ScrollUp
-.ml_notK
-
   LDX #KEY_M                    \ scroll down, 8 px
   JSR keydown
   BNE ml_notM
   JSR ScrollDown
 .ml_notM
+
+  \ Park the CRTC address ONCE, with every axis accounted for, and
+  \ before any drawing — the IRQ latches it at frame row 3, only a
+  \ few rows into this window.
+  JSR SetCRTCStart
+  JSR DoRedraws
 
   \ Deck keys are edge triggered: one press steps one deck however
   \ long it is held. A blocking wait-for-release deadlocks if the
@@ -236,6 +271,14 @@ ORG &1100
   LDA #0 : STA prevDn
 .ml_notDn
 
+IF DEBUG_DRAW
+  LDA deck                      \ back to the deck's real background
+  ASL A : ASL A
+  TAY
+  LDA deckPalette,Y
+  JSR DbgSetBg
+ENDIF
+
   LDX #KEY_SPACE                \ DEBUG: force a full redraw, to compare
   JSR keydown                   \ the incremental edge draws against it
   BNE ml_notSpc
@@ -266,11 +309,15 @@ ORG &1100
 \ it. Instead we sit in front of IRQ1V, count fields, and chain on
 \ to the OS so its timers and keyboard scan keep working.
 \ ============================================================
+\ Waits until the play area has finished being displayed, not until
+\ VSync — see rt_drawok. Everything the main loop does after this
+\ (edge redraw, parking R12/R13) must land before the play area is
+\ drawn again, so starting 7 rows earlier is 7 rows more headroom.
 .WaitVSync
-  LDA vsyncCount
-.wv_loop
-  CMP vsyncCount
-  BEQ wv_loop
+  LDA drawFlag
+  BEQ WaitVSync
+  LDA #0
+  STA drawFlag
   RTS
 
 \ ============================================================

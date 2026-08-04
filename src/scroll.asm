@@ -290,10 +290,8 @@ subBase = mcTmp                 \ (cellY AND 3) * 4
   INC mapHX+1
 .sr_nohi
   SCROLL_ADD UNIT_BYTES
-  JSR SetCRTCStart
-  LDA #PLAY_UNITS-1             \ the column that just appeared
-  STA uCount
-  JSR DrawColumn
+  LDA #1
+  STA needCol79                 \ redrawn later, by DoRedraws
 .sr_no
   RTS
 
@@ -310,10 +308,8 @@ subBase = mcTmp                 \ (cellY AND 3) * 4
 .sl_nohi
   DEC mapHX
   SCROLL_SUB UNIT_BYTES
-  JSR SetCRTCStart
-  LDA #0
-  STA uCount
-  JSR DrawColumn
+  LDA #1
+  STA needCol0
 .sl_no
   RTS
 
@@ -326,10 +322,8 @@ subBase = mcTmp                 \ (cellY AND 3) * 4
   BCS sd_no
   INC mapYr
   SCROLL_ADD ROW_BYTES
-  JSR SetCRTCStart
-  LDA #PLAY_ROWS-1
-  STA rCount
-  JSR DrawRow
+  LDA #1
+  STA needRow15
 .sd_no
   RTS
 
@@ -341,9 +335,57 @@ subBase = mcTmp                 \ (cellY AND 3) * 4
   BEQ su_no
   DEC mapYr
   SCROLL_SUB ROW_BYTES
-  JSR SetCRTCStart
-  LDA #0
-  STA rCount
-  JSR DrawRow
+  LDA #1
+  STA needRow0
 .su_no
   RTS
+
+\ ============================================================
+\ DoRedraws — redraw whatever the scroll routines flagged
+\
+\ Split out from the Scroll* routines so that SetCRTCStart can be
+\ called ONCE, before any drawing. Previously each routine parked
+\ the address itself, so on a diagonal move the second one's park
+\ landed after the first one's redraw — about 19 rows into the
+\ window, i.e. past frame row 3 where the IRQ latches R12/R13.
+\ The CRTC then used an address missing one axis while the buffer
+\ held the combined position: one frame of wrong graphics on the
+\ trailing edge.
+\
+\ Order is by how soon the raster reaches each: row 0 displays at
+\ frame row 8, the columns span rows 8-23, row 15 not until 23.
+\ ============================================================
+.DoRedraws
+  LDA needRow0
+  BEQ dor_nr0
+  LDA #0 : STA rCount
+  JSR DrawRow
+  LDA #0 : STA needRow0
+.dor_nr0
+
+  LDA needCol0
+  BEQ dor_nc0
+  LDA #0 : STA uCount
+  JSR DrawColumn
+  LDA #0 : STA needCol0
+.dor_nc0
+
+  LDA needCol79
+  BEQ dor_nc79
+  LDA #PLAY_UNITS-1 : STA uCount
+  JSR DrawColumn
+  LDA #0 : STA needCol79
+.dor_nc79
+
+  LDA needRow15
+  BEQ dor_nr15
+  LDA #PLAY_ROWS-1 : STA rCount
+  JSR DrawRow
+  LDA #0 : STA needRow15
+.dor_nr15
+  RTS
+
+.needRow0  EQUB 0
+.needRow15 EQUB 0
+.needCol0  EQUB 0
+.needCol79 EQUB 0

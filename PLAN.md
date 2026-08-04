@@ -356,6 +356,31 @@ needed for sub-character horizontal scrolling, which was the thing that looked e
 Source split into `screen.asm` (buffer addressing, `DrawHalf`, `MapChar`, `RedrawAll`),
 `scroll.asm` (the four scroll directions) and `level.asm` (deck decode, charset, palette, framing).
 
+**The main loop is released when the play area stops displaying, not at VSync.** The play area
+occupies frame rows 8–23; the panel draws from `&4800`, so writing the play buffer while it shows
+is safe. That makes the usable window rows 24 → 8 of the next frame — **24 rows**, against ~23 for
+a worst-case redraw. Releasing at VSync (row 34) gave only 13 and was overrunning every step.
+
+T1's three fires must land in different windows, which one period cannot do:
+
+| Fire | Row | Job | Must be in |
+|---|---|---|---|
+| 1 | 3 | cycle 1 CRTC setup | rows 0–7 |
+| 2 | 11 | cycle 2 CRTC setup | rows 8–15 |
+| 3 | 24 | release the redraw | rows 24–26 |
+
+So the latch is rewritten during fire 1. T1 reloads its counter at underflow, so a latch write
+takes effect one reload later — fire 2 keeps the 8-row spacing while fire 3 moves out to 13.
+
+**`SetCRTCStart` is called once, after all key handling, before any drawing.** Previously each
+`Scroll*` routine parked the address itself, so on a diagonal the second one's park landed after
+the first one's redraw — past frame row 3, where the IRQ latches R12/R13. The CRTC then used an
+address missing one axis while the buffer held the combined position: one frame of wrong graphics
+on the trailing edge. The routines now only set flags, and `DoRedraws` handles the drawing.
+
+**Redraws run in raster order** — row 0 first (displays at frame row 8), then the columns (rows
+8–23), then row 15 (row 23). A diagonal does two redraws in one window, so the tightest goes first.
+
 **VSYNC synced, no OS calls in the main loop.** R12/R13 form a 14-bit value across two writes; if
 the CRTC samples between them the display shows one frame at a half-updated address. `WaitVSync` at
 the top of the main loop puts both writes and the edge redraw in the blanking window, and paces
@@ -411,19 +436,25 @@ calls `DrawHalf`/`MapChar` at all, and reuses their zero page. Vertical went 5 �
 with nothing between. Vertical was never 2× too slow — it was a few thousand cycles over the line,
 which is why the small first fix moved nothing and the second moved everything.
 
-#### ⚠ KNOWN DEFECT — `DrawRow`, from its 6th tile onward
+#### ⚠ KNOWN DEFECT — `DrawRow` corrupts the row it draws
 
-Not fully fixed. After scrolling to an **odd** unit and then scrolling vertically, the row
-`DrawRow` last drew is correct to unit 38 and wrong from unit 39 — the point where its 6th tile
-begins. 41 cells, verified by diffing against `RedrawAll` *and* independently against the tile map,
-so it is `DrawRow` that is wrong, not the reference. The bad bytes are valid charset data but match
-no character in the correct tile row, so `maprow`/`tdp` has drifted by that point. Root cause not
-isolated.
+**Broader than first recorded.** It was characterised as "unit 39 onward, after an *odd* offset".
+Both halves of that are wrong: a diagonal-scroll diff found it corrupting **units 2–78 with
+`mapHX` = 134, an even offset**. Every column and every other row matched a full redraw exactly, so
+`DrawRow` alone is at fault — verified against `RedrawAll` *and* independently against the tile map.
 
-Accepted for now — KC tested and found it acceptable in practice. If it resurfaces, the pragmatic
-fix is to revert `DrawRow` to the pre-optimisation version (simple, diffed clean) and lose the
-vertical frame-lock, then redo the optimisation with the diff harness driven over odd *and* even
-offsets from the outset.
+Diagonal movement calls `DrawRow` on every step, which turns an occasional artifact into a
+permanent one on the trailing edge.
+
+**`DrawRow` has now produced three separate bugs**: uninitialised `chp` on odd row starts (fixed),
+corruption from unit 39, and this. Each time the conversion looked right and the fault was in its
+incremental state tracking.
+
+**Recommended fix: revert `DrawRow` to the pre-optimisation version.** That one diffed byte-clean
+twice. The cost was vertical scrolling at 2 frames/step rather than 1 — but the draw window has
+roughly doubled since that measurement (release moved from VSync to frame row 24), so it may now
+fit at 1 frame regardless. If the optimisation is redone, drive the diff harness over odd *and*
+even offsets on both axes from the outset.
 
 **Testing lesson.** Two earlier runs of that harness reported 0 differing bytes and were worthless:
 both used an even number of horizontal steps (30 and 300), so `halfSel` was always 0 and the odd

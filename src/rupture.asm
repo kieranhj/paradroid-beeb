@@ -48,8 +48,8 @@ ENDIF
 \ T1C-H transfers the latch into the counter and starts it; in
 \ continuous mode it then reloads itself, so the second stage is
 \ exactly one period later however late this handler ran.
-  LDA #LO(T1_PERIOD) : STA SYS_VIA_T1LL
-  LDA #HI(T1_PERIOD) : STA SYS_VIA_T1CH
+  LDA #LO(T1_PERIOD_A) : STA SYS_VIA_T1LL
+  LDA #HI(T1_PERIOD_A) : STA SYS_VIA_T1CH
   LDA #0
   STA ruptState
   RTS
@@ -62,7 +62,26 @@ ENDIF
   BEQ rt_cycle1
   CMP #1
   BEQ rt_cycle2
+  CMP #2
+  BEQ rt_drawok
   RTS                           \ later fires in the frame: nothing to do
+
+\ ---- play area has finished displaying ----------------------
+\ T1 free-runs at 8 rows, so its fires land at frame rows 3, 11,
+\ 19 and 27. The play area occupies rows 8-23, so row 19 is still
+\ 4 rows short of the end — releasing the main loop there let the
+\ raster catch the bottom rows mid-redraw. Row 27 is the first
+\ fire clear of the display.
+\
+\ The deadline is cycle 2 starting again at row 8 of the next
+\ frame, so this leaves 20 rows — ample even for the 80-cell
+\ vertical redraw, which measures about 14.
+.rt_drawok
+  LDA #1
+  STA drawFlag
+  LDA #3
+  STA ruptState
+  RTS
 
 .rt_cycle1
 
@@ -77,7 +96,13 @@ ENDIF
   LDA #12 : STA CRTC_ADDR : LDA crtcHi : STA CRTC_DATA
   LDA #13 : STA CRTC_ADDR : LDA crtcLo : STA CRTC_DATA
 
-  LDA #1                        \ T1 reloads itself — nothing to re-arm
+\ Retime the third fire. The counter has already reloaded with
+\ period A, so this latch write takes effect one reload later:
+\ fire 2 stays at row 11, fire 3 moves to row 25.
+  LDA #LO(T1_PERIOD_B) : STA SYS_VIA_T1LL
+  LDA #HI(T1_PERIOD_B) : STA SYS_VIA_T1LH
+
+  LDA #1
   STA ruptState
   RTS
 
@@ -174,7 +199,7 @@ ENDIF
   BNE fv_row
   RTS
 
-IF DEBUG_RASTER
+IF DEBUG_RASTER OR DEBUG_DRAW
 \ ============================================================
 \ DbgSetBg — background (logical 0) to physical colour A
 \ Four entries because in a 4-colour mode the palette CAM only
@@ -191,6 +216,7 @@ IF DEBUG_RASTER
 .dbgTmp EQUB 0
 ENDIF
 
-.ruptState EQUB 0               \ 0 = next timer starts cycle 1, 1 = cycle 2
+.ruptState EQUB 0               \ which rupture stage the next T1 fire is
+.drawFlag  EQUB 0               \ set when the play area is off-display
 .crtcHi    EQUB 0               \ play-area start for cycle 2, latched by the IRQ
 .crtcLo    EQUB 0
