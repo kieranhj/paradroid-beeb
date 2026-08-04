@@ -1,51 +1,56 @@
 \ ============================================================
-\ Paradroid — BBC Model B port
-\ LAYER 1: graphics data pipeline
+\ Paradroid â€” BBC Model B port
+\ LAYER 2: static deck render
 \ ============================================================
-\ Renders all 32 tile definitions as an 8x4 sheet, to verify:
-\   - the C64 -> MODE 1 charset conversion
-\   - the tile definition data
-\   - the character plotter Layer 2 will build on
+\ Ports BuildLevel (RLE -> tile map) and renders a viewport of
+\ the decoded deck.
 \
-\ Compare the result against tools/output/tiles.png.
+\ Divergence from the C64: the original expands each tile into a
+\ 256x64 character map at $8000 (16K). We keep only the 64x16
+\ tile map (1K) and expand tiles to characters at draw time â€”
+\ two extra lookups per character against a ~100 cycle 16-byte
+\ copy, for a 15K saving we cannot do without on a Model B.
 \ ============================================================
 
-CPU 0                           \ plain 6502 — Model B
+CPU 0                           \ plain 6502 â€” Model B
 
 OSWRCH    = &FFEE
+OSCLI     = &FFF7
 CRTC_ADDR = &FE00
 CRTC_DATA = &FE01
 
 SCREEN    = &4000
-SCR_BYTES = 16000               \ 25 rows x 640
 
-\ Character cell = 16 contiguous bytes (left 4px x 8 rows, then right 4px x 8)
-CHAR_BYTES = 16
+CHAR_BYTES = 16                 \ a character is 16 contiguous bytes
 ROW_BYTES  = 640                \ one character row
-TILE_BYTES = 4 * CHAR_BYTES     \ a tile is 4 chars wide
-TILE_ROW   = 4 * ROW_BYTES      \ a tile is 4 chars tall
+SCR_COLS   = 40                 \ characters across
+SCR_ROWS   = 25                 \ character rows
 
-\ Sheet origin: character column 4, character row 3
-SHEET = SCREEN + 3*ROW_BYTES + 4*CHAR_BYTES
+MAP_COLS   = 64                 \ tile map is 64 x 16
+MAP_ROWS   = 16
+
+DECK       = 1                  \ deck to render
 
 \ ---- zero page (user area &70-&8F) -------------------------
-scr     = &70                   \ screen destination      (2)
-chp     = &72                   \ charset source          (2)
-tdp     = &74                   \ tile definition source  (2)
-tdi     = &76                   \ index within tile def, 0-15
-tnum    = &77                   \ tile number being drawn
-colcnt  = &78                   \ draw_tile inner column counter
-rowscr  = &79                   \ draw_tile row origin    (2)
-tileorg = &7B                   \ sheet row origin        (2)
-tilecur = &7D                   \ current tile position   (2)
-sheetcol= &7F                   \ sheet column counter
-sheetrow= &80                   \ sheet row counter
+scr      = &70                  \ screen destination        (2)
+chp      = &72                  \ charset source            (2)
+tdp      = &74                  \ tile definition source    (2)
+src      = &76                  \ RLE read pointer          (2)
+mapptr   = &78                  \ tile map write pointer    (2)
+rptTile  = &7A                  \ tile being repeated
+rptLen   = &7B                  \ repeat count
+rowscr   = &7C                  \ current row's screen base (2)
+maprow   = &7E                  \ current row's map base    (2)
+cy       = &80                  \ character row counter
+cx       = &81                  \ character column counter
+tilecol  = &82                  \ tile column within the row
+subcol   = &83                  \ character column within the tile, 0-3
+subbase  = &84                  \ (cy AND 3) * 4
 
 MACRO CRTC reg, val
   LDA #reg : STA CRTC_ADDR : LDA #val : STA CRTC_DATA
 ENDMACRO
 
-\ Add a 16-bit constant to a zero page pointer
 MACRO ADDPTR ptr, val
   CLC
   LDA ptr   : ADC #LO(val) : STA ptr
@@ -55,11 +60,9 @@ ENDMACRO
 ORG &1900
 .start
 
-\ ---- select MODE 1 -----------------------------------------
+\ ---- select MODE 1, cursor off -----------------------------
   LDA #22 : JSR OSWRCH
   LDA #1  : JSR OSWRCH
-
-\ ---- cursor off: VDU 23,1,0;0;0;0; -------------------------
   LDA #23 : JSR OSWRCH
   LDA #1  : JSR OSWRCH
   LDX #8
@@ -70,27 +73,24 @@ ORG &1900
   DEX
   BNE cursoff
 
-\ ---- logical colour 1 -> cyan ------------------------------
-\ The charset stores its foreground as logical colour 1, so a deck's
-\ colour scheme is just a palette change — as the C64 did via CharColor.
+\ ---- logical colour 1 -> cyan (deck 1's scheme) ------------
   LDA #19 : JSR OSWRCH
-  LDA #1  : JSR OSWRCH          \ logical colour 1
-  LDA #6  : JSR OSWRCH          \ physical cyan
+  LDA #1  : JSR OSWRCH
+  LDA #6  : JSR OSWRCH
   LDA #0  : JSR OSWRCH
   LDA #0  : JSR OSWRCH
   LDA #0  : JSR OSWRCH
 
-\ ---- reprogram CRTC for 320x200 based at &4000 -------------
-\ CRTC start address is the screen address / 8, so &4000 -> &0800.
-  CRTC 6,  25                   \ vertical displayed = 25 rows (200 lines)
-  CRTC 7,  31                   \ vsync position
-  CRTC 12, &08                  \ start address high
-  CRTC 13, &00                  \ start address low
+\ ---- CRTC: 320x200 based at &4000 --------------------------
+  CRTC 6,  25
+  CRTC 7,  31
+  CRTC 12, &08
+  CRTC 13, &00
 
 \ ---- clear the screen --------------------------------------
   LDA #LO(SCREEN) : STA scr
   LDA #HI(SCREEN) : STA scr+1
-  LDX #62                       \ 62 whole pages
+  LDX #62
   LDY #0
   LDA #0
 .clrpage
@@ -100,79 +100,173 @@ ORG &1900
   INC scr+1
   DEX
   BNE clrpage
-.clrtail                        \ + 128 = 16000 bytes
+.clrtail
   STA (scr),Y
   INY
   CPY #128
   BNE clrtail
 
-\ ---- draw the 32 tiles as an 8 x 4 sheet -------------------
-  LDA #LO(SHEET) : STA tileorg
-  LDA #HI(SHEET) : STA tileorg+1
-  LDA #0         : STA tnum
-  LDA #4         : STA sheetrow
-.sheet_row
-  LDA tileorg   : STA tilecur
-  LDA tileorg+1 : STA tilecur+1
-  LDA #8        : STA sheetcol
-.sheet_col
-  LDA tilecur   : STA scr
-  LDA tilecur+1 : STA scr+1
-  JSR draw_tile
-  INC tnum
-  ADDPTR tilecur, TILE_BYTES
-  DEC sheetcol
-  BNE sheet_col
-  ADDPTR tileorg, TILE_ROW
-  DEC sheetrow
-  BNE sheet_row
+\ ---- load the data file ------------------------------------
+\ This MUST happen after the mode change. VDU 22 makes the OS clear
+\ what it still believes is its screen, &3000-&7FFF, so any data
+\ living above &3000 at load time is wiped before we can read it.
+\ Code and the tile map sit below &3000 and survive; the converted
+\ graphics and level data are loaded separately, afterwards.
+  LDX #LO(loadcmd)
+  LDY #HI(loadcmd)
+  JSR OSCLI
+
+\ ---- build and draw ----------------------------------------
+  LDA #DECK
+  JSR BuildLevel
+  JSR DrawScreen
 
 .halt
   JMP halt
 
+.loadcmd
+  EQUS "LOAD PARADAT"
+  EQUB 13
+
 \ ============================================================
-\ draw_tile — plot one 4x4 character tile
-\   tnum = tile number (0-31), scr = top-left screen address
+\ BuildLevel â€” RLE-decode a deck into the tile map
+\   A = deck number (0-15)
+\
+\ RLE format, unchanged from the C64:
+\   bit 7 clear -> one tile, index in bits 0-4
+\   bit 7 set   -> tile index in bits 0-4, next byte is the count
+\ Decoding stops when the map is full. A count of 0 means 256,
+\ which falls out of decrementing after the store.
 \ ============================================================
-.draw_tile
-  \ tdp = tiledefs + tnum*16   (tiledefs is page aligned)
-  LDA tnum
+.BuildLevel
+  TAY
+  CLC
+  LDA deckOffsetLo,Y : ADC #LO(leveldata) : STA src
+  LDA deckOffsetHi,Y : ADC #HI(leveldata) : STA src+1
+
+  LDA #LO(tilemap) : STA mapptr
+  LDA #HI(tilemap) : STA mapptr+1
+
+.bl_next
+  LDY #0
+  LDA (src),Y
+  STA rptTile
+  BPL bl_single
+  INY                           \ bit 7 set: a count byte follows
+  LDA (src),Y
+  STA rptLen
+  ADDPTR src, 2
+  JMP bl_fill
+.bl_single
+  LDA #1
+  STA rptLen
+  ADDPTR src, 1
+.bl_fill
+  LDA rptTile
+  AND #&1F
+  STA rptTile
+  LDY #0
+.bl_put
+  LDA rptTile
+  STA (mapptr),Y
+  INC mapptr
+  BNE bl_nohi
+  INC mapptr+1
+.bl_nohi
+  LDA mapptr+1                  \ map full?
+  CMP #HI(tilemap_end)
+  BNE bl_more
+  LDA mapptr
+  CMP #LO(tilemap_end)
+  BEQ bl_done
+.bl_more
+  DEC rptLen
+  BNE bl_put
+  JMP bl_next
+.bl_done
+  RTS
+
+\ ============================================================
+\ DrawScreen â€” render the top-left of the tile map to the screen
+\
+\ For each character cell:
+\   tile      = tilemap[(cy>>2)*64 + (cx>>2)]
+\   character = tiledefs[tile*16 + (cy AND 3)*4 + (cx AND 3)]
+\ ============================================================
+.DrawScreen
+  LDA #LO(SCREEN)  : STA rowscr
+  LDA #HI(SCREEN)  : STA rowscr+1
+  LDA #LO(tilemap) : STA maprow
+  LDA #HI(tilemap) : STA maprow+1
+  LDA #0           : STA cy
+
+.ds_row
+  LDA cy                        \ subbase = (cy AND 3) * 4
+  AND #3
+  ASL A : ASL A
+  STA subbase
+
+  LDA rowscr   : STA scr
+  LDA rowscr+1 : STA scr+1
+  LDA #0 : STA tilecol
+  LDA #0 : STA subcol
+  LDA #0 : STA cx
+
+.ds_col
+  LDY tilecol                   \ tile = maprow[tilecol]
+  LDA (maprow),Y
+
+  \ tdp = tiledefs + tile*16   (tiledefs is page aligned)
+  PHA
   AND #&0F
   ASL A : ASL A : ASL A : ASL A
   STA tdp
-  LDA tnum
+  PLA
   LSR A : LSR A : LSR A : LSR A
   CLC : ADC #HI(tiledefs)
   STA tdp+1
 
-  LDA scr   : STA rowscr
-  LDA scr+1 : STA rowscr+1
-  LDA #0    : STA tdi
-  LDX #4                        \ 4 character rows
-.dt_row
-  LDA rowscr   : STA scr
-  LDA rowscr+1 : STA scr+1
-  LDA #4       : STA colcnt
-.dt_col
-  LDY tdi
+  LDA subbase                   \ character within the tile
+  CLC
+  ADC subcol
+  TAY
   LDA (tdp),Y
   JSR plot_char
-  INC tdi
+
   ADDPTR scr, CHAR_BYTES
-  DEC colcnt
-  BNE dt_col
+  INC subcol                    \ every 4 characters, step a tile
+  LDA subcol
+  CMP #4
+  BNE ds_nextcol
+  LDA #0
+  STA subcol
+  INC tilecol
+.ds_nextcol
+  INC cx
+  LDA cx
+  CMP #SCR_COLS
+  BNE ds_col
+
   ADDPTR rowscr, ROW_BYTES
-  DEX
-  BNE dt_row
+  INC cy
+  LDA cy
+  AND #3                        \ every 4 character rows, step a map row
+  BNE ds_samemap
+  ADDPTR maprow, MAP_COLS
+.ds_samemap
+  LDA cy
+  CMP #SCR_ROWS
+  BEQ ds_done
+  JMP ds_row
+.ds_done
   RTS
 
 \ ============================================================
-\ plot_char — copy one 16-byte character to the screen
+\ plot_char â€” copy one 16-byte character to the screen
 \   A = character code, scr = destination (preserved)
 \ ============================================================
 .plot_char
-  \ chp = charset + A*16   (charset is page aligned)
-  PHA
+  PHA                           \ chp = charset + A*16
   AND #&0F
   ASL A : ASL A : ASL A : ASL A
   STA chp
@@ -189,12 +283,30 @@ ORG &1900
   BPL pc_copy
   RTS
 
+.code_end
+
+\ ---- tile map: 64 x 16, one byte per tile -------------------
+\ Below &3000, so it survives the mode change. Built at runtime,
+\ so it is reserved rather than saved.
+ORG &1C00
+.tilemap
+  SKIP MAP_COLS * MAP_ROWS
+.tilemap_end
+
 \ ============================================================
-\ Generated data
+\ Generated data â€” loaded separately, after the mode change
 \ ============================================================
+ORG &2000
+.data_start
 INCLUDE "src/data/charset.asm"
 INCLUDE "src/data/tiledefs.asm"
+INCLUDE "src/data/levels.asm"
+.data_end
 
-.end
+PRINT "code    ", ~start, "-", ~code_end
+PRINT "tilemap ", ~tilemap, "-", ~tilemap_end
+PRINT "data    ", ~data_start, "-", ~data_end
+PRINT "charset ", ~charset, " tiledefs ", ~tiledefs, " levels ", ~leveldata
 
-SAVE "PARA", start, end, start
+SAVE "PARA",    start,      code_end, start
+SAVE "PARADAT", data_start, data_end

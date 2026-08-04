@@ -130,9 +130,43 @@ needs to compete for space with sprite data.
 **Verified:** `verify_bbc.py` passes 5/5 — charset round-trips to the original `$7800` bytes with
 no high nibble ever set; tile defs, RLE, deck offsets and metadata all byte-identical.
 
-### Layer 2 — Static deck render
-Port `BuildLevel` (RLE → tile buffer) and enough of `DrawScreen` to paint one deck. **Proves:**
-level data and tile pipeline are sound. Output: deck 1 on screen, motionless.
+### Layer 2 — Static deck render ✅ DONE
+`BuildLevel` RLE-decodes a deck into a tile map; `DrawScreen` renders the viewport from it.
+
+**Divergence from the C64 — the map buffer.** The original expands every tile into a 256×64
+*character* map at `$8000` (16K) and `DrawScreen` just copies characters from it to screen RAM.
+We keep only the **64×16 tile map (1K)** and expand tiles to characters at draw time:
+
+```
+tile      = tilemap[(cy>>2)*64 + (cx>>2)]
+character = tiledefs[tile*16 + (cy AND 3)*4 + (cx AND 3)]
+```
+
+Two extra lookups per character against a ~100-cycle 16-byte copy — roughly 25% more work when
+drawing, for a **15K saving**. Not a close call on a Model B. Scrolling only redraws the leading
+edge, so the overhead lands on a column of 25 characters, not the full screen.
+
+**Memory layout — code and data must be split across two disc files.** `VDU 22` makes the OS clear
+what it still believes is its screen, `&3000–&7FFF`. Anything loaded above `&3000` is wiped before
+it can be read. So:
+
+| File | Range | Contents |
+|---|---|---|
+| `PARA` | `&1900–&1ACE` | code |
+| — | `&1C00–&1FFF` | tile map (reserved, built at runtime) |
+| `PARADAT` | `&2000–&3F07` | charset, tile defs, level data — `*LOAD`ed *after* the mode change |
+
+This bites again at every later layer that adds data. The eventual fix is to stop using `VDU 22`
+and program the video ULA and CRTC directly, which we need anyway to keep the OS from clearing or
+scrolling our screen.
+
+**Verified:** `verify_bbc.py --tilemap <dump> <deck>` diffs a tile map dumped from the emulator
+against a fresh Python RLE decode. Deck 1 (226 non-empty tiles) and deck 3 (498) both match all
+1024 bytes, and both counts agree with `level_stats.txt`. Deck 3 was chosen deliberately — its RLE
+lives at `&3393`, above `&3000`, so it exercises the clear-on-mode-change bug above.
+
+*Note:* deck 1 masked that bug entirely. Its RLE sits at `&2DC0`, below `&3000`, so it rendered
+identically before and after the fix. Screenshot comparison alone would not have caught it.
 
 ### Layer 3 — Scroll spike ← *the decision point*
 Wide virtual buffer, CRTC R12/R13 hardware scroll, keyboard-driven. **Decide the scroll model here

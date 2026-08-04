@@ -37,9 +37,37 @@ def read_equb(path):
     return out
 
 
+def check_tilemap(mem, dump_path, deck):
+    """Diff a tile map dumped from the emulator against a fresh RLE decode."""
+    from rip_levels import decode_deck_rle
+    expected = decode_deck_rle(mem, deck)[:1024]
+    expected += [0] * (1024 - len(expected))
+    actual = list(open(dump_path, 'rb').read())
+
+    if len(actual) != 1024:
+        print('FAIL tilemap: dump is %d bytes, expected 1024' % len(actual))
+        return 1
+
+    diffs = [(i, e, a) for i, (e, a) in enumerate(zip(expected, actual)) if e != a]
+    if diffs:
+        print('FAIL tilemap: %d of 1024 bytes differ' % len(diffs))
+        for i, e, a in diffs[:8]:
+            print('       row %2d col %2d: expected %d, got %d'
+                  % (i // 64, i % 64, e, a))
+        return 1
+
+    used = sum(1 for b in actual if b)
+    print('OK   tilemap   deck %d: 1024 bytes match the RLE decode '
+          '(%d non-empty tiles)' % (deck, used))
+    return 0
+
+
 def main():
     mem, _ = parse_listing(LST_FILE)
     failures = 0
+
+    if len(sys.argv) > 2 and sys.argv[1] == '--tilemap':
+        return check_tilemap(mem, sys.argv[2], int(sys.argv[3]))
 
     # ---- charset: decode MODE 1 back to 1bpp -----------------------
     chars = read_equb(DATA_DIR / 'charset.asm')
