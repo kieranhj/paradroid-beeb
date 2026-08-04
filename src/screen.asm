@@ -24,15 +24,8 @@
 \ is exactly one stored half-character. No pre-shifted data.
 \ ============================================================
 
-BUF_BASE   = &5800
-BUF_SIZE   = 10240              \ 16 rows x 640
-BUF_END    = BUF_BASE + BUF_SIZE
-PLAY_UNITS = 80                 \ CRTC units across (4 px each) = 320 px
-PLAY_ROWS  = 16                 \ character rows = 128 px
-UNIT_BYTES = 8
-ROW_BYTES  = 640
-
-VIA_PORTB  = &FE40
+\ Geometry constants live in main.asm — beebasm resolves constant
+\ assignments in file order, and rupture.asm needs them too.
 
 \ ============================================================
 \ SetupScreen — MODE 1 geometry with a 10K wrap at &5800
@@ -61,19 +54,41 @@ VIA_PORTB  = &FE40
   STA VIA_PORTB
 
   CRTC 1,  PLAY_UNITS           \ 80 units = 320 px displayed
-  CRTC 6,  PLAY_ROWS            \ 16 character rows = 128 px
-  CRTC 7,  30                   \ vsync position, re-centres the short frame
+
+\ R8 = 0: non-interlaced. The OS leaves MODE 1 at R8=1 (interlace
+\ sync), which offsets VSync by half a scanline on alternate fields.
+\ Our rupture timers are fixed intervals from VSync, so that half
+\ line makes the split land in a different place every other field
+\ — an intermittent glitch along the top of the play area.
+  CRTC 8,  0
+
+\ Start in the cycle-2 configuration; the rupture IRQ takes over
+\ from the next VSync and drives both cycles from then on.
+  CRTC 4,  CYCLE2_R4
+  CRTC 6,  PLAY_ROWS
+  CRTC 7,  CYCLE2_R7
 
   LDA #0                        \ start at the bottom of the buffer
   STA scrollS
   STA scrollS+1
   JSR SetCRTCStart
+
+  LDA #12 : STA CRTC_ADDR : LDA crtcHi : STA CRTC_DATA
+  LDA #13 : STA CRTC_ADDR : LDA crtcLo : STA CRTC_DATA
+
+  JSR FillPanel
+  JSR RuptInit
   RTS
 
 \ ============================================================
 \ SetCRTCStart — program R12/R13 from scrollS
 \ CRTC start = physical address / 8.
 \ ============================================================
+\ With rupture running, R12/R13 belong to the IRQ — it latches the
+\ panel address at VSync and the play address one cycle later. So
+\ this only computes the value and parks it for the IRQ to pick up.
+\ SEI around the store: the IRQ reads the pair ~5 rows after VSync
+\ and must not see a half-updated address.
 .SetCRTCStart
   CLC                           \ addr = BUF_BASE + scrollS
   LDA scrollS   : ADC #LO(BUF_BASE) : STA sTmp
@@ -86,10 +101,10 @@ VIA_PORTB  = &FE40
   DEX
   BNE sc_shift
 
-  LDA #12 : STA CRTC_ADDR
-  LDA sTmp+1 : STA CRTC_DATA
-  LDA #13 : STA CRTC_ADDR
-  LDA sTmp   : STA CRTC_DATA
+  SEI
+  LDA sTmp+1 : STA crtcHi
+  LDA sTmp   : STA crtcLo
+  CLI
   RTS
 
 \ ============================================================

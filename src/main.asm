@@ -28,6 +28,63 @@ MAP_ROWS   = 16
 MAP_CHAR_W = MAP_COLS * 4       \ 256 characters across
 MAP_CHAR_H = MAP_ROWS * 4       \ 64 character rows
 
+\ ---- debug build options ------------------------------------
+\ DEBUG_RASTER tints the background at entry to each rupture
+\ interrupt, so the scanline each one lands on is visible:
+\   magenta  from the VSync IRQ
+\   green    from the cycle 1 IRQ (top of frame)
+\   normal   from the cycle 2 IRQ (play area restored)
+\ The boundaries between bands ARE the interrupt points.
+DEBUG_RASTER = FALSE
+
+\ ---- screen geometry ---------------------------------------
+\ These live here rather than in screen.asm/rupture.asm because
+\ beebasm resolves constant assignments in file order, and both
+\ of those files need them.
+BUF_BASE   = &5800              \ 10K play buffer, wraps at &8000
+BUF_SIZE   = 10240              \ 16 rows x 640
+BUF_END    = BUF_BASE + BUF_SIZE
+PLAY_UNITS = 80                 \ CRTC units across (4 px each) = 320 px
+PLAY_ROWS  = 16                 \ character rows = 128 px
+UNIT_BYTES = 8
+ROW_BYTES  = 640
+VIA_PORTB  = &FE40
+
+\ ---- vertical rupture: two CRTC cycles per frame ------------
+PANEL_ADDR  = &4800             \ below &5800, clear of the play buffer
+PANEL_ROWS  = 5                 \ rows of title
+PANEL_GAP   = 3                 \ blank rows below it, as on the C64
+PANEL_BYTES = PANEL_ROWS * ROW_BYTES
+PANEL_START = PANEL_ADDR / 8    \ what R12/R13 wants
+
+CYCLE1_ROWS = PANEL_ROWS + PANEL_GAP
+CYCLE1_R4   = CYCLE1_ROWS - 1
+CYCLE2_ROWS = 39 - CYCLE1_ROWS
+CYCLE2_R4   = CYCLE2_ROWS - 1
+CYCLE2_R7   = CYCLE2_ROWS - 5   \ VSync 5 rows before the cycle ends
+
+\ System VIA T1 in CONTINUOUS mode drives the rupture stages.
+\
+\ T2 was the wrong choice: it is one-shot only, so the interval
+\ starts when the handler writes T2C-H and every interrupt's
+\ service latency feeds straight into the next interval — jitter
+\ accumulates. T1 continuous auto-reloads from its latch at
+\ underflow, so the period is exact however late we are serviced.
+\
+\ One period = 8 char rows. VSync is 5 rows before cycle 2 ends,
+\ so the first fire lands 3 rows into cycle 1; cycle 1 is 8 rows,
+\ so the second lands 3 rows into cycle 2. Both sit ~4 rows clear
+\ of the deadline (C4 reaching the old R4 of 7). Later fires in
+\ the frame are ignored.
+T1_PERIOD    = 8 * 512 - 2      \ fires N+2 us after start
+
+SYS_VIA_T1CL = &FE44
+SYS_VIA_T1CH = &FE45
+SYS_VIA_T1LL = &FE46
+SYS_VIA_ACR  = &FE4B
+SYS_VIA_IER  = &FE4E
+USR_VIA_IER  = &FE6E
+
 VIEW_CHARS = 40                 \ 320 px / 8
 MAX_HX     = (MAP_CHAR_W - VIEW_CHARS) * 2      \ 432 half-characters
 MAX_Y      = MAP_CHAR_H - 16                    \ 48 rows
@@ -94,11 +151,13 @@ ORG &1100
 .start
 
   JSR SetupScreen
-  JSR InstallIrq
 
   LDX #LO(loadcmd)              \ must follow the mode change: VDU 22
   LDY #HI(loadcmd)              \ clears what the OS thinks is its screen
   JSR OSCLI
+
+  JSR InstallIrq                \ after the load: taking over the IRQ stops
+                                \ the MOS servicing the filing system
 
   LDA #1 : STA deck
   LDA #0
@@ -219,24 +278,60 @@ ORG &1100
 \ The MOS saves the interrupted A in &FC before dispatching, so A
 \ is free here as long as it is restored before chaining on.
 \ ============================================================
+\ We own IRQ1V outright — nothing is passed on to the MOS, so its
+\ handler never adds latency ahead of ours. Cost: the MOS 100 Hz
+\ tick stops, which takes its sound with it. Keyboard still works
+\ (OSBYTE &81 scans the matrix directly) and the filing system is
+\ only used before we take over.
+\
+\ The MOS saves the interrupted A in &FC before dispatching but
+\ does NOT save X or Y, so we must.
 .IrqHandler
+  TXA : PHA
+  TYA : PHA
+
+  LDA SYS_VIA_IFR
+  AND #&40                      \ T1 — the rupture stage timer
+  BEQ ih_notT1
+  LDA SYS_VIA_T1CL              \ acknowledge
+  JSR RuptTimer
+  JMP ih_done
+.ih_notT1
   LDA SYS_VIA_IFR
   AND #2                        \ CA1 — vsync
-  BEQ ih_chain
+  BEQ ih_done
+  LDA #2
+  STA SYS_VIA_IFR               \ acknowledge
   INC vsyncCount
-.ih_chain
+  JSR RuptVSync
+
+.ih_done
+  PLA : TAY
+  PLA : TAX
   LDA &FC                       \ restore the interrupted accumulator
-  JMP (oldIrq1V)
+  RTI
+
 
 \ ============================================================
 \ InstallIrq — put IrqHandler at the head of IRQ1V
 \ ============================================================
 .InstallIrq
   SEI
+  LDA #&7F : STA SYS_VIA_IER    \ silence every interrupt source on both
+  LDA #&7F : STA USR_VIA_IER    \ VIAs — anything we do not service would
+                                \ hold the IRQ line asserted forever
   LDA IRQ1V   : STA oldIrq1V
   LDA IRQ1V+1 : STA oldIrq1V+1
   LDA #LO(IrqHandler) : STA IRQ1V
   LDA #HI(IrqHandler) : STA IRQ1V+1
+
+  LDA SYS_VIA_ACR               \ T1 continuous, no PB7 output
+  AND #&3F
+  ORA #&40
+  STA SYS_VIA_ACR
+
+  LDA #&7F : STA SYS_VIA_IFR    \ clear anything pending
+  LDA #&C2 : STA SYS_VIA_IER    \ enable CA1 (vsync) + T1
   CLI
   RTS
 
@@ -257,6 +352,7 @@ ORG &1100
   JSR RedrawAll
   RTS
 
+INCLUDE "src/rupture.asm"
 INCLUDE "src/screen.asm"
 INCLUDE "src/scroll.asm"
 INCLUDE "src/level.asm"

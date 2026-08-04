@@ -456,7 +456,79 @@ fits in a frame, so it was left alone — but the same hoisting applies if the s
 squeezes the budget (`halfX` is constant down a column, so the character and tile lookups are
 constant too; only the row base changes).
 
-#### 3c — Decide the scroll model
+#### 3c — Vertical rupture: static panel + scrolled play area ✅ DONE
+
+Two CRTC cycles per TV frame. Reprogramming R4 mid-frame ends a cycle early; the next cycle
+reloads VMA from R12/R13, so each cycle has its own screen start.
+
+| Cycle | Content | R4 | Rows | R6 | R7 | R12/R13 |
+|---|---|---|---|---|---|---|
+| 1 | static panel | 7 | 8 | 5 | 255 (suppressed) | `&4800 / 8` |
+| 2 | scrolled play area | 30 | 31 | 16 | 26 | `(&5800 + scrollS) / 8` |
+| | | | **39 ✓** | | | |
+
+Cycle 1 shows 5 rows of panel then 3 blank — the same title-plus-gap the C64 has above its play
+area. `Σ(R4+1)` must total 39 rows / 312 scanlines or the picture rolls.
+
+**Consistency check:** VSync lands at frame row `8 + 26 = 34`, which is MODE 1's default R7, so the
+TV sees an identically phased frame and stays locked.
+
+**Staging: System VIA T1 in CONTINUOUS mode, and we own IRQ1V outright.**
+
+T2 was the wrong timer. It is one-shot only, so the interval starts when the handler writes
+`T2C-H` — every interrupt's service latency feeds straight into the next interval and jitter
+accumulates. T1 continuous auto-reloads from its latch at underflow, so the period is exact
+however late we are serviced. VSync restarts it, keeping the stages phase-locked to the frame.
+
+Nothing is chained on to the MOS either, so its handler never runs ahead of ours adding latency.
+The cost is the MOS 100 Hz tick, and with it MOS sound. Keyboard still works (OSBYTE `&81` scans
+the matrix directly) and the filing system is only needed before we take over — hence `*LOAD` now
+runs *before* `InstallIrq`.
+
+Both VIAs have every interrupt source disabled except System VIA CA1 and T1; anything unserviced
+would hold the IRQ line asserted forever. The MOS saves the interrupted A in `&FC` but not X or Y,
+so the handler saves those itself.
+
+One period = 8 char rows, giving a three-state machine on the IRQ:
+
+1. **VSync (CA1)** — inside cycle 2, five rows from its end. Latch R12/R13 = panel. Arm T2 for
+   2560 ticks.
+2. **T2, inside cycle 1** — set R4/R6/R7 for the panel, queue R12/R13 = play area. Arm T2 for
+   4096 ticks.
+3. **T2, inside cycle 2** — set R4/R6/R7 for the play area. Wait for VSync.
+
+Timing is generous: the interrupt only has to land inside its cycle before `C4` reaches the target
+R4. (The `C0<2` write window quoted for R4 applies to single-scanline RVI work, not here — KC.)
+
+**Both waits deliberately overshoot the boundary by 3 rows.** Sizing them to reach the boundary
+exactly is what glitched: IRQ latency alone carried them over, so any jitter fired them in the
+*previous* cycle, where writing that cycle's R4 breaks the field. Overshooting costs nothing — the
+deadline is `C4` reaching the old R4 (7), so arriving 3 rows in leaves ~4 rows of slack either side.
+
+**`DEBUG_RASTER` build flag** tints the background at entry to each interrupt — magenta at VSync,
+green at cycle 1, the deck's real colour at cycle 2 — so the scanline each one lands on is visible
+and the band boundaries *are* the interrupt points. This is what diagnosed the margin problem;
+reasoning about it from the timing numbers had led me the wrong way. Set `FALSE` for a clean
+picture.
+
+`SetCRTCStart` no longer writes R12/R13; it computes the address and parks it for the IRQ, with
+`SEI` around the store so the IRQ can't read a half-updated pair.
+
+**Interlace must be off — `R8 = 0`.** The OS leaves MODE 1 at `R8 = 1`, *interlace sync*, which
+offsets VSync by half a scanline on alternate fields. The rupture timers are fixed intervals from
+VSync, so that half line lands the split in a different place every other field — an intermittent
+glitch along the top of the play area. Non-interlaced is what a game wants anyway.
+
+**Verified:** panel holds position exactly while the play area scrolls on both axes, and
+consecutive fields render identically with interlace off.
+
+*Placeholder:* the panel is a bordered box, not artwork. Real title/HUD content is a later layer.
+
+*Known limitation:* the panel shares the play area's 4-colour palette, so its colours change with
+the deck. Fixable by reprogramming the palette at the cycle boundary — we are already in the IRQ
+there — but that needs the panel's colour needs settled first.
+
+#### 3d — Decide the scroll model
 Wide virtual buffer, CRTC R12/R13 hardware scroll, keyboard-driven. **Decide the scroll model here
 and record it in this document.** Everything downstream depends on the map buffer layout.
 
