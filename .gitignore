@@ -23,5 +23,9 @@ tools/output/
 # level data, so copyright as above. Regenerate it; do not commit it.
 src/data/
 
+# ---- Python ----
+__pycache__/
+*.pyc
+
 # ---- Local editor / agent settings ----
 .claude/settings.local.json
