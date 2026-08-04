@@ -117,23 +117,161 @@ ENDMACRO
 \ DrawRow — redraw one character row, all 80 columns
 \   rCount = the row
 \ ============================================================
+\ Everything that is constant across a row is hoisted out: cellY does
+\ not change, so the tile-map row base and the sub-row offset are
+\ fixed, and the tile pointer only moves every 4 characters. The
+\ character code is fetched once per PAIR of units, because a
+\ character is two 4-pixel halves — 40 lookups instead of 80.
+\
+\ Reuses zero page belonging to DrawHalf/MapChar, which this routine
+\ deliberately does not call.
+dhp     = halfX                 \ working source pointer  (2)
+charIdx = cellX                 \ map column, characters
+subCol  = cellX+1               \ character within the tile, 0-3
+subBase = mcTmp                 \ (cellY AND 3) * 4
+
 .DrawRow
-  LDA #0 : STA uCount
-.dr_loop
-  JSR SetCell
-
-  CLC
-  LDA mapHX   : ADC uCount : STA halfX
-  LDA mapHX+1 : ADC #0     : STA halfX+1
-  CLC
+  CLC                           \ cellY = mapYr + rCount
   LDA mapYr : ADC rCount : STA cellY
-  JSR DrawHalf
 
+  AND #3                        \ subBase = (cellY AND 3) * 4
+  ASL A : ASL A
+  STA subBase
+
+  LDA cellY                     \ maprow = tilemap + (cellY>>2)*64
+  LSR A : LSR A
+  PHA
+  AND #3
+  ASL A : ASL A : ASL A : ASL A : ASL A : ASL A
+  STA maprow
+  PLA
+  LSR A : LSR A
+  CLC : ADC #HI(tilemap)
+  STA maprow+1
+
+  LDA mapHX+1                   \ charIdx = mapHX >> 1  (<= 216, one byte)
+  LSR A
+  LDA mapHX
+  ROR A
+  STA charIdx
+  LDA mapHX                     \ halfSel = mapHX AND 1
+  AND #1
+  STA halfSel
+
+  LDA charIdx                   \ subCol = charIdx AND 3
+  AND #3
+  STA subCol
+  LDA charIdx                   \ tileCol = charIdx >> 2
+  LSR A : LSR A
+  STA drTileCol
+  JSR SetTilePtr
+
+  JSR FetchChar                 \ the row may start on a RIGHT half, and the
+                                \ dr_right path reads chp without setting it,
+                                \ so it must be primed before the loop
+
+  LDA #0 : STA uCount
+  JSR SetCell                   \ start of the row
+
+.dr_loop
+  LDA halfSel
+  BNE dr_right
+
+  JSR FetchChar                 \ left half: fetch the character
+  LDA chp   : STA dhp
+  LDA chp+1 : STA dhp+1
+  JMP dr_copy
+
+.dr_right                       \ right half of the same character
+  CLC
+  LDA chp   : ADC #8 : STA dhp
+  LDA chp+1 : ADC #0 : STA dhp+1
+
+.dr_copy
+  LDY #7
+.dr_cp
+  LDA (dhp),Y
+  STA (bufp),Y
+  DEY
+  BPL dr_cp
+
+  CLC                           \ next 4-pixel column, wrapping the strip
+  LDA bufp : ADC #UNIT_BYTES : STA bufp
+  BCC dr_nohi
+  INC bufp+1
+.dr_nohi
+  LDA bufp+1
+  CMP #HI(BUF_END)
+  BCC dr_nowrap
+  BNE dr_wrap
+  LDA bufp
+  CMP #LO(BUF_END)
+  BCC dr_nowrap
+.dr_wrap
+  SEC
+  LDA bufp   : SBC #LO(BUF_SIZE) : STA bufp
+  LDA bufp+1 : SBC #HI(BUF_SIZE) : STA bufp+1
+.dr_nowrap
+
+  LDA halfSel                   \ advance half, then character, then tile
+  EOR #1
+  STA halfSel
+  BNE dr_next                   \ still the same character
+  INC subCol
+  LDA subCol
+  CMP #4
+  BNE dr_next
+  LDA #0 : STA subCol
+  INC drTileCol
+  JSR SetTilePtr
+
+.dr_next
   INC uCount
   LDA uCount
   CMP #PLAY_UNITS
-  BNE dr_loop
+  BEQ dr_done
+  JMP dr_loop
+.dr_done
   RTS
+
+\ ============================================================
+\ FetchChar — chp = charset entry for the current map character
+\ Uses tdp, subBase, subCol.
+\ ============================================================
+.FetchChar
+  LDA subBase
+  CLC : ADC subCol
+  TAY
+  LDA (tdp),Y
+  TAX
+  LDA charRemap,X               \ only used characters are converted
+  PHA
+  AND #&0F
+  ASL A : ASL A : ASL A : ASL A
+  STA chp
+  PLA
+  LSR A : LSR A : LSR A : LSR A
+  CLC : ADC #HI(charset)
+  STA chp+1
+  RTS
+
+\ ============================================================
+\ SetTilePtr — tdp = tiledefs + tilemap[drTileCol]*16
+\ ============================================================
+.SetTilePtr
+  LDY drTileCol
+  LDA (maprow),Y
+  PHA
+  AND #&0F
+  ASL A : ASL A : ASL A : ASL A
+  STA tdp
+  PLA
+  LSR A : LSR A : LSR A : LSR A
+  CLC : ADC #HI(tiledefs)
+  STA tdp+1
+  RTS
+
+.drTileCol EQUB 0
 
 \ ============================================================
 \ ScrollRight — view moves right by 4 px

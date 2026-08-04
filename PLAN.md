@@ -387,22 +387,74 @@ frames with the key held:
 | horizontal, 16 cells | **10** | 1 frame/step — vsync-locked |
 | vertical, 80 cells | **4** | ~2.5 frames/step — overruns the frame |
 
-**`SetCell` loop replaced with lookup tables** (`rowMulLo/Hi`, `unitMulLo/Hi`). It previously added
-640 in a loop — for `DrawRow` a constant 15 iterations × 80 cells, ~1200 redundant 16-bit adds.
+#### Vertical scroll optimisation ✅ — both axes now frame-locked
 
-*Result: less than predicted.* Vertical went from 4 to **5 steps per 10 frames** (2.5 → 2.0
-frames/step); horizontal unchanged at 10. So `SetCell` was **not** the dominant cost — that
+Two changes, and the first was much less useful than predicted:
+
+**1. `SetCell` loop → lookup tables** (`rowMulLo/Hi`, `unitMulLo/Hi`). It previously added 640 in a
+loop: for `DrawRow` a constant 15 iterations × 80 cells, ~1200 redundant 16-bit adds. Vertical went
+4 → **5** steps per 10 frames. Real, but small — `SetCell` was *not* the dominant cost, so that
 diagnosis was wrong.
 
-**Where the time actually goes.** `OSBYTE 19` quantises to whole frames, so a step costs 1 frame if
-the work fits and 2 if it spills over by any amount. Vertical is sitting just above the boundary —
-the remaining gap is small, and crossing it jumps straight from 5 to 10 steps.
+**2. `DrawRow` rewritten to hoist per-row constants.** `cellY` does not change across a row, so the
+tile-map row base and sub-row offset are fixed; the tile pointer only moves every 4 characters; and
+crucially **the character code is fetched once per pair of units**, because a character is two
+4-pixel halves — 40 lookups instead of 80, with the right half just `chp + 8`. `DrawRow` no longer
+calls `DrawHalf`/`MapChar` at all, and reuses their zero page. Vertical went 5 → **10**.
 
-The likely culprit is `MapChar`, which per cell recomputes the tile-map row base (shifts, adds, a
-16-bit pointer build) and then the tile-definition pointer. For `DrawRow` `cellY` is *constant*, so
-the row base is identical for all 80 cells and recomputed 80 times. Hoisting it — and the tile
-pointer, which only changes every 4 cells — should get under one frame. Still deferred, but now
-pointed at the right routine.
+| | steps in 10 frames | |
+|---|---|---|
+| horizontal, 16 cells | 10 | unchanged |
+| vertical, 80 cells | **10** | was 4 |
+
+**The lesson worth keeping:** because vsync quantises to whole frames, a step costs 1 frame or 2
+with nothing between. Vertical was never 2× too slow — it was a few thousand cycles over the line,
+which is why the small first fix moved nothing and the second moved everything.
+
+#### ⚠ KNOWN DEFECT — `DrawRow`, from its 6th tile onward
+
+Not fully fixed. After scrolling to an **odd** unit and then scrolling vertically, the row
+`DrawRow` last drew is correct to unit 38 and wrong from unit 39 — the point where its 6th tile
+begins. 41 cells, verified by diffing against `RedrawAll` *and* independently against the tile map,
+so it is `DrawRow` that is wrong, not the reference. The bad bytes are valid charset data but match
+no character in the correct tile row, so `maprow`/`tdp` has drifted by that point. Root cause not
+isolated.
+
+Accepted for now — KC tested and found it acceptable in practice. If it resurfaces, the pragmatic
+fix is to revert `DrawRow` to the pre-optimisation version (simple, diffed clean) and lose the
+vertical frame-lock, then redo the optimisation with the diff harness driven over odd *and* even
+offsets from the outset.
+
+**Testing lesson.** Two earlier runs of that harness reported 0 differing bytes and were worthless:
+both used an even number of horizontal steps (30 and 300), so `halfSel` was always 0 and the odd
+path never executed. The harness was sound; the inputs never reached the failing case. Any future
+scroll test must cover odd and even offsets on both axes.
+
+#### Bug: corrupted graphics that scrolling revealed but did not cause
+
+`DrawHalf` computed `halfX >> 1` by shifting `halfX+1` in place and "restoring" it with `ASL`.
+`LSR` then `ASL` only restores a value whose low bit was 0, so whenever `halfX+1` was 1 it came
+back as 0.
+
+`DrawColumn` recomputes `halfX` from `mapHX + uCount` every cell and was immune. Only `RedrawAll`,
+which sets `halfX` once and increments it across the row, was affected — so the damage was written
+**at deck load** and then persisted indefinitely, because incremental scrolling only redraws the
+edges and never repairs the interior. Scrolling exposed it rather than caused it.
+
+Triggers when `mapHX + 79` crosses 256 — **decks 2 and 14**, both centring at `mapHX` = 180.
+
+*Diagnostic worth keeping:* a debug key (SPACE) forces `RedrawAll`, so the incremental buffer can be
+diffed against a full redraw at the same position. Both then matched byte-for-byte — after
+right/down/left, and after scrolling to the extremes with the buffer wrapping repeatedly — which
+proved the scroll logic correct and pointed at the load-time draw instead.
+
+*Not a bug:* the large flat areas on some decks are genuine. Empty tiles (index 0) are all
+character 0, which renders as solid background. Verified against the tile map.
+
+`DrawColumn` still uses the general `DrawHalf`/`MapChar` path. It only touches 16 cells and already
+fits in a frame, so it was left alone — but the same hoisting applies if the sprite blitter later
+squeezes the budget (`halfX` is constant down a column, so the character and tile lookups are
+constant too; only the row base changes).
 
 #### 3c — Decide the scroll model
 Wide virtual buffer, CRTC R12/R13 hardware scroll, keyboard-driven. **Decide the scroll model here

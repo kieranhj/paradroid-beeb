@@ -128,14 +128,13 @@ VIA_PORTB  = &FE40
 \   bufp  = destination
 \ ============================================================
 .DrawHalf
-  LDA halfX                     \ character = halfX >> 1
-  LSR halfX+1
+  LDA halfX+1                   \ cellX = halfX >> 1, without disturbing halfX
+  LSR A
+  STA cellX+1
+  LDA halfX
   ROR A
   STA cellX
-  LDA halfX+1
-  STA cellX+1
-  ASL halfX+1                   \ restore halfX+1 (only the low bit of
-  LDA halfX                     \ halfX matters for the half select)
+  LDA halfX
   AND #1
   STA halfSel
 

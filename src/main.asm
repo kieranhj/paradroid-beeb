@@ -47,6 +47,7 @@ KEY_K      = &B9                \ -71
 KEY_M      = &9A                \ -102
 KEY_UP     = &C6                \ -58
 KEY_DOWN   = &D6                \ -42
+KEY_SPACE  = &9D                \ -99
 
 \ ---- zero page (user area &70-&8F, all 32 bytes used) ------
 bufp     = &70                  \ buffer write pointer      (2)
@@ -175,6 +176,12 @@ ORG &1100
 .ml_dnOff
   LDA #0 : STA prevDn
 .ml_notDn
+
+  LDX #KEY_SPACE                \ DEBUG: force a full redraw, to compare
+  JSR keydown                   \ the incremental edge draws against it
+  BNE ml_notSpc
+  JSR RedrawAll
+.ml_notSpc
 
   JMP mainloop
 
