@@ -2,13 +2,51 @@
 
 Living document. Revised as each layer lands.
 
+## Where we are — read this first
+
+**Layers 0–3 are done.** The port boots to a scrolling deck browser: a static panel above a
+320 × 120 play area that hardware-scrolls 8 ways, 4 px horizontally and 1 scanline vertically, both
+axes locked to one step per frame. 16 decks, per-deck palette and charset built at load time.
+Keys: Z/X left/right, K/M up/down, cursor up/down change deck, SPACE forces a full redraw.
+
+**Next up: Layer 4, the sprite blitter.** It is the layer that decides whether the port performs.
+
+Three things Layer 4 has to know before a line of it is written:
+
+1. **Display row 0 is a split row** — it can hold two map rows at once, in disjoint scanline
+   ranges. Anything writing whole cells into it must repair scanlines `0..line-1` from map row
+   `mapYr+16`, the way `DrawColumn` and `RedrawAll` do. This has already caused one bug.
+2. **The draw window is frame rows 23 → 8 of the next frame**, released by `drawFlag` at `P+184`
+   when the play area stops displaying. Sprites share it with the edge redraws.
+3. **Sideways RAM has to start being used.** Only ~2.3 K is free below the screen.
+
+**Verification that actually works here:** diff the play buffer against `RedrawAll` at the same
+position (SPACE), byte for byte. Screenshots have repeatedly said "fine" when it was not. Drive it
+over **odd and even** `mapHX`, **non-zero `line`**, and **diagonals** — every scrolling bug so far
+has hidden in one of those. Allow ~1,500,000 cycles to settle before dumping, or the oracle is
+sampled mid-redraw.
+
+**Open items, in the order they are likely to bite:**
+
+| | |
+|---|---|
+| Play area is 320 × 120, not 128 | Consequence of the single hardware wrap — see Layer 3d. Getting the row back needs the 20K wrap or per-cycle wrap bits. **KC's call.** |
+| Vertical granularity | 1 scanline against 4 px horizontal is lopsided. 2 or 4 scanlines costs nothing extra. Decide when there is a droid to move. |
+| `$D021` is an assumption | Marked `[assumed]` in `export_bbc.py`. First suspect if deck colours look wrong on hardware. |
+| Panel shares the play palette | Its colours change with the deck. Fixable at the cycle boundary — we are already in the IRQ there. Layer 9. |
+| `keydown` uses OSBYTE `&81` | The last OS call in the main loop. |
+| 8 decks draw ALERT in multicolour | Confirmed faithful to Redux, not a bug. Worth a look on real hardware. |
+
 ## Decisions taken
 
 | Decision | Choice | Date |
 |---|---|---|
 | Target machine | BBC Model B / B+ with **2 × 16K sideways RAM banks** | 2026-08-04 |
-| Screen mode | MODE 1, 320×200, 4 colours, 16K wrap at `&4000–&7FFF` | 2026-08-04 |
-| Scrolling | **Undecided** — to be proven by spike in Layer 3 | 2026-08-04 |
+| Screen mode | MODE 1, 4 colours, **10K wrap at `&5800–&7FFF`** | 2026-08-04 |
+| Screen layout | 3-cycle vertical rupture: 5-row panel at `&4800`, 3-row gap, scrolled play area | 2026-08-05 |
+| Play area | **320 × 120** — 10 tiles wide, 15 character rows. See Layer 3d for why not 128. | 2026-08-05 |
+| Scrolling | CRTC hardware scroll over a circular strip. **4 px horizontal, 1 scanline vertical.** | 2026-08-05 |
+| Interrupts | We own IRQ1V outright, System VIA T1 continuous. No MOS chaining, no MOS sound. | 2026-08-04 |
 | Architecture | No HAL. Build one working layer at a time, verified in the emulator before moving on. | 2026-08-04 |
 
 ### Why MODE 1
@@ -59,15 +97,27 @@ Decide explicitly before Layer 6 whether the target is Redux fidelity or origina
 
 ## Memory budget
 
+**As actually built** (addresses from the `beebasm` output, not planned):
+
 | Region | Size | Contents |
 |---|---|---|
-| ZP (`&00–&8F`, `&A8–&AF`) | ~150 B | hot game variables. C64 used ~206 B — the excess demotes to page 4. |
+| ZP `&70–&8F` | 32 B | all used — see the map in `main.asm` |
 | `&0100–&01FF` | 256 B | stack |
-| `&0400–&0CFF` | ~2.2 K | reclaimed OS workspace: BASIC, sound/printer buffers, UDK, UDC |
-| `&0E00–&3FFF` | 12.5 K | main code + resident data (requires DFS displaced after load) |
-| `&4000–&7FFF` | 16 K | MODE 1 screen, 320×200 |
-| SWRAM bank 0 | 16 K | converted tiles, sprites, level RLE, metadata |
-| SWRAM bank 1 | 16 K | paged code: transfer minigame, console/info screens, side view |
+| `&0400–&0CFF` | ~2.2 K | reclaimed OS workspace — **not yet used** |
+| `&1100–&1DB8` | 3.2 K | code (`PARA`). DFS random-access buffer space, safe for `*LOAD` |
+| `&1E00–&21FF` | 1 K | tile map, built at deck load |
+| `&2200–&2A8F` | 2192 B | MODE 1 charset, built at deck load |
+| `&2A90–&2FFF` | **1.4 K free** | |
+| `&3000–&4707` | 5.8 K | `PARADAT`: C64 char data, colour schemes, tile defs, deck RLE |
+| `&4800–&547F` | 3.2 K | panel — 5 rows × 640, displayed by rupture cycle 1 |
+| `&5480–&57FF` | **~900 B free** | |
+| `&5800–&7FFF` | 10 K | play buffer: circular strip, 16 rows × 640 |
+| SWRAM bank 0 | 16 K | **unused so far** — sprites, and data displaced from `&3000` |
+| SWRAM bank 1 | 16 K | **unused so far** — paged code: transfer minigame, console, side view |
+
+Only ~2.3 K is free below the screen, so **Layer 4 is where sideways RAM has to start being used**.
+The obvious first move is `PARADAT` into bank 0, which frees `&3000–&4707` — but note the deck RLE
+and colour tables are read during `LoadDeck`, so whatever pages them in has to be resident.
 
 Open risk: sprite data in MODE 1 with pre-shifted copies runs 30–60K depending on how many shift
 variants and whether masks are stored or generated. May force a third bank or runtime shifting.
@@ -92,13 +142,10 @@ Each layer ends with something visibly working in b-em. Nothing moves on until i
   Solid colour 0/1/2/3 = `&00`/`&0F`/`&F0`/`&FF`.
 - DFS filenames are max 7 chars — the disc file is `PARA`, not `PARADROID`.
 
-Outstanding niggle: the display sits slightly low; R7 wants a nudge. Deferred — final geometry
-changes at Layer 9 anyway (see below).
-
-**RAM reclaim opportunity (from KC):** Paradroid's layout is a static title bar at the top, a gap,
-then the active play area. The play area needs far fewer than 25 char rows, so R6 can shrink
-further and hand back more of `&4000–&7E7F`. Quantify once the HUD split is designed; it may
-relieve the sprite-data budget without touching the mode choice.
+> Superseded by Layers 3b–3d. The screen is no longer a 16K MODE 1 frame at `&4000`: it is a 10K
+> circular strip at `&5800` with a panel at `&4800`, driven by a three-cycle rupture. The
+> "RAM reclaim opportunity" noted here was taken — shrinking the displayed area handed back
+> `&3000–&57FF`, which is where the level data and panel now live.
 
 ### Layer 1 — Graphics data pipeline ✅ DONE
 `tools/export_bbc.py` emits BeebASM sources into `src/data/` (gitignored — converted game
@@ -273,15 +320,18 @@ edge, so the overhead lands on a column of 25 characters, not the full screen.
 what it still believes is its screen, `&3000–&7FFF`. Anything loaded above `&3000` is wiped before
 it can be read. So:
 
-| File | Range | Contents |
-|---|---|---|
-| `PARA` | `&1900–&1ACE` | code |
-| — | `&1C00–&1FFF` | tile map (reserved, built at runtime) |
-| `PARADAT` | `&2000–&3F07` | charset, tile defs, level data — `*LOAD`ed *after* the mode change |
+| File | Contents |
+|---|---|
+| `PARA` | code, plus reserved space for the tile map and charset built at runtime |
+| `PARADAT` | C64 char data, colour schemes, tile defs, deck RLE — `*LOAD`ed *after* the mode change |
+
+Current addresses are in the memory budget above; they move as the code grows, so read them from
+the `beebasm` output rather than from here.
 
 This bites again at every later layer that adds data. The eventual fix is to stop using `VDU 22`
 and program the video ULA and CRTC directly, which we need anyway to keep the OS from clearing or
-scrolling our screen.
+scrolling our screen. Note `*LOAD` must also happen **before** `InstallIrq` — taking over IRQ1V
+stops the MOS servicing the filing system.
 
 **Verified:** `verify_bbc.py --tilemap <dump> <deck>` diffs a tile map dumped from the emulator
 against a fresh Python RLE decode. Deck 1 (226 non-empty tiles) and deck 3 (498) both match all
@@ -291,7 +341,10 @@ lives at `&3393`, above `&3000`, so it exercises the clear-on-mode-change bug ab
 *Note:* deck 1 masked that bug entirely. Its RLE sits at `&2DC0`, below `&3000`, so it rendered
 identically before and after the fix. Screenshot comparison alone would not have caught it.
 
-### Layer 3 — Scroll ← *the decision point*, split into chunks
+### Layer 3 — Scroll ✅ DONE (3a–3d)
+
+The decision point, and it is now decided: **CRTC hardware scroll over a circular strip, 4 px
+horizontally and 1 scanline vertically, both axes vsync-locked at one step per frame.**
 
 #### 3a — Map browser ✅ DONE
 Scroll the viewport by one character with Z/X/K/M; switch decks with UP/DOWN. Full-screen redraw
@@ -872,10 +925,32 @@ state tracking — is moot rather than fixed. `DrawColumn` still uses the genera
   scanlines) makes a strip a straight indexed copy. That is the difference between smooth scrolling
   costing *less* than today's row draw and costing ~2.5× more at full speed.
 
-### Layer 4 — Sprite blitter
+### Layer 4 — Sprite blitter ← NEXT
 MODE 1 software sprites, 24×21, background save/restore, pre-shifted variants. One player droid
 drawn over the scrolling map. **Proves:** the frame budget. Measure cycles; this is where the port
 either performs or doesn't.
+
+**Constraints inherited from Layer 3, all of which have already bitten once:**
+
+- **The buffer is a circular strip, not a grid.** A sprite spanning the wrap point is split in
+  memory. `SetCell` and `WrapBufFwd` are the addressing primitives; do not compute buffer addresses
+  any other way.
+- **Display row 0 is a split row.** It can hold map row `mapYr` and `mapYr+16` at once, in disjoint
+  scanline ranges. A blit into it that writes whole cells destroys the part being prepared for the
+  next row rotation — invisible at the time, visible 8 scanlines later. Save/restore has the same
+  hazard in reverse: restoring a saved background must not resurrect stale split content.
+- **The draw window is `drawFlag` (frame row 23) → the play cycle starting again at row 8.** About
+  184 scanlines, shared with the edge redraws. A diagonal step already spends a scanline strip
+  (~75 scanlines) plus two columns in there.
+- **Sub-row scrolling means sprite Y is in scanlines, not rows.** Sprites live in buffer
+  coordinates and scroll with the map, so this is mostly free — but the vertical position of a
+  sprite relative to the visible window depends on `line`.
+- **Sideways RAM.** Only ~2.3 K free below the screen, so sprite data cannot be resident. Moving
+  `PARADAT` to bank 0 frees `&3000–&4707`; the paging code must stay resident.
+
+Open question to settle first: pre-shifted variants at 4 px granularity means 2 horizontal shifts
+per sprite (a MODE 1 byte is 4 px and the strip addresses in 4-px units), not 8. Quantify the data
+size before committing to pre-shifting versus shifting at blit time.
 
 ### Layer 5 — Player movement
 Port `GetNewDir`, `CalcSpeed`, `SpriteHitWall`, rotation animation tables. Player walks the deck
@@ -892,8 +967,10 @@ and is stopped by walls.
 `OpenDoor`, `CloseDoors`, `DoLift`, `FindLift`, `ChangeDeck`. The whole ship becomes traversable.
 
 ### Layer 9 — HUD and console
-Status bar via the mid-frame split, `Console`, `con_DroidInfo`, `con_DeckInfo`, `con_ShipInfo`,
-side view.
+The mid-frame split already exists (Layer 3c/3d) and the panel is a placeholder bordered box at
+`&4800`. This layer fills it with real content: `Console`, `con_DroidInfo`, `con_DeckInfo`,
+`con_ShipInfo`, side view. Also the point to revisit the panel palette — it currently shares the
+play area's four colours and so changes with the deck.
 
 ### Layer 10 — Transfer minigame
 `SubGameSelectSide` and the circuit puzzle. Paged from SWRAM bank 1.
@@ -901,13 +978,23 @@ side view.
 ### Layer 11 — Sound, title, polish
 SN76489 driver replacing the SID engine, title screen, attract mode.
 
-## Fate of the existing `src/`
+## `src/` as it stands
 
-| File | Fate |
+Single-pass flat build, everything included from `main.asm`. No linker.
+
+| File | State |
 |---|---|
-| `zeropage.asm` | Keep, rework for the ~150-byte Model B ZP budget |
-| `hardware.asm` | Keep, strip Master-only registers (ACCCON, shadow RAM) |
-| `macros.asm` | Keep `CRTC_WRITE`, `SN_WRITE`; drop `ACCCON_*` |
-| `main.asm` | Rewrite — assumes Master, MODE 2, shadow double-buffering |
-| `hal_video.asm` | Retire — MODE 2 CRTC arithmetic, unverified, carries `TODO`s |
-| `hal_irq.asm` | Retire — assumes Master shadow RAM and a HAL structure we're not building |
+| `main.asm` | **Live.** Constants, memory map, main loop, IRQ dispatch. Geometry constants live here because beebasm resolves them in file order and the other files need them. |
+| `rupture.asm` | **Live.** Three-cycle vertical rupture, the T1 state machine, `FillPanel`, `DbgSetBg`. |
+| `screen.asm` | **Live.** `SetupScreen`, `SetCRTCStart`, `DrawHalf`/`DrawHalfScan`/`DrawHalfPart`, `HalfPtr`, `MapChar`, `RedrawAll`, buffer wrapping. |
+| `scroll.asm` | **Live.** Offset tables, `SetCell`, `DrawScanline`, `DrawColumn`, the four scroll directions, `DoRedraws`. |
+| `level.asm` | **Live.** Deck decode, `BuildCharset`, `BuildLUTs`, `SetPalette`, `CentreOnDeck`. |
+| `zeropage.asm` | **Dead** — not included. Inherited scaffolding; the live ZP map is in `main.asm`. |
+| `hardware.asm` | **Dead** — not included. Inherited; live register definitions are in `main.asm`. |
+| `macros.asm` | **Dead** — not included. `CRTC` and `ADDPTR` macros live in `main.asm`. |
+| `hal_video.asm` | **Retired** — Master/MODE 2, unverified CRTC arithmetic, carries `TODO`s. Do not build on it. |
+| `hal_irq.asm` | **Retired** — assumes Master shadow RAM and a HAL we are not building. |
+
+Five of these ten files are not in the build. Worth deleting the three dead ones and the two retired
+ones before Layer 4 adds more, so that what is on disc is what runs — but check nothing wanted is
+buried in them first.
