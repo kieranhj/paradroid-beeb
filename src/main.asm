@@ -1,13 +1,21 @@
 \ ============================================================
 \ Paradroid — BBC Model B port
-\ LAYER 3b: CRTC hardware scrolling with edge redraw
+\ LAYER 4: the player droid — sprite, controls, collision
 \ ============================================================
-\ Z / X       scroll left / right   (4 px, one CRTC unit)
-\ K / M       scroll up / down      (8 px, one character row)
+\ Z / X       move left / right
+\ K / M       move up / down
 \ UP / DOWN   previous / next deck
+\ SPACE       force a full redraw (debug oracle)
 \
-\ Play area 320 x 128 px = 10 x 4 tiles, in a 10K circular
-\ buffer at &5800. See screen.asm for the addressing scheme.
+\ The player is pinned at the centre of the play area and the
+\ deck scrolls underneath it, as on the C64. Movement is the
+\ C64's own model: keys feed a direction, the direction feeds an
+\ accelerating 8.8 speed, and the speed moves the view by 0-7
+\ pixels a frame. Walls stop it.
+\
+\ Play area 320 x 120 px, in a 10K circular buffer at &5800.
+\ See screen.asm for the addressing scheme and scroll.asm for
+\ how a pixel position turns into work.
 \ ============================================================
 
 CPU 0                           \ plain 6502 — Model B
@@ -219,7 +227,16 @@ KEY_UP     = &C6                \ -58
 KEY_DOWN   = &D6                \ -42
 KEY_SPACE  = &9D                \ -99
 
-\ ---- zero page (user area &70-&8F, all 32 bytes used) ------
+\ ---- zero page ---------------------------------------------
+\ &70-&8F was the original allocation and is full. With BASIC not
+\ running and the MOS reduced to OSBYTE &81, the whole of &00-&8F
+\ is ours, so the sprite blitter extends downwards from &68.
+cht      = &66                  \ charset source, the half being copied (2)
+psrc     = &68                  \ sprite row, pixel data    (2)
+pmsk     = &6A                  \ sprite row, mask          (2)
+plyScan  = &6C                  \ scanline within the char row
+plyRow   = &6D                  \ sprite row being blitted
+
 bufp     = &70                  \ buffer write pointer      (2)
 chp      = &72                  \ charset source            (2)
 tdp      = &74                  \ tile definition source    (2)
@@ -288,46 +305,19 @@ ORG &1100
   \ edge redraw and the R12/R13 park both have to land before the
   \ play area is drawn again.
   JSR WaitVSync
+  JSR PlyRestore                \ before anything moves: the saved pixels
+                                \ belong at the address they were taken from
 IF DEBUG_DRAW
   LDA #6 : JSR DbgSetBg         \ cyan while the redraw runs
 ENDIF
 
-  \ Ordered by how soon the raster reaches what each one redraws.
-  \ A diagonal move does two redraws in one window, so the tightest
-  \ has to go first:
-  \   ScrollUp    row 0,  displayed at frame row 8  — most urgent
-  \   Scroll L/R  a column, spanning rows 8-23
-  \   ScrollDown  row 15, displayed at frame row 23 — most slack
-\ Up and down are mutually exclusive. Both directions record into
-\ one deferred-draw slot, and if both ran the second would overwrite
-\ the first — with a scanline number belonging to a strip position
-\ that no longer exists. Net movement of both held is zero anyway.
-  LDX #KEY_K                    \ scroll up, 1 scanline
-  JSR keydown
-  BNE ml_notK
-  LDX #KEY_M
-  JSR keydown
-  BEQ ml_vdone                  \ both down: neither
-  JSR ScrollUp
-  JMP ml_vdone
-.ml_notK
-  LDX #KEY_M                    \ scroll down, 1 scanline
-  JSR keydown
-  BNE ml_vdone
-  JSR ScrollDown
-.ml_vdone
-
-  LDX #KEY_Z                    \ scroll left, 4 px
-  JSR keydown
-  BNE ml_notZ
-  JSR ScrollLeft
-.ml_notZ
-
-  LDX #KEY_X                    \ scroll right, 4 px
-  JSR keydown
-  BNE ml_notX
-  JSR ScrollRight
-.ml_notX
+  \ Z / X left-right, K / M up-down. The keys feed a direction pair
+  \ and the direction pair feeds an accelerating speed, so the view
+  \ position moves by 0-7 pixels a frame rather than a fixed step.
+  JSR ReadKeys
+  JSR CalcSpeed
+  JSR CheckWalls                \ before the move, as the C64 does: it
+  JSR ApplyMove                 \ zeroes the speed the move would apply
 
   \ Park the CRTC address ONCE, with every axis accounted for, and
   \ before any drawing — the IRQ latches it at frame row 3, only a
@@ -382,6 +372,9 @@ ENDIF
   BNE ml_notSpc
   JSR RedrawAll
 .ml_notSpc
+
+  JSR PlyAnimate                \ last: the buffer is settled, so the save
+  JSR PlyDraw                   \ picks up the background the frame will show
 
   JMP mainloop
 
@@ -490,11 +483,15 @@ ENDIF
   LDA deck
   JSR BuildLevel
   JSR CentreOnDeck
+  JSR SetPosFromMap             \ the pixel position is the authority from
+                                \ here on; CentreOnDeck works in characters
   LDA #0                        \ start the strip at the buffer base,
   STA scrollS                   \ on a character row boundary — RedrawAll
   STA scrollS+1                 \ writes whole rows, so buffer row 0 must
   STA line                      \ not be a split row
   STA iline
+  LDA #0                        \ the saved background belongs to the deck
+  STA plySaved                  \ we are leaving; RedrawAll replaces it
   JSR SetCRTCStart
   JSR RedrawAll
   RTS
@@ -503,6 +500,9 @@ INCLUDE "src/rupture.asm"
 INCLUDE "src/screen.asm"
 INCLUDE "src/scroll.asm"
 INCLUDE "src/level.asm"
+INCLUDE "src/player.asm"
+INCLUDE "src/data/player.asm"
+INCLUDE "src/sprite.asm"
 
 \ ---- absolute working storage ------------------------------
 .rowOfs    EQUW 0               \ row*640 accumulator for RedrawAll
@@ -512,17 +512,32 @@ INCLUDE "src/level.asm"
 
 .code_end
 
+\ ---- MODE 1 charset, built at deck-load time ----------------
+\ In reclaimed OS workspace, not below &3000. Layer 4 filled that:
+\ code plus the tile map plus the sprite data leaves under 1.5K, and
+\ the charset alone is 2192 bytes.
+\
+\ &0400-&0CFF is 2.3K of MOS workspace that nothing here uses —
+\ BASIC's variables, the sound and printer queues, the soft key and
+\ user-defined character buffers. BASIC is not running (we are *RUN
+\ from the boot file), we own IRQ1V so the MOS sound code never
+\ executes, and the charset is built at deck load, which is after
+\ the last filing-system call. DFS's own workspace is higher up.
+\
+\ The alternative was moving PARADAT into sideways RAM, which is the
+\ right answer eventually but not the one that unblocks this layer.
+ORG &0400
+.charset
+  SKIP 137 * CHAR_BYTES         \ NUM_CHARS, defined in chardata.asm
+.charset_end
+ORG code_end
+
 \ ---- tile map: 64 x 16, one byte per tile -------------------
+\ MapChar depends on this being page aligned and exactly 1K.
 ALIGN &100
 .tilemap
   SKIP MAP_COLS * MAP_ROWS
 .tilemap_end
-
-\ ---- MODE 1 charset, built at deck-load time ----------------
-ALIGN &100
-.charset
-  SKIP 137 * CHAR_BYTES         \ NUM_CHARS, defined in chardata.asm
-.charset_end
 
 \ ============================================================
 \ Generated data — loaded separately, after the mode change

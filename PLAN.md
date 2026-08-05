@@ -4,21 +4,31 @@ Living document. Revised as each layer lands.
 
 ## Where we are — read this first
 
-**Layers 0–3 are done.** The port boots to a scrolling deck browser: a static panel above a
-320 × 120 play area that hardware-scrolls 8 ways, 4 px horizontally and 1 scanline vertically, both
-axes locked to one step per frame. 16 decks, per-deck palette and charset built at load time.
-Keys: Z/X left/right, K/M up/down, cursor up/down change deck, SPACE forces a full redraw.
+**Layers 0–4 are done.** The port boots to a playable deck: a static panel above a 320 × 120 play
+area, the player droid pinned at the centre with its rotor spinning, and the deck hardware-scrolling
+8 ways underneath it — 4 px horizontally, 1 scanline vertically — driven by the C64's own
+acceleration model and stopped by walls. Frame-locked at 50 Hz in every direction including full
+diagonal. 16 decks, per-deck palette and charset built at load time. Keys: Z/X left/right, K/M
+up/down, cursor up/down change deck, SPACE forces a full redraw.
 
-**Next up: Layer 4, the sprite blitter.** It is the layer that decides whether the port performs.
+**Next up: Layer 5, droids** — the same movement model applied to non-player droids, plus
+pathfinding and sprite slot allocation. There is ~14,000 cycles of identified but unclaimed
+optimisation listed at the end of Layer 4; spend it when droids start competing for the frame.
 
-Three things Layer 4 has to know before a line of it is written:
+**Before trusting any speed number, read the speed model section of Layer 4.** The C64's constants
+are per `GameLoop` iteration and an iteration is 2–3 frames, not 1. Every droid speed in
+`PlayerSpeed_t` needs the same conversion, so this will come up again immediately in Layer 5.
+
+Three things anything drawing into the play buffer has to know:
 
 1. **Display row 0 is a split row** — it can hold two map rows at once, in disjoint scanline
    ranges. Anything writing whole cells into it must repair scanlines `0..line-1` from map row
-   `mapYr+16`, the way `DrawColumn` and `RedrawAll` do. This has already caused one bug.
-2. **The draw window is frame rows 23 → 8 of the next frame**, released by `drawFlag` at `P+184`
-   when the play area stops displaying. Sprites share it with the edge redraws.
-3. **Sideways RAM has to start being used.** Only ~2.3 K is free below the screen.
+   `mapYr+16`, the way `DrawColumn` and `RedrawAll` do. This has already caused one bug. The player
+   sprite sidesteps it by construction: it sits in strip rows 6-9 and cannot reach rows 0 or 15.
+2. **Adjacent 4-pixel columns are 8 bytes apart, not 1.** Consecutive bytes within a column are
+   consecutive scanlines. This cost a build.
+3. **The draw window is frame rows 23 → 8 of the next frame**, released by `drawFlag` at `P+184`
+   when the play area stops displaying. Everything shares it, and it is already full.
 
 **Verification that actually works here:** diff the play buffer against `RedrawAll` at the same
 position (SPACE), byte for byte. Screenshots have repeatedly said "fine" when it was not. Drive it
@@ -925,36 +935,236 @@ state tracking — is moot rather than fixed. `DrawColumn` still uses the genera
   scanlines) makes a strip a straight indexed copy. That is the difference between smooth scrolling
   costing *less* than today's row draw and costing ~2.5× more at full speed.
 
-### Layer 4 — Sprite blitter ← NEXT
-MODE 1 software sprites, 24×21, background save/restore, pre-shifted variants. One player droid
-drawn over the scrolling map. **Proves:** the frame budget. Measure cycles; this is where the port
-either performs or doesn't.
+### Layer 4 — Player droid: sprite, controls, collision ✅ MOSTLY DONE
 
-**Constraints inherited from Layer 3, all of which have already bitten once:**
+Merged with the player half of Layer 5, because the point of the layer is the *feel* of moving the
+player and the sprite alone does not demonstrate that. What landed: the 24×21 player sprite with its
+8 rotor phases, the C64 speed model, pixel-granular 8-way scrolling, and wall collision.
 
-- **The buffer is a circular strip, not a grid.** A sprite spanning the wrap point is split in
-  memory. `SetCell` and `WrapBufFwd` are the addressing primitives; do not compute buffer addresses
-  any other way.
-- **Display row 0 is a split row.** It can hold map row `mapYr` and `mapYr+16` at once, in disjoint
-  scanline ranges. A blit into it that writes whole cells destroys the part being prepared for the
-  next row rotation — invisible at the time, visible 8 scanlines later. Save/restore has the same
-  hazard in reverse: restoring a saved background must not resurrect stale split content.
-- **The draw window is `drawFlag` (frame row 23) → the play cycle starting again at row 8.** About
-  184 scanlines, shared with the edge redraws. A diagonal step already spends a scanline strip
-  (~75 scanlines) plus two columns in there.
-- **Sub-row scrolling means sprite Y is in scanlines, not rows.** Sprites live in buffer
-  coordinates and scroll with the map, so this is mostly free — but the vertical position of a
-  sprite relative to the visible window depends on `line`.
-- **Sideways RAM.** Only ~2.3 K free below the screen, so sprite data cannot be resident. Moving
-  `PARADAT` to bank 0 frees `&3000–&4707`; the paging code must stay resident.
+**Outstanding: the frame budget at full diagonal speed.** See below — it is the one thing not
+finished, and it is quantified rather than guessed.
 
-Open question to settle first: pre-shifted variants at 4 px granularity means 2 horizontal shifts
-per sprite (a MODE 1 byte is 4 px and the strip addresses in 4-px units), not 8. Quantify the data
-size before committing to pre-shifting versus shifting at blit time.
+#### The player sprite is constructed, not stored
 
-### Layer 5 — Player movement
-Port `GetNewDir`, `CalcSpeed`, `SpriteHitWall`, rotation animation tables. Player walks the deck
-and is stopped by walls.
+There is no player sprite in the C64 data. The dynamic sprite area `$5200-$53FF` ships **zeroed**
+and every droid's sprite is built into it at runtime:
+
+| routine | writes |
+|---|---|
+| `BuildDroidSprite` (`$3C77`) | the three-digit droid number into sprite rows 6-13 |
+| `AnimateDroids` (`$3CFB`) | the spinning rotor into rows 0-4 and 15-19, from `RotAnim_*` |
+
+Rows 5, 14 and 20 are never written, so they stay transparent. That is the entire sprite: a rotor
+above and below, the number in the middle. `tools/export_player.py` replays both routines offline
+for droid 001 (`DCent_t[0]` = 0, `DNum_t[0]` = `$01` → digits 0, 0, 1) and emits MODE 1 data.
+
+Two details worth keeping:
+- The bottom half is the top half in **reverse row order**, not mirrored left to right —
+  `AnimateDroids` writes the same L/M/R bytes both times.
+- Rows 0/1 and 18/19 carry only a middle byte, from 2-entry tables indexed by `phase >> 2`, and the
+  bottom pair uses the *other* entry. That is what makes the two ends of the rotor alternate.
+- Row 2 and row 17's right-hand byte is `$80`, left in the accumulator from the row above. There is
+  no `RotAnim_2_17R` table.
+
+Only 13 distinct rows are stored (5 rotor rows per phase, 8 shared digit rows, one blank), 768
+bytes, with a 21-entry table saying where each sprite row comes from.
+
+**Colour is approximate.** A C64 multicolour sprite's bit pairs are transparent / `$D025` (black) /
+the sprite's own colour (white) / `$D026` (orange). MODE 1's four logical colours are the deck's, so
+the three are mapped onto logical 1-3 by role. The player therefore changes colour with the deck,
+exactly as the tiles do. Revisit if it reads badly on a particular deck.
+
+#### The player does not move; the deck does
+
+`PlayerSprite_dat` (`$6A2E`) puts sprite 7 at VIC (172, 172) = screen (148, 122). 148 is exactly
+`(320-24)/2` and a multiple of 4, so the sprite lands on a CRTC unit boundary and **needs no
+pre-shifting at all** — the open question from the old Layer 4 notes is answered: zero shift
+variants, not two.
+
+Our play area is 120 px rather than 136, so the sprite sits at y = 50. That puts it in strip rows
+6-9, which means **it never touches display row 0 or row 15** — the two rows the scroll redraws
+write. The split-row hazard and any blit/redraw collision are structurally impossible here rather
+than merely avoided.
+
+Order within a frame is load-bearing: restore at the old address, *then* move, *then* save and blit
+at the new one.
+
+> **Adjacent 4-pixel columns are 8 bytes apart, not 1.** Consecutive bytes within a column are
+> consecutive scanlines. The first build blitted the six bytes of a sprite row to six consecutive
+> addresses and drew the sprite one column wide and six scanlines deep. Obvious in hindsight, and
+> the same trap will be there for every sprite added later.
+
+#### Scrolling is now a pixel position, not a step
+
+`posX`/`posY` are 16-bit map pixel positions and everything derives from them: `mapHX = posX >> 2`,
+`mapYr = posY >> 3`, `line = posY AND 7`. A frame moves 0-7 pixels on each axis, which is up to 2
+columns and up to 7 scanlines.
+
+The addressing invariant that makes this work — absolute map pixel row `A`, unit `u`, lives at
+
+```
+BUF_BASE + ((scrollS + ((A>>3) - mapYr)*640 + u*8 + (A AND 7)) MOD BUF_SIZE)
+```
+
+and **that expression is invariant under scrolling**: substitute the new `scrollS` and `mapYr` after
+a move and it names the same byte. So nothing already drawn ever moves, and only the leading edge is
+drawn. `((A>>3) - mapYr) AND 15` is exactly what makes display row 16 and display row 0 the same
+row.
+
+`ScrollUp`/`ScrollDown`/`ScrollLeft`/`ScrollRight` and `DrawScanline` are gone, replaced by
+`ApplyMove` (state, and a record of what got exposed) and `DrawBand` (N scanlines from an absolute
+map pixel row, split across at most two character rows).
+
+#### The speed model — and why the listing's numbers are not the ones to use
+
+**The C64's constants are per `GameLoop` iteration, and an iteration is not a frame.** Taking them
+literally made the player move at twice the original's speed, which is what KC saw.
+
+`GameLoop` (`$13DA`) has five reads of `irqToggle` that look like frame waits. Three — `$13DC`,
+`$13F5`, `$13FC` — assemble as `D0 00` and `F0 00`: branch offset zero, falling straight through.
+Redux patched them out and the listing marks them `; !! remove`. Only `_w4` (`$1417`, `F0 FC`) and
+`EnterGame` (`$1430`, `D0 FC`) really spin, one on each edge of `irqToggle` — which `Irq_254` sets
+and the raster handler at `$6FB1` clears. So the loop is bounded by one rising and one falling edge:
+**one frame, if the work fits in a frame.**
+
+It does not. `DrawScreen` (`$391A`) copies 17 rows of 39 characters to screen RAM and colour RAM,
+and its inner loop is 26 cycles:
+
+```
+LDA $4940,Y 4 / STA (dest),Y 6 / TAX 2 / LDA CharColor,X 4 / STA $D940,Y 5 / DEY 2 / BPL 3
+```
+
+663 characters × 26 = **~17,250 cycles**, against roughly 18,300 usable in a PAL frame once badline
+and sprite DMA are taken out. `DrawScreen` alone very nearly fills a frame, before `RunDroids`,
+`DoCollision`, `AnimateDroids` or the sound driver have run. An iteration is **2 to 3 frames**,
+drifting towards 3 as a deck fills with droids.
+
+So the conversion, with `PLY_ITER_FRAMES = 2` — velocity divides by the frame count once,
+acceleration twice:
+
+| | C64, per iteration | here, per frame |
+|---|---|---|
+| acceleration | 208/256 px/it² (`Acceleration_`, `$6955`) | 52/256 |
+| deceleration | 176/256 px/it² (`DecelerationNeg_`, `$6954`) | 44/256 |
+| top speed | 7 px/it (`PlayerSpeed_t[DSpeed_t[0]]`) | **3.5 px/frame** |
+
+Same motion in real time — 0.34 s from standing to top speed either way — but sampled at 50 Hz
+instead of 25, so it is smoother than the original rather than merely as fast. `PLY_ITER_FRAMES` is
+the one number to change if it still reads wrong; raising it slows everything together and keeps the
+acceleration curve's shape.
+
+**The position needs a fraction byte.** The C64 adds only the whole-pixel part of the speed and
+drops the fraction every frame, which it can afford because its top speed is a whole number of
+pixels per iteration. Ours is 3.5: truncating moves 3 and throws the half away every frame — 14%
+short — and makes the first few frames of acceleration move nothing at all, which reads as a sticky
+start. `posXf`/`posYf` make the position 16.8 and the speed adds into it whole, as a 24-bit signed
+add. Clamping, stopping and wall-snapping all clear the fraction so the result lands on a whole
+pixel.
+
+The clamp is 16-bit for the same reason: 3.5 has a fraction, so it is part of the limit rather than
+something to discard.
+
+*Deliberate divergence:* the C64's accelerate-negative path is one 256th weaker than its positive
+one, an artefact of the `SEC`/`ADC` idiom it uses to subtract. We subtract properly and both
+directions match.
+
+Opposite keys cancel, which falls out of a `DEC`/`INC` pair rather than needing a test — and that
+retires the hand-written up/down exclusion Layer 3d needed.
+
+#### Wall collision, and a one-pixel jitter worth understanding
+
+`CheckPlyAdvance` (`$29C1`) probes 12 cells in a diamond around the player; the listing draws it at
+`$6B52`. Probes 9-B guard the right, 6-8 the left, 3-5 below, 0-2 above, and a probe only counts if
+the player is moving that way — which is what lets the player slide along a wall instead of sticking
+to it. A cell is solid if its **character code has bit 7 set**, the same test the droid AI uses.
+
+**The reference cell must use the C64's ceiling-rounded origin.** `DrawScreen` computes it as
+`(ScreenPosX + 7) >> 3`, and `plyMapPos` is that plus 19. Round *down* instead and the collision
+snap moves the reference cell: snapping to a character boundary tips the cell index over by one, the
+whole probe diamond shifts right, the wall drops out of the probes, and the player drifts back into
+it next frame. It sat against the wall visibly jittering one pixel. With the `+7`, snapping can only
+remove the sub-character remainder, never change the cell — which is the property the scheme
+depends on.
+
+Our offsets are `PLY_REFX = 159` (sprite left 148 + 11) and `PLY_REFY = 63` (sprite top 50 + 13),
+putting the reference cell over the digit block, the same part of the sprite the C64 uses.
+
+#### Memory: the charset moved to `&0400`
+
+Layer 4 filled the space below `&3000`. `&0400-&0CFF` is 2.3 K of MOS workspace nothing here uses —
+BASIC's variables, the sound and printer queues, the soft key and user-defined character buffers.
+BASIC is not running, we own IRQ1V so the MOS sound code never executes, and the charset is built at
+deck load, after the last filing-system call.
+
+The alternative was moving `PARADAT` into sideways RAM. That is still the right answer eventually,
+but it was not the one that unblocked this layer.
+
+| | |
+|---|---|
+| `&0400-&0C8F` | MODE 1 charset, built at deck load |
+| `&1100-&296F` | code + sprite data |
+| `&2A00-&2DFF` | tile map |
+| `&2E00-&2FFF` | free — about 512 bytes |
+
+#### The frame budget — closed, and how
+
+At the (wrong) 7 px/frame this did not fit. Measured by holding keys and reading `posX`/`posY` over
+exactly 25 frames (998,400 cycles):
+
+| | at 7 px/frame | at 3.5 px/frame |
+|---|---|---|
+| horizontal only | 7.0 — 100% | **3.5 — 100%** |
+| vertical only | 6.2 — 88% | **3.5 — 100%** |
+| diagonal | 5.0 — 72% | **3.5 — 100%** |
+
+Correcting the speed halved the work per frame as well as the speed — a step is now at most 4
+scanlines and 1 column instead of 7 and 2 — and the budget closed as a side effect. Both axes hold
+exactly 35 pixels per 10 frames on a full-speed diagonal, frame-locked. *(Measured with `CheckWalls`
+poked to `RTS`, so the run was not cut short by a wall.)*
+
+**Watch this if anything gets added to the frame.** When the loop overruns, `WaitVSync` finds
+`drawFlag` already set and returns immediately, so it free-runs rather than quantising to 2 frames:
+the symptom is not a halved frame rate but movement that is quietly slower than it should be, and a
+leading edge that can tear. The check is the measurement above — hold a diagonal and confirm 35
+pixels per 10 frames.
+
+Two rounds of optimisation landed while chasing this and are worth keeping regardless:
+
+- **`BandSetRow`/`BandCharPtr` and `ColSetup`/`ColCharPtr`** hoist everything that depends on only
+  one axis out of `MapChar`, and cache the tile pointer (it changes every 4 characters, or every 4
+  rows down a column).
+- **`DrawBandRows` walks characters, not units.** Two adjacent units are the two halves of one
+  character, so one lookup serves both — and, more importantly, it halves the per-unit bookkeeping,
+  which turned out to cost more than the lookups did.
+- **`BUF_END` is page aligned**, so the strip wrap test is one compare on the high byte: 5 cycles
+  when it does not fire, which is 159 times in 160.
+
+Those took the diagonal from 4.2 to 5.0 px/frame before the speed was corrected. Headroom still in
+the bank, in rough order of value, for when droids start competing for the frame:
+
+| | worth |
+|---|---|
+| Inline `CopyRun` / `BufNextUnit` / `CellXInc` — 72 cycles of call overhead per character | ~5,800 |
+| Sprite: precompose the current phase instead of `PlyFetchRow` per row | ~2,500 |
+| Cache the previous frame's 40 row pointers — group 2 of frame N is group 1 of frame N+1 | ~2,300 |
+| Unroll `DrawColumn`'s 8-byte copy | ~1,300 |
+| Replace `keydown`'s OSBYTE `&81` with a direct System VIA matrix scan | ~2,000 |
+
+**The deadlines are staggered and tighter than a frame**, which matters more than the frame total:
+an **up**-band and the columns both display at `P+64`, so they share only 192 scanlines (24,576
+cycles), while a **down**-band has until `P+184` of the next frame.
+
+#### Verified
+
+Play buffer diffed byte-for-byte against `RedrawAll` at odd `mapHX` (167) and non-zero `line` (1),
+after full-speed diagonal scrolling in both vertical directions: **0 real differences in 10240**.
+Ten bytes differed and all ten were inside the sprite's own footprint, where the rotor had spun
+between the two dumps — worth computing that footprint and excluding it, rather than staring at a
+10-byte diff wondering.
+
+### Layer 5 — Droid movement
+`GetNewDir`, `AdvanceMapPos`, `CheckDroidAdvance` and the waypoint logic — the same speed model
+applied to non-player droids. The player half of this layer landed in Layer 4.
 
 ### Layer 6 — Droids
 `RunDroids`, `dMd0_droid`, sprite slot allocation, pathfinding. Droids move and chase.

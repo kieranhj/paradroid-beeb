@@ -1,16 +1,33 @@
 \ ============================================================
-\ scroll.asm — move the CRTC start and fill in what appeared
+\ scroll.asm — move the view, fill in what appeared
 \ ============================================================
-\ Horizontal steps are one CRTC unit (8 bytes = 4 px) and expose
-\ one 4-pixel column: 16 cells. Vertical steps are one character
-\ row (640 bytes = 8 px) and expose one row: 80 cells.
+\ The view is a 16-bit PIXEL position (posX, posY), owned by
+\ player.asm. Everything here derives from it:
+\
+\   mapHX = posX >> 2     4-pixel units — the horizontal grain
+\   mapYr = posY >> 3     character row
+\   line  = posY AND 7    scanline within it, applied by the CRTC
+\
+\ The player moves up to 7 pixels in a frame, so a step is no longer
+\ one unit or one scanline: it is up to 2 columns and up to 7
+\ scanlines, and either may be zero.
+\
+\ Where a scanline lives
+\ ----------------------
+\ Absolute map pixel row A, unit u, is at
+\
+\   BUF_BASE + ((scrollS + ((A>>3) - mapYr)*640 + u*8 + (A AND 7))
+\               MOD BUF_SIZE)
+\
+\ and that expression is invariant under scrolling: substitute the
+\ new scrollS and mapYr after a move and it names the same byte. So
+\ nothing already drawn ever has to move — only the leading edge is
+\ drawn. ((A>>3) - mapYr) is taken AND 15, and that is precisely
+\ what makes display row 16 and display row 0 the same row: the
+\ split row.
 \ ============================================================
 
 \ ---- offset tables -----------------------------------------
-\ SetCell used to add 640 in a loop, which for DrawRow meant a
-\ constant 15 iterations x 80 cells — about 1200 redundant 16-bit
-\ adds per vertical step, and the reason vertical scrolling
-\ overran the frame. Both offsets are now table lookups.
 .rowMulLo
   FOR n, 0, PLAY_ROWS-1
     EQUB LO(n * ROW_BYTES)
@@ -28,48 +45,46 @@
     EQUB HI(n * UNIT_BYTES)
   NEXT
 
-\ ---- helpers -----------------------------------------------
-\ Add/subtract from scrollS, keeping it in [0, BUF_SIZE).
-MACRO SCROLL_ADD val
+\ ============================================================
+\ ScrollAddS — scrollS += sDelta, signed, kept in [0, BUF_SIZE)
+\ ============================================================
+\ sDelta is dUnits*8 + dRows*640, so at most +/-656 — one wrap
+\ correction either way is always enough.
+.ScrollAddS
   CLC
-  LDA scrollS   : ADC #LO(val) : STA scrollS
-  LDA scrollS+1 : ADC #HI(val) : STA scrollS+1
+  LDA scrollS   : ADC sDelta   : STA scrollS
+  LDA scrollS+1 : ADC sDelta+1 : STA scrollS+1
   LDA scrollS+1
+  BMI sas_neg
   CMP #HI(BUF_SIZE)
-  BCC skip
-  BNE do
+  BCC sas_x
+  BNE sas_sub
   LDA scrollS
   CMP #LO(BUF_SIZE)
-  BCC skip
-.do
+  BCC sas_x
+.sas_sub
   SEC
   LDA scrollS   : SBC #LO(BUF_SIZE) : STA scrollS
   LDA scrollS+1 : SBC #HI(BUF_SIZE) : STA scrollS+1
-.skip
-ENDMACRO
-
-MACRO SCROLL_SUB val
-  SEC
-  LDA scrollS   : SBC #LO(val) : STA scrollS
-  LDA scrollS+1 : SBC #HI(val) : STA scrollS+1
-  BCS skip
+  RTS
+.sas_neg
   CLC
   LDA scrollS   : ADC #LO(BUF_SIZE) : STA scrollS
   LDA scrollS+1 : ADC #HI(BUF_SIZE) : STA scrollS+1
-.skip
-ENDMACRO
+.sas_x
+  RTS
 
 \ ============================================================
 \ SetCell — point bufp at display cell (rCount, uCount)
 \   bufp = BUF_BASE + ((scrollS + rCount*640 + uCount*8) MOD SIZE)
 \ ============================================================
 .SetCell
-  LDX rCount                    \ scrollS + rCount*640, from a table
+  LDX rCount
   CLC
   LDA scrollS   : ADC rowMulLo,X : STA bufp
   LDA scrollS+1 : ADC rowMulHi,X : STA bufp+1
 
-  LDX uCount                    \ + uCount*8, likewise
+  LDX uCount
   CLC
   LDA bufp   : ADC unitMulLo,X : STA bufp
   LDA bufp+1 : ADC unitMulHi,X : STA bufp+1
@@ -86,7 +101,7 @@ ENDMACRO
   LDA bufp   : SBC #LO(BUF_SIZE) : STA bufp
   LDA bufp+1 : SBC #HI(BUF_SIZE) : STA bufp+1
 .sc_nowrap
-  CLC                           \ + BUF_BASE
+  CLC
   LDA bufp   : ADC #LO(BUF_BASE) : STA bufp
   LDA bufp+1 : ADC #HI(BUF_BASE) : STA bufp+1
   RTS
@@ -95,18 +110,39 @@ ENDMACRO
 \ DrawColumn — redraw one 4-pixel column, all 16 rows
 \   uCount = the column
 \ ============================================================
+\ halfX is constant down a column, so the lookup is set up once and
+\ the row walk is a 640-byte pointer add rather than a fresh SetCell
+\ per row.
 .DrawColumn
-  LDA #0 : STA rCount
-.dc_loop
-  JSR SetCell
-
   CLC                           \ halfX = mapHX + uCount
   LDA mapHX   : ADC uCount : STA halfX
   LDA mapHX+1 : ADC #0     : STA halfX+1
-  CLC                           \ cellY = mapYr + rCount
-  LDA mapYr : ADC rCount : STA cellY
-  JSR DrawHalf
+  JSR ColSetup
 
+  LDA #0 : STA rCount
+  JSR SetCell                   \ only once: row 0 of this column
+  LDA mapYr : STA cellY
+.dc_loop
+  JSR ColCharPtr
+  LDY #7
+.dc_copy
+  LDA (chp),Y
+  STA (bufp),Y
+  DEY
+  BPL dc_copy
+
+  CLC                           \ next row of the strip
+  LDA bufp   : ADC #LO(ROW_BYTES) : STA bufp
+  LDA bufp+1 : ADC #HI(ROW_BYTES) : STA bufp+1
+  LDA bufp+1                    \ BUF_END is page aligned, so the low
+  CMP #HI(BUF_END)              \ byte never needs testing
+  BCC dc_nowrap
+  SEC
+  LDA bufp   : SBC #LO(BUF_SIZE) : STA bufp
+  LDA bufp+1 : SBC #HI(BUF_SIZE) : STA bufp+1
+.dc_nowrap
+
+  INC cellY
   INC rCount
   LDA rCount
   CMP #PLAY_ROWS
@@ -133,203 +169,205 @@ ENDMACRO
 .dc_done
   RTS
 
-\ `DrawRow` lived here. Vertical scrolling now moves a scanline at
-\ a time and never redraws a whole row, so it is gone — and with it
-\ the defect recorded in PLAN.md, which it produced three times.
 \ ============================================================
-\ ScrollRight — view moves right by 4 px
+\ DrawBandRows — bandRun scanlines of ONE display row, full width
+\   rCount   = display row
+\   bandScan = first scanline within it
+\   bandRun  = how many, 1..8, never crossing the row
+\   cellY    = map character row to take them from
 \ ============================================================
-.ScrollRight
-  LDA mapHX+1                   \ at the right edge already?
-  CMP #HI(MAX_HX)
-  BCC sr_ok
-  BNE sr_no
-  LDA mapHX
-  CMP #LO(MAX_HX)
-  BCS sr_no
-.sr_ok
-  INC mapHX
-  BNE sr_nohi
-  INC mapHX+1
-.sr_nohi
-  SCROLL_ADD UNIT_BYTES
-  LDA #1
-  STA needCol79                 \ redrawn later, by DoRedraws
-.sr_no
-  RTS
-
-\ ============================================================
-\ ScrollLeft — view moves left by 4 px
-\ ============================================================
-.ScrollLeft
-  LDA mapHX
-  ORA mapHX+1
-  BEQ sl_no
-  LDA mapHX
-  BNE sl_nohi
-  DEC mapHX+1
-.sl_nohi
-  DEC mapHX
-  SCROLL_SUB UNIT_BYTES
-  LDA #1
-  STA needCol0
-.sl_no
-  RTS
-
-\ ============================================================
-\ DrawScanline — one scanline strip across all 80 units
-\   scanY  = scanline within the character row, 0-7
-\   cellY  = map character row to take it from
-\   rCount = display row to write
-\ ============================================================
-.DrawScanline
+\ Walks CHARACTERS, not units. Two adjacent units are the two halves
+\ of one character, so looking the character up once and drawing
+\ both halves halves the tile and character lookups — and removes
+\ half of the per-unit bookkeeping, which turned out to cost more
+\ than the lookups did.
+\
+\ mapHX can be odd, in which case unit 0 is a right half and unit 79
+\ a left half, with 39 whole characters between them.
+\
+\ Everything the loop touches is inline. This is the hottest code in
+\ the port: at the top speed of 7 px a frame it runs twice, 40 times
+\ each, every frame.
+.DrawBandRows
+  JSR BandSetRow                \ cellY is fixed for the whole pass
   LDA #0
   STA uCount
   JSR SetCell                   \ bufp = display row rCount, unit 0
 
-.ds_loop
-  CLC                           \ halfX = mapHX + uCount
-  LDA mapHX   : ADC uCount : STA halfX
-  LDA mapHX+1 : ADC #0     : STA halfX+1
-  JSR DrawHalfScan
+  LDA mapHX+1                   \ cellX = mapHX >> 1
+  LSR A
+  STA cellX+1
+  LDA mapHX
+  ROR A
+  STA cellX
 
-  CLC                           \ next 4-pixel column, wrapping the strip
-  LDA bufp : ADC #UNIT_BYTES : STA bufp
-  BCC ds_nohi
-  INC bufp+1
-.ds_nohi
-  JSR WrapBufFwd
+  LDA mapHX
+  AND #1
+  STA dbOdd
+  BEQ dbr_whole
 
-  INC uCount
-  LDA uCount
-  CMP #PLAY_UNITS
-  BNE ds_loop
-  RTS
-
-\ ============================================================
-\ ScrollDown — view moves down by ONE SCANLINE
-\ ============================================================
-\ Buffer row 0 is split: scanlines line..7 hold map row mapYr (the
-\ top of the view), scanlines 0..line-1 hold map row mapYr+16 (the
-\ sliver that display row 16 shows at the bottom). Moving down one
-\ scanline hands scanline `line` over from the first to the second,
-\ so exactly one scanline strip has to be rewritten.
-\
-\ When line wraps, the row that was split becomes an ordinary full
-\ row — and the 7 scanlines it needs are already right, because
-\ they were written on the way here. The scanline written on the
-\ wrapping step completes it. No special case.
-\ Like the column scrolls, this only updates state and records what
-\ needs drawing. DoRedraws does the drawing, AFTER SetCRTCStart has
-\ parked the new position — see the note there.
-.ScrollDown
-  LDA mapYr
-  CMP #MAX_Y
-  BCS sd_no
-
-  LDA line                      \ hand this scanline to map row mapYr+16
-  STA scanY
+  JSR BandCharPtr               \ leading right half, on its own
   CLC
-  LDA mapYr : ADC #PLAY_ROWS : STA scanCellY
-  LDA #0
-  STA scanRow
+  LDA chp : ADC #8 : STA chp
+  BCC dbr_l1
+  INC chp+1
+.dbr_l1
+  JSR CopyRun
+  JSR BufNextUnit
+  JSR CellXInc
+  LDA #(PLAY_UNITS/2)-1
+  BNE dbr_setn
+.dbr_whole
+  LDA #PLAY_UNITS/2
+.dbr_setn
+  STA dbCount
 
-  INC line                      \ then advance
-  LDA line
-  CMP #8
-  BNE sd_flag
-  LDA #0
-  STA line
-  INC mapYr
-  SCROLL_ADD ROW_BYTES
-  LDA #PLAY_ROWS-1              \ the strip moved: the row just handed over
-  STA scanRow                   \ is the BOTTOM display row now, not the top
-.sd_flag
-  LDA #1
-  STA needScan
-.sd_no
+.dbr_char
+  JSR BandCharPtr
+  JSR CopyRun                   \ left half
+  JSR BufNextUnit
+  CLC
+  LDA chp : ADC #8 : STA chp
+  BCC dbr_l2
+  INC chp+1
+.dbr_l2
+  JSR CopyRun                   \ right half
+  JSR BufNextUnit
+  JSR CellXInc
+  DEC dbCount
+  BNE dbr_char
+
+  LDA dbOdd
+  BEQ dbr_done
+  JSR BandCharPtr               \ trailing left half
+  JSR CopyRun
+.dbr_done
+  RTS
+
+\ ---- band inner helpers ------------------------------------
+\ bandRun bytes at offset bandScan, from the charset to the buffer.
+\ Source and destination are both 8-byte units indexed the same way,
+\ so one Y serves both.
+.CopyRun
+  LDY bandScan
+  LDX bandRun
+.cr_loop
+  LDA (chp),Y
+  STA (bufp),Y
+  INY
+  DEX
+  BNE cr_loop
+  RTS
+
+\ BUF_END is page aligned, so the wrap test is one compare on the
+\ high byte and costs 5 cycles when it does not fire — which is
+\ 159 times out of 160.
+.BufNextUnit
+  CLC
+  LDA bufp : ADC #UNIT_BYTES : STA bufp
+  BCC bnu_nc
+  INC bufp+1
+.bnu_nc
+  LDA bufp+1
+  CMP #HI(BUF_END)
+  BCC bnu_x
+  SEC
+  LDA bufp   : SBC #LO(BUF_SIZE) : STA bufp
+  LDA bufp+1 : SBC #HI(BUF_SIZE) : STA bufp+1
+.bnu_x
+  RTS
+
+.CellXInc
+  INC cellX
+  BNE cxi_x
+  INC cellX+1
+.cxi_x
   RTS
 
 \ ============================================================
-\ ScrollUp — view moves up by ONE SCANLINE
+\ DrawBand — bandN scanlines from absolute map pixel row bandA
 \ ============================================================
-\ The mirror image: retreat first, then claim scanline `line` back
-\ for map row mapYr.
-.ScrollUp
-  LDA line
-  BNE su_dec
-  LDA mapYr                     \ already at the top?
-  BEQ su_no
-  LDA #8                        \ borrow a row
-  STA line
-  DEC mapYr
-  SCROLL_SUB ROW_BYTES
-.su_dec
-  DEC line
+\ Split into at most two character rows. bandN never exceeds the top
+\ speed, so in practice that is one boundary at most, but the loop
+\ does not depend on it.
+.DrawBand
+.db_loop
+  LDA bandA+1 : STA dbTmp+1     \ M = bandA >> 3
+  LDA bandA   : STA dbTmp
+  LSR dbTmp+1 : ROR dbTmp
+  LSR dbTmp+1 : ROR dbTmp
+  LSR dbTmp+1 : ROR dbTmp
+  LDA dbTmp
+  STA cellY
+  SEC                           \ display row = (M - mapYr) AND 15
+  SBC mapYr
+  AND #PLAY_ROWS-1
+  STA rCount
 
-  LDA line                      \ claim this scanline for map row mapYr
-  STA scanY
-  LDA mapYr
-  STA scanCellY
-  LDA #0                        \ retreat happens first, so it is the top row
-  STA scanRow
-  LDA #1
-  STA needScan
-.su_no
+  LDA bandA                     \ first scanline within that row
+  AND #7
+  STA bandScan
+
+  LDA #8                        \ run = min(bandN, 8 - bandScan)
+  SEC
+  SBC bandScan
+  CMP bandN
+  BCC db_run
+  LDA bandN
+.db_run
+  STA bandRun
+
+  JSR DrawBandRows
+
+  CLC                           \ on past what was drawn
+  LDA bandA : ADC bandRun : STA bandA
+  BCC db_nc
+  INC bandA+1
+.db_nc
+  LDA bandN
+  SEC
+  SBC bandRun
+  STA bandN
+  BNE db_loop
   RTS
 
-.scanY     EQUB 0
-.scanCellY EQUB 0
-.scanRow   EQUB 0
-.needScan  EQUB 0
-
 \ ============================================================
-\ DoRedraws — redraw whatever the scroll routines flagged
-\
-\ Split out from the Scroll* routines so that SetCRTCStart can be
-\ called ONCE, before any drawing. Previously each routine parked
-\ the address itself, so on a diagonal move the second one's park
-\ landed after the first one's redraw — about 19 rows into the
-\ window, i.e. past frame row 3 where the IRQ latches R12/R13.
-\ The CRTC then used an address missing one axis while the buffer
-\ held the combined position: one frame of wrong graphics on the
-\ trailing edge.
-\
-\ EVERYTHING is deferred to here, including the single scanline a
-\ vertical step needs. Drawing it inside ScrollUp/ScrollDown looked
-\ harmless — it is only 80 bytes — but the strip costs ~75
-\ scanlines, which pushed SetCRTCStart past VSync. `line` is latched
-\ by the IRQ at VSync and the parked address is not read until fire
-\ 1, so the two landed in different frames: a one-frame row jump at
-\ every borrow going up, and a wrongly-exposed top scanline going
-\ down. Park first, then draw.
-\
-\ The scanline strip goes first — it is the split row, which is
-\ displayed at both the top and bottom of the play area.
+\ DoRedraws — draw whatever the move exposed
 \ ============================================================
+\ The band goes first: it is the top or bottom edge of the strip,
+\ which the raster reaches soonest, and on a diagonal it and the
+\ columns have to share one window.
+\
+\ Everything is deferred to here rather than done inside the move,
+\ because SetCRTCStart has to park the address BEFORE any drawing.
+\ A band costs most of the window; drawing first pushed the park
+\ past VSync and split the line/scrollS pair across two frames.
 .DoRedraws
-  LDA needScan
-  BEQ dor_ns
-  LDA scanRow   : STA rCount
-  LDA scanCellY : STA cellY
-  JSR DrawScanline
-  LDA #0 : STA needScan
-.dor_ns
+  LDA bandN
+  BEQ dor_nb
+  JSR DrawBand                  \ leaves bandN at 0
+.dor_nb
 
-  LDA needCol0
-  BEQ dor_nc0
-  LDA #0 : STA uCount
+  LDA colCount
+  BEQ dor_nc
+  LDA colFirst
+  STA uCount
+.dor_col
   JSR DrawColumn
-  LDA #0 : STA needCol0
-.dor_nc0
-
-  LDA needCol79
-  BEQ dor_nc79
-  LDA #PLAY_UNITS-1 : STA uCount
-  JSR DrawColumn
-  LDA #0 : STA needCol79
-.dor_nc79
+  INC uCount
+  DEC colCount
+  BNE dor_col
+.dor_nc
   RTS
 
-.needCol0  EQUB 0
-.needCol79 EQUB 0
+.bandA     EQUW 0               \ absolute map pixel row, first exposed
+.bandN     EQUB 0               \ scanlines to draw; 0 = nothing to do
+.bandScan  EQUB 0
+.scanY     EQUB 0               \ DrawColumn's split-row repair depth
+.bandRun   EQUB 0
+.colFirst  EQUB 0
+.colCount  EQUB 0
+.dbTmp     EQUW 0
+.dbOdd     EQUB 0               \ mapHX odd: the row starts on a right half
+.dbCount   EQUB 0
+.sDelta    EQUW 0

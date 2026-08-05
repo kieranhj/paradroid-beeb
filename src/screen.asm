@@ -200,15 +200,33 @@
 \ HalfPtr — chp = charset bytes for the cell at (halfX, cellY)
 \ ============================================================
 .HalfPtr
+  JSR HalfPtrLeft
+  LDA halfX                     \ right half is 8 bytes further on
+  AND #1
+  BEQ hp_done
+  CLC
+  LDA chp : ADC #8 : STA chp
+  BCC hp_done
+  INC chp+1
+.hp_done
+  RTS
+
+\ ============================================================
+\ HalfPtrLeft — chp = the LEFT half of the character containing
+\ halfX, whichever half halfX itself names
+\ ============================================================
+\ Split out because a character is two 4-pixel halves and a
+\ full-width draw visits both in succession. Keeping chp on the left
+\ half lets the odd unit reuse it as chp+8, halving the number of
+\ tile and character lookups a band costs — and lookups, not the
+\ copying, are what a band spends its time on.
+.HalfPtrLeft
   LDA halfX+1                   \ cellX = halfX >> 1, without disturbing halfX
   LSR A
   STA cellX+1
   LDA halfX
   ROR A
   STA cellX
-  LDA halfX
-  AND #1
-  STA halfSel
 
   JSR MapChar                   \ -> A = character code
 
@@ -222,15 +240,178 @@
   LSR A : LSR A : LSR A : LSR A
   CLC : ADC #HI(charset)
   STA chp+1
+  RTS
 
-  LDA halfSel                   \ right half is 8 bytes further on
-  BEQ hp_done
+\ ============================================================
+\ BandSetRow / BandCharPtr — the same lookup as HalfPtrLeft, with
+\ everything that depends only on cellY hoisted out
+\ ============================================================
+\ A band draws one map row across all 80 units, so cellY is constant
+\ for the whole pass: the tile-map row base and the sub-row offset
+\ within a tile can be computed once instead of 40 times. And the
+\ tile number only changes every 4 characters — every 8 units — so
+\ the tile-definition pointer is cached and recomputed on 1 call in
+\ 4.
+\
+\ This matters because a band's cost is almost entirely lookups. At
+\ the top speed of 7 px/frame a move exposes scanlines in two
+\ character rows, so the play area pays for two full passes of 40
+\ lookups to draw 7 scanlines — and that, not the copying, was
+\ pushing the redraw into the visible picture.
+.BandSetRow
+  LDA cellY                     \ row base: tilemap + (cellY>>2)*64
+  LSR A : LSR A
+  STA mcTmp
+  AND #3
+  ASL A : ASL A : ASL A : ASL A : ASL A : ASL A
+  STA maprow
+  LDA mcTmp
+  LSR A : LSR A
+  CLC : ADC #HI(tilemap)
+  STA maprow+1
+
+  LDA cellY                     \ (cellY AND 3) * 4, the row within a tile
+  AND #3
+  ASL A : ASL A
+  STA subRowOfs
+
+  LDA #&FF                      \ no tile column can match: force a miss
+  STA tileCol
+  RTS
+
+\ BandCharPtr works from cellX directly. A band walks the map one
+\ character at a time and draws both of its 4-pixel halves, so it
+\ counts characters, not units, and never needs halfX.
+.BandCharPtr
+  LDA cellX+1
+  LSR A
+  LDA cellX
+  ROR A
+  LSR A                         \ tile column = cellX >> 2
+  CMP tileCol
+  BEQ bcp_hit
+  STA tileCol
+  TAY
+  LDA (maprow),Y                \ tile number
+  PHA                           \ tdp = tiledefs + tile*16
+  AND #&0F
+  ASL A : ASL A : ASL A : ASL A
+  STA tdp
+  PLA
+  LSR A : LSR A : LSR A : LSR A
+  CLC : ADC #HI(tiledefs)
+  STA tdp+1
+.bcp_hit
+  LDA cellX
+  AND #3
+  CLC
+  ADC subRowOfs
+  TAY
+  LDA (tdp),Y                   \ character code
+
+  TAX                           \ chp = charset + remap(code)*16
+  LDA charRemap,X
+  PHA
+  AND #&0F
+  ASL A : ASL A : ASL A : ASL A
+  STA chp
+  PLA
+  LSR A : LSR A : LSR A : LSR A
+  CLC : ADC #HI(charset)
+  STA chp+1
+  RTS
+
+.subRowOfs EQUB 0
+.tileCol   EQUB 0
+
+\ ============================================================
+\ ColSetup / ColCharPtr — the mirror image, for a column
+\ ============================================================
+\ Down a column cellX is constant and cellY changes, so the tile
+\ COLUMN and the character's column within its tile are fixed, and
+\ the tile itself only changes every 4 rows. Same idea as
+\ BandSetRow, hoisting the other axis.
+.ColSetup                       \ from halfX
+  LDA halfX+1
+  LSR A
+  STA cellX+1
+  LDA halfX
+  ROR A
+  STA cellX
+
+  LDA cellX+1                   \ tile column = cellX >> 2
+  LSR A
+  LDA cellX
+  ROR A
+  LSR A
+  STA colTileCol
+  LDA cellX
+  AND #3
+  STA colSubX
+  LDA halfX                     \ which half of the character
+  AND #1
+  STA colRight
+  LDA #&FF
+  STA colTileRow                \ no tile row can match: force a miss
+  RTS
+
+.ColCharPtr                     \ cellY -> chp
+  LDA cellY
+  LSR A : LSR A                 \ tile row
+  CMP colTileRow
+  BEQ ccp_hit
+  STA colTileRow
+  PHA
+  AND #3
+  ASL A : ASL A : ASL A : ASL A : ASL A : ASL A
+  STA maprow
+  PLA
+  LSR A : LSR A
+  CLC : ADC #HI(tilemap)
+  STA maprow+1
+  LDY colTileCol
+  LDA (maprow),Y                \ tile number
+  PHA
+  AND #&0F
+  ASL A : ASL A : ASL A : ASL A
+  STA tdp
+  PLA
+  LSR A : LSR A : LSR A : LSR A
+  CLC : ADC #HI(tiledefs)
+  STA tdp+1
+.ccp_hit
+  LDA cellY
+  AND #3
+  ASL A : ASL A
+  CLC
+  ADC colSubX
+  TAY
+  LDA (tdp),Y                   \ character code
+
+  TAX
+  LDA charRemap,X
+  PHA
+  AND #&0F
+  ASL A : ASL A : ASL A : ASL A
+  STA chp
+  PLA
+  LSR A : LSR A : LSR A : LSR A
+  CLC : ADC #HI(charset)
+  STA chp+1
+
+  LDA colRight
+  BEQ ccp_x
   CLC
   LDA chp : ADC #8 : STA chp
-  BCC hp_done
+  BCC ccp_x
   INC chp+1
-.hp_done
+.ccp_x
   RTS
+
+.colTileCol EQUB 0
+.colSubX    EQUB 0
+.colRight   EQUB 0
+.colTileRow EQUB 0
 
 \ ============================================================
 \ MapChar — character code at map cell (cellX, cellY)
@@ -336,14 +517,11 @@
   BEQ ra_nosplit
   LDA #0
   STA rCount
-  STA scanY
+  STA bandScan
+  LDA line
+  STA bandRun
   CLC
   LDA mapYr : ADC #PLAY_ROWS : STA cellY
-.ra_split
-  JSR DrawScanline
-  INC scanY
-  LDA scanY
-  CMP line
-  BNE ra_split
+  JSR DrawBandRows
 .ra_nosplit
   RTS

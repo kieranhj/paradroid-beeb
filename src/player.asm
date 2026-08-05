@@ -1,0 +1,641 @@
+\ ============================================================
+\ player.asm — reading the controls and moving the view
+\ ============================================================
+\ Ported from the C64: ReadJoystick ($091A), CalcSpeed ($39F9) and
+\ DoMove ($3849). The player never moves on screen — it is pinned
+\ at the centre and the deck scrolls underneath — so "moving the
+\ player" is moving the view, and the speed model belongs here.
+\
+\ Speed is 8.8 signed fixed point. The low byte is the fraction the
+\ acceleration accumulates into; the high byte is whole pixels, and
+\ is what actually moves the view.
+\
+\ THE C64 NUMBERS ARE PER GameLoop ITERATION, NOT PER FRAME, AND AN
+\ ITERATION IS NOT A FRAME. This is the whole reason the constants
+\ below are not the ones in the listing, and taking the listing's
+\ numbers literally made the player move at twice the speed of the
+\ original.
+\
+\ GameLoop ($13DA) has five reads of irqToggle that look like frame
+\ waits. Three of them — $13DC, $13F5, $13FC — assemble as D0 00 and
+\ F0 00: branch offset zero, falling through to the next instruction.
+\ Redux patched them out and the listing marks them "!! remove". Only
+\ _w4 ($1417, F0 FC) and EnterGame ($1430, D0 FC) really spin, one on
+\ each edge of irqToggle, which Irq_254 sets and the raster handler
+\ at $6FB1 clears. So the loop is bounded by ONE rising and ONE
+\ falling edge — one frame, IF the work fits in a frame.
+\
+\ It does not. DrawScreen ($391A) copies 17 rows of 39 characters to
+\ screen RAM and colour RAM, and its inner loop is 26 cycles:
+\
+\   LDA $4940,Y 4 / STA (dest),Y 6 / TAX 2 /
+\   LDA CharColor,X 4 / STA $D940,Y 5 / DEY 2 / BPL 3
+\
+\ 663 characters x 26 = ~17,250 cycles, against roughly 18,300 usable
+\ in a PAL frame once badline and sprite DMA are taken out. DrawScreen
+\ alone very nearly fills a frame, before RunDroids, DoCollision,
+\ AnimateDroids or the sound driver have run. An iteration is 2 to 3
+\ frames, drifting towards 3 as a deck fills with droids.
+\
+\ So the original's top speed of 7 px per iteration is about
+\ 3.5 px per FRAME, and its acceleration is halved twice over —
+\ once for velocity, once for time:
+\
+\   per iteration (C64)        per frame (here, at 2 frames/iteration)
+\   accel  208/256 px/it^2     52/256 px/frame^2
+\   decel  176/256 px/it^2     44/256 px/frame^2
+\   max      7    px/it         3.5  px/frame
+\
+\ Same motion in real time — 0.34 s from a standing start to top
+\ speed either way — but sampled at 50 Hz instead of 25, so it is
+\ smoother than the original rather than merely as fast. It also
+\ halves the redraw work per frame, which is what the frame budget
+\ needed.
+\
+\ PLY_ITER_FRAMES is the one number to change if this reads wrong.
+\ Raise it and everything slows together, keeping the acceleration
+\ curve's shape.
+\
+\ Top speed comes from PlayerSpeed_t ($6D97) indexed through
+\ DSpeed_t ($EA40) by droid type. The player starts as droid 001,
+\ type 0: DSpeed_t[0] = 4, PlayerSpeed_t[4] = 7 — the fastest thing
+\ in the game. 001 is quick and fragile, which is the point of it.
+\
+\ The C64's accelerate-negative path is one 256th weaker than its
+\ positive one, an artefact of the SEC/ADC idiom it uses to subtract.
+\ We subtract properly, so both directions match.
+\ ============================================================
+
+PLY_ITER_FRAMES = 2             \ TV frames per C64 GameLoop iteration
+
+C64_ACCEL  = 208                \ Acceleration_    $6955, per iteration
+C64_DECEL  = 176                \ DecelerationNeg_ $6954, per iteration
+C64_MAXSPD = 7                  \ PlayerSpeed_t[DSpeed_t[0]], px per iteration
+
+\ Velocity divides by the frame count once, acceleration twice.
+PLY_ACCEL  = C64_ACCEL / (PLY_ITER_FRAMES * PLY_ITER_FRAMES)
+PLY_DECEL  = C64_DECEL / (PLY_ITER_FRAMES * PLY_ITER_FRAMES)
+PLY_MAXSPD = (C64_MAXSPD * 256) / PLY_ITER_FRAMES       \ 8.8, so &0380
+PLY_MAXNEG = 65536 - PLY_MAXSPD
+
+MAX_PX_X = (MAP_CHAR_W * 8) - 320       \ 1728
+MAX_PX_Y = MAX_Y * 8                    \ 384; mapYr must not pass MAX_Y,
+                                        \ or the split row reads map row 64
+
+\ ============================================================
+\ ReadKeys — joyXDir / joyYDir, each -1, 0 or +1
+\ ============================================================
+\ Opposite keys cancel, which falls out of the DEC/INC pair rather
+\ than needing a test. That matters: the previous build had to make
+\ up and down mutually exclusive by hand because both recorded into
+\ one deferred-draw slot, and the second overwrote the first.
+.ReadKeys
+  LDA #0
+  STA joyXDir
+  STA joyYDir
+
+  LDX #KEY_Z
+  JSR keydown
+  BNE rk_notZ
+  DEC joyXDir
+.rk_notZ
+  LDX #KEY_X
+  JSR keydown
+  BNE rk_notX
+  INC joyXDir
+.rk_notX
+
+  LDX #KEY_K
+  JSR keydown
+  BNE rk_notK
+  DEC joyYDir
+.rk_notK
+  LDX #KEY_M
+  JSR keydown
+  BNE rk_notM
+  INC joyYDir
+.rk_notM
+  RTS
+
+\ ============================================================
+\ CalcAxis — one axis of CalcSpeed
+\   spd    = 16-bit signed speed, 8.8
+\   axDir  = -1, 0 or +1
+\ ============================================================
+.CalcAxis
+  LDA axDir
+  BEQ ca_coast
+  BMI ca_neg
+  CLC                           \ accelerate positive
+  LDA spd   : ADC #LO(PLY_ACCEL) : STA spd
+  LDA spd+1 : ADC #HI(PLY_ACCEL) : STA spd+1
+  JMP ca_clamp
+.ca_neg
+  SEC                           \ accelerate negative
+  LDA spd   : SBC #LO(PLY_ACCEL) : STA spd
+  LDA spd+1 : SBC #HI(PLY_ACCEL) : STA spd+1
+  JMP ca_clamp
+
+\ Coasting. Decelerate towards zero and STOP there rather than
+\ overshooting into a crawl the other way — the sign of the high
+\ byte flipping is the test, exactly as the C64 does it.
+.ca_coast
+  LDA spd+1
+  BMI ca_coastneg
+  ORA spd
+  BEQ ca_clamp                  \ already stopped
+  SEC
+  LDA spd   : SBC #LO(PLY_DECEL) : STA spd
+  LDA spd+1 : SBC #HI(PLY_DECEL) : STA spd+1
+  LDA spd+1
+  BPL ca_clamp
+  JMP ca_stop
+.ca_coastneg
+  CLC
+  LDA spd   : ADC #LO(PLY_DECEL) : STA spd
+  LDA spd+1 : ADC #HI(PLY_DECEL) : STA spd+1
+  LDA spd+1
+  BMI ca_clamp
+.ca_stop
+  LDA #0
+  STA spd
+  STA spd+1
+  RTS
+
+\ The clamp is 16-bit. The C64's was a byte compare against the whole
+\ pixel count, which it could afford because its top speed was a
+\ whole number of pixels per iteration; ours is 3.5 per frame, so the
+\ fraction is part of the limit rather than something to throw away.
+\
+\ Both sides of the negative compare are above &8000, so an unsigned
+\ comparison orders them the same way a signed one would.
+.ca_clamp
+  LDA spd+1
+  BMI ca_clampneg
+  CMP #HI(PLY_MAXSPD)
+  BCC ca_x
+  BNE ca_setmax
+  LDA spd
+  CMP #LO(PLY_MAXSPD)
+  BCC ca_x
+  BEQ ca_x
+.ca_setmax
+  LDA #LO(PLY_MAXSPD) : STA spd
+  LDA #HI(PLY_MAXSPD) : STA spd+1
+  RTS
+.ca_clampneg
+  CMP #HI(PLY_MAXNEG)
+  BCC ca_setmin
+  BNE ca_x
+  LDA spd
+  CMP #LO(PLY_MAXNEG)
+  BCS ca_x
+.ca_setmin
+  LDA #LO(PLY_MAXNEG) : STA spd
+  LDA #HI(PLY_MAXNEG) : STA spd+1
+.ca_x
+  RTS
+
+\ ============================================================
+\ CalcSpeed — both axes
+\ ============================================================
+\ CalcAxis works on one pair of zero page bytes, so each axis is
+\ copied in and out. Twice a frame, for about 40 cycles.
+.CalcSpeed
+  LDA xSpd   : STA spd
+  LDA xSpd+1 : STA spd+1
+  LDA joyXDir : STA axDir
+  JSR CalcAxis
+  LDA spd   : STA xSpd
+  LDA spd+1 : STA xSpd+1
+
+  LDA ySpd   : STA spd
+  LDA ySpd+1 : STA spd+1
+  LDA joyYDir : STA axDir
+  JSR CalcAxis
+  LDA spd   : STA ySpd
+  LDA spd+1 : STA ySpd+1
+  RTS
+
+\ ============================================================
+\ CheckWalls — port of CheckPlyAdvance ($29C1) and GetNearChar
+\ ============================================================
+\ Twelve probe cells around the player, arranged as a diamond. The
+\ comment in the listing at $6B52 draws it, x being the player:
+\
+\     . 0 . 1 .
+\     6 . 2 . 9
+\     . 7 x A .
+\     8 . 3 . B
+\     . 4 . 5 .
+\
+\ so 9-B guard the right, 6-8 the left, 3-5 below and 0-2 above. A
+\ probe only counts if the player is moving that way, which is what
+\ lets the player slide along a wall instead of sticking to it.
+\
+\ A cell is solid if its CHARACTER CODE has bit 7 set — the same
+\ test the droid AI uses at CheckDroidAdvance. Hitting one kills
+\ that axis's speed outright and snaps the view to the character
+\ grid, so the player ends up flush against the wall rather than
+\ embedded in it by however far the last step overshot.
+\
+\ The reference cell is the middle of the sprite: the C64 puts the
+\ player at screen (148, 122) with plyMapPos at character column
+\ origin+19, row origin+8, which is the cell covering sprite pixels
+\ 4-11 across and 6-13 down — the digit block. PLY_REFX/Y place ours
+\ on the same part of the sprite.
+\
+\ The +7 in the offsets is load-bearing and cost a bug. DrawScreen
+\ ($391A) derives the character origin as (ScreenPosX + 7) >> 3 —
+\ rounding UP — and plyMapPos is that plus 19. Round DOWN instead
+\ and the snap moves the reference cell: snapping to a character
+\ boundary tips (posX + 152) >> 3 over to the next cell, the whole
+\ probe diamond shifts right by one, the wall drops out of the
+\ probes, and the player drifts back into it next frame. It sat
+\ against the wall visibly jittering one pixel.
+\
+\ With the +7 the snap cannot change the reference cell — it only
+\ removes the sub-character remainder — which is the property the
+\ whole scheme depends on.
+\
+\   159 = 148 (sprite left)  + 11
+\    63 =  50 (sprite top)   + 13
+\
+\ putting the reference cell over the middle of the sprite, the same
+\ part of it the C64 uses: the digit block.
+PLY_REFX = 159
+PLY_REFY = 63
+
+.CheckWalls
+  CLC                           \ reference cell
+  LDA posX   : ADC #LO(PLY_REFX) : STA plyCX
+  LDA posX+1 : ADC #HI(PLY_REFX) : STA plyCX+1
+  LSR plyCX+1 : ROR plyCX
+  LSR plyCX+1 : ROR plyCX
+  LSR plyCX+1 : ROR plyCX
+  CLC
+  LDA posY   : ADC #PLY_REFY : STA plyCY
+  LDA posY+1 : ADC #0         : STA plyCY+1
+  LSR plyCY+1 : ROR plyCY
+  LSR plyCY+1 : ROR plyCY
+  LSR plyCY+1 : ROR plyCY
+
+  LDA xSpd+1
+  BEQ cw_vert
+  BMI cw_leftward
+  LDX #9                        \ moving right: probes 9, A, B
+  JSR ProbeGroup
+  BCC cw_vert
+  LDA posX                      \ back to the grid line behind us
+  AND #&F8
+  CLC
+  ADC #1
+  STA posX
+  JMP cw_xstop
+.cw_leftward
+  LDX #6                        \ moving left: probes 6, 7, 8
+  JSR ProbeGroup
+  BCC cw_vert
+  CLC
+  LDA posX : ADC #7 : STA posX
+  BCC cw_lnc
+  INC posX+1
+.cw_lnc
+  LDA posX
+  AND #&F8
+  STA posX
+.cw_xstop
+  LDA #0
+  STA posXf                     \ the snap lands on a whole pixel
+  STA xSpd
+  STA xSpd+1
+
+.cw_vert
+  LDA ySpd+1
+  BEQ cw_x
+  BMI cw_upward
+  LDX #3                        \ moving down: probes 3, 4, 5
+  JSR ProbeGroup
+  BCC cw_x
+  LDA posY
+  AND #&F8
+  CLC
+  ADC #1
+  STA posY
+  JMP cw_ystop
+.cw_upward
+  LDX #0                        \ moving up: probes 0, 1, 2
+  JSR ProbeGroup
+  BCC cw_x
+  CLC
+  LDA posY : ADC #7 : STA posY
+  BCC cw_unc
+  INC posY+1
+.cw_unc
+  LDA posY
+  AND #&F8
+  STA posY
+.cw_ystop
+  LDA #0
+  STA posYf
+  STA ySpd
+  STA ySpd+1
+.cw_x
+  RTS
+
+\ ============================================================
+\ ProbeGroup — are any of the 3 probe cells from X solid?
+\ Carry set = blocked.
+\ ============================================================
+\ cellX stays 8-bit: the map is 256 characters wide, so cellX+1 is
+\ always 0 and a probe that runs off an edge simply wraps. The view
+\ is clamped well inside the map, so that never happens where it
+\ could matter.
+.ProbeGroup
+  LDA #3
+  STA pgCount
+.pg_loop
+  CLC
+  LDA plyCX : ADC nearXoffset,X : STA cellX
+  LDA #0    : STA cellX+1
+  CLC
+  LDA plyCY : ADC nearYoffset,X : STA cellY
+  JSR MapChar
+  BMI pg_wall
+  INX
+  DEC pgCount
+  BNE pg_loop
+  CLC
+  RTS
+.pg_wall
+  SEC
+  RTS
+
+\ The probe offsets, straight from $6B52 / $6B5E.
+.nearXoffset
+  EQUB &FF, 1, 0, 0, &FF, 1, &FE, &FF, &FE, 2, 1, 2
+.nearYoffset
+  EQUB &FE, &FE, &FF, 1, 2, 2, &FF, 0, 1, &FF, 0, 1
+
+.plyCX     EQUW 0
+.plyCY     EQUW 0
+.pgCount   EQUB 0
+
+\ ============================================================
+\ ApplyMove — integrate the speeds, work out what got exposed
+\ ============================================================
+\ Records the exposed edges for DoRedraws rather than drawing them,
+\ so that SetCRTCStart can park the CRTC address first.
+.ApplyMove
+  LDA mapHX   : STA oldHX       \ what the frame is moving from
+  LDA mapHX+1 : STA oldHX+1
+  LDA mapYr   : STA oldMapYr
+  LDA posY    : STA oldPosY
+  LDA posY+1  : STA oldPosY+1
+
+\ The position carries a fraction byte, so it is 16.8 and the speed
+\ adds into it whole. The C64 only ever adds the whole-pixel part of
+\ the speed and drops the fraction each frame, which it can afford
+\ because its top speed is a whole number of pixels per iteration.
+\ Ours is 3.5 per frame: truncating would move 3 and throw the half
+\ away every single frame, 14% short. It also makes the first few
+\ frames of acceleration move nothing at all, which reads as a sticky
+\ start rather than a smooth one.
+\
+\ A 24-bit add of a sign-extended 16-bit value, so it works
+\ unchanged for both directions.
+  LDA xSpd+1
+  JSR SignByte                  \ -> mvSign, &00 or &FF
+  CLC
+  LDA posXf  : ADC xSpd   : STA posXf
+  LDA posX   : ADC xSpd+1 : STA posX
+  LDA posX+1 : ADC mvSign : STA posX+1
+  JSR ClampX
+
+  LDA ySpd+1
+  JSR SignByte
+  CLC
+  LDA posYf  : ADC ySpd   : STA posYf
+  LDA posY   : ADC ySpd+1 : STA posY
+  LDA posY+1 : ADC mvSign : STA posY+1
+  JSR ClampY
+
+  LDA posX+1                    \ mapHX = posX >> 2
+  LSR A
+  STA mapHX+1
+  LDA posX
+  ROR A
+  LSR mapHX+1
+  ROR A
+  STA mapHX
+
+  LDA posY+1                    \ mapYr = posY >> 3, line = posY AND 7
+  STA amTmp+1
+  LDA posY
+  STA amTmp
+  LSR amTmp+1 : ROR amTmp
+  LSR amTmp+1 : ROR amTmp
+  LSR amTmp+1 : ROR amTmp
+  LDA amTmp
+  STA mapYr
+  LDA posY
+  AND #7
+  STA line
+
+\ scrollS moves by whole units horizontally and whole rows
+\ vertically; the sub-row remainder is `line`, which the CRTC
+\ applies with R5 and which costs nothing here.
+  SEC                           \ dUnits = mapHX - oldHX
+  LDA mapHX : SBC oldHX
+  STA sDelta
+  LDA mapHX+1 : SBC oldHX+1
+  STA sDelta+1
+  ASL sDelta : ROL sDelta+1     \ * UNIT_BYTES
+  ASL sDelta : ROL sDelta+1
+  ASL sDelta : ROL sDelta+1
+
+  SEC                           \ dRows = mapYr - oldMapYr, in [-1, 1]
+  LDA mapYr
+  SBC oldMapYr
+  BEQ am_norow
+  BMI am_rowup
+  CLC
+  LDA sDelta   : ADC #LO(ROW_BYTES) : STA sDelta
+  LDA sDelta+1 : ADC #HI(ROW_BYTES) : STA sDelta+1
+  JMP am_norow
+.am_rowup
+  SEC
+  LDA sDelta   : SBC #LO(ROW_BYTES) : STA sDelta
+  LDA sDelta+1 : SBC #HI(ROW_BYTES) : STA sDelta+1
+.am_norow
+  JSR ScrollAddS
+
+\ ---- what became visible ------------------------------------
+\ Horizontally, dUnits columns at whichever edge is leading.
+  SEC
+  LDA mapHX : SBC oldHX
+  STA amDU                      \ -2..2; the high byte cannot differ by
+  BEQ am_nocols                 \ more than this at 7 px a frame
+  BMI am_left
+  STA colCount
+  LDA #PLAY_UNITS
+  SEC
+  SBC colCount
+  STA colFirst                  \ the rightmost dUnits columns
+  JMP am_nocols
+.am_left
+  EOR #&FF
+  CLC
+  ADC #1
+  STA colCount
+  LDA #0
+  STA colFirst                  \ the leftmost |dUnits| columns
+.am_nocols
+
+\ Vertically, |dy| scanlines at the leading edge, named by absolute
+\ map pixel row so that DrawBand can place them without caring which
+\ display row they land in.
+\   down: rows [oldPosY + 128, posY + 128)
+\   up:   rows [posY, oldPosY)
+  SEC
+  LDA posY   : SBC oldPosY   : STA amDY
+  LDA posY+1 : SBC oldPosY+1 : STA amDY+1
+  LDA amDY
+  ORA amDY+1
+  BEQ am_noband
+  LDA amDY+1
+  BMI am_up
+
+  LDA amDY                      \ moving down: the new bottom edge
+  STA bandN
+  CLC
+  LDA oldPosY   : ADC #LO(PLAY_ROWS*8) : STA bandA
+  LDA oldPosY+1 : ADC #HI(PLAY_ROWS*8) : STA bandA+1
+  RTS
+.am_up
+  LDA amDY                      \ bandN = -amDY
+  EOR #&FF
+  CLC
+  ADC #1
+  STA bandN
+  LDA posY   : STA bandA
+  LDA posY+1 : STA bandA+1
+  RTS
+.am_noband
+  LDA #0
+  STA bandN
+  RTS
+
+\ ============================================================
+\ SignByte — mvSign = &FF if A is negative, else &00
+\ ============================================================
+.SignByte
+  LDX #0
+  CMP #&80
+  BCC sb_x
+  LDX #&FF
+.sb_x
+  STX mvSign
+  RTS
+
+\ ============================================================
+\ ClampX / ClampY — hold the view inside the map, and stop dead
+\ ============================================================
+\ Running into the edge of the map kills the speed rather than
+\ leaving it wound up, so turning round is immediate instead of
+\ waiting for a phantom 7 px/frame to decelerate.
+.ClampX
+  LDA posX+1
+  BMI cx_low                    \ went below zero
+  CMP #HI(MAX_PX_X)
+  BCC cx_x
+  BNE cx_high
+  LDA posX
+  CMP #LO(MAX_PX_X)
+  BCC cx_x
+  BEQ cx_x
+.cx_high
+  LDA #LO(MAX_PX_X) : STA posX
+  LDA #HI(MAX_PX_X) : STA posX+1
+  JMP cx_stop
+.cx_low
+  LDA #0
+  STA posX
+  STA posX+1
+.cx_stop
+  LDA #0
+  STA posXf                     \ snapping or stopping lands on a whole
+  STA xSpd                      \ pixel; a stale fraction would drift
+  STA xSpd+1
+.cx_x
+  RTS
+
+.ClampY
+  LDA posY+1
+  BMI cy_low
+  CMP #HI(MAX_PX_Y)
+  BCC cy_x
+  BNE cy_high
+  LDA posY
+  CMP #LO(MAX_PX_Y)
+  BCC cy_x
+  BEQ cy_x
+.cy_high
+  LDA #LO(MAX_PX_Y) : STA posY
+  LDA #HI(MAX_PX_Y) : STA posY+1
+  JMP cy_stop
+.cy_low
+  LDA #0
+  STA posY
+  STA posY+1
+.cy_stop
+  LDA #0
+  STA posYf
+  STA ySpd
+  STA ySpd+1
+.cy_x
+  RTS
+
+\ ============================================================
+\ SetPosFromMap — posX/posY from mapHX/mapYr after CentreOnDeck
+\ ============================================================
+\ CentreOnDeck frames a deck in character units; the pixel position
+\ is the authority from then on, so it has to be seeded from it.
+.SetPosFromMap
+  LDA mapHX   : STA posX        \ posX = mapHX * 4
+  LDA mapHX+1 : STA posX+1
+  ASL posX : ROL posX+1
+  ASL posX : ROL posX+1
+  LDA mapYr                     \ posY = mapYr * 8
+  STA posY
+  LDA #0
+  STA posY+1
+  ASL posY : ROL posY+1
+  ASL posY : ROL posY+1
+  ASL posY : ROL posY+1
+  LDA #0
+  STA xSpd : STA xSpd+1
+  STA ySpd : STA ySpd+1
+  STA posXf : STA posYf
+  STA line
+  STA bandN
+  STA colCount
+  RTS
+
+.posX      EQUW 0               \ view origin, map pixels
+.posY      EQUW 0
+.xSpd      EQUW 0               \ 8.8 signed, px per frame
+.ySpd      EQUW 0
+.joyXDir   EQUB 0
+.joyYDir   EQUB 0
+.oldHX     EQUW 0
+.oldPosY   EQUW 0
+.oldMapYr  EQUB 0
+.mvSign    EQUB 0
+.posXf     EQUB 0               \ sub-pixel fraction of the position
+.posYf     EQUB 0
+.spd       EQUW 0               \ CalcAxis works on this pair
+.axDir     EQUB 0
+.amTmp     EQUW 0
+.amDU      EQUB 0
+.amDY      EQUW 0
