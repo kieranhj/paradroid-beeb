@@ -42,6 +42,7 @@ sampled mid-redraw.
 | | |
 |---|---|
 | 1 px sprite positioning | Needs four shifted copies, 1820 bytes — waiting on `PARADAT` moving to sideways RAM. 2 px matches the C64 artwork's own pixel size. |
+| 2 px world scrolling | Parked, Master-only via shadow RAM. Feasible and cheap to switch; costs +60–80% on all drawing because both buffers must stay current. Layer 4a. |
 | Play area is 320 × 120, not 128 | Consequence of the single hardware wrap — see Layer 3d. Getting the row back needs the 20K wrap or per-cycle wrap bits. **KC's call.** |
 | Vertical granularity | 1 scanline against 4 px horizontal is lopsided. 2 or 4 scanlines costs nothing extra. Decide when there is a droid to move. |
 | `$D021` is an assumption | Marked `[assumed]` in `export_bbc.py`. First suspect if deck colours look wrong on hardware. |
@@ -642,10 +643,12 @@ enough unaided — that is what the spike measures.
 To compare:
 - 4-px horizontal (CRTC only) vs. 1-scanline vertical (R4/R5/R12 trick) vs. flip-screen.
 
-**Parked option — 2-px horizontal, Master only.** Keep a second 16K buffer in shadow RAM holding a
-copy of the map offset by 2 px, and alternate which buffer is displayed to halve the granularity.
-Significant added complexity, and a Model B has no room for the second buffer — revisit only if the
-target moves back to the Master.
+**Parked option — 2-px horizontal, Master only.** A second buffer holding the map offset by 2 px,
+alternating which one is displayed. Superseded by the fuller write-up in Layer 4a, which corrects
+this note: the obstacle on a Model B is not "no room for the second buffer" but that a circular
+strip's period must equal the hardware wrap span and there is only one such region. On a Master both
+buffers live at the *same* address in main and shadow RAM, so the wrap is shared and the switch is
+one ACCCON bit.
 
 #### 3d — Smooth vertical scroll, 1-scanline granularity ✅ DONE
 
@@ -987,8 +990,42 @@ points at — is the obvious answer and **cannot work on a Model B**. A circular
 because its period equals the hardware wrap span, and there is exactly one wrap region available:
 10K wrapping at `&5800`. A second strip at `&3000` under the 20K wrap runs out of its own 10K and
 continues into the first. Interleaving rows, a 1280-byte row stride with `R1` = 80, switching the
-wrap per field — all fail on the same point, that the CRTC's row stride *is* `R1`. Master-only, as
-parked.
+wrap per field — all fail on the same point, that the CRTC's row stride *is* `R1`.
+
+##### ⏸ PARKED: 2 px horizontal scrolling on a Master, via shadow RAM
+
+Not a compromise version of the above — the *same* scheme, which the Master can actually host.
+
+**The mechanism.** Both buffers sit at the same address, `&5800–&7FFF`: one in main RAM, one in
+shadow. Same 10K wrap, same R12/R13, same scroll arithmetic, same everything — the only difference
+between displaying A and displaying B is one bit of ACCCON (`&FE34`): `D` selects which RAM the
+video fetches from, `X` selects which one the CPU sees at `&3000–&7FFF`. So none of the addressing
+problems that kill it on a Model B arise; we are not fitting two strips into one wrap region, we are
+using the same region twice over. Flip `D` in the VSync handler and the view is 2 px further along.
+
+**Confirmed by KC, not assumed:**
+- The Master's screen wrap is driven the same way as the Model B's — the System VIA addressable
+  latch — so the 10K/`&5800` setting and everything derived from it carries over unchanged.
+- Writing ACCCON's `D` bit takes effect **instantly**, including mid-scanline. Per-field switching
+  is therefore trivially safe; mid-scanline switching is a whole other technique and a conversation
+  for another day.
+
+**Why it is parked: cost, not feasibility.** Either buffer might be the one displayed next field, so
+both must be current at all times. Every edge redraw and every sprite blit happens twice.
+
+- It is cheaper than a straight doubling. B's exposed edges can be produced by *shifting bytes out
+  of A* rather than redrawing from the tile map, which skips the tile → character → charset
+  lookups — and those are the expensive half of a band, not the copying. Call it +60–80% on the
+  drawing rather than +100%.
+- Even so that is roughly +12–16K cycles a frame against about 5K spare. It needs the optimisation
+  backlog below spent (~14K identified) or a smaller play area, or both.
+- And it forks the rendering path, or makes the port Master-only. `PLAN.md`'s target is a Model B
+  with sideways RAM.
+
+**Revisit when** the frame budget has real headroom — most likely after `PARADAT` moves to sideways
+RAM and the inlining work below is done — or if the target ever moves to the Master. The dead-zone
+camera already fixes the case that actually looked bad (the world lurching when you creep), so this
+buys smoothness at moderate speeds rather than curing a defect.
 
 **So the camera moved instead of the scroll.** `plyX` is the player's own position in the world, at
 1 px; `posX` is the view, which only follows once the player leaves a ±8 px window around the
