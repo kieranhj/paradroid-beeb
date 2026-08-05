@@ -45,13 +45,22 @@ Output format
 -------------
 The blitter walks the sprite one scanline at a time, because a 21-row sprite
 does not align to the 8-scanline groups BBC screen memory uses and the play
-buffer is a circular strip anyway. One scanline is 24 px = 6 MODE 1 bytes, so
-a row is stored as 6 data bytes followed by 6 mask bytes:
+buffer is a circular strip anyway.
 
-    result = (background AND mask) OR data
+Rows are stored SEVEN bytes wide, not six. 24 px is 6 MODE 1 bytes when the
+sprite sits on a 4-pixel boundary, but the dead-zone camera positions it every
+2 pixels, and a 2-pixel shift spills into a seventh byte. The shifted copy is
+generated at startup rather than stored, so only the unshifted set is here.
 
-Only 13 distinct rows are stored, not 21: the 5 ring rows per frame, plus the
-8 digit rows shared by every frame. 8*5*12 + 8*12 = 576 bytes.
+NO MASKS ARE STORED. The mask is derivable: every opaque pixel maps to logical
+colour 1, 2 or 3 (see COLOUR), never 0, so a pixel is transparent exactly when
+both of its bits are clear. The blitter recovers it with one lookup through a
+256-byte table built at startup. That halves the data and, because the copy
+into the row buffer was going to happen anyway, costs nothing at blit time.
+
+Only 65 distinct rows exist: 5 ring rows x 8 phases, 2 alternate end rows x 8
+phases, 8 digit rows shared by every phase, and one blank. 65 x 7 = 455 bytes,
+plus 8 x 21 sixteen-bit row offsets so the blitter can find them.
 
 Requires: Python 3. No third-party dependencies.
 """
@@ -158,36 +167,76 @@ def build_c64_rows(mem):
 
 
 def convert_row(c64_row):
-    """3 C64 multicolour bytes -> (6 MODE 1 data bytes, 6 mask bytes).
+    """3 C64 multicolour bytes -> 7 MODE 1 data bytes.
 
     Each C64 byte is four 2-bit pixels; each becomes two MODE 1 pixels, so a
     C64 byte is two MODE 1 bytes. MODE 1 pixel n takes bit (7-n) as its high
-    colour bit and bit (3-n) as its low bit; a transparent pixel sets both in
-    the mask and neither in the data.
+    colour bit and bit (3-n) as its low bit; a transparent pixel gets neither.
+
+    The seventh byte is always empty. It exists so that the 2-pixel-shifted
+    copy generated at startup has somewhere to put the pixels that spill out
+    of byte 6, and so every row is the same width whichever shift is in use.
     """
-    data, mask = [], []
+    data = []
     for byte in c64_row:
         pixels = [(byte >> 6) & 3, (byte >> 4) & 3, (byte >> 2) & 3, byte & 3]
         doubled = [p for p in pixels for _ in (0, 1)]        # 8 MODE 1 pixels
         for half in (doubled[:4], doubled[4:]):
-            d = m = 0
+            d = 0
             for n, pair in enumerate(half):
                 logical = COLOUR[pair]
                 if logical is None:
-                    m |= (1 << (7 - n)) | (1 << (3 - n))
-                else:
-                    if logical & 2:
-                        d |= 1 << (7 - n)
-                    if logical & 1:
-                        d |= 1 << (3 - n)
+                    continue                    # transparent: both bits clear
+                assert logical != 0, (
+                    'an opaque sprite pixel mapped to logical 0; the mask can '
+                    'no longer be derived from the data')
+                if logical & 2:
+                    d |= 1 << (7 - n)
+                if logical & 1:
+                    d |= 1 << (3 - n)
             data.append(d)
-            mask.append(m)
-    return data, mask
+    data.append(0)
+    return data
 
 
 def main():
     mem, _ = parse_listing(LST_FILE)
     frames, bottoms, digits = build_c64_rows(mem)
+
+    # --- flatten every distinct row into one table -------------------------
+    # order: ring[phase][0..4], ringbot[phase][0..1], digits[0..7], blank
+    rows = []
+    ring_at, bot_at, dig_at = {}, {}, {}
+    for phase in range(FRAMES):
+        for r in range(5):
+            ring_at[(phase, r)] = len(rows)
+            rows.append(convert_row(frames[phase][r]))
+    for phase in range(FRAMES):
+        for r in range(2):               # 0 = sprite row 19, 1 = sprite row 18
+            bot_at[(phase, r)] = len(rows)
+            rows.append(convert_row([0, bottoms[phase][r], 0]))
+    for r in range(8):
+        dig_at[r] = len(rows)
+        rows.append(convert_row(digits[r]))
+    blank_at = len(rows)
+    rows.append([0] * 7)
+
+    # --- which stored row each of the 21 sprite rows uses, per phase -------
+    def row_index(phase, r):
+        if r < 5:
+            return ring_at[(phase, r)]
+        if r in (5, 14, 20):
+            return blank_at
+        if r < 14:
+            return dig_at[r - 6]
+        if r < 18:
+            return ring_at[(phase, 19 - r)]      # 15->4, 16->3, 17->2
+        return bot_at[(phase, 19 - r)]           # 18->bot 1, 19->bot 0
+
+    offsets = []
+    for phase in range(FRAMES):
+        for r in range(SPRITE_ROWS):
+            offsets.append(row_index(phase, r) * 7)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     path = OUT_DIR / 'player.asm'
@@ -196,91 +245,37 @@ def main():
             name='player.asm',
             desc='Droid 001, 8 ring phases + shared digit block, 24x21 MODE 1'))
         f.write('\n')
-        f.write('PLY_W       = 6                 \\ 24 px = 6 MODE 1 bytes\n')
-        f.write('PLY_H       = %d\n' % SPRITE_ROWS)
-        f.write('PLY_ROWBYTES = 12               \\ 6 data then 6 mask\n')
-        f.write('PLY_FRAMES  = %d\n' % FRAMES)
-        f.write('PLY_RINGROWS = 5                \\ stored ring rows per frame\n')
+        f.write('PLY_W        = 7                \ 24 px, plus one for a 2 px shift\n')
+        f.write('PLY_H        = %d\n' % SPRITE_ROWS)
+        f.write('PLY_FRAMES   = %d\n' % FRAMES)
+        f.write('PLY_ROWS     = %d               \ distinct stored rows\n' % len(rows))
+        f.write('PLY_DATASIZE = PLY_ROWS * PLY_W\n')
         f.write('\n')
 
-        f.write('\\ Ring rows 0-4 of each phase. Rows 15-19 reuse these in\n')
-        f.write('\\ reverse: 15=4, 16=3, 17=2, 18=1b, 19=0b, where the b rows\n')
-        f.write('\\ come from plyRingBot below.\n')
-        f.write('.plyRing\n')
-        for phase in range(FRAMES):
-            f.write('  \\ phase %d\n' % phase)
-            for row in frames[phase]:
-                d, m = convert_row(row)
-                emit_bytes(f, d + m)
+        f.write('\ Every distinct row, seven bytes each, unshifted. The 2 px\n')
+        f.write('\ shifted copy is built from this at startup, and masks are\n')
+        f.write('\ derived rather than stored - see the header comment.\n')
+        f.write('.plySprData\n')
+        for row in rows:
+            emit_bytes(f, row, per_line=7)
         f.write('\n')
 
-        f.write('\\ Rows 19 and 18: the same two tables as rows 0 and 1 but\n')
-        f.write('\\ the other entry, so the two ends of the rotor alternate.\n')
-        f.write('\\ Two rows per phase, row 19 first.\n')
-        f.write('.plyRingBot\n')
-        for phase in range(FRAMES):
-            for mid in bottoms[phase]:
-                d, m = convert_row([0, mid, 0])
-                emit_bytes(f, d + m)
+        f.write('\ Byte offset into plySprData for sprite row r of phase p, at\n')
+        f.write('\ index p*%d + r. Blank rows point at a real all-transparent\n'
+                % SPRITE_ROWS)
+        f.write('\ row, so the blit needs no special case for them.\n')
+        f.write('.plyOfsLo\n')
+        emit_bytes(f, [o & 0xFF for o in offsets], per_line=SPRITE_ROWS)
+        f.write('.plyOfsHi\n')
+        emit_bytes(f, [o >> 8 for o in offsets], per_line=SPRITE_ROWS)
+        f.write('\n')
+        f.write('\\ p * %d, to index the tables above.\n' % SPRITE_ROWS)
+        f.write('.plyMulRows\n')
+        emit_bytes(f, [SPRITE_ROWS * p for p in range(FRAMES)], per_line=FRAMES)
         f.write('\n')
 
-        f.write('\\ Rows 6-13: the droid number, identical in every phase.\n')
-        f.write('.plyDigits\n')
-        for row in digits:
-            d, m = convert_row(row)
-            emit_bytes(f, d + m)
-        f.write('\n')
-
-        # --- lookup tables the blitter decodes ----------------------------
-        f.write('\\ Rows 5, 14 and 20 are never written by the C64 either.\n')
-        f.write('\\ Storing them as a real all-transparent row rather than a\n')
-        f.write('\\ special case keeps the blit inner loop branchless.\n')
-        f.write('.plyBlank\n')
-        emit_bytes(f, [0] * 6 + [0xFF] * 6)
-        f.write('\n')
-
-        f.write('\\ Where each of the 21 sprite rows comes from:\n')
-        f.write('\\   &00-&04  plyRing row n, of the current phase\n')
-        f.write('\\   &20      plyBlank\n')
-        f.write('\\   &40-&41  plyRingBot row n, of the current phase\n')
-        f.write('\\   &80-&87  plyDigits row n\n')
-        src = []
-        for r in range(SPRITE_ROWS):
-            if r < 5:
-                src.append(r)
-            elif r in (5, 14, 20):
-                src.append(0x20)
-            elif r < 14:
-                src.append(0x80 | (r - 6))
-            elif r < 18:
-                src.append(19 - r)               # 15->4, 16->3, 17->2
-            else:
-                src.append(0x40 | (19 - r))      # 18->bot 1, 19->bot 0
-        f.write('.plyRowSrc\n')
-        emit_bytes(f, src, per_line=21)
-        f.write('\n')
-
-        f.write('\\ Per-phase base of each bank, so a row costs one add.\n')
-        f.write('.plyRingLo\n')
-        f.write('  ' + '\n  '.join(
-            'EQUB LO(plyRing + %d)' % (p * 5 * 12) for p in range(FRAMES)) + '\n')
-        f.write('.plyRingHi\n')
-        f.write('  ' + '\n  '.join(
-            'EQUB HI(plyRing + %d)' % (p * 5 * 12) for p in range(FRAMES)) + '\n')
-        f.write('.plyBotLo\n')
-        f.write('  ' + '\n  '.join(
-            'EQUB LO(plyRingBot + %d)' % (p * 2 * 12) for p in range(FRAMES)) + '\n')
-        f.write('.plyBotHi\n')
-        f.write('  ' + '\n  '.join(
-            'EQUB HI(plyRingBot + %d)' % (p * 2 * 12) for p in range(FRAMES)) + '\n')
-        f.write('\n')
-        f.write('\\ n * PLY_ROWBYTES, for n = 0-7.\n')
-        f.write('.plyMulRow\n')
-        emit_bytes(f, [12 * n for n in range(8)], per_line=8)
-        f.write('\n')
-
-    size = FRAMES * 5 * 12 + FRAMES * 2 * 12 + 8 * 12
-    print('%s  (%d bytes of sprite data)' % (path, size))
+    print('%s  (%d rows, %d bytes of data + %d of tables)'
+          % (path, len(rows), len(rows) * 7, len(offsets) * 2 + FRAMES))
 
 
 if __name__ == '__main__':

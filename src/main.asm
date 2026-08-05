@@ -7,11 +7,13 @@
 \ UP / DOWN   previous / next deck
 \ SPACE       force a full redraw (debug oracle)
 \
-\ The player is pinned at the centre of the play area and the
-\ deck scrolls underneath it, as on the C64. Movement is the
-\ C64's own model: keys feed a direction, the direction feeds an
-\ accelerating 8.8 speed, and the speed moves the view by 0-7
-\ pixels a frame. Walls stop it.
+\ Movement is the C64's own model: keys feed a direction, the
+\ direction feeds an accelerating 8.8 speed. Walls stop it.
+\ The camera has a DEAD ZONE. The C64 pins the player dead centre
+\ because its hardware scroll is 1 pixel; ours is 4, and a rigid
+\ camera makes the world lurch at low speed. So the player moves
+\ through the world at 1 pixel and the view only follows once the
+\ player leaves a window around the centre — see player.asm.
 \
 \ Play area 320 x 120 px, in a 10K circular buffer at &5800.
 \ See screen.asm for the addressing scheme and scroll.asm for
@@ -206,6 +208,14 @@ SYS_VIA_ACR  = &FE4B
 SYS_VIA_IER  = &FE4E
 USR_VIA_IER  = &FE6E
 
+\ ---- sprite scratch, above the panel and below the play buffer ----
+\ &5480-&57FF is the ~900 bytes left over between the panel's last
+\ row and the start of the 10K strip. Both of these are constant and
+\ are built at startup by PlyBuildTables rather than shipped, which
+\ keeps them out of the PARA file where there is no room left.
+PLY_SHIFT2  = &5480             \ the sprite, shifted 2 px right
+PLY_MASKTAB = &5700             \ data byte -> its transparency mask
+
 VIEW_CHARS = 40                 \ 320 px / 8
 MAX_HX     = (MAP_CHAR_W - VIEW_CHARS) * 2      \ 432 half-characters
 MAX_Y      = MAP_CHAR_H - 16                    \ 48 rows
@@ -231,6 +241,7 @@ KEY_SPACE  = &9D                \ -99
 \ &70-&8F was the original allocation and is full. With BASIC not
 \ running and the MOS reduced to OSBYTE &81, the whole of &00-&8F
 \ is ours, so the sprite blitter extends downwards from &68.
+pdst     = &64                  \ PlyBuildTables destination        (2)
 cht      = &66                  \ charset source, the half being copied (2)
 psrc     = &68                  \ sprite row, pixel data    (2)
 pmsk     = &6A                  \ sprite row, mask          (2)
@@ -285,6 +296,9 @@ ORG &1100
   LDX #LO(loadcmd)              \ must follow the mode change: VDU 22
   LDY #HI(loadcmd)              \ clears what the OS thinks is its screen
   JSR OSCLI
+
+  JSR PlyBuildTables            \ AFTER the mode change: VDU 22 clears
+                                \ &3000-&7FFF, which includes these
 
   JSR InstallIrq                \ after the load: taking over the IRQ stops
                                 \ the MOS servicing the filing system

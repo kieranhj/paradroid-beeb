@@ -78,9 +78,18 @@ PLY_DECEL  = C64_DECEL / (PLY_ITER_FRAMES * PLY_ITER_FRAMES)
 PLY_MAXSPD = (C64_MAXSPD * 256) / PLY_ITER_FRAMES       \ 8.8, so &0380
 PLY_MAXNEG = 65536 - PLY_MAXSPD
 
-MAX_PX_X = (MAP_CHAR_W * 8) - 320       \ 1728
+MAX_PX_X = (MAP_CHAR_W * 8) - 320       \ 1728, view origin
 MAX_PX_Y = MAX_Y * 8                    \ 384; mapYr must not pass MAX_Y,
                                         \ or the split row reads map row 64
+MAX_PLY_X = (MAP_CHAR_W * 8) - 24       \ 2024, sprite left edge
+
+\ The camera window. The sprite's home is the C64's, 148 px from the
+\ left of the view: PlayerSprite_dat puts sprite 7 at VIC x 172,
+\ which is screen 148, and that is exactly (320-24)/2.
+PLY_HOME_X   = 148
+PLY_DEADZONE = 8
+PLY_DZ_MIN   = PLY_HOME_X - PLY_DEADZONE
+PLY_DZ_MAX   = PLY_HOME_X + PLY_DEADZONE
 
 \ ============================================================
 \ ReadKeys — joyXDir / joyYDir, each -1, 0 or +1
@@ -263,13 +272,15 @@ MAX_PX_Y = MAX_Y * 8                    \ 384; mapYr must not pass MAX_Y,
 \
 \ putting the reference cell over the middle of the sprite, the same
 \ part of it the C64 uses: the digit block.
-PLY_REFX = 159
-PLY_REFY = 63
+PLY_REFX = 11                   \ from the sprite's left edge; 148 + 11 = 159
+PLY_REFY = 63                   \ from the view's top edge, sprite top + 13
 
 .CheckWalls
-  CLC                           \ reference cell
-  LDA posX   : ADC #LO(PLY_REFX) : STA plyCX
-  LDA posX+1 : ADC #HI(PLY_REFX) : STA plyCX+1
+  CLC                           \ reference cell, from the SPRITE's own
+  LDA plyX   : ADC #LO(PLY_REFX) : STA cwU    \ position now, not the view's
+  LDA plyX+1 : ADC #HI(PLY_REFX) : STA cwU+1
+  LDA cwU   : STA plyCX
+  LDA cwU+1 : STA plyCX+1
   LSR plyCX+1 : ROR plyCX
   LSR plyCX+1 : ROR plyCX
   LSR plyCX+1 : ROR plyCX
@@ -286,27 +297,24 @@ PLY_REFY = 63
   LDX #9                        \ moving right: probes 9, A, B
   JSR ProbeGroup
   BCC cw_vert
-  LDA posX                      \ back to the grid line behind us
+  LDA cwU                       \ back to the near side of this cell
   AND #&F8
   CLC
   ADC #1
-  STA posX
+  STA cwU
+  JSR CwUnRef
   JMP cw_xstop
 .cw_leftward
   LDX #6                        \ moving left: probes 6, 7, 8
   JSR ProbeGroup
   BCC cw_vert
-  CLC
-  LDA posX : ADC #7 : STA posX
-  BCC cw_lnc
-  INC posX+1
-.cw_lnc
-  LDA posX
-  AND #&F8
-  STA posX
+  LDA cwU                       \ to the far side of this cell
+  ORA #7
+  STA cwU
+  JSR CwUnRef
 .cw_xstop
   LDA #0
-  STA posXf                     \ the snap lands on a whole pixel
+  STA plyXf                     \ the snap lands on a whole pixel
   STA xSpd
   STA xSpd+1
 
@@ -377,6 +385,35 @@ PLY_REFY = 63
 .nearYoffset
   EQUB &FE, &FE, &FF, 1, 2, 2, &FF, 0, 1, &FF, 0, 1
 
+\ The snap works on cwU = plyX + PLY_REFX, the same quantity the
+\ reference cell is derived from, and the rule it must obey is that
+\ SNAPPING MUST NOT MOVE THE CELL. Move it and the wall drops out of
+\ the probes, the player drifts back into it, and it sits against the
+\ wall jittering a pixel — which is exactly what happened the first
+\ time, before the reference offset was fixed.
+\
+\ So both snaps stay inside the current cell and only strip the
+\ sub-cell remainder, in whichever direction backs away from the
+\ wall:
+\
+\   blocked going right   cwU = (cwU AND &F8) + 1   near side
+\   blocked going left    cwU = cwU OR 7            far side
+\
+\ Both are idempotent, so holding against a wall is stable.
+\
+\ The C64 writes these as (X AND $F8)+1 and (X+7) AND $F8 on
+\ ScreenPosX rather than on the reference quantity. That works there
+\ only because its offset is 159 and 159 MOD 8 = 7, which makes the
+\ two formulations coincide. Ours is 11, and rounding UP moves the
+\ cell — the vertical snap below still uses the C64's form because
+\ PLY_REFY is 63 and the coincidence holds.
+.CwUnRef
+  SEC
+  LDA cwU   : SBC #LO(PLY_REFX) : STA plyX
+  LDA cwU+1 : SBC #HI(PLY_REFX) : STA plyX+1
+  RTS
+
+.cwU       EQUW 0
 .plyCX     EQUW 0
 .plyCY     EQUW 0
 .pgCount   EQUB 0
@@ -407,10 +444,11 @@ PLY_REFY = 63
   LDA xSpd+1
   JSR SignByte                  \ -> mvSign, &00 or &FF
   CLC
-  LDA posXf  : ADC xSpd   : STA posXf
-  LDA posX   : ADC xSpd+1 : STA posX
-  LDA posX+1 : ADC mvSign : STA posX+1
-  JSR ClampX
+  LDA plyXf  : ADC xSpd   : STA plyXf
+  LDA plyX   : ADC xSpd+1 : STA plyX
+  LDA plyX+1 : ADC mvSign : STA plyX+1
+  JSR ClampPlyX
+  JSR DeadZone                  \ -> posX, and plyUnit / plyShift
 
   LDA ySpd+1
   JSR SignByte
@@ -420,8 +458,8 @@ PLY_REFY = 63
   LDA posY+1 : ADC mvSign : STA posY+1
   JSR ClampY
 
-  LDA posX+1                    \ mapHX = posX >> 2
-  LSR A
+  LDA posX+1                    \ mapHX = posX >> 2; posX is always a
+  LSR A                         \ multiple of 4, so nothing is lost
   STA mapHX+1
   LDA posX
   ROR A
@@ -527,6 +565,110 @@ PLY_REFY = 63
   RTS
 
 \ ============================================================
+\ DeadZone — the view follows the player, but only when pushed
+\ ============================================================
+\ The C64 pins the player dead centre because its hardware scroll is
+\ 1 pixel. Ours is 4 — the CRTC addresses in 8-byte units, 80 to a
+\ row, so a step is 1/80 of the screen width in every mode — and at
+\ low speed a rigid camera makes the whole world lurch 4 pixels
+\ every few frames.
+\
+\ So the player moves through the world at 1 pixel and the view only
+\ follows once the player leaves a window either side of the centre.
+\ Walking slowly, the world holds perfectly still and only the droid
+\ moves; at speed the window saturates and the view scrolls as
+\ before. The cost is that the player is no longer pinned centre and
+\ that reversing direction crosses the window before the world
+\ reacts — about 5 frames at top speed.
+\
+\ posX stays a multiple of 4 so that mapHX = posX >> 2 loses
+\ nothing, and the leftover 0-3 pixels are carried by the sprite:
+\ plyShift picks the 2-pixel-shifted copy, plyUnit the CRTC column.
+.DeadZone
+  SEC                           \ sx = where the sprite sits on screen
+  LDA plyX   : SBC posX   : STA dzSx
+  LDA plyX+1 : SBC posX+1 : STA dzSx+1
+
+  LDA dzSx+1
+  BNE dz_right                  \ past 255: certainly right of the window
+  LDA dzSx
+  CMP #PLY_DZ_MAX+1
+  BCS dz_right
+  CMP #PLY_DZ_MIN
+  BCC dz_left
+  JMP dz_screen                 \ inside: the view holds still
+
+.dz_right
+  SEC                           \ how far out, rounded up to whole units
+  LDA dzSx   : SBC #PLY_DZ_MAX : STA dzD
+  LDA dzSx+1 : SBC #0          : STA dzD+1
+  JSR DzRoundUnits
+  CLC
+  LDA posX   : ADC dzD   : STA posX
+  LDA posX+1 : ADC dzD+1 : STA posX+1
+  JMP dz_clamp
+.dz_left
+  SEC
+  LDA #PLY_DZ_MIN : SBC dzSx   : STA dzD
+  LDA #0          : SBC dzSx+1 : STA dzD+1
+  JSR DzRoundUnits
+  SEC
+  LDA posX   : SBC dzD   : STA posX
+  LDA posX+1 : SBC dzD+1 : STA posX+1
+
+\ Both limits are multiples of 4, so clamping cannot knock posX off
+\ the unit grid.
+.dz_clamp
+  LDA posX+1
+  BMI dz_low
+  CMP #HI(MAX_PX_X)
+  BCC dz_screen
+  BNE dz_high
+  LDA posX
+  CMP #LO(MAX_PX_X)
+  BCC dz_screen
+  BEQ dz_screen
+.dz_high
+  LDA #LO(MAX_PX_X) : STA posX
+  LDA #HI(MAX_PX_X) : STA posX+1
+  JMP dz_screen
+.dz_low
+  LDA #0
+  STA posX
+  STA posX+1
+
+\ Where the sprite lands, now that the view has settled. sx reaches
+\ 296 at the right-hand edge of the map, so the halving is 16-bit;
+\ after it, everything fits in a byte.
+.dz_screen
+  SEC
+  LDA plyX   : SBC posX   : STA dzSx
+  LDA plyX+1 : SBC posX+1 : STA dzSx+1
+  LDA dzSx+1
+  LSR A
+  LDA dzSx
+  ROR A                         \ sx >> 1, 0-148
+  STA amTmp
+  AND #1
+  STA plyShift                  \ odd half-pixel pair: use the shifted copy
+  LDA amTmp
+  LSR A
+  STA plyUnit
+  RTS
+
+\ dzD rounded up to a whole number of 4-pixel units.
+.DzRoundUnits
+  CLC
+  LDA dzD : ADC #3 : STA dzD
+  BCC dzr_1
+  INC dzD+1
+.dzr_1
+  LDA dzD
+  AND #&FC
+  STA dzD
+  RTS
+
+\ ============================================================
 \ SignByte — mvSign = &FF if A is negative, else &00
 \ ============================================================
 .SignByte
@@ -544,27 +686,27 @@ PLY_REFY = 63
 \ Running into the edge of the map kills the speed rather than
 \ leaving it wound up, so turning round is immediate instead of
 \ waiting for a phantom 7 px/frame to decelerate.
-.ClampX
-  LDA posX+1
+.ClampPlyX
+  LDA plyX+1
   BMI cx_low                    \ went below zero
-  CMP #HI(MAX_PX_X)
+  CMP #HI(MAX_PLY_X)
   BCC cx_x
   BNE cx_high
-  LDA posX
-  CMP #LO(MAX_PX_X)
+  LDA plyX
+  CMP #LO(MAX_PLY_X)
   BCC cx_x
   BEQ cx_x
 .cx_high
-  LDA #LO(MAX_PX_X) : STA posX
-  LDA #HI(MAX_PX_X) : STA posX+1
+  LDA #LO(MAX_PLY_X) : STA plyX
+  LDA #HI(MAX_PLY_X) : STA plyX+1
   JMP cx_stop
 .cx_low
   LDA #0
-  STA posX
-  STA posX+1
+  STA plyX
+  STA plyX+1
 .cx_stop
   LDA #0
-  STA posXf                     \ snapping or stopping lands on a whole
+  STA plyXf                     \ snapping or stopping lands on a whole
   STA xSpd                      \ pixel; a stale fraction would drift
   STA xSpd+1
 .cx_x
@@ -613,15 +755,24 @@ PLY_REFY = 63
   ASL posY : ROL posY+1
   ASL posY : ROL posY+1
   ASL posY : ROL posY+1
+  CLC                           \ the player starts at the home position
+  LDA posX   : ADC #LO(PLY_HOME_X) : STA plyX
+  LDA posX+1 : ADC #HI(PLY_HOME_X) : STA plyX+1
   LDA #0
   STA xSpd : STA xSpd+1
   STA ySpd : STA ySpd+1
-  STA posXf : STA posYf
+  STA posXf : STA posYf : STA plyXf
   STA line
   STA bandN
   STA colCount
   RTS
 
+.plyX      EQUW 0               \ the player itself, map pixels — the
+.plyXf     EQUB 0               \ authority horizontally; posX follows
+.plyUnit   EQUB 0               \ sprite's CRTC column on screen
+.plyShift  EQUB 0               \ 1 = draw from the 2 px shifted copy
+.dzSx      EQUW 0
+.dzD       EQUW 0
 .posX      EQUW 0               \ view origin, map pixels
 .posY      EQUW 0
 .xSpd      EQUW 0               \ 8.8 signed, px per frame

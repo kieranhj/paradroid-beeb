@@ -5,10 +5,11 @@ Living document. Revised as each layer lands.
 ## Where we are — read this first
 
 **Layers 0–4 are done.** The port boots to a playable deck: a static panel above a 320 × 120 play
-area, the player droid pinned at the centre with its rotor spinning, and the deck hardware-scrolling
-8 ways underneath it — 4 px horizontally, 1 scanline vertically — driven by the C64's own
-acceleration model and stopped by walls. Frame-locked at 50 Hz in every direction including full
-diagonal. 16 decks, per-deck palette and charset built at load time. Keys: Z/X left/right, K/M
+area, the player droid near the centre with its rotor spinning, and the deck hardware-scrolling 8
+ways underneath it — 4 px horizontally, 1 scanline vertically — driven by the C64's own acceleration
+model and stopped by walls. The camera has a dead zone, so at low speed the world holds still and
+the droid glides at 2 px instead of the world lurching at 4. Frame-locked at 50 Hz in every
+direction including full diagonal. 16 decks, per-deck palette and charset built at load time. Keys: Z/X left/right, K/M
 up/down, cursor up/down change deck, SPACE forces a full redraw.
 
 **Next up: Layer 5, droids** — the same movement model applied to non-player droids, plus
@@ -40,6 +41,7 @@ sampled mid-redraw.
 
 | | |
 |---|---|
+| 1 px sprite positioning | Needs four shifted copies, 1820 bytes — waiting on `PARADAT` moving to sideways RAM. 2 px matches the C64 artwork's own pixel size. |
 | Play area is 320 × 120, not 128 | Consequence of the single hardware wrap — see Layer 3d. Getting the row back needs the 20K wrap or per-cycle wrap bits. **KC's call.** |
 | Vertical granularity | 1 scanline against 4 px horizontal is lopsided. 2 or 4 scanlines costs nothing extra. Decide when there is a droid to move. |
 | `$D021` is an assumption | Marked `[assumed]` in `export_bbc.py`. First suspect if deck colours look wrong on hardware. |
@@ -974,7 +976,49 @@ the sprite's own colour (white) / `$D026` (orange). MODE 1's four logical colour
 the three are mapped onto logical 1-3 by role. The player therefore changes colour with the deck,
 exactly as the tiles do. Revisit if it reads badly on a particular deck.
 
-#### The player does not move; the deck does
+#### 4a — Dead-zone camera, and 2 px sprite positioning
+
+**The CRTC's horizontal granularity is 1/80 of the display width in every mode.** It addresses in
+8-byte units and a row is 80 of them, so a step is ~4 MODE 1 pixels; MODE 0 does not help, because
+its pixels are half the width. Anything finer is software.
+
+Two 10K circular strips — a second copy of the map offset by 2 px, alternating which one R12/R13
+points at — is the obvious answer and **cannot work on a Model B**. A circular strip only works
+because its period equals the hardware wrap span, and there is exactly one wrap region available:
+10K wrapping at `&5800`. A second strip at `&3000` under the 20K wrap runs out of its own 10K and
+continues into the first. Interleaving rows, a 1280-byte row stride with `R1` = 80, switching the
+wrap per field — all fail on the same point, that the CRTC's row stride *is* `R1`. Master-only, as
+parked.
+
+**So the camera moved instead of the scroll.** `plyX` is the player's own position in the world, at
+1 px; `posX` is the view, which only follows once the player leaves a ±8 px window around the
+centre and then moves in whole 4 px units. Walking slowly the world holds perfectly still and only
+the droid moves, which is the case that looked bad; at speed the window saturates and the view
+scrolls as before. The cost is that the player is no longer pinned centre and that reversing
+direction crosses the window — about 5 frames at top speed — before the world reacts.
+
+Vertically nothing changed: the scroll is already 1 scanline, so the player stays pinned and
+`posY` remains the authority.
+
+**The sprite is positioned every 2 px.** A 2 px shift spills 24 px into seven bytes, so rows are
+stored seven wide and there are two copies — unshifted on disc, shifted built at startup by
+`PlyBuildTables` into `&5480`. 2 px rather than 1 is not only thrift: a C64 multicolour pixel is
+exactly two MODE 1 pixels, so the artwork holds no finer detail. 1 px needs four copies, 1820
+bytes, which does not fit below `&3000` until `PARADAT` moves to sideways RAM.
+
+**Masks are no longer stored.** Every opaque pixel maps to logical 1, 2 or 3 and never 0 — the
+exporter asserts it — so a pixel is transparent exactly when both its bits are clear, and a
+256-byte table recovers the mask from the data. The row was being copied into a buffer anyway, so
+deriving it there is free, and it halves the sprite data.
+
+> **The collision snap must not move the reference cell.** With the reference offset now 11 rather
+> than 159, the C64's `(X+7) AND $F8` rounds *up* and tips the cell over — the same one-pixel
+> jitter as before, back again by a different route. Both snaps now stay inside the current cell and
+> only strip the sub-cell remainder: `(cwU AND &F8) + 1` going right, `cwU OR 7` going left. Both
+> idempotent, so holding against a wall is stable. The vertical snap still uses the C64's form
+> because `PLY_REFY` is 63 and 63 MOD 8 = 7 makes the two coincide.
+
+#### The player does not move on screen; the deck does — mostly
 
 `PlayerSprite_dat` (`$6A2E`) puts sprite 7 at VIC (172, 172) = screen (148, 122). 148 is exactly
 `(320-24)/2` and a multiple of 4, so the sprite lands on a CRTC unit boundary and **needs no
@@ -1156,11 +1200,17 @@ cycles), while a **down**-band has until `P+184` of the next frame.
 
 #### Verified
 
-Play buffer diffed byte-for-byte against `RedrawAll` at odd `mapHX` (167) and non-zero `line` (1),
-after full-speed diagonal scrolling in both vertical directions: **0 real differences in 10240**.
-Ten bytes differed and all ten were inside the sprite's own footprint, where the rotor had spun
-between the two dumps — worth computing that footprint and excluding it, rather than staring at a
-10-byte diff wondering.
+Play buffer diffed byte-for-byte against `RedrawAll` after full-speed diagonal scrolling in both
+vertical directions:
+
+| | result |
+|---|---|
+| odd `mapHX` (167), `line` = 1, before the dead zone | **0 real differences in 10240** |
+| odd `mapHX` (155), `line` = 5, sprite at unit 39 with a 2 px shift | **0 real differences in 10240** |
+
+In both runs some bytes differed and every one was inside the sprite's own footprint, where the
+rotor had spun between the two dumps. Compute that footprint and exclude it rather than staring at
+the diff wondering — it depends on `scrollS`, `line` and `plyUnit`.
 
 ### Layer 5 — Droid movement
 `GetNewDir`, `AdvanceMapPos`, `CheckDroidAdvance` and the waypoint logic — the same speed model
