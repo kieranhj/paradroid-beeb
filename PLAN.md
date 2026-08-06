@@ -42,7 +42,7 @@ sampled mid-redraw.
 | | |
 |---|---|
 | 1 px sprite positioning | Needs four shifted copies, 1820 bytes — waiting on `PARADAT` moving to sideways RAM. 2 px matches the C64 artwork's own pixel size. |
-| 2 px world scrolling | Parked, Master-only via shadow RAM. Feasible and cheap to switch; costs +60–80% on all drawing because both buffers must stay current. Layer 4a. |
+| 2 px world scrolling | Parked, Master-only via shadow RAM. Feasible and cheap to switch; costs +60–80% on all drawing because both buffers must stay current. See **Master-only extensions**. |
 | Play area is 320 × 120, not 128 | Consequence of the single hardware wrap — see Layer 3d. Getting the row back needs the 20K wrap or per-cycle wrap bits. **KC's call.** |
 | Vertical granularity | 1 scanline against 4 px horizontal is lopsided. 2 or 4 scanlines costs nothing extra. Decide when there is a droid to move. |
 | `$D021` is an assumption | Marked `[assumed]` in `export_bbc.py`. First suspect if deck colours look wrong on hardware. |
@@ -177,27 +177,32 @@ palettes. Judge that from a conversion, not from the C64 screenshots.
 
 | Region | Size | Contents |
 |---|---|---|
-| ZP `&70–&8F` | 32 B | all used — see the map in `main.asm` |
+| ZP `&64–&6D`, `&70–&8F` | 42 B | all used — see the map in `main.asm` |
 | `&0100–&01FF` | 256 B | stack |
-| `&0400–&0CFF` | ~2.2 K | reclaimed OS workspace — **not yet used** |
-| `&1100–&1DB8` | 3.2 K | code (`PARA`). DFS random-access buffer space, safe for `*LOAD` |
-| `&1E00–&21FF` | 1 K | tile map, built at deck load |
-| `&2200–&2A8F` | 2192 B | MODE 1 charset, built at deck load |
-| `&2A90–&2FFF` | **1.4 K free** | |
+| `&0400–&0C90` | 2192 B | MODE 1 charset, built at deck load — reclaimed OS workspace |
+| `&0C90–&10FF` | ~1.1 K free | rest of the reclaimed OS workspace |
+| `&1100–&2B0D` | 6.5 K | code + sprite data (`PARA`). DFS random-access buffer space, safe for `*LOAD` |
+| `&2B0D–&2BFF` | **243 B free** | |
+| `&2C00–&3000` | 1 K | tile map, built at deck load |
 | `&3000–&4707` | 5.8 K | `PARADAT`: C64 char data, colour schemes, tile defs, deck RLE |
 | `&4800–&547F` | 3.2 K | panel — 5 rows × 640, displayed by rupture cycle 1 |
-| `&5480–&57FF` | **~900 B free** | |
+| `&5480–&5647` | 455 B | the player sprite, shifted 2 px right — built at startup |
+| `&5647–&56FF` | **185 B free** | |
+| `&5700–&57FF` | 256 B | data byte → transparency mask table — built at startup |
 | `&5800–&7FFF` | 10 K | play buffer: circular strip, 16 rows × 640 |
 | SWRAM bank 0 | 16 K | **unused so far** — sprites, and data displaced from `&3000` |
 | SWRAM bank 1 | 16 K | **unused so far** — paged code: transfer minigame, console, side view |
 
-Only ~2.3 K is free below the screen, so **Layer 4 is where sideways RAM has to start being used**.
-The obvious first move is `PARADAT` into bank 0, which frees `&3000–&4707` — but note the deck RLE
-and colour tables are read during `LoadDeck`, so whatever pages them in has to be resident.
+**Layer 4 spent the slack.** The charset moved down into reclaimed OS workspace at `&0400` to buy
+room, and even so only **243 bytes** remain contiguous below the tile map. Layer 5 has to fit droid
+state and movement into that, so `PARADAT` into bank 0 — which frees `&3000–&4707` — is now the
+next structural move rather than a someday one. Note the deck RLE and colour tables are read during
+`LoadDeck`, so whatever pages them in has to be resident.
 
-Open risk: sprite data in MODE 1 with pre-shifted copies runs 30–60K depending on how many shift
-variants and whether masks are stored or generated. May force a third bank or runtime shifting.
-Quantify at Layer 4.
+Sprite storage turned out far cheaper than the 30–60 K feared here before Layer 4: the player is
+455 bytes plus 344 of tables, because masks are derived rather than stored and only 2 px shift
+variants are kept. Four-way 1 px shifts would need 1820 bytes, which is what waits on `PARADAT`
+moving out.
 
 ## Layers
 
@@ -707,11 +712,11 @@ To compare:
 - 4-px horizontal (CRTC only) vs. 1-scanline vertical (R4/R5/R12 trick) vs. flip-screen.
 
 **Parked option — 2-px horizontal, Master only.** A second buffer holding the map offset by 2 px,
-alternating which one is displayed. Superseded by the fuller write-up in Layer 4a, which corrects
-this note: the obstacle on a Model B is not "no room for the second buffer" but that a circular
-strip's period must equal the hardware wrap span and there is only one such region. On a Master both
-buffers live at the *same* address in main and shadow RAM, so the wrap is shared and the switch is
-one ACCCON bit.
+alternating which one is displayed. Superseded by **Master-only extensions** at the end of this
+document, which corrects this note: the obstacle on a Model B is not "no room for the second buffer"
+but that a circular strip's period must equal the hardware wrap span and there is only one such
+region. On a Master both buffers live at the *same* address in main and shadow RAM, so the wrap is
+shared and the switch is one ACCCON bit.
 
 #### 3d — Smooth vertical scroll, 1-scanline granularity ✅ DONE
 
@@ -1003,14 +1008,15 @@ state tracking — is moot rather than fixed. `DrawColumn` still uses the genera
   scanlines) makes a strip a straight indexed copy. That is the difference between smooth scrolling
   costing *less* than today's row draw and costing ~2.5× more at full speed.
 
-### Layer 4 — Player droid: sprite, controls, collision ✅ MOSTLY DONE
+### Layer 4 — Player droid: sprite, controls, collision ✅ DONE
 
 Merged with the player half of Layer 5, because the point of the layer is the *feel* of moving the
 player and the sprite alone does not demonstrate that. What landed: the 24×21 player sprite with its
 8 rotor phases, the C64 speed model, pixel-granular 8-way scrolling, and wall collision.
 
-**Outstanding: the frame budget at full diagonal speed.** See below — it is the one thing not
-finished, and it is quantified rather than guessed.
+The frame budget at full diagonal speed was the last thing outstanding and is **closed** — see the
+end of this layer for the measurement. The one judgement still open is whether the dead-zone
+camera's feel is right; KC has it "to sleep on".
 
 #### The player sprite is constructed, not stored
 
@@ -1034,8 +1040,11 @@ Two details worth keeping:
 - Row 2 and row 17's right-hand byte is `$80`, left in the accumulator from the row above. There is
   no `RotAnim_2_17R` table.
 
-Only 13 distinct rows are stored (5 rotor rows per phase, 8 shared digit rows, one blank), 768
-bytes, with a 21-entry table saying where each sprite row comes from.
+Only the distinct rows are stored: 5 rotor rows × 8 phases, the 2 alternating end rows × 8 phases,
+8 digit rows shared by every phase, and one blank — **65 rows of 7 bytes, 455 bytes**. Finding them
+costs a 16-bit offset per sprite row per phase (`plyOfsLo`/`plyOfsHi`, 8 × 21) plus `plyMulRows`,
+another 344 bytes. Blank rows point at a real all-transparent row, so the blit needs no special
+case for them.
 
 **Colour is approximate.** A C64 multicolour sprite's bit pairs are transparent / `$D025` (black) /
 the sprite's own colour (white) / `$D026` (orange). MODE 1's four logical colours are the deck's, so
@@ -1055,40 +1064,8 @@ because its period equals the hardware wrap span, and there is exactly one wrap 
 continues into the first. Interleaving rows, a 1280-byte row stride with `R1` = 80, switching the
 wrap per field — all fail on the same point, that the CRTC's row stride *is* `R1`.
 
-##### ⏸ PARKED: 2 px horizontal scrolling on a Master, via shadow RAM
-
-Not a compromise version of the above — the *same* scheme, which the Master can actually host.
-
-**The mechanism.** Both buffers sit at the same address, `&5800–&7FFF`: one in main RAM, one in
-shadow. Same 10K wrap, same R12/R13, same scroll arithmetic, same everything — the only difference
-between displaying A and displaying B is one bit of ACCCON (`&FE34`): `D` selects which RAM the
-video fetches from, `X` selects which one the CPU sees at `&3000–&7FFF`. So none of the addressing
-problems that kill it on a Model B arise; we are not fitting two strips into one wrap region, we are
-using the same region twice over. Flip `D` in the VSync handler and the view is 2 px further along.
-
-**Confirmed by KC, not assumed:**
-- The Master's screen wrap is driven the same way as the Model B's — the System VIA addressable
-  latch — so the 10K/`&5800` setting and everything derived from it carries over unchanged.
-- Writing ACCCON's `D` bit takes effect **instantly**, including mid-scanline. Per-field switching
-  is therefore trivially safe; mid-scanline switching is a whole other technique and a conversation
-  for another day.
-
-**Why it is parked: cost, not feasibility.** Either buffer might be the one displayed next field, so
-both must be current at all times. Every edge redraw and every sprite blit happens twice.
-
-- It is cheaper than a straight doubling. B's exposed edges can be produced by *shifting bytes out
-  of A* rather than redrawing from the tile map, which skips the tile → character → charset
-  lookups — and those are the expensive half of a band, not the copying. Call it +60–80% on the
-  drawing rather than +100%.
-- Even so that is roughly +12–16K cycles a frame against about 5K spare. It needs the optimisation
-  backlog below spent (~14K identified) or a smaller play area, or both.
-- And it forks the rendering path, or makes the port Master-only. `PLAN.md`'s target is a Model B
-  with sideways RAM.
-
-**Revisit when** the frame budget has real headroom — most likely after `PARADAT` moves to sideways
-RAM and the inlining work below is done — or if the target ever moves to the Master. The dead-zone
-camera already fixes the case that actually looked bad (the world lurching when you creep), so this
-buys smoothness at moderate speeds rather than curing a defect.
+> The same 2 px scheme *is* hostable on a Master, via shadow RAM. It is parked on cost, not
+> feasibility — see **Master-only extensions** at the end of this document.
 
 **So the camera moved instead of the scroll.** `plyX` is the player's own position in the world, at
 1 px; `posX` is the view, which only follows once the player leaves a ±8 px window around the
@@ -1243,12 +1220,20 @@ deck load, after the last filing-system call.
 The alternative was moving `PARADAT` into sideways RAM. That is still the right answer eventually,
 but it was not the one that unblocked this layer.
 
+As the build actually reports it — regenerate these numbers from `build.ps1` rather than trusting
+the table, because Layer 4 moved them twice:
+
 | | |
 |---|---|
-| `&0400-&0C8F` | MODE 1 charset, built at deck load |
-| `&1100-&296F` | code + sprite data |
-| `&2A00-&2DFF` | tile map |
-| `&2E00-&2FFF` | free — about 512 bytes |
+| `&0400-&0C90` | MODE 1 charset, built at deck load |
+| `&1100-&2B0D` | code + sprite data |
+| `&2B0D-&2BFF` | **free — 243 bytes** |
+| `&2C00-&3000` | tile map |
+| `&3000-&4707` | `PARADAT`, loaded after the mode change |
+
+**243 bytes is the whole of the headroom below `&3000`**, and Layer 5 has to fit droid state and
+movement code into it. Moving `PARADAT` to sideways RAM frees 5.8 K and is now closer to necessary
+than optional — it is also the prerequisite for 1 px sprite positioning.
 
 #### The frame budget — closed, and how
 
@@ -1337,6 +1322,49 @@ play area's four colours and so changes with the deck.
 
 ### Layer 11 — Sound, title, polish
 SN76489 driver replacing the SID engine, title screen, attract mode.
+
+## Master-only extensions
+
+Things the port could do on a Master 128 that a Model B cannot host, kept together so the Model B
+path stays readable. **None of these are on the critical path.** `PLAN.md`'s target is a Model B
+with two sideways RAM banks; anything here either forks the rendering path or makes the port
+Master-only, and that is a decision not yet taken.
+
+### ⏸ 2 px horizontal scrolling, via shadow RAM
+
+The scheme Layer 4a rules out on a Model B — two 10K circular strips, a second copy of the map
+offset by 2 px, alternating which one R12/R13 points at. It fails there because a circular strip's
+period must equal the hardware wrap span and only one wrap region exists. It is not a compromise
+version of that idea; it is the *same* idea, which the Master can actually host.
+
+**The mechanism.** Both buffers sit at the same address, `&5800–&7FFF`: one in main RAM, one in
+shadow. Same 10K wrap, same R12/R13, same scroll arithmetic, same everything — the only difference
+between displaying A and displaying B is one bit of ACCCON (`&FE34`): `D` selects which RAM the
+video fetches from, `X` selects which one the CPU sees at `&3000–&7FFF`. So none of the addressing
+problems that kill it on a Model B arise; we are not fitting two strips into one wrap region, we are
+using the same region twice over. Flip `D` in the VSync handler and the view is 2 px further along.
+
+**Confirmed by KC, not assumed:**
+- The Master's screen wrap is driven the same way as the Model B's — the System VIA addressable
+  latch — so the 10K/`&5800` setting and everything derived from it carries over unchanged.
+- Writing ACCCON's `D` bit takes effect **instantly**, including mid-scanline. Per-field switching
+  is therefore trivially safe; mid-scanline switching is a whole other technique and a conversation
+  for another day.
+
+**Why it is parked: cost, not feasibility.** Either buffer might be the one displayed next field, so
+both must be current at all times. Every edge redraw and every sprite blit happens twice.
+
+- It is cheaper than a straight doubling. B's exposed edges can be produced by *shifting bytes out
+  of A* rather than redrawing from the tile map, which skips the tile → character → charset
+  lookups — and those are the expensive half of a band, not the copying. Call it +60–80% on the
+  drawing rather than +100%.
+- Even so that is roughly +12–16K cycles a frame against about 5K spare. It needs the optimisation
+  backlog at the end of Layer 4 spent (~14K identified) or a smaller play area, or both.
+
+**Revisit when** the frame budget has real headroom — most likely after `PARADAT` moves to sideways
+RAM and Layer 4's inlining work is done — or if the target ever moves to the Master. The dead-zone
+camera already fixes the case that actually looked bad (the world lurching when you creep), so this
+buys smoothness at moderate speeds rather than curing a defect.
 
 ## `src/` as it stands
 
