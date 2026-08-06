@@ -32,17 +32,33 @@ while the rotor rows depend on the PHASE. A single table indexed by both would
 be 24 x 8 x 21 entries. So the blitter uses drOfs[] for rows 0-5 and 14-20,
 and drDigit[type] + (row-6)*7 for rows 6-13.
 
-Colour
-------
-A C64 multicolour sprite's bit pairs mean:
+Colour and resolution
+---------------------
+DROIDS ARE HIRES SPRITES, NOT MULTICOLOUR. This was got wrong once and the
+code says so plainly:
 
-  00  transparent
-  01  $D025 sprite multicolour 0  = black
-  10  the sprite's own colour     = white
-  11  $D026 sprite multicolour 1  = orange
+  $190C  dMd0_droid, allocating a slot   LDA #0   / STA SpriteMC
+  $187F  dMd1_bullet                     LDA #0   / STA SpriteMC
+  $1BE8  ExplodeSprite                   LDA #$FF / STA SpriteMC
 
-MODE 1's four logical colours are the deck's, so the three are mapped onto
-logical 1-3 by role. Droids change colour with the deck, as the tiles do.
+so only explosions are multicolour. $190E-$1912 also clear SpriteXExp and
+SpriteYExp, so there is no doubling in either direction either.
+
+A hires sprite is 24 pixels across at the C64's full 320-pixel horizontal
+resolution, one BIT per pixel: set means the sprite's own colour, clear means
+transparent. There is no second or third colour to map.
+
+That is a straight 1:1 to MODE 1, which is also 320 across - 24 C64 pixels
+become 24 MODE 1 pixels. Reading the bytes as multicolour bit pairs instead
+produced 12 fat pixels doubled to 24, which is the same WIDTH and the same
+byte count, so it built and ran and looked plausible while being wrong.
+
+The single colour maps to DROID_COLOUR below. The C64 gives enemy droids
+$F0 - colour 0, black ($1906) - but MODE 1's four logical colours are the
+deck's own, and logical 1 is white on all 16 decks whereas logical 2 is black
+on fourteen of them and green on the other two. Logical 1 is therefore the
+one that reads consistently. Per-type colour from DColorTheme_t ($EA60) is a
+question for the combat layer, not this one.
 
 NO MASKS ARE STORED. Every opaque pixel maps to logical 1, 2 or 3 and never 0,
 so a pixel is transparent exactly when both of its bits are clear, and a
@@ -121,12 +137,7 @@ PLAYER_SPEED_T = 0x6D97
 # The C64's speeds are per iteration and an iteration is 2-3 frames.
 ITER_FRAMES = 2
 
-COLOUR = {
-    0b00: None,             # transparent
-    0b01: 2,                # black  -> logical 2
-    0b10: 1,                # white  -> logical 1, the highlight
-    0b11: 3,                # orange -> logical 3, the accent
-}
+DROID_COLOUR = 1            # MODE 1 logical colour of a set bit; see above
 
 BANNER = """\\ ============================================================
 \\ droids.asm
@@ -144,33 +155,29 @@ def emit_bytes(f, data, per_line=12):
 
 
 def convert_row(c64_row):
-    """3 C64 multicolour bytes -> 7 MODE 1 data bytes.
+    """3 C64 HIRES sprite bytes -> 7 MODE 1 data bytes.
 
-    Each C64 byte is four 2-bit pixels; each becomes two MODE 1 pixels, so a
-    C64 byte is two MODE 1 bytes. MODE 1 pixel n takes bit (7-n) as its high
-    colour bit and bit (3-n) as its low bit; a transparent pixel gets neither.
+    24 bits, one per pixel, straight across to 24 MODE 1 pixels at 4 per byte.
+    MODE 1 pixel n takes bit (7-n) as its high colour bit and bit (3-n) as its
+    low bit; a clear source bit sets neither, which is transparent.
 
     The seventh byte is always empty, so the 2-pixel-shifted copy built at
     startup has somewhere to put the pixels that spill out of byte 6.
     """
+    assert DROID_COLOUR != 0, (
+        'an opaque sprite pixel would map to logical 0; the mask could no '
+        'longer be derived from the data')
+    bits = [(byte >> (7 - i)) & 1 for byte in c64_row for i in range(8)]
     data = []
-    for byte in c64_row:
-        pixels = [(byte >> 6) & 3, (byte >> 4) & 3, (byte >> 2) & 3, byte & 3]
-        doubled = [p for p in pixels for _ in (0, 1)]
-        for half in (doubled[:4], doubled[4:]):
-            d = 0
-            for n, pair in enumerate(half):
-                logical = COLOUR[pair]
-                if logical is None:
-                    continue
-                assert logical != 0, (
-                    'an opaque sprite pixel mapped to logical 0; the mask can '
-                    'no longer be derived from the data')
-                if logical & 2:
+    for group in range(6):
+        d = 0
+        for n in range(4):
+            if bits[group * 4 + n]:
+                if DROID_COLOUR & 2:
                     d |= 1 << (7 - n)
-                if logical & 1:
+                if DROID_COLOUR & 1:
                     d |= 1 << (3 - n)
-            data.append(d)
+        data.append(d)
     data.append(0)
     return data
 
