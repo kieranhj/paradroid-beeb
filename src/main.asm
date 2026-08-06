@@ -235,11 +235,28 @@ USR_VIA_IER  = &FE6E
 
 \ ---- sprite scratch, above the panel and below the play buffer ----
 \ &5480-&57FF is the ~900 bytes left over between the panel's last
-\ row and the start of the 10K strip. Both of these are constant and
-\ are built at startup by PlyBuildTables rather than shipped, which
-\ keeps them out of the PARA file where there is no room left.
-PLY_SHIFT2  = &5480             \ the sprite, shifted 2 px right
-PLY_MASKTAB = &5700             \ data byte -> its transparency mask
+\ row and the start of the 10K strip. Only the mask table lives here
+\ now: it is a pure function of a byte, so building it at startup is
+\ cheaper than shipping it. The 2 px shifted artwork used to be built
+\ here too, but at 1743 bytes for 24 droid types it no longer fits —
+\ it ships pre-shifted in sideways RAM instead. &5480-&56FF is free.
+SPR_MASKTAB = &5700             \ data byte -> its transparency mask
+
+\ The player is a droid like any other, in slot 0. Its screen Y never
+\ changes: vertical scrolling is 1 scanline, so the C64's arrangement
+\ survives here and the view carries the player rather than the other
+\ way round. Only its X moved, because of the dead zone.
+PLY_SLOT = 0
+PLY_Y    = 50                   \ scanlines below the top of the view
+
+\ The 2 px shifted artwork, built at startup into spare sideways RAM
+\ above the generated data. It is not shipped: PARADAT is staged in
+\ main RAM at &3000 before being copied into the bank, and another
+\ 1743 bytes would push that staging area into the play buffer at
+\ &5800. An explicit address rather than a label after data_end,
+\ because beebasm resolves constant assignments in file order and
+\ sprite.asm is assembled before the data.
+SPR_SHIFT2 = &A800
 
 VIEW_CHARS = 40                 \ 320 px / 8
 MAX_HX     = (MAP_CHAR_W - VIEW_CHARS) * 2      \ 432 half-characters
@@ -266,12 +283,12 @@ KEY_SPACE  = &9D                \ -99
 \ &70-&8F was the original allocation and is full. With BASIC not
 \ running and the MOS reduced to OSBYTE &81, the whole of &00-&8F
 \ is ours, so the sprite blitter extends downwards from &68.
-pdst     = &64                  \ PlyBuildTables destination        (2)
+sprScan  = &64                  \ scanline within the char row
 swSrc    = &66                  \ sideways-RAM copy source  (2)
 psrc     = &68                  \ sprite row, pixel data    (2)
 swDst    = &6A                  \ sideways-RAM copy dest    (2)
-plyScan  = &6C                  \ scanline within the char row
-plyRow   = &6D                  \ sprite row being blitted
+sprRow   = &6C                  \ sprite row being blitted
+\ &6D free
 
 bufp     = &70                  \ buffer write pointer      (2)
 chp      = &72                  \ charset source            (2)
@@ -328,8 +345,9 @@ ORG &1100
   JSR FillPanel                 \ after the staging area is done with: it
                                 \ reaches past &4800, over the panel
 
-  JSR PlyBuildTables            \ AFTER the mode change: VDU 22 clears
-                                \ &3000-&7FFF, which includes these
+  JSR SprBuildMask              \ AFTER the mode change: VDU 22 clears
+  JSR SprBuildShift             \ &3000-&7FFF, which includes the mask
+  JSR SprInit                   \ table. The shift buffer is in the bank.
 
   JSR InstallIrq                \ after the load: taking over the IRQ stops
                                 \ the MOS servicing the filing system
@@ -350,7 +368,7 @@ ORG &1100
   \ edge redraw and the R12/R13 park both have to land before the
   \ play area is drawn again.
   JSR WaitVSync
-  JSR PlyRestore                \ before anything moves: the saved pixels
+  JSR SprRestoreAll             \ before anything moves: the saved pixels
                                 \ belong at the address they were taken from
 IF DEBUG_DRAW
   LDA #6 : JSR DbgSetBg         \ cyan while the redraw runs
@@ -418,8 +436,8 @@ ENDIF
   JSR RedrawAll
 .ml_notSpc
 
-  JSR PlyAnimate                \ last: the buffer is settled, so the save
-  JSR PlyDraw                   \ picks up the background the frame will show
+  JSR SprAnimateAll             \ last: the buffer is settled, so the save
+  JSR SprDrawAll                \ picks up the background the frame will show
 
   JMP mainloop
 
@@ -572,8 +590,12 @@ ENDIF
   STA scrollS+1                 \ writes whole rows, so buffer row 0 must
   STA line                      \ not be a split row
   STA iline
-  LDA #0                        \ the saved background belongs to the deck
-  STA plySaved                  \ we are leaving; RedrawAll replaces it
+  LDX #SPR_SLOTS-1              \ the saved backgrounds belong to the deck
+  LDA #0                        \ we are leaving; RedrawAll replaces them
+.ld_unsave
+  STA sprSaved,X
+  DEX
+  BPL ld_unsave
   JSR SetCRTCStart
   JSR RedrawAll
   RTS
@@ -583,7 +605,6 @@ INCLUDE "src/screen.asm"
 INCLUDE "src/scroll.asm"
 INCLUDE "src/level.asm"
 INCLUDE "src/player.asm"
-INCLUDE "src/data/player.asm"
 INCLUDE "src/sprite.asm"
 
 \ ---- absolute working storage ------------------------------
@@ -644,13 +665,18 @@ INCLUDE "src/data/levels.asm"
 INCLUDE "src/data/droids.asm"
 .data_end
 
+ASSERT DR_W == SPR_W            \ sprite.asm declares these ahead of the
+ASSERT DR_H == SPR_H            \ generated data; keep the two in step
+ASSERT data_end <= SPR_SHIFT2   \ the shift buffer sits above the data
+ASSERT SPR_SHIFT2 + DR_DATASIZE <= SWRAM_BASE + &4000
+
 DATA_PAGES = (data_end - data_start + 255) DIV 256
 ASSERT data_end <= SWRAM_BASE + &4000
 
 \ The staging copy may overrun the panel — FillPanel is called after
 \ PageDataIn for exactly that reason — but it must not reach the
-\ sprite tables PlyBuildTables writes next, nor the play buffer.
-ASSERT DATA_LOAD + DATA_PAGES * 256 <= PLY_SHIFT2
+\ mask table SprBuildMask writes next, nor the play buffer.
+ASSERT DATA_LOAD + DATA_PAGES * 256 <= SPR_MASKTAB
 
 ASSERT charset_end - charset == NUM_CHARS * CHAR_BYTES
 

@@ -175,6 +175,13 @@ def convert_row(c64_row):
     return data
 
 
+# The 2 px shifted copy is NOT emitted. It is built at startup directly into
+# spare sideways RAM above this data (SPR_SHIFT2 in main.asm). Shipping it
+# would add 1743 bytes to PARADAT, and PARADAT is staged in main RAM at &3000
+# before being copied up - which would push the staging area into the play
+# buffer at &5800. Building it costs a few thousand cycles once.
+
+
 def build_rotor(mem):
     """The 8 rotor phases: 5 top rows each, plus the 2 alternating end rows.
 
@@ -302,7 +309,6 @@ def main():
         for row in rows:
             emit_bytes(f, row, per_line=7)
         f.write('\n')
-
         f.write('\\ Byte offset into drSprData for sprite row r of phase p, at\n')
         f.write('\\ index p*%d + r. Rows %d-%d (the number) point at the blank\n'
                 % (SPRITE_ROWS, 6, 13))

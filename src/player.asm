@@ -448,7 +448,7 @@ PLY_REFY = 63                   \ from the view's top edge, sprite top + 13
   LDA plyX   : ADC xSpd+1 : STA plyX
   LDA plyX+1 : ADC mvSign : STA plyX+1
   JSR ClampPlyX
-  JSR DeadZone                  \ -> posX, and plyUnit / plyShift
+  JSR DeadZone                  \ -> posX, and slot 0's unit / shift
 
   LDA ySpd+1
   JSR SignByte
@@ -650,10 +650,10 @@ PLY_REFY = 63                   \ from the view's top edge, sprite top + 13
   ROR A                         \ sx >> 1, 0-148
   STA amTmp
   AND #1
-  STA plyShift                  \ odd half-pixel pair: use the shifted copy
+  STA sprShift+PLY_SLOT         \ odd half-pixel pair: use the shifted copy
   LDA amTmp
   LSR A
-  STA plyUnit
+  STA sprUnit+PLY_SLOT
   RTS
 
 \ dzD rounded up to a whole number of 4-pixel units.
@@ -769,8 +769,6 @@ PLY_REFY = 63                   \ from the view's top edge, sprite top + 13
 
 .plyX      EQUW 0               \ the player itself, map pixels — the
 .plyXf     EQUB 0               \ authority horizontally; posX follows
-.plyUnit   EQUB 0               \ sprite's CRTC column on screen
-.plyShift  EQUB 0               \ 1 = draw from the 2 px shifted copy
 .dzSx      EQUW 0
 .dzD       EQUW 0
 .posX      EQUW 0               \ view origin, map pixels
