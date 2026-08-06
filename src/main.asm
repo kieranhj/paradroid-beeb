@@ -323,7 +323,10 @@ ORG &1100
   JSR OSCLI
 
   JSR PageDataIn                \ PARADAT lands at &3000 and is copied up
-                                \ into SWRAM; &3000-&4707 is free after
+                                \ into SWRAM; the staging area is free after
+
+  JSR FillPanel                 \ after the staging area is done with: it
+                                \ reaches past &4800, over the panel
 
   JSR PlyBuildTables            \ AFTER the mode change: VDU 22 clears
                                 \ &3000-&7FFF, which includes these
@@ -638,11 +641,16 @@ INCLUDE "src/data/chardata.asm"
 INCLUDE "src/data/colours.asm"
 INCLUDE "src/data/tiledefs.asm"
 INCLUDE "src/data/levels.asm"
+INCLUDE "src/data/droids.asm"
 .data_end
 
 DATA_PAGES = (data_end - data_start + 255) DIV 256
 ASSERT data_end <= SWRAM_BASE + &4000
-ASSERT DATA_LOAD + DATA_PAGES * 256 <= PANEL_ADDR
+
+\ The staging copy may overrun the panel — FillPanel is called after
+\ PageDataIn for exactly that reason — but it must not reach the
+\ sprite tables PlyBuildTables writes next, nor the play buffer.
+ASSERT DATA_LOAD + DATA_PAGES * 256 <= PLY_SHIFT2
 
 ASSERT charset_end - charset == NUM_CHARS * CHAR_BYTES
 

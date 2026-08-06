@@ -1,0 +1,385 @@
+#!/usr/bin/env python3
+"""
+export_droids.py - Droid sprites, waypoints and type tables for the BBC port.
+
+Emits src/data/droids.asm. Supersedes export_player.py: the player is droid
+type 0, so one table now serves every droid including him.
+
+Sprites
+-------
+No droid sprite exists in the C64 data. The dynamic sprite area $5200-$53FF
+ships zeroed and every droid's artwork is built at runtime:
+
+  BuildDroidSprite ($3C77)  writes the three-digit droid number into sprite
+                            rows 6-13, one 4-pixel-wide digit per byte column.
+  AnimateDroids    ($3CFB)  writes the spinning rotor into rows 0-4 and 15-19
+                            from the RotAnim_* tables, indexed by a phase
+                            counter kept in the sprite's own pad byte ($3F).
+
+Rows 5, 14 and 20 are never written, so they stay transparent.
+
+The rotor is IDENTICAL for every droid - only the number differs. So the rows
+are stored once and shared:
+
+    rotor   5 rows x 8 phases            = 40 rows
+    ends    2 alternating rows x 8 phases = 16 rows
+    digits  8 rows x 24 types             = 192 rows
+    blank   1
+                                          = 249 rows x 7 bytes = 1743 bytes
+
+Two lookups instead of one, because the digit rows depend on the droid TYPE
+while the rotor rows depend on the PHASE. A single table indexed by both would
+be 24 x 8 x 21 entries. So the blitter uses drOfs[] for rows 0-5 and 14-20,
+and drDigit[type] + (row-6)*7 for rows 6-13.
+
+Colour
+------
+A C64 multicolour sprite's bit pairs mean:
+
+  00  transparent
+  01  $D025 sprite multicolour 0  = black
+  10  the sprite's own colour     = white
+  11  $D026 sprite multicolour 1  = orange
+
+MODE 1's four logical colours are the deck's, so the three are mapped onto
+logical 1-3 by role. Droids change colour with the deck, as the tiles do.
+
+NO MASKS ARE STORED. Every opaque pixel maps to logical 1, 2 or 3 and never 0,
+so a pixel is transparent exactly when both of its bits are clear, and a
+256-byte table built at startup recovers the mask. The row is copied into a
+buffer anyway, so deriving it there is free.
+
+Rows are SEVEN bytes wide, not six: 24 px is 6 MODE 1 bytes on a 4-pixel
+boundary, but sprites are positioned every 2 px and the shift spills into a
+seventh byte.
+
+Waypoints
+---------
+Droids only change direction on a waypoint. Each is a 3-byte record - char X,
+char Y, and a bitmask of permitted exit directions - and a deck's records are
+sorted by Y ascending, which FindWaypoint ($170D) relies on to bail early.
+
+Waypoint 0 of each deck is never used by InitDeckDroids ($1664), which starts
+placing at waypoint 1. We use it as the player's spawn point when changing
+deck, which is why the exporter checks it exists for every deck.
+
+Requires: Python 3. No third-party dependencies.
+"""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
+from rip_levels import parse_listing  # noqa: E402
+
+PROJECT = Path(__file__).resolve().parent.parent
+LST_FILE = PROJECT / 'paradroid_ce.lst'
+OUT_DIR = PROJECT / 'src' / 'data'
+
+# --- C64 addresses: sprite construction ------------------------------------
+ROT_2_17L = 0x6B0E
+ROT_2_17M = 0x6B16
+ROT_3_16L = 0x6B1E
+ROT_3_16M = 0x6B26
+ROT_3_16R = 0x6B2E
+ROT_4_15L = 0x6B36
+ROT_4_15M = 0x6B3E
+ROT_4_15R = 0x6B46
+ROT_0_19M = 0x6B4E          # 2 entries
+ROT_1_18M = 0x6B50          # 2 entries
+
+NUM_DATA_OFFSET = 0x6AA4    # digit -> offset into NumData
+NUM_DATA = 0x6AAE
+
+# AnimateDroids writes $80 into the right-hand byte of rows 2 and 17. There is
+# no RotAnim_2_17R table; the accumulator still holds $80 from the row above.
+ROW_2_17_R = 0x80
+
+# --- C64 addresses: droid types --------------------------------------------
+DCENT_T = 0xEA00            # hundreds digit
+DNUM_T = 0xEA20             # tens/units, packed BCD
+DSPEED_T = 0xEA40           # pixels per GameLoop iteration: 1, 2, 4 or 8
+
+NUM_TYPES = 24
+
+# --- C64 addresses: waypoints ----------------------------------------------
+NUM_WAYPOINTS = 0xC800      # 16 bytes, one per deck
+WAYPOINTS_LO = 0xC810
+WAYPOINTS_HI = 0xC820
+DECK_DROID_BASE = 0xC830    # per-deck droid type base
+
+NUM_DECKS = 16
+SPRITE_ROWS = 21
+FRAMES = 8
+
+# The player's speed is PlayerSpeed_t[DSpeed_t[type]]; every OTHER droid uses
+# the raw DSpeed_t value. Kept here only to document the distinction - the
+# chained lookup is the player's alone and lives in player.asm.
+PLAYER_SPEED_T = 0x6D97
+
+# Frames per C64 GameLoop iteration, matching PLY_ITER_FRAMES in player.asm.
+# The C64's speeds are per iteration and an iteration is 2-3 frames.
+ITER_FRAMES = 2
+
+COLOUR = {
+    0b00: None,             # transparent
+    0b01: 2,                # black  -> logical 2
+    0b10: 1,                # white  -> logical 1, the highlight
+    0b11: 3,                # orange -> logical 3, the accent
+}
+
+BANNER = """\\ ============================================================
+\\ droids.asm
+\\ GENERATED by tools/export_droids.py - do not edit by hand.
+\\ Source: paradroid_ce.lst (Paradroid, C64 - original/CE lineage)
+\\ 24 droid types, 8 rotor phases, waypoints for 16 decks
+\\ ============================================================
+"""
+
+
+def emit_bytes(f, data, per_line=12):
+    for i in range(0, len(data), per_line):
+        chunk = data[i:i + per_line]
+        f.write('  EQUB ' + ','.join('&%02X' % b for b in chunk) + '\n')
+
+
+def convert_row(c64_row):
+    """3 C64 multicolour bytes -> 7 MODE 1 data bytes.
+
+    Each C64 byte is four 2-bit pixels; each becomes two MODE 1 pixels, so a
+    C64 byte is two MODE 1 bytes. MODE 1 pixel n takes bit (7-n) as its high
+    colour bit and bit (3-n) as its low bit; a transparent pixel gets neither.
+
+    The seventh byte is always empty, so the 2-pixel-shifted copy built at
+    startup has somewhere to put the pixels that spill out of byte 6.
+    """
+    data = []
+    for byte in c64_row:
+        pixels = [(byte >> 6) & 3, (byte >> 4) & 3, (byte >> 2) & 3, byte & 3]
+        doubled = [p for p in pixels for _ in (0, 1)]
+        for half in (doubled[:4], doubled[4:]):
+            d = 0
+            for n, pair in enumerate(half):
+                logical = COLOUR[pair]
+                if logical is None:
+                    continue
+                assert logical != 0, (
+                    'an opaque sprite pixel mapped to logical 0; the mask can '
+                    'no longer be derived from the data')
+                if logical & 2:
+                    d |= 1 << (7 - n)
+                if logical & 1:
+                    d |= 1 << (3 - n)
+            data.append(d)
+    data.append(0)
+    return data
+
+
+def build_rotor(mem):
+    """The 8 rotor phases: 5 top rows each, plus the 2 alternating end rows.
+
+    The bottom half is the top half in reverse ROW order, not mirrored left to
+    right - AnimateDroids writes the same L/M/R bytes both times. Rows 0/1 and
+    18/19 carry only a middle byte from 2-entry tables indexed by phase >> 2,
+    and the bottom pair uses the OTHER entry, which is what makes the two ends
+    of the rotor alternate.
+    """
+    frames = []
+    for phase in range(FRAMES):
+        frames.append([
+            [0, mem[ROT_0_19M + (phase >> 2)], 0],                  # row 0
+            [0, mem[ROT_1_18M + (phase >> 2)], 0],                  # row 1
+            [mem[ROT_2_17L + phase], mem[ROT_2_17M + phase], ROW_2_17_R],
+            [mem[ROT_3_16L + phase], mem[ROT_3_16M + phase], mem[ROT_3_16R + phase]],
+            [mem[ROT_4_15L + phase], mem[ROT_4_15M + phase], mem[ROT_4_15R + phase]],
+        ])
+
+    bottoms = []
+    for phase in range(FRAMES):
+        other = ((phase >> 2) + 1) & 1
+        bottoms.append((mem[ROT_0_19M + other], mem[ROT_1_18M + other]))
+
+    return frames, bottoms
+
+
+def build_digits(mem, dtype):
+    """The 8 digit rows for one droid type, as C64 sprite bytes."""
+    digits_of = [mem[DCENT_T + dtype],
+                 mem[DNUM_T + dtype] >> 4,
+                 mem[DNUM_T + dtype] & 0x0F]
+    rows = []
+    for r in range(8):
+        rows.append([mem[NUM_DATA + mem[NUM_DATA_OFFSET + d] + 3 * r]
+                     for d in digits_of])
+    return rows, digits_of
+
+
+def droid_number(mem, dtype):
+    return '%d%02X' % (mem[DCENT_T + dtype], mem[DNUM_T + dtype])
+
+
+def collect_waypoints(mem):
+    """Per-deck waypoint records, and a flat blob with per-deck offsets."""
+    counts = [mem[NUM_WAYPOINTS + d] for d in range(NUM_DECKS)]
+    blob, offsets = [], []
+    for d in range(NUM_DECKS):
+        addr = mem[WAYPOINTS_LO + d] | (mem[WAYPOINTS_HI + d] << 8)
+        offsets.append(len(blob))
+        for i in range(counts[d]):
+            blob += [mem[addr + 3 * i], mem[addr + 3 * i + 1], mem[addr + 3 * i + 2]]
+        assert counts[d] >= 1, 'deck %d has no waypoints, so no player spawn' % d
+        # FindWaypoint bails early on wp.Y > droid.Y, so the sort matters.
+        ys = [blob[offsets[d] + 3 * i + 1] for i in range(counts[d])]
+        assert ys == sorted(ys), 'deck %d waypoints are not sorted by Y' % d
+    return counts, offsets, blob
+
+
+def main():
+    mem, _ = parse_listing(LST_FILE)
+    frames, bottoms = build_rotor(mem)
+
+    # --- flatten every distinct row -----------------------------------------
+    # order: rotor[phase][0..4], rotorend[phase][0..1], digits[type][0..7], blank
+    rows = []
+    rotor_at, end_at, digit_at = {}, {}, {}
+    for phase in range(FRAMES):
+        for r in range(5):
+            rotor_at[(phase, r)] = len(rows)
+            rows.append(convert_row(frames[phase][r]))
+    for phase in range(FRAMES):
+        for r in range(2):           # 0 = sprite row 19, 1 = sprite row 18
+            end_at[(phase, r)] = len(rows)
+            rows.append(convert_row([0, bottoms[phase][r], 0]))
+    numbers = []
+    for dtype in range(NUM_TYPES):
+        digits, _ = build_digits(mem, dtype)
+        digit_at[dtype] = len(rows)
+        for r in range(8):
+            rows.append(convert_row(digits[r]))
+        numbers.append(droid_number(mem, dtype))
+    blank_at = len(rows)
+    rows.append([0] * 7)
+
+    # --- per-phase offsets for the rows that do NOT depend on type ----------
+    def row_index(phase, r):
+        if r < 5:
+            return rotor_at[(phase, r)]
+        if r in (5, 14, 20):
+            return blank_at
+        if r < 14:
+            return blank_at         # digit rows: the blitter uses drDigit
+        if r < 18:
+            return rotor_at[(phase, 19 - r)]     # 15->4, 16->3, 17->2
+        return end_at[(phase, 19 - r)]           # 18->end 1, 19->end 0
+
+    offsets = []
+    for phase in range(FRAMES):
+        for r in range(SPRITE_ROWS):
+            offsets.append(row_index(phase, r) * 7)
+
+    counts, wp_offsets, wp_blob = collect_waypoints(mem)
+    speeds = [mem[DSPEED_T + t] for t in range(NUM_TYPES)]
+
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    path = OUT_DIR / 'droids.asm'
+    with open(path, 'w') as f:
+        f.write(BANNER)
+        f.write('\n')
+        f.write('DR_W        = 7                 \\ 24 px, plus one for a 2 px shift\n')
+        f.write('DR_H        = %d\n' % SPRITE_ROWS)
+        f.write('DR_FRAMES   = %d\n' % FRAMES)
+        f.write('DR_TYPES    = %d\n' % NUM_TYPES)
+        f.write('DR_ROWS     = %d              \\ distinct stored rows\n' % len(rows))
+        f.write('DR_DATASIZE = DR_ROWS * DR_W\n')
+        f.write('DR_DIGIT0   = 6                 \\ first digit row\n')
+        f.write('DR_DIGITN   = 8                 \\ how many digit rows\n')
+        f.write('\n')
+
+        f.write('\\ Every distinct row, seven bytes each, unshifted. The 2 px\n')
+        f.write('\\ shifted copy is built from this at startup and the masks are\n')
+        f.write('\\ derived, not stored - see the header comment.\n')
+        f.write('.drSprData\n')
+        for row in rows:
+            emit_bytes(f, row, per_line=7)
+        f.write('\n')
+
+        f.write('\\ Byte offset into drSprData for sprite row r of phase p, at\n')
+        f.write('\\ index p*%d + r. Rows %d-%d (the number) point at the blank\n'
+                % (SPRITE_ROWS, 6, 13))
+        f.write('\\ row: they depend on the droid type, not the phase, so the\n')
+        f.write('\\ blitter takes them from drDigit instead.\n')
+        f.write('.drOfsLo\n')
+        emit_bytes(f, [o & 0xFF for o in offsets], per_line=SPRITE_ROWS)
+        f.write('.drOfsHi\n')
+        emit_bytes(f, [o >> 8 for o in offsets], per_line=SPRITE_ROWS)
+        f.write('\n')
+        f.write('\\ p * %d, to index the tables above.\n' % SPRITE_ROWS)
+        f.write('.drMulRows\n')
+        emit_bytes(f, [SPRITE_ROWS * p for p in range(FRAMES)], per_line=FRAMES)
+        f.write('\n')
+
+        f.write('\\ Byte offset of each type\'s 8 digit rows. Row 6+n is at\n')
+        f.write('\\ drDigit[type] + n*%d.\n' % 7)
+        f.write('.drDigitLo\n')
+        emit_bytes(f, [(digit_at[t] * 7) & 0xFF for t in range(NUM_TYPES)])
+        f.write('.drDigitHi\n')
+        emit_bytes(f, [(digit_at[t] * 7) >> 8 for t in range(NUM_TYPES)])
+        f.write('\n')
+
+        f.write('\\ Speed in pixels per GameLoop ITERATION, straight from the\n')
+        f.write('\\ C64\'s DSpeed_t. Enemy droids use this value directly; only\n')
+        f.write('\\ the player chains it through PlayerSpeed_t. An iteration is\n')
+        f.write('\\ %d frames here, so 1/2/4/8 becomes 0.5/1/2/4 px per frame -\n' % ITER_FRAMES)
+        f.write('\\ hence drSpeedF, the 8.8 fixed-point per-frame value.\n')
+        f.write('.drSpeed\n')
+        emit_bytes(f, speeds)
+        f.write('.drSpeedF                       \\ (speed * 256) / %d, 8.8\n' % ITER_FRAMES)
+        emit_bytes(f, [(s * 256 // ITER_FRAMES) & 0xFF for s in speeds])
+        f.write('.drSpeedFHi\n')
+        emit_bytes(f, [(s * 256 // ITER_FRAMES) >> 8 for s in speeds])
+        f.write('\n')
+
+        f.write('\\ Droid numbers, for reference: ')
+        f.write(', '.join('%d=%s' % (t, numbers[t]) for t in range(NUM_TYPES)))
+        f.write('\n\n')
+
+        f.write('\\ ---- waypoints ------------------------------------------\n')
+        f.write('\\ 3 bytes per record: char X, char Y, permitted directions.\n')
+        f.write('\\ Sorted by Y ascending within a deck - FindWaypoint bails\n')
+        f.write('\\ out as soon as it passes the droid\'s row.\n')
+        f.write('\\\n')
+        f.write('\\ Direction bit n gives a delta pair via the C64\'s overlapping\n')
+        f.write('\\ dirXdelta/dirYdelta tables, 0 = -speed, 1 = 0, 2 = +speed:\n')
+        f.write('\\   bit  7   6   5   4   3   2   1   0\n')
+        f.write('\\   dx   0   0   1   2   2   2   1   0\n')
+        f.write('\\   dy   1   2   2   2   1   0   0   0\n')
+        f.write('\\        W  SW   S  SE   E  NE   N  NW\n')
+        f.write('DR_WP_TOTAL = %d\n' % (len(wp_blob) // 3))
+        f.write('.wpCount\n')
+        emit_bytes(f, counts, per_line=NUM_DECKS)
+        f.write('.wpOfsLo\n')
+        emit_bytes(f, [o & 0xFF for o in wp_offsets], per_line=NUM_DECKS)
+        f.write('.wpOfsHi\n')
+        emit_bytes(f, [o >> 8 for o in wp_offsets], per_line=NUM_DECKS)
+        f.write('.wpData\n')
+        emit_bytes(f, wp_blob, per_line=9)
+        f.write('\n')
+
+        f.write('\\ Per-deck droid type base, from the C64\'s deckDroidBase.\n')
+        f.write('\\ NextLevel adds shipLevel and a random spread on top; that\n')
+        f.write('\\ arrives with shipLevel in Layer 6. Deck counts are already\n')
+        f.write('\\ exported as deckDroids in levels.asm.\n')
+        f.write('.deckDroidBase\n')
+        emit_bytes(f, [mem[DECK_DROID_BASE + d] for d in range(NUM_DECKS)],
+                   per_line=NUM_DECKS)
+        f.write('\n')
+
+    print('%s' % path)
+    print('  sprites   %d rows x 7 = %d bytes  (+ %d offsets, %d digit ptrs)'
+          % (len(rows), len(rows) * 7, len(offsets) * 2, NUM_TYPES * 2))
+    print('  waypoints %d records = %d bytes' % (len(wp_blob) // 3, len(wp_blob)))
+    print('  per-deck waypoint counts: %s' % counts)
+
+
+if __name__ == '__main__':
+    main()

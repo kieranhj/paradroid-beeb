@@ -81,9 +81,10 @@
   LDA #12 : STA CRTC_ADDR : LDA crtcHi : STA CRTC_DATA
   LDA #13 : STA CRTC_ADDR : LDA crtcLo : STA CRTC_DATA
 
-  JSR FillPanel
-  JSR RuptInit
-  RTS
+  JSR RuptInit                  \ FillPanel is deliberately NOT here: the
+  RTS                           \ PARADAT staging area runs through &4800,
+                                \ so the panel has to be drawn after
+                                \ PageDataIn has finished with it
 
 \ ============================================================
 \ SetCRTCStart — program R12/R13 from scrollS
