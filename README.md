@@ -71,10 +71,11 @@ The C64 game's code and data are **not** included in this repository — they re
 Andrew Braybrook and Hewson Consultants. To run the extraction tools you need to supply
 `paradroid_ce.lst` in the project root.
 
-> **Which version?** That listing is a disassembly of **Paradroid Redux**, a community-extended
-> version, *not* the 1985 Hewson original. Everything ported so far — level data, tile definitions,
-> sprites, game logic — comes from Redux. If a divergence from the original matters, the original
-> release's `.prg` can be obtained and disassembled separately for a clean reference listing.
+> **Which version?** That listing is a disassembly of the **1985 Hewson original / 1986 Competition
+> Edition** lineage — verified by unpacking all four C64 releases with `tools/unpack_prg.ps1` and
+> diffing them against it. Everything ported so far — level data, tile definitions, sprites, game
+> logic — is original-lineage. It is *not* Paradroid Redux or Heavy Metal, both of which relocate
+> everything and match the listing at ~1–3 %. See *Source material: which Paradroid?* in `PLAN.md`.
 
 With that in place:
 

@@ -48,7 +48,7 @@ sampled mid-redraw.
 | `$D021` is an assumption | Marked `[assumed]` in `export_bbc.py`. First suspect if deck colours look wrong on hardware. |
 | Panel shares the play palette | Its colours change with the deck. Fixable at the cycle boundary — we are already in the IRQ there. Layer 9. |
 | `keydown` uses OSBYTE `&81` | The last OS call in the main loop. |
-| 8 decks draw ALERT in multicolour | Confirmed faithful to Redux, not a bug. Worth a look on real hardware. |
+| 8 decks draw ALERT in multicolour | Confirmed faithful to the C64 original, not a bug. Worth a look on real hardware. |
 
 ## Decisions taken
 
@@ -61,6 +61,7 @@ sampled mid-redraw.
 | Scrolling | CRTC hardware scroll over a circular strip. **4 px horizontal, 1 scanline vertical.** | 2026-08-05 |
 | Interrupts | We own IRQ1V outright, System VIA T1 continuous. No MOS chaining, no MOS sound. | 2026-08-04 |
 | Architecture | No HAL. Build one working layer at a time, verified in the emulator before moving on. | 2026-08-04 |
+| Source version | **1985 original / 1986 Competition Edition** lineage — which is what `paradroid_ce.lst` already is. Redux's bug list adopted as a spec, not as code. Heavy Metal parked as a possible later tile set. | 2026-08-06 |
 
 ### Why MODE 1
 
@@ -85,28 +86,90 @@ width and breaking the 32×32 tile aspect ratio.
 > An earlier version of this section described the map as 1bpp hires and the 4-colour budget as
 > "tight". Both were wrong — see Layer 1.
 
-## Source material: which Paradroid?
+## Source material: which Paradroid? ✅ DECIDED
 
-The listing this port is built from (`paradroid_ce.lst`) is a disassembly of **Paradroid Redux**, a
-community-extended version — **not** the 1985 Hewson original. Everything downstream of it inherits
-that: `ANNOTATION.md`, `GRAPHICS.md`, and all data extracted by `tools/` (sprites, charsets, the 16
-deck maps, tile definitions, side view, title screen, transfer board).
+**The target is the 1985 Hewson original / 1986 Competition Edition lineage. `paradroid_ce.lst` is
+that lineage, so nothing extracted so far needs redoing.**
 
-Practically this means the port currently reproduces *Redux*. Not a problem for Layers 0–4, which
-are pipeline and rendering work where any version would do. It could matter later:
+> An earlier version of this section stated the listing was a disassembly of *Paradroid Redux*, and
+> that the port therefore reproduced Redux. That was wrong. It was never verified; this section
+> now records the measurement that settled it.
 
-| Layer | Possible divergence |
-|---|---|
-| 2 — deck render | Redux may have altered or added deck maps |
-| 6 — droids | droid roster, stats, AI tuning |
-| 7 — combat | scoring tables, alert behaviour |
-| 10 — transfer | circuit-puzzle rules or board layout |
+### How it was settled
 
-**If a clean reference is needed:** obtain the original release's `.prg` and disassemble it
-separately, then diff the data tables against the Redux extraction. Not required yet — noted so
-that an unexpected difference from remembered C64 behaviour is diagnosed rather than debugged.
+All four C64 releases were unpacked by running them under VICE and dumping RAM at a breakpoint —
+see `tools/unpack_prg.ps1`. Diffing the unpacked images against the listing:
 
-Decide explicitly before Layer 6 whether the target is Redux fidelity or original fidelity.
+| | original | Competition Ed. | Heavy Metal | Redux |
+|---|---|---|---|---|
+| listing code image match | **82.4 %** | 67.6 %¹ | 1.2 % | 2.9 % |
+| `"VERSION 1.0"` present at `$6E90` | yes | yes | no | no |
+| listing blocks `$6B0E` `$6AA4` `$6FEA` `$E613` `$EA00` found at their listed addresses | yes | yes² | none | none |
+| core code `$1000–$3FFF` | 99.8 % | 99.9 % | ~1 % | ~1 % |
+
+¹ Depressed only because that dump was taken at the title screen, before the game copies its high
+code up to `$C000–$FFFF`.  ² Staged at `$8000–$BFFF`, which is where both releases hold them until
+the copy-up.
+
+Heavy Metal and Redux relocate everything, so every tool in `tools/` would have to be rewritten to
+target either. That alone rules them out as a baseline.
+
+### Original vs Competition Edition is very nearly a non-choice
+
+The staged code+data block `$8000–$B1FF` (12.5 K, holding the high code before it is copied up to
+`$C000–$FFFF`) differs between the two by **8 bytes** — three a `"CBM"` marker, the rest small immediates
+that look like raster split positions. Core code `$1000–$3FFF` is byte-identical, as are the
+graphics and level data. Crucially:
+
+```
+PlayerSpeed_t @ $6D97   orig [0,5,6,0,7,0,0,0,7]     ==  CE [0,5,6,0,7,0,0,0,7]
+DSpeed_t      @ $8A40   orig [4,1,2,4,2,1,8,2,...]   ==  CE [4,1,2,4,2,1,8,2,...]
+```
+
+**CE's "50 % faster" is frames-per-iteration, not distance-per-iteration.** The movement constants
+are identical; CE simply completes more `GameLoop` iterations per second. On this port that dial is
+`PLY_ITER_FRAMES` in `src/player.asm` — currently 2, which sits nearer CE's pace than the
+original's ~3. So CE's feel is available from the original's data for free, by choosing a number.
+
+CE's actual change is its rewritten C64 scroll code in `$C000–$FFFF`, which this port replaces with
+CRTC hardware scrolling. It is therefore of no use to us. (That region was not diffed for CE — the
+CE dump was on the title screen, before the copy-up — but nothing downstream depends on it.)
+
+**A caveat on the method, for anyone repeating it:** the staging block is only intact for part of the
+game's life. Paradroid passes through three states — title screen (staging populated, `$C000–$FFFF`
+still zero), early in-game (both copies present), and later in-game (staging overwritten with filler,
+only the `$C000` copy left). Both dumps used above were in a state with staging intact, so the
+comparison is sound, but a dump taken later would have shown the two releases as ~99% *different* for
+no reason at all. `tools/unpack_prg.ps1` documents which regions are stable in which state.
+
+### Redux is a specification, not a codebase
+
+Redux's [bug list](https://paradro.id/) is worth adopting as *behaviour*, without porting any of
+its code:
+
+- enemy laser 1 / laser 2 damage swapped
+- player able to pass through walls by abusing asymmetry in the wall collision check
+- `DroidNear()` returning true for faraway droids
+- droids losing waypoints when bumped mid-transition; waypoints ignored when a droid paused on
+  entering one; waypoints checked twice as often as necessary
+- non-visible area scanned differently in each direction
+- droid mode occasionally uninitialised, exploding droids on deck entry
+- the last waypoint of the maintenance deck sending droids into a wall
+
+Several other Redux fixes are C64 platform bugs that cannot occur on the Beeb and should not be
+carried over as complexity: hardware sprite-collision handling, VIC-II register write buffering,
+the decimal flag left set in the IRQ, and C128 / NTSC raster timing. Its optimisations (delta
+calculation, `TestLine()`, screen redraw cycle counts) are C64-cycle-specific.
+
+### Heavy Metal — parked as an optional skin
+
+Heavy Metal has the more elaborate "embossed" Morpheus-style tiles and is widely considered the
+best of the three original releases. It is **not** a baseline candidate: its data layout matches the
+listing at ~1 %, so adopting it means re-disassembling and rewriting the whole extraction pipeline.
+It could return later as an alternate tile set — Redux ships both sets, which is fair precedent —
+but MODE 1's flat four colours may not flatter artwork that leans on C64 multicolour with per-tile
+palettes. Judge that from a conversion, not from the C64 screenshots.
+
 
 ## Memory budget
 
@@ -1103,7 +1166,7 @@ literally made the player move at twice the original's speed, which is what KC s
 
 `GameLoop` (`$13DA`) has five reads of `irqToggle` that look like frame waits. Three — `$13DC`,
 `$13F5`, `$13FC` — assemble as `D0 00` and `F0 00`: branch offset zero, falling straight through.
-Redux patched them out and the listing marks them `; !! remove`. Only `_w4` (`$1417`, `F0 FC`) and
+The listing's annotator marks them `; !! remove`. Only `_w4` (`$1417`, `F0 FC`) and
 `EnterGame` (`$1430`, `D0 FC`) really spin, one on each edge of `irqToggle` — which `Irq_254` sets
 and the raster handler at `$6FB1` clears. So the loop is bounded by one rising and one falling edge:
 **one frame, if the work fits in a frame.**
