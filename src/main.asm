@@ -31,6 +31,31 @@ VIDEO_ULA_PAL = &FE21           \ palette register, write only
 SYS_VIA_IFR   = &FE4D
 IRQ1V         = &0204
 
+\ ---- sideways RAM -------------------------------------------
+\ ROMSEL selects which 16K bank appears at &8000-&BFFF. Only one is
+\ visible at a time, so paging our RAM in displaces whatever ROM was
+\ there — BASIC, usually. ROMSHAD is the MOS's own copy: the MOS
+\ restores ROMSEL from it after a service call, so writing one
+\ without the other leaves the two disagreeing and the next OS call
+\ pages something unexpected back in. Always write both.
+\
+\ Measured in jsbeeb (B-DFS1.2): banks 0-7 are RAM, 8-15 ROM.
+\
+\ We use 4 and 5 rather than 0 and 1 because a Master 128's own
+\ sideways RAM is banks 4-7, so the same numbers work on both
+\ machines and the port stays Master-compatible for free. A Model B
+\ SWRAM board is jumpered to whichever banks you like, so nothing is
+\ lost by picking these.
+\
+\ Eventually this wants probing at boot rather than hard-coding —
+\ write a byte, read it back, take the first bank that holds it —
+\ but a fixed pair is fine while the machine is a known quantity.
+ROMSEL     = &FE30
+ROMSHAD    = &F4
+SWRAM_DATA = 4                  \ bank holding PARADAT
+SWRAM_CODE = 5                  \ reserved: paged code, Layers 9-11
+SWRAM_BASE = &8000
+
 CHAR_BYTES = 16                 \ a character is 16 bytes: two 8-byte halves
 
 MAP_COLS   = 64                 \ tile map is 64 x 16 tiles
@@ -242,9 +267,9 @@ KEY_SPACE  = &9D                \ -99
 \ running and the MOS reduced to OSBYTE &81, the whole of &00-&8F
 \ is ours, so the sprite blitter extends downwards from &68.
 pdst     = &64                  \ PlyBuildTables destination        (2)
-cht      = &66                  \ charset source, the half being copied (2)
+swSrc    = &66                  \ sideways-RAM copy source  (2)
 psrc     = &68                  \ sprite row, pixel data    (2)
-pmsk     = &6A                  \ sprite row, mask          (2)
+swDst    = &6A                  \ sideways-RAM copy dest    (2)
 plyScan  = &6C                  \ scanline within the char row
 plyRow   = &6D                  \ sprite row being blitted
 
@@ -296,6 +321,9 @@ ORG &1100
   LDX #LO(loadcmd)              \ must follow the mode change: VDU 22
   LDY #HI(loadcmd)              \ clears what the OS thinks is its screen
   JSR OSCLI
+
+  JSR PageDataIn                \ PARADAT lands at &3000 and is copied up
+                                \ into SWRAM; &3000-&4707 is free after
 
   JSR PlyBuildTables            \ AFTER the mode change: VDU 22 clears
                                 \ &3000-&7FFF, which includes these
@@ -395,6 +423,43 @@ ENDIF
 .loadcmd
   EQUS "LOAD PARADAT"
   EQUB 13
+
+\ ============================================================
+\ PageDataIn — move PARADAT from &3000 into sideways RAM bank 0
+\ ============================================================
+\ PARADAT is assembled at &8000 but its catalogue load address is
+\ DATA_LOAD, so *LOAD puts it in main RAM and this copies it up.
+\ It cannot be loaded straight into the bank: while the filing
+\ system is working, the MOS has the DFS ROM paged in at &8000, so
+\ the bytes would land in the ROM socket and be discarded.
+\
+\ The data bank stays selected from here on. MapChar reads
+\ `tiledefs` and DrawHalf reads `charRemap` every frame, so it
+\ cannot be paged out during play. That displaces BASIC, which we
+\ never return to, and not DFS, which lives in its own socket and
+\ which the MOS pages in and back out around each of its own calls.
+.PageDataIn
+  LDA #SWRAM_DATA
+  STA ROMSHAD                   \ both, always — see the note at the top
+  STA ROMSEL
+
+  LDA #LO(DATA_LOAD) : STA swSrc
+  LDA #HI(DATA_LOAD) : STA swSrc+1
+  LDA #LO(SWRAM_BASE): STA swDst
+  LDA #HI(SWRAM_BASE): STA swDst+1
+  LDX #DATA_PAGES
+.pdi_page
+  LDY #0
+.pdi_byte
+  LDA (swSrc),Y
+  STA (swDst),Y
+  INY
+  BNE pdi_byte
+  INC swSrc+1
+  INC swDst+1
+  DEX
+  BNE pdi_page
+  RTS
 
 \ ============================================================
 \ keydown — is a key held?  X = negative INKEY code, Z set if down
@@ -554,12 +619,20 @@ ALIGN &100
 .tilemap_end
 
 \ ============================================================
-\ Generated data — loaded separately, after the mode change
+\ Generated data — in sideways RAM bank 0
 \ ============================================================
-\ &3000-&57FF is free: the OS thinks the screen is &3000-&7FFF, but
-\ we have repointed the CRTC at a 10K window starting &5800, so only
-\ &5800-&7FFF is ever fetched for display.
-ORG &3000
+\ Assembled at &8000 so every label resolves to its address in the
+\ bank, but SAVEd with a catalogue load address of DATA_LOAD, so
+\ *LOAD drops it in main RAM for PageDataIn to copy up. &3000 is a
+\ safe staging area: the OS thinks the screen is &3000-&7FFF, but
+\ the CRTC has been repointed at a 10K window starting &5800, so
+\ only &5800-&7FFF is ever fetched for display — and the staging
+\ copy is dead by the time anything is drawn.
+\
+\ Layer 5 spends the &3000-&4707 this frees on droid state and the
+\ per-slot background save buffers.
+DATA_LOAD = &3000
+ORG SWRAM_BASE
 .data_start
 INCLUDE "src/data/chardata.asm"
 INCLUDE "src/data/colours.asm"
@@ -567,12 +640,16 @@ INCLUDE "src/data/tiledefs.asm"
 INCLUDE "src/data/levels.asm"
 .data_end
 
+DATA_PAGES = (data_end - data_start + 255) DIV 256
+ASSERT data_end <= SWRAM_BASE + &4000
+ASSERT DATA_LOAD + DATA_PAGES * 256 <= PANEL_ADDR
+
 ASSERT charset_end - charset == NUM_CHARS * CHAR_BYTES
 
 PRINT "code    ", ~start, "-", ~code_end
 PRINT "tilemap ", ~tilemap, "-", ~tilemap_end
 PRINT "charset ", ~charset, "-", ~charset_end
-PRINT "data    ", ~data_start, "-", ~data_end
+PRINT "data    ", ~data_start, "-", ~data_end, " (SWRAM bank", SWRAM_DATA, ",", DATA_PAGES, "pages )"
 
 SAVE "PARA",    start,      code_end, start
-SAVE "PARADAT", data_start, data_end
+SAVE "PARADAT", data_start, data_end, DATA_LOAD, DATA_LOAD
