@@ -258,7 +258,38 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
   BCC sca_x
   INC bufp+1
 .sca_x
+
+\ Can ANY of this sprite's 21 rows straddle the end of the strip?
+\ Testing that per row cost a JSR and ~27 cycles, 42 times a sprite.
+\ It only depends on where the sprite starts: the walk advances at
+\ most 3 row-crossings, so the furthest byte touched is under
+\ 3*ROW_BYTES + SPR_SPAN beyond bufp. If that clears SPR_WRAPLIM the
+\ whole sprite is safe and every row can take the fast path blind.
+\ True about 80% of the time; the rest fall back to the per-row test.
+  LDA #0
+  STA sprNoWrap
+  CLC
+  LDA bufp   : ADC #LO(3*ROW_BYTES + SPR_SPAN) : TAX
+  LDA bufp+1 : ADC #HI(3*ROW_BYTES + SPR_SPAN)
+  BCS sca_may                   \ ran past &FFFF, so certainly past the end
+  CMP #HI(SPR_WRAPLIM)
+  BCC sca_safe
+  BNE sca_may
+  CPX #LO(SPR_WRAPLIM)
+  BCS sca_may
+.sca_safe
+  INC sprNoWrap
+.sca_may
   RTS
+
+\ Rows 5, 14 and 20 are transparent for EVERY droid: the C64's
+\ BuildDroidSprite and AnimateDroids simply never write them, so the
+\ exporter points them at the one all-blank row. A row that writes
+\ nothing needs no background saved and none restored, so all three
+\ are skipped in both passes — 14% of the rows, for the price of one
+\ table lookup on the other 18.
+.sprBlankRow
+  EQUB 0,0,0,0,0,1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,1
 
 \ ============================================================
 \ SprNextScan — advance bufp by one scanline
@@ -409,9 +440,17 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
   STA sprRow
   STA sprSaveIdx
 .sd_row
+  LDX sprRow
+  LDA sprBlankRow,X
+  BEQ sd_notblank               \ transparent: nothing to save or draw
+  JMP sd_next
+.sd_notblank
   JSR SprFetchRow
+  LDA sprNoWrap
+  BNE sd_fastrow
   JSR SprWraps
   BCS sd_slow
+.sd_fastrow
 
   LDX sprSaveIdx                \ 0, 7, 14 ... 140
   LDY #0*UNIT_BYTES
@@ -527,8 +566,16 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
   STA sprRow
   STA sprSaveIdx
 .sr_row
+  LDX sprRow
+  LDA sprBlankRow,X
+  BEQ sr_notblank               \ never saved, so nothing to put back
+  JMP sr_next
+.sr_notblank
+  LDA sprNoWrap
+  BNE sr_fastrow
   JSR SprWraps
   BCS sr_slow
+.sr_fastrow
 
   LDX sprSaveIdx
   LDY #0*UNIT_BYTES
@@ -658,6 +705,7 @@ SPR_SPIN = 0                    \ frames between phases; full energy = 0
 .sprScan0   SKIP SPR_SLOTS
 
 \ ---- working, one sprite at a time --------------------------
+.sprNoWrap  EQUB 0
 .sprSlot    EQUB 0
 .sprIter    EQUB 0
 .sprY       EQUB 0
