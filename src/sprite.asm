@@ -60,15 +60,33 @@ SPR_BYTES = SPR_W * SPR_H       \ 147 bytes of background per slot
 \ so they are declared here and checked against the generated file
 \ down there instead.
 
-\ Save areas are a page apart rather than packed into 147 bytes, so
-\ a slot's base differs only in its high byte and the blit's seven
-\ absolute addresses can be retargeted by poking seven bytes. Packed
-\ bases would need a 16-bit multiply per slot and a slower inner
-\ loop. 7 pages against 147*7 = 1029 bytes costs 763 bytes, out of
-\ the 5.8K that moving PARADAT to sideways RAM released.
+\ THE SAVE AREA MIRRORS SCREEN GEOMETRY. Within one character row a
+\ byte is at col*8 + scan, so a slot's save block is laid out the
+\ same way: SPR_BLOCK bytes per character row, blocks in order. The
+\ point is that the SAME Y — always col*8 — addresses both the screen
+\ through (bufp),Y and the save through (svp),Y. Nothing needs X, and
+\ nothing needs the seven absolute addresses in each loop retargeted
+\ per slot, which used to cost fifteen pokes every time a slot came
+\ round.
+\
+\ That matters beyond tidiness: a compiled blitter cannot poke a save
+\ address into every one of its ~72 stores, so an X-indexed save area
+\ would rule compilation out entirely. This is the shape that lets the
+\ immediates be baked in.
+\
+\ Save areas stay a page apart rather than packed into 224 bytes, so
+\ a slot's base is just HI(SPR_SAVE) + slot with a zero low byte.
 SPR_SAVE  = &3000
+SPR_BLOCK = SPR_W * UNIT_BYTES  \ 56: one character row of save area
 ASSERT (SPR_SAVE AND &FF) == 0
 ASSERT SPR_SAVE + SPR_SLOTS * 256 <= PANEL_ADDR
+
+\ 21 scanlines starting at scan 0-7 touch at most FOUR character rows,
+\ so the furthest byte a slot can reach is block 3 + the widest Y +
+\ the deepest scanline = 3*56 + 48 + 7 = 223. Slots are page-aligned
+\ and 223 < 256, so svp never leaves its page and neither does
+\ (svp),Y — which is why the advances in SprNextScan carry nothing.
+ASSERT 3 * SPR_BLOCK + (SPR_W - 1) * UNIT_BYTES + 7 < 256
 
 \ A row's 7 columns span 49 bytes, so the fast path needs the whole
 \ span to sit below the end of the strip.
@@ -204,15 +222,6 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
   BCS sss_no                    \ off the top or bottom
   STA sprY
 
-  LDA #HI(SPR_SAVE)             \ slot N's save page
-  CLC
-  ADC sprSlot
-  STA sd_s0+2 : STA sd_s1+2 : STA sd_s2+2 : STA sd_s3+2
-  STA sd_s4+2 : STA sd_s5+2 : STA sd_s6+2
-  STA sr_s0+2 : STA sr_s1+2 : STA sr_s2+2 : STA sr_s3+2
-  STA sr_s4+2 : STA sr_s5+2 : STA sr_s6+2
-  STA sslow+2                   \ the slow path's single indexed access
-
   LDX sprSlot                   \ which artwork, and which of the two copies
   LDA sprShift,X
   BEQ sss_flat
@@ -292,26 +301,36 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
   EQUB 0,0,0,0,0,1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,1
 
 \ ============================================================
-\ SprNextScan — advance bufp by one scanline
+\ SprNextScan — advance bufp AND svp by one scanline
 \ ============================================================
+\ Both walk the same shape, which is the whole point: one scanline on
+\ is +1 within a character row, and crossing into the next row is
+\ +(stride - 7), where the stride is ROW_BYTES for the screen and
+\ SPR_BLOCK for the save. Keeping them in step is what lets one Y
+\ address both, and it is what absorbs the vertical alignment that
+\ would otherwise need eight compiled variants of every sprite.
+\
+\ svp needs no carry handling — see the assert at the top of the file.
 .SprNextScan
   LDA sprScan
   CMP #7
   BEQ sns_row
   INC sprScan
+  INC svp
   INC bufp
   BNE sns_x
   INC bufp+1
+.sns_x
   RTS
 .sns_row
   LDA #0
   STA sprScan
   CLC
+  LDA svp    : ADC #SPR_BLOCK-7     : STA svp
+  CLC
   LDA bufp   : ADC #LO(ROW_BYTES-7) : STA bufp
   LDA bufp+1 : ADC #HI(ROW_BYTES-7) : STA bufp+1
-  JSR WrapBufFwd
-.sns_x
-  RTS
+  JMP WrapBufFwd
 
 \ ============================================================
 \ SprNextUnit — bufp on to the next 4-pixel column, wrapping
@@ -362,6 +381,26 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
   RTS
 
 .sprMul7 EQUB 0,7,14,21,28,35,42,49
+
+\ ============================================================
+\ SprSetSave — svp = slot sprSlot's save area, at scanline sprScan
+\ ============================================================
+\ Slots are a page apart with a zero low byte, so the base is one
+\ addition. The sprite's first row sits at scanline sprScan of block
+\ 0, and SprNextScan walks on from there — draw and restore call this
+\ with the same scanline and therefore trace the same path.
+.SprSetSave
+  LDA sprScan
+  STA svp
+  LDA #HI(SPR_SAVE)
+  CLC
+  ADC sprSlot
+  STA svp+1
+  RTS
+
+\ Y offsets of the seven columns, for the wrapped paths where the
+\ column index has to live in X.
+.sprMul8 EQUB 0,8,16,24,32,40,48
 
 \ ============================================================
 \ SprWraps — does this row's span cross the end of the strip?
@@ -432,13 +471,15 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
   LDA sprScan : STA sprScan0,X
   LDA #1      : STA sprSaved,X
 
+  JSR SprSetSave                \ svp = this slot's block 0, scanline sprScan
+
+  LDX sprSlot
   LDA sprFrame,X                \ phase*21, the row walk increments it
   TAY
   LDA drMulRows,Y
   STA sprRowIdx
   LDA #0
   STA sprRow
-  STA sprSaveIdx
 .sd_row
   LDX sprRow
   LDA sprBlankRow,X
@@ -452,84 +493,57 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
   BCS sd_slow
 .sd_fastrow
 
-  LDX sprSaveIdx                \ 0, 7, 14 ... 140
   LDY #0*UNIT_BYTES
-  LDA (bufp),Y
-.sd_s0
-  STA SPR_SAVE+0,X
+  LDA (bufp),Y : STA (svp),Y
   AND sprRowBuf+7  : ORA sprRowBuf+0 : STA (bufp),Y
   LDY #1*UNIT_BYTES
-  LDA (bufp),Y
-.sd_s1
-  STA SPR_SAVE+1,X
+  LDA (bufp),Y : STA (svp),Y
   AND sprRowBuf+8  : ORA sprRowBuf+1 : STA (bufp),Y
   LDY #2*UNIT_BYTES
-  LDA (bufp),Y
-.sd_s2
-  STA SPR_SAVE+2,X
+  LDA (bufp),Y : STA (svp),Y
   AND sprRowBuf+9  : ORA sprRowBuf+2 : STA (bufp),Y
   LDY #3*UNIT_BYTES
-  LDA (bufp),Y
-.sd_s3
-  STA SPR_SAVE+3,X
+  LDA (bufp),Y : STA (svp),Y
   AND sprRowBuf+10 : ORA sprRowBuf+3 : STA (bufp),Y
   LDY #4*UNIT_BYTES
-  LDA (bufp),Y
-.sd_s4
-  STA SPR_SAVE+4,X
+  LDA (bufp),Y : STA (svp),Y
   AND sprRowBuf+11 : ORA sprRowBuf+4 : STA (bufp),Y
   LDY #5*UNIT_BYTES
-  LDA (bufp),Y
-.sd_s5
-  STA SPR_SAVE+5,X
+  LDA (bufp),Y : STA (svp),Y
   AND sprRowBuf+12 : ORA sprRowBuf+5 : STA (bufp),Y
   LDY #6*UNIT_BYTES
-  LDA (bufp),Y
-.sd_s6
-  STA SPR_SAVE+6,X
+  LDA (bufp),Y : STA (svp),Y
   AND sprRowBuf+13 : ORA sprRowBuf+6 : STA (bufp),Y
   JMP sd_next
 
-\ The row straddles the end of the strip, so the seven columns are
-\ not 8 bytes apart in address order any more. Two passes, because
-\ each needs the index register the other is using. About one row in
-\ fifty; speed does not matter, correctness does.
+\ The row straddles the end of the strip, so the seven columns are no
+\ longer 8 bytes apart in address order and bufp has to be walked.
+\ The SAVE side is unaffected — it never wraps — so this is now one
+\ pass rather than two: X indexes the row data and the save offset
+\ through sprMul8, Y alternates between 0 for the walked bufp and
+\ col*8 for svp, and A survives LDY so the background is read once.
+\ About one row in fifty; correctness matters, speed does not.
 .sd_slow
   LDA bufp   : STA sprTmpPtr
   LDA bufp+1 : STA sprTmpPtr+1
-  LDX sprSaveIdx
-  LDA #0 : STA sprCol
-.sds_save
-  LDY #0
-  LDA (bufp),Y
-.sslow
-  STA SPR_SAVE,X
-  INX
-  JSR SprNextUnit
-  INC sprCol
-  LDA sprCol
-  CMP #SPR_W
-  BNE sds_save
-
-  LDA sprTmpPtr   : STA bufp
-  LDA sprTmpPtr+1 : STA bufp+1
   LDX #0
-.sds_blit
+.sds_loop
   LDY #0
-  LDA (bufp),Y
+  LDA (bufp),Y                  \ the background
+  LDY sprMul8,X
+  STA (svp),Y                   \ save it
   AND sprRowBuf+SPR_W,X
   ORA sprRowBuf,X
+  LDY #0
   STA (bufp),Y
   JSR SprNextUnit
   INX
   CPX #SPR_W
-  BNE sds_blit
+  BNE sds_loop
   LDA sprTmpPtr   : STA bufp
   LDA sprTmpPtr+1 : STA bufp+1
 
 .sd_next
-  CLC
-  LDA sprSaveIdx : ADC #SPR_W : STA sprSaveIdx
   INC sprRowIdx
   JSR SprNextScan
   INC sprRow
@@ -552,19 +566,12 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
   RTS
 .sr_go
   STX sprSlot
-  LDA #HI(SPR_SAVE)
-  CLC
-  ADC sprSlot
-  STA sr_s0+2 : STA sr_s1+2 : STA sr_s2+2 : STA sr_s3+2
-  STA sr_s4+2 : STA sr_s5+2 : STA sr_s6+2
-  STA srslow+2
-
   LDA sprPtr0Lo,X : STA bufp
   LDA sprPtr0Hi,X : STA bufp+1
   LDA sprScan0,X  : STA sprScan
+  JSR SprSetSave                \ replays the same walk the draw took
   LDA #0
   STA sprRow
-  STA sprSaveIdx
 .sr_row
   LDX sprRow
   LDA sprBlankRow,X
@@ -577,59 +584,39 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
   BCS sr_slow
 .sr_fastrow
 
-  LDX sprSaveIdx
   LDY #0*UNIT_BYTES
-.sr_s0
-  LDA SPR_SAVE+0,X
-  STA (bufp),Y
+  LDA (svp),Y : STA (bufp),Y
   LDY #1*UNIT_BYTES
-.sr_s1
-  LDA SPR_SAVE+1,X
-  STA (bufp),Y
+  LDA (svp),Y : STA (bufp),Y
   LDY #2*UNIT_BYTES
-.sr_s2
-  LDA SPR_SAVE+2,X
-  STA (bufp),Y
+  LDA (svp),Y : STA (bufp),Y
   LDY #3*UNIT_BYTES
-.sr_s3
-  LDA SPR_SAVE+3,X
-  STA (bufp),Y
+  LDA (svp),Y : STA (bufp),Y
   LDY #4*UNIT_BYTES
-.sr_s4
-  LDA SPR_SAVE+4,X
-  STA (bufp),Y
+  LDA (svp),Y : STA (bufp),Y
   LDY #5*UNIT_BYTES
-.sr_s5
-  LDA SPR_SAVE+5,X
-  STA (bufp),Y
+  LDA (svp),Y : STA (bufp),Y
   LDY #6*UNIT_BYTES
-.sr_s6
-  LDA SPR_SAVE+6,X
-  STA (bufp),Y
+  LDA (svp),Y : STA (bufp),Y
   JMP sr_next
 
 .sr_slow
   LDA bufp   : STA sprTmpPtr
   LDA bufp+1 : STA sprTmpPtr+1
-  LDX sprSaveIdx
-  LDA #0 : STA sprCol
+  LDX #0
 .srs_loop
+  LDY sprMul8,X
+  LDA (svp),Y
   LDY #0
-.srslow
-  LDA SPR_SAVE,X
   STA (bufp),Y
-  INX
   JSR SprNextUnit
-  INC sprCol
-  LDA sprCol
-  CMP #SPR_W
+  INX
+  CPX #SPR_W
   BNE srs_loop
   LDA sprTmpPtr   : STA bufp
   LDA sprTmpPtr+1 : STA bufp+1
 
 .sr_next
-  CLC
-  LDA sprSaveIdx : ADC #SPR_W : STA sprSaveIdx
   JSR SprNextScan
   INC sprRow
   LDA sprRow
@@ -710,8 +697,6 @@ SPR_SPIN = 0                    \ frames between phases; full energy = 0
 .sprIter    EQUB 0
 .sprY       EQUB 0
 .sprTmpPtr  EQUW 0
-.sprSaveIdx EQUB 0
-.sprCol     EQUB 0
 .sprRowIdx  EQUB 0
 .sprBank    EQUW 0
 .sprDigit   EQUW 0

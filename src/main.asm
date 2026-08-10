@@ -289,6 +289,7 @@ psrc     = &68                  \ sprite row, pixel data    (2)
 swDst    = &6A                  \ sideways-RAM copy dest    (2)
 sprRow   = &6C                  \ sprite row being blitted
 \ &6D free
+svp      = &6E                  \ sprite background save pointer (2)
 
 bufp     = &70                  \ buffer write pointer      (2)
 chp      = &72                  \ charset source            (2)
