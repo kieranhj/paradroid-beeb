@@ -289,6 +289,14 @@ IF DEBUG_RASTER OR DEBUG_DRAW
   LDA #&50 : ORA dbgTmp : STA VIDEO_ULA_PAL
   RTS
 .dbgTmp EQUB 0
+
+\ Back to the deck's own background, ending whichever band was open.
+.DbgDeckBg
+  LDA deck
+  ASL A : ASL A
+  TAY
+  LDA deckPalette,Y
+  JMP DbgSetBg
 ENDIF
 
 .ruptState EQUB 0               \ which rupture stage the next T1 fire is

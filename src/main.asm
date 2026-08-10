@@ -77,13 +77,28 @@ MAP_CHAR_H = MAP_ROWS * 4       \ 64 character rows
 \ that blanking would otherwise hide.
 DEBUG_RASTER = FALSE
 
-\ DEBUG_DRAW tints the background cyan for exactly as long as the
-\ main loop spends redrawing the edge strip, so the band shows
-\ which scanlines that work occupies. It must all fit between the
-\ play area going off-display (frame row 27) and being drawn again
-\ (row 8 of the next frame) — if the cyan reaches into the play
-\ area, the redraw is overrunning its window.
+\ DEBUG_DRAW tints the background for exactly as long as the main
+\ loop spends on a piece of work, so the band shows which scanlines
+\ that work occupies. It must all fit between the play area going
+\ off-display (frame row 27) and being drawn again (row 8 of the
+\ next frame) — if a band reaches into the play area, that work is
+\ overrunning its window.
+\
+\ Two bands, because the sprites and the edge redraw are separate
+\ budgets and the sprite pool is the one still being cut down:
+\
+\   magenta  SprRestoreAll, then SprAnimateAll + SprDrawAll. Two
+\            bands, one either side of the redraw, because that is
+\            genuinely where the sprite work happens — restore has
+\            to precede any change to the scroll state, and the draw
+\            has to follow the redraw so the save picks up settled
+\            background. Restore is about a third of the sprite cost,
+\            so leaving it untinted would flatter the total.
+\   cyan     everything between: keys, movement, SetCRTCStart and
+\            the edge redraw.
 DEBUG_DRAW   = FALSE
+DBG_SPR      = 5                \ magenta
+DBG_REDRAW   = 6                \ cyan
 
 \ ---- screen geometry ---------------------------------------
 \ These live here rather than in screen.asm/rupture.asm because
@@ -256,7 +271,11 @@ PLY_Y    = 50                   \ scanlines below the top of the view
 \ &5800. An explicit address rather than a label after data_end,
 \ because beebasm resolves constant assignments in file order and
 \ sprite.asm is assembled before the data.
-SPR_SHIFT2 = &A800
+\
+\ Raised from &A800 when the compiled rotor was added: that is ~3.2K
+\ of generated code sitting inside the bank, and the ASSERT below is
+\ what catches the address going stale next time.
+SPR_SHIFT2 = &B000
 
 VIEW_CHARS = 40                 \ 320 px / 8
 MAX_HX     = (MAP_CHAR_W - VIEW_CHARS) * 2      \ 432 half-characters
@@ -369,10 +388,13 @@ ORG &1100
   \ edge redraw and the R12/R13 park both have to land before the
   \ play area is drawn again.
   JSR WaitVSync
+IF DEBUG_DRAW
+  LDA #DBG_SPR : JSR DbgSetBg   \ the restore is sprite time too, and it is
+ENDIF                           \ a third of it — it gets the sprite colour
   JSR SprRestoreAll             \ before anything moves: the saved pixels
                                 \ belong at the address they were taken from
 IF DEBUG_DRAW
-  LDA #6 : JSR DbgSetBg         \ cyan while the redraw runs
+  LDA #DBG_REDRAW : JSR DbgSetBg
 ENDIF
 
   \ Z / X left-right, K / M up-down. The keys feed a direction pair
@@ -424,11 +446,7 @@ ENDIF
 .ml_notDn
 
 IF DEBUG_DRAW
-  LDA deck                      \ back to the deck's real background
-  ASL A : ASL A
-  TAY
-  LDA deckPalette,Y
-  JSR DbgSetBg
+  JSR DbgDeckBg                 \ back to the deck's real background
 ENDIF
 
   LDX #KEY_SPACE                \ DEBUG: force a full redraw, to compare
@@ -437,8 +455,16 @@ ENDIF
   JSR RedrawAll
 .ml_notSpc
 
+IF DEBUG_DRAW
+  LDA #DBG_SPR : JSR DbgSetBg   \ magenta over the sprite draw
+ENDIF
+
   JSR SprAnimateAll             \ last: the buffer is settled, so the save
   JSR SprDrawAll                \ picks up the background the frame will show
+
+IF DEBUG_DRAW
+  JSR DbgDeckBg
+ENDIF
 
   JMP mainloop
 
@@ -668,16 +694,24 @@ INCLUDE "src/data/droids.asm"
 
 ASSERT DR_W == SPR_W            \ sprite.asm declares these ahead of the
 ASSERT DR_H == SPR_H            \ generated data; keep the two in step
+ASSERT DR_TABSHIFT == SPR_TABSHIFT
 ASSERT data_end <= SPR_SHIFT2   \ the shift buffer sits above the data
 ASSERT SPR_SHIFT2 + DR_DATASIZE <= SWRAM_BASE + &4000
 
 DATA_PAGES = (data_end - data_start + 255) DIV 256
 ASSERT data_end <= SWRAM_BASE + &4000
 
-\ The staging copy may overrun the panel — FillPanel is called after
-\ PageDataIn for exactly that reason — but it must not reach the
-\ mask table SprBuildMask writes next, nor the play buffer.
-ASSERT DATA_LOAD + DATA_PAGES * 256 <= SPR_MASKTAB
+\ The staging copy overruns the panel, the mask table and the bottom
+\ of the play buffer, and that is fine: PageDataIn is the FIRST thing
+\ after the load, and FillPanel, SprBuildMask and LoadDeck all run
+\ afterwards and rewrite everything above it. The one hard floor is
+\ the code, which sits below &3000. Boot shows a moment of garbage in
+\ the play area before the deck is drawn.
+\
+\ The limit that remains is the bank itself — staging more than 16K
+\ would mean the data no longer fits where it is going.
+ASSERT DATA_PAGES * 256 <= &4000
+ASSERT DATA_LOAD + DATA_PAGES * 256 <= &8000
 
 ASSERT charset_end - charset == NUM_CHARS * CHAR_BYTES
 

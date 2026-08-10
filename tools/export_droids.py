@@ -148,6 +148,32 @@ BANNER = """\\ ============================================================
 """
 
 
+def mode1_mask(b):
+    """The transparency mask for a MODE 1 data byte.
+
+    Same derivation as SprBuildMask: fold the low nibble onto the high, invert,
+    spread back across both. A set mask bit means "this pixel is transparent,
+    keep the background".
+    """
+    m = ((b >> 4) | b) & 0x0F
+    m ^= 0x0F
+    return m | (m << 4)
+
+
+def shift_row(row):
+    """The 2 px right shift SprBuildShift performs, done here instead.
+
+    Compiled code bakes its data in as immediates, so the shifted artwork
+    cannot be derived at run time from the compiled form - it needs its own
+    compiled copy, and that copy is generated from here.
+    """
+    out, carry = [], 0
+    for b in row:
+        out.append(((b & 0xCC) >> 2) | carry)
+        carry = (b & 0x33) << 2
+    return out
+
+
 def emit_bytes(f, data, per_line=12):
     for i in range(0, len(data), per_line):
         chunk = data[i:i + per_line]
@@ -214,6 +240,141 @@ def build_rotor(mem):
         bottoms.append((mem[ROT_0_19M + other], mem[ROT_1_18M + other]))
 
     return frames, bottoms
+
+
+def build_rotor_code(mem, frames, bottoms):
+    """The 28 distinct rotor rows, and the slot each sprite row maps to.
+
+    The rotor's 10 non-blank rows per phase are NOT 10 distinct pictures. The
+    bottom half is the top half in reverse row order, so rows 15/16/17 are rows
+    4/3/2 again; and rows 0/1/18/19 come from two-entry tables indexed by
+    phase >> 2, so across all eight phases there are only four of them. Seven
+    distinct rows per phase, 8 * 3 rotor + 4 end = 28 in all.
+
+    Slots, per phase, with a = phase >> 2 and b = 1 - a:
+
+        0  end kind 0, index a      sprite row 0
+        1  end kind 1, index a      sprite row 1
+        2  rotor row 2              sprite rows 2 and 17
+        3  rotor row 3              sprite rows 3 and 16
+        4  rotor row 4              sprite rows 4 and 15
+        5  end kind 1, index b      sprite row 18
+        6  end kind 0, index b      sprite row 19
+    """
+    rows = {}                       # key -> 7 MODE 1 bytes, unshifted
+    for phase in range(FRAMES):
+        for r in (2, 3, 4):
+            rows[('R', phase, r)] = convert_row(frames[phase][r])
+    for idx in (0, 1):
+        rows[('E', 0, idx)] = convert_row([0, mem[ROT_0_19M + idx], 0])
+        rows[('E', 1, idx)] = convert_row([0, mem[ROT_1_18M + idx], 0])
+
+    slots = []                      # [phase][slot] -> key
+    for phase in range(FRAMES):
+        a = phase >> 2
+        b = 1 - a
+        slots.append([('E', 0, a), ('E', 1, a),
+                      ('R', phase, 2), ('R', phase, 3), ('R', phase, 4),
+                      ('E', 1, b), ('E', 0, b)])
+
+    # sprite row -> slot, &FF for the rows the compiled path does not own
+    row_slot = [0xFF] * SPRITE_ROWS
+    for r, s in ((0, 0), (1, 1), (2, 2), (3, 3), (4, 4),
+                 (15, 4), (16, 3), (17, 2), (18, 5), (19, 6)):
+        row_slot[r] = s
+
+    return rows, slots, row_slot
+
+
+def emit_rotor_code(f, rows, slots, row_slot):
+    """Compiled draw and restore routines for every distinct rotor row.
+
+    A compiled row costs 23 cycles per OPAQUE byte and nothing at all for the
+    transparent ones; the interpreted path costs 26 to fetch and 27 to blit
+    every one of the seven whether it draws anything or not. The rotor averages
+    3.2 opaque bytes of 7, so this is the row where compiling pays best - and
+    the digits, which are two thirds of the work, are left alone for now.
+
+    THE ALIGNMENT ESCAPE. A compiled sprite normally needs eight variants, one
+    per vertical alignment. Here it needs one: within a character row a byte is
+    at col*8 + scan, the scan part is carried by bufp, and SprNextScan advances
+    bufp and svp together - so Y is always col*8, whatever the alignment.
+
+    Restore routines are keyed on the SET OF COLUMNS, not the artwork: putting
+    the background back does not care what was drawn over it. Four sets cover
+    all 28 rows, so 28 draw routines share 4 restore routines.
+    """
+    labels = {}                     # (shift, key) -> draw label
+    rest_labels = {}                # (shift, cols) -> restore label
+    draw_bytes = rest_bytes = 0
+
+    for shift in (0, 1):
+        f.write('\\ ---- shift %d ----------------------------------------\n'
+                % (shift * 2))
+        for n, (key, row) in enumerate(sorted(rows.items())):
+            data = shift_row(row) if shift else row
+            label = 'drD%d_%02d' % (shift, n)
+            labels[(shift, key)] = label
+            f.write('.%s\n' % label)
+            for col, b in enumerate(data):
+                if not b:
+                    continue        # transparent: not drawn, and not saved
+                m = mode1_mask(b)
+                f.write('  LDY #%d*UNIT_BYTES\n' % col)
+                f.write('  LDA (bufp),Y : STA (svp),Y\n')
+                if m == 0:
+                    # every pixel opaque, so the background contributes nothing
+                    f.write('  LDA #&%02X : STA (bufp),Y\n' % b)
+                    draw_bytes += 10
+                else:
+                    f.write('  AND #&%02X : ORA #&%02X : STA (bufp),Y\n' % (m, b))
+                    draw_bytes += 12
+            f.write('  RTS\n')
+            draw_bytes += 1
+
+        sets = []
+        for key, row in sorted(rows.items()):
+            data = shift_row(row) if shift else row
+            cols = tuple(i for i, b in enumerate(data) if b)
+            if cols not in sets:
+                sets.append(cols)
+        for n, cols in enumerate(sets):
+            label = 'drR%d_%02d' % (shift, n)
+            rest_labels[(shift, cols)] = label
+            f.write('.%s\n' % label)
+            for col in cols:
+                f.write('  LDY #%d*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y\n'
+                        % col)
+                rest_bytes += 6
+            f.write('  RTS\n')
+            rest_bytes += 1
+
+    def rest_for(shift, key):
+        data = shift_row(rows[key]) if shift else rows[key]
+        cols = tuple(i for i, b in enumerate(data) if b)
+        return rest_labels[(shift, cols)]
+
+    f.write('\n')
+    f.write('\\ Dispatch, at index shift*%d + phase*7 + slot.\n' % (FRAMES * 7))
+    for name, pick in (('drDrawLo', lambda s, k: 'LO(%s)' % labels[(s, k)]),
+                       ('drDrawHi', lambda s, k: 'HI(%s)' % labels[(s, k)]),
+                       ('drRestLo', lambda s, k: 'LO(%s)' % rest_for(s, k)),
+                       ('drRestHi', lambda s, k: 'HI(%s)' % rest_for(s, k))):
+        f.write('.%s\n' % name)
+        for shift in (0, 1):
+            for phase in range(FRAMES):
+                f.write('  EQUB ' + ','.join(pick(shift, k)
+                                             for k in slots[phase]) + '\n')
+    f.write('\n')
+    f.write('\\ Sprite row -> rotor slot; &FF means the row is not the rotor\'s\n')
+    f.write('\\ (a digit row, or one of the three always-blank ones).\n')
+    f.write('.drRotSlot\n')
+    emit_bytes(f, row_slot, per_line=SPRITE_ROWS)
+    f.write('.drMul7                         \\ phase * 7\n')
+    emit_bytes(f, [7 * p for p in range(FRAMES)], per_line=FRAMES)
+    f.write('\n')
+
+    return draw_bytes, rest_bytes
 
 
 def build_digits(mem, dtype):
@@ -339,6 +500,21 @@ def main():
         emit_bytes(f, [(digit_at[t] * 7) >> 8 for t in range(NUM_TYPES)])
         f.write('\n')
 
+        f.write('\\ ---- compiled rotor ---------------------------------------\n')
+        f.write('\\ Rows 0-4 and 15-19 are drawn by generated code rather than\n')
+        f.write('\\ fetched and blitted. See emit_rotor_code in the exporter for\n')
+        f.write('\\ why this is the row that pays, and why one variant suffices\n')
+        f.write('\\ where a compiled sprite usually needs eight.\n')
+        f.write('\\\n')
+        f.write('\\ The interpreted path is NOT retired: a row straddling the end\n')
+        f.write('\\ of the play strip has its columns out of address order and\n')
+        f.write('\\ falls back to it, so drOfs and the rotor rows in drSprData\n')
+        f.write('\\ are still live.\n')
+        f.write('DR_TABSHIFT = %d                \\ table stride between the two shifts\n'
+                % (FRAMES * 7))
+        rotor_rows, rotor_slots, rotor_rowslot = build_rotor_code(mem, frames, bottoms)
+        code_d, code_r = emit_rotor_code(f, rotor_rows, rotor_slots, rotor_rowslot)
+
         f.write('\\ Speed in pixels per GameLoop ITERATION, straight from the\n')
         f.write('\\ C64\'s DSpeed_t. Enemy droids use this value directly; only\n')
         f.write('\\ the player chains it through PlayerSpeed_t. An iteration is\n')
@@ -390,6 +566,8 @@ def main():
     print('%s' % path)
     print('  sprites   %d rows x 7 = %d bytes  (+ %d offsets, %d digit ptrs)'
           % (len(rows), len(rows) * 7, len(offsets) * 2, NUM_TYPES * 2))
+    print('  rotor     compiled: %d bytes draw + %d restore, 2 shifts'
+          % (code_d, code_r))
     print('  waypoints %d records = %d bytes' % (len(wp_blob) // 3, len(wp_blob)))
     print('  per-deck waypoint counts: %s' % counts)
 

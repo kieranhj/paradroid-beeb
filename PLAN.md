@@ -1301,6 +1301,62 @@ the diff wondering — it depends on `scrollS`, `line` and `plyUnit`.
 `GetNewDir`, `AdvanceMapPos`, `CheckDroidAdvance` and the waypoint logic — the same speed model
 applied to non-player droids. The player half of this layer landed in Layer 4.
 
+#### Blitter optimisation, before the droids go in
+
+Seven slots at the Layer 4 cost do not fit in a frame, so the blitter is being cut down first. Four
+steps, in dependency order:
+
+1. **Save area into screen geometry** — done (`3f69b4d`). `(svp),Y` with the same Y as `(bufp),Y`.
+   Cycle-neutral in itself; its point is that it makes compilation *possible*, since a compiled
+   blitter cannot poke a save address into each of its ~72 stores.
+2. **Compile the rotor** — done. Rows 0–4 and 15–19 are generated 6502 in the data bank, with the
+   pixels and masks baked in as immediates.
+3. **Compile the digits** — not started. Two thirds of the remaining work; generated at deck load
+   rather than shipped, since they depend on the droid type.
+4. **Raster-ordered updating** — not started. Flicker, and probably `BUGS.md` #3 with it.
+
+**Measured, one sprite, one frame** (User VIA T1 around the two calls; both builds at the same
+position; ±0 across repeats — the emulator is deterministic):
+
+| | before | after | |
+|---|---|---|---|
+| `SprRestoreAll` | 3,490 | 3,506 | +0.5% |
+| `SprDrawAll` | 10,508 | 7,142 | **−32%** |
+| total | 13,998 | 10,648 | **−24%** |
+
+The draw is where compiling pays: the rotor averages **3.2 opaque bytes of 7**, and a compiled row
+costs nothing for the transparent ones, where the interpreted path pays 26 cycles to fetch and 27 to
+blit each of the seven regardless.
+
+**Restore came out flat, and that is not a disappointment — it is arithmetic.** Copying seven bytes
+back costs 91 cycles; the compiled form costs 13 per saved byte plus ~49 to dispatch, which at 3.2
+bytes is 91 again. It is kept because the alternative is worse: an interpreted restore would force
+the *draw* to save all seven columns, and that costs the draw more than the restore saves.
+
+Seven sprites at 10,648 is 74.5K against a frame of 80K, so this step alone does not buy the pool —
+step 3 has to. It does prove the addressing, which was the risk.
+
+**Cost in the bank:** 3,159 bytes of generated code and tables, so `SPR_SHIFT2` moved `&A800` →
+`&B000` and the bank now ends at `&B6CF` of `&C000`. The staging assert had to be relaxed with it:
+`PARADAT` is now 48 pages and overruns the panel, the mask table and the bottom of the play buffer,
+which is safe because `PageDataIn` is the first thing after the load and everything above it is
+rewritten before it is next read. Boot shows a moment of garbage in the play area.
+
+**Verification.**
+- The generator is checked against the interpreted path in Python: for all 8 phases × 21 rows × 2
+  shifts the compiled row is the row `drOfs` would have fetched (320 rows, 0 mismatches), and for
+  every distinct row over eight background patterns the compiled writes equal the interpreted
+  writes and the compiled restore undoes them exactly.
+- In the emulator, after full-speed diagonal scrolling, disabling the sprite and letting it restore
+  leaves the play buffer **byte-identical to a forced `RedrawAll` across all 10K** — 0 diffs.
+  (Run this at `line == 0`; at `line != 0` the oracle itself is wrong — `BUGS.md` #1.)
+
+**Noted while measuring, not chased:** adding ~44 cycles of instrumentation to the *draw* call site
+deadlocks the main loop in both builds, while the same stub on the *restore* call site is harmless.
+So the loop finishes very close to a raster deadline at that point, and a miss appears to hang the
+`ruptState` machine rather than merely costing a frame. Worth understanding before the budget gets
+spent.
+
 ### Layer 6 — Droids
 `RunDroids`, `dMd0_droid`, sprite slot allocation, pathfinding. Droids move and chase.
 

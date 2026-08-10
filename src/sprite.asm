@@ -96,6 +96,30 @@ SPR_WRAPLIM = BUF_END - SPR_SPAN
 \ Fully on screen means every column and every scanline lands in the
 \ play area. Anything else is culled rather than clipped for now, so
 \ a droid pops in and out at the edges — see the note by SprSetSlot.
+\ ============================================================
+\ THE ROTOR IS COMPILED CODE
+\ ============================================================
+\ Sprite rows 0-4 and 15-19 are not fetched and blitted; they are
+\ drawn by generated 6502 in the data bank, one routine per distinct
+\ row, with the pixels and their masks baked in as immediates. The
+\ rotor averages 3.2 opaque bytes of 7, and a compiled routine costs
+\ nothing at all for the transparent ones — where the interpreted path
+\ pays 26 cycles to fetch and 27 to blit every byte regardless.
+\
+\ Normally a compiled sprite needs eight variants, one per vertical
+\ alignment. This one needs one. Within a character row a byte is at
+\ col*8 + scan; the scan part is carried by bufp, which SprNextScan
+\ advances in step with svp, so Y is always col*8 whatever the
+\ alignment. That is the whole reason the save area was moved into
+\ screen geometry first.
+\
+\ Two copies exist, not eight: unshifted and shifted 2 px, since the
+\ immediates cannot be shifted at run time the way the artwork can.
+\ SPR_TABSHIFT is the stride between them in the dispatch tables —
+\ declared here and checked against the generated DR_TABSHIFT in
+\ main.asm, the same way SPR_W and SPR_H are.
+SPR_TABSHIFT = 56               \ 8 phases * 7 distinct rows
+
 SPR_MAX_UNIT = PLAY_UNITS - SPR_W       \ 80 - 7 = 73
 SPR_MAX_Y    = PLAY_VIS_ROWS * 8 - SPR_H \ 120 - 21 = 99
 
@@ -236,6 +260,24 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
   CLC
   LDA drDigitLo,Y : ADC sprBank   : STA sprDigit
   LDA drDigitHi,Y : ADC sprBank+1 : STA sprDigit+1
+
+\ Where this slot's compiled rotor rows live: shift picks the half of
+\ the table, phase picks the group of seven within it. Kept per slot as
+\ well as in the working variable, because RESTORE runs a frame later —
+\ by which time the phase has advanced and the shift may have changed,
+\ and the background must be put back the way it was taken.
+  LDA sprShift,X
+  BEQ sss_tab0
+  LDA #SPR_TABSHIFT
+  BNE sss_tab                   \ always
+.sss_tab0
+  LDA #0
+.sss_tab
+  LDY sprFrame,X
+  CLC
+  ADC drMul7,Y
+  STA sprTabBase
+  STA sprTabBaseS,X
   CLC
   RTS
 
@@ -470,6 +512,7 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
   LDA bufp+1  : STA sprPtr0Hi,X
   LDA sprScan : STA sprScan0,X
   LDA #1      : STA sprSaved,X
+  LDA sprNoWrap : STA sprNoWrapS,X
 
   JSR SprSetSave                \ svp = this slot's block 0, scanline sprScan
 
@@ -485,8 +528,34 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
   LDA sprBlankRow,X
   BEQ sd_notblank               \ transparent: nothing to save or draw
   JMP sd_next
+\ ---- compiled rotor row ------------------------------------
+\ The generated routine addresses each of its columns as (bufp),Y with
+\ Y = col*8, so it needs the seven columns to be eight bytes apart in
+\ address order. A row straddling the end of the strip is not, and
+\ there is no way to express the walk in baked-in immediates — so that
+\ row alone drops back to the interpreted slow path. See SprCalcAddr:
+\ four sprites in five clear the whole test up front.
 .sd_notblank
-  JSR SprFetchRow
+  LDA drRotSlot,X
+  BMI sd_digit
+  CLC
+  ADC sprTabBase                \ the index, worked out before the wrap test
+  TAX                           \ so it survives in X — SprWraps touches only A
+  LDA sprNoWrap
+  BNE sd_comp
+  JSR SprWraps
+  BCC sd_comp
+  JSR SprFetchRow               \ clobbers X, but sd_slow reloads it
+  JMP sd_slow
+.sd_comp
+  LDA drDrawLo,X : STA sd_call+1
+  LDA drDrawHi,X : STA sd_call+2
+.sd_call
+  JSR &FFFF
+  JMP sd_next
+
+.sd_digit
+  JSR SprFetchRow               \ fetched and blitted as before
   LDA sprNoWrap
   BNE sd_fastrow
   JSR SprWraps
@@ -569,6 +638,9 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
   LDA sprPtr0Lo,X : STA bufp
   LDA sprPtr0Hi,X : STA bufp+1
   LDA sprScan0,X  : STA sprScan
+  LDA sprNoWrapS,X  : STA sprNoWrap   \ the draw's answers, not this frame's:
+  LDA sprTabBaseS,X : STA sprTabBase  \ the sprite may since have moved, and
+                                      \ the rotor has certainly turned
   JSR SprSetSave                \ replays the same walk the draw took
   LDA #0
   STA sprRow
@@ -577,7 +649,33 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
   LDA sprBlankRow,X
   BEQ sr_notblank               \ never saved, so nothing to put back
   JMP sr_next
+\ The compiled draw saved only the columns it was going to cover, so
+\ the restore must put back exactly those and no more. The generated
+\ restore routines are keyed on the COLUMN SET rather than the
+\ artwork — putting the background back does not care what was drawn
+\ over it — which is why 28 draw routines share four restore ones.
+\
+\ The wrap answer is the draw's own, replayed: same start pointer,
+\ same walk, so the same rows take the same path both times and the
+\ save and the restore always agree.
 .sr_notblank
+  LDA drRotSlot,X
+  BMI sr_digit
+  CLC
+  ADC sprTabBase
+  TAX
+  LDA sprNoWrap
+  BNE sr_comp
+  JSR SprWraps
+  BCS sr_slow
+.sr_comp
+  LDA drRestLo,X : STA sr_call+1
+  LDA drRestHi,X : STA sr_call+2
+.sr_call
+  JSR &FFFF
+  JMP sr_next
+
+.sr_digit
   LDA sprNoWrap
   BNE sr_fastrow
   JSR SprWraps
@@ -690,6 +788,8 @@ SPR_SPIN = 0                    \ frames between phases; full energy = 0
 .sprPtr0Lo  SKIP SPR_SLOTS      \ where the last draw started
 .sprPtr0Hi  SKIP SPR_SLOTS
 .sprScan0   SKIP SPR_SLOTS
+.sprNoWrapS SKIP SPR_SLOTS      \ the draw's wrap answer, for the restore
+.sprTabBaseS SKIP SPR_SLOTS     \ the draw's compiled-rotor table base
 
 \ ---- working, one sprite at a time --------------------------
 .sprNoWrap  EQUB 0
@@ -698,6 +798,7 @@ SPR_SPIN = 0                    \ frames between phases; full energy = 0
 .sprY       EQUB 0
 .sprTmpPtr  EQUW 0
 .sprRowIdx  EQUB 0
+.sprTabBase EQUB 0
 .sprBank    EQUW 0
 .sprDigit   EQUW 0
 .sprRowBuf  SKIP SPR_W * 2
