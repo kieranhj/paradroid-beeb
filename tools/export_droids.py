@@ -377,6 +377,89 @@ def emit_rotor_code(f, rows, slots, row_slot):
     return draw_bytes, rest_bytes
 
 
+def emit_glyph_code(f, mem):
+    """Compiled draw code for the ten digit glyphs.
+
+    THE DIGITS ARE DENSE WHERE THE ROTOR WAS SPARSE - 42.7 opaque bytes of 56
+    against 3.2 of 7 - so almost nothing is saved by skipping transparent
+    bytes. The win is deleting SprFetchRow, which copies and masks all seven
+    bytes of all eight rows whether they draw anything or not.
+
+    That changes what is worth compiling. Per-TYPE code would be ~1,012 bytes
+    a type and 24 types do not fit in a 16K bank with the level data. But the
+    number is three independent 8-pixel glyphs and there are only ten glyphs,
+    so ten routines cover all 24 types - and the three positions are reached
+    by offsetting bufp, not by generating three copies.
+
+    A glyph walks its own eight rows, so this needs no per-type trampoline and
+    nothing is generated at run time.
+
+    DRAW ONLY, no saving. The 2 px shift spills each glyph into the next
+    one's first byte, so under a shift the three glyphs share columns 2 and 4
+    - and whichever glyph writes a shared column first would have to be the
+    one that saves it, which is not a property a glyph knows about itself.
+    Hoisting the save into one generic pass over all seven columns removes
+    the question. It is also FASTER on the restore side, because one pass
+    over the block walks the eight rows once where three glyph-shaped
+    restores would walk them three times.
+    """
+    def glyph_rows(d):
+        base = mem[NUM_DATA_OFFSET + d]
+        return [convert_row([mem[NUM_DATA + base + 3 * r], 0, 0])[:2]
+                for r in range(8)]
+
+    size = 0
+    for shift in (0, 1):
+        for d in range(10):
+            rows = glyph_rows(d)
+            if shift:
+                rows = [shift_row(r) for r in rows]
+            f.write('.drGlyph%d_%d\n' % (shift, d))
+            for n, row in enumerate(rows):
+                for col, b in enumerate(row):
+                    if not b:
+                        continue
+                    m = mode1_mask(b)
+                    f.write('  LDY #%d*UNIT_BYTES\n' % col)
+                    if m == 0:
+                        f.write('  LDA #&%02X : STA (bufp),Y\n' % b)
+                        size += 6
+                    else:
+                        f.write('  LDA (bufp),Y : AND #&%02X : ORA #&%02X'
+                                ' : STA (bufp),Y\n' % (m, b))
+                        size += 10
+                if n != 7:
+                    f.write('  JSR SprNextScan\n')
+                    size += 3
+            f.write('  RTS\n')
+            size += 1
+
+    f.write('\n\\ Glyph dispatch, at index shift*10 + digit.\n')
+    f.write('.drGlyphLo\n')
+    for shift in (0, 1):
+        f.write('  EQUB ' + ','.join('LO(drGlyph%d_%d)' % (shift, d)
+                                     for d in range(10)) + '\n')
+    f.write('.drGlyphHi\n')
+    for shift in (0, 1):
+        f.write('  EQUB ' + ','.join('HI(drGlyph%d_%d)' % (shift, d)
+                                     for d in range(10)) + '\n')
+
+    f.write('\n\\ The three digits of each droid type, as glyph numbers.\n')
+    for pos in range(3):
+        f.write('.drDigit%d\n' % pos)
+        vals = []
+        for t in range(NUM_TYPES):
+            if pos == 0:
+                vals.append(mem[DCENT_T + t])
+            elif pos == 1:
+                vals.append(mem[DNUM_T + t] >> 4)
+            else:
+                vals.append(mem[DNUM_T + t] & 0x0F)
+        emit_bytes(f, vals)
+    f.write('\n')
+    return size
+
+
 def build_digits(mem, dtype):
     """The 8 digit rows for one droid type, as C64 sprite bytes."""
     digits_of = [mem[DCENT_T + dtype],
@@ -512,8 +595,16 @@ def main():
         f.write('\\ are still live.\n')
         f.write('DR_TABSHIFT = %d                \\ table stride between the two shifts\n'
                 % (FRAMES * 7))
+        f.write('DR_GLYPHS   = 10                '
+                '\\ digit glyphs, and the shift stride\n')
         rotor_rows, rotor_slots, rotor_rowslot = build_rotor_code(mem, frames, bottoms)
         code_d, code_r = emit_rotor_code(f, rotor_rows, rotor_slots, rotor_rowslot)
+
+        f.write('\\ ---- compiled digits --------------------------------------\n')
+        f.write('\\ Rows 6-13. Ten glyph routines cover all 24 droid types; see\n')
+        f.write('\\ emit_glyph_code in the exporter for why it is glyphs rather\n')
+        f.write('\\ than types, and why they draw without saving.\n')
+        code_g = emit_glyph_code(f, mem)
 
         f.write('\\ Speed in pixels per GameLoop ITERATION, straight from the\n')
         f.write('\\ C64\'s DSpeed_t. Enemy droids use this value directly; only\n')
@@ -568,6 +659,7 @@ def main():
           % (len(rows), len(rows) * 7, len(offsets) * 2, NUM_TYPES * 2))
     print('  rotor     compiled: %d bytes draw + %d restore, 2 shifts'
           % (code_d, code_r))
+    print('  digits    compiled: %d bytes, 10 glyphs x 2 shifts' % code_g)
     print('  waypoints %d records = %d bytes' % (len(wp_blob) // 3, len(wp_blob)))
     print('  per-deck waypoint counts: %s' % counts)
 

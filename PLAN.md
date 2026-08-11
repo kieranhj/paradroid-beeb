@@ -1311,9 +1311,10 @@ steps, in dependency order:
    blitter cannot poke a save address into each of its ~72 stores.
 2. **Compile the rotor** — done. Rows 0–4 and 15–19 are generated 6502 in the data bank, with the
    pixels and masks baked in as immediates.
-3. **Compile the digits** — not started. Two thirds of the remaining work; generated at deck load
-   rather than shipped, since they depend on the droid type.
-4. **Raster-ordered updating** — not started. Flicker, and probably `BUGS.md` #3 with it.
+3. **Compile the digits** — done, but it bought less than half what was projected. See below.
+4. **Round-robin updating** — the load-bearing step, and now clearly the only one that closes the
+   gap. Not started.
+5. **Raster-ordered updating** — flicker, and probably `BUGS.md` #3 with it.
 
 **Measured, one sprite, one frame** (User VIA T1 around the two calls; both builds at the same
 position; ±0 across repeats — the emulator is deterministic):
@@ -1350,6 +1351,57 @@ rewritten before it is next read. Boot shows a moment of garbage in the play are
 - In the emulator, after full-speed diagonal scrolling, disabling the sprite and letting it restore
   leaves the play buffer **byte-identical to a forced `RedrawAll` across all 10K** — 0 diffs.
   (Run this at `line == 0`; at `line != 0` the oracle itself is wrong — `BUGS.md` #1.)
+
+#### Step 3, the digits — and why it under-delivered
+
+**The digits are dense where the rotor is sparse: 42.7 opaque bytes of 56 against 3.2 of 7.** So
+almost nothing is saved by skipping transparent bytes; the whole win is deleting `SprFetchRow`.
+
+Per-TYPE compiled code is ~1,012 bytes and 24 types is 25K, which does not fit. But the number is
+three independent 8-pixel glyphs and there are only ten glyphs, so **ten routines cover all 24
+types** and the three positions are reached by offsetting `bufp` by 0/16/32 rather than by
+generating three copies. Nothing is generated at run time.
+
+The glyphs draw without saving. Under a 2 px shift each glyph spills into the next one's first
+byte, so the three share columns 2 and 4 — and whichever writes a shared column first would have to
+be the one that saves it, which is not something a glyph can know about itself. Hoisting the save
+into one generic pass over all seven columns removes the question entirely, and the same trick makes
+the *restore* a single pass, because putting the background back does not care what was drawn.
+
+| | before | after | |
+|---|---|---|---|
+| `SprRestoreAll` | 3,506 | 3,260 | −7% |
+| `SprDrawAll` | 7,142 | 6,400 | −10% |
+| total | 10,648 | **9,660** | −9.3% |
+
+**That is ~990 cycles, against the ~2,600 projected when the scheme was chosen, and the shortfall is
+structural rather than a bug.** Three glyph positions mean three walks of the eight rows, plus one
+for the save — four walks where the interpreted path made one. A walk step is `JSR SprNextScan`, ~37
+cycles including call and return, so the block spends ~1,180 cycles just advancing scanlines where
+the old code spent ~296. The projection did not count that.
+
+Getting to one walk needs per-row code covering all three glyphs at once, which is per-type — either
+25K shipped or a run-time generator plus a bank to put it in. That was the option deliberately not
+taken, and the 990 is what the cheaper choice is worth. It is not worth revisiting: the same effort
+spent on step 4 is worth far more.
+
+**Cumulative: 13,998 at the end of Layer 4 → 9,660, a 31% cut.** Seven sprites is still 67.6K
+against a 40,000-cycle frame, so compilation has now clearly run out of road and the update rate is
+the whole remaining problem.
+
+Verified byte-identical two ways: the compiled digits against the same build's interpreted path
+(force it by patching `sd_digit`/`sr_digit`'s `LDA sprNoWrap` to `LDA #0`) — 0 diffs over the whole
+10K; and the restore against a forced `RedrawAll` after full-speed diagonal scrolling — 0 diffs.
+
+> **Sample the buffer inside `WaitVSync`, not at an arbitrary cycle count.** A dump taken mid-
+> `SprDrawSlot` shows the sprite half-drawn and looks exactly like missing rows. That cost an hour
+> here: rows 16-19 appeared to be absent in two independent dumps, and the save area proved they had
+> been written all along. Poll the PC until it reaches the `WaitVSync` spin, then dump.
+
+**Bank after step 3:** `&8000-&BA84` of `&C000`, 1,404 bytes spare; `PARADAT` is 59 pages. The 2 px
+shifted copy of the artwork is gone — both shifts exist as compiled code, and the stored rows are
+read only by the wrap fallback, which shifts the few it needs on the fly in `SprFetchRow`. That
+reclaimed the 1,743 bytes the glyph code now occupies.
 
 **Noted while measuring, not chased:** adding ~44 cycles of instrumentation to the *draw* call site
 deadlocks the main loop in both builds, while the same stub on the *restore* call site is harmless.

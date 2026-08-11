@@ -264,18 +264,11 @@ SPR_MASKTAB = &5700             \ data byte -> its transparency mask
 PLY_SLOT = 0
 PLY_Y    = 50                   \ scanlines below the top of the view
 
-\ The 2 px shifted artwork, built at startup into spare sideways RAM
-\ above the generated data. It is not shipped: PARADAT is staged in
-\ main RAM at &3000 before being copied into the bank, and another
-\ 1743 bytes would push that staging area into the play buffer at
-\ &5800. An explicit address rather than a label after data_end,
-\ because beebasm resolves constant assignments in file order and
-\ sprite.asm is assembled before the data.
-\
-\ Raised from &A800 when the compiled rotor was added: that is ~3.2K
-\ of generated code sitting inside the bank, and the ASSERT below is
-\ what catches the address going stale next time.
-SPR_SHIFT2 = &B000
+\ There is no longer a shifted copy of the artwork. It used to be
+\ built into spare bank RAM at startup and cost 1,743 bytes; both
+\ shifts now exist as compiled code, and the stored rows are read
+\ only by the wrap fallback, which shifts the few it needs on the
+\ fly. Those 1,743 bytes are where the compiled digits live.
 
 VIEW_CHARS = 40                 \ 320 px / 8
 MAX_HX     = (MAP_CHAR_W - VIEW_CHARS) * 2      \ 432 half-characters
@@ -366,8 +359,7 @@ ORG &1100
                                 \ reaches past &4800, over the panel
 
   JSR SprBuildMask              \ AFTER the mode change: VDU 22 clears
-  JSR SprBuildShift             \ &3000-&7FFF, which includes the mask
-  JSR SprInit                   \ table. The shift buffer is in the bank.
+  JSR SprInit                   \ &3000-&7FFF, mask table included
 
   JSR InstallIrq                \ after the load: taking over the IRQ stops
                                 \ the MOS servicing the filing system
@@ -695,8 +687,7 @@ INCLUDE "src/data/droids.asm"
 ASSERT DR_W == SPR_W            \ sprite.asm declares these ahead of the
 ASSERT DR_H == SPR_H            \ generated data; keep the two in step
 ASSERT DR_TABSHIFT == SPR_TABSHIFT
-ASSERT data_end <= SPR_SHIFT2   \ the shift buffer sits above the data
-ASSERT SPR_SHIFT2 + DR_DATASIZE <= SWRAM_BASE + &4000
+ASSERT DR_GLYPHS == SPR_DIG_GLYPHS
 
 DATA_PAGES = (data_end - data_start + 255) DIV 256
 ASSERT data_end <= SWRAM_BASE + &4000

@@ -20,14 +20,16 @@
 \ same "no free slot" cases arise and the same rules apply.
 \
 \ Sprites land on 2-pixel boundaries, not 4. A 2 px shift spills
-\ 24 px of sprite into SEVEN bytes, so every row is stored seven
-\ wide and there are two whole copies of the artwork, unshifted and
-\ shifted. Both ship in sideways RAM and are indexed by the same
-\ offsets, so choosing between them is choosing a base address.
+\ 24 px of sprite into SEVEN bytes, so every row is seven wide and
+\ every piece of compiled code exists twice, unshifted and shifted —
+\ immediates cannot be shifted at run time the way artwork can.
 \
 \ 2 px rather than 1 is not just thrift: a C64 multicolour pixel is
 \ exactly two MODE 1 pixels, so the artwork has no detail finer
 \ than that. 1 px would need four copies.
+\
+\ The STORED rows are a single unshifted copy, read only by the wrap
+\ fallback; SprFetchRow shifts those few on the fly.
 \
 \ MASKS ARE NOT STORED. Every opaque pixel maps to logical colour
 \ 1, 2 or 3 and never 0, so a pixel is transparent exactly when
@@ -93,9 +95,6 @@ ASSERT 3 * SPR_BLOCK + (SPR_W - 1) * UNIT_BYTES + 7 < 256
 SPR_SPAN    = (SPR_W - 1) * UNIT_BYTES
 SPR_WRAPLIM = BUF_END - SPR_SPAN
 
-\ Fully on screen means every column and every scanline lands in the
-\ play area. Anything else is culled rather than clipped for now, so
-\ a droid pops in and out at the edges — see the note by SprSetSlot.
 \ ============================================================
 \ THE ROTOR IS COMPILED CODE
 \ ============================================================
@@ -120,81 +119,36 @@ SPR_WRAPLIM = BUF_END - SPR_SPAN
 \ main.asm, the same way SPR_W and SPR_H are.
 SPR_TABSHIFT = 56               \ 8 phases * 7 distinct rows
 
+\ ============================================================
+\ THE DIGITS ARE COMPILED TOO, BUT PER GLYPH
+\ ============================================================
+\ Rows 6-13 are the droid's number. They are dense where the rotor is
+\ sparse — 42.7 opaque bytes of 56 — so almost nothing is saved by
+\ skipping transparent bytes; the win is deleting SprFetchRow.
+\
+\ Per-TYPE code would be ~1K a type and 24 types do not fit. But the
+\ number is three independent 8-pixel glyphs and there are only ten
+\ glyphs, so ten routines serve all 24 types and the three POSITIONS
+\ are reached by offsetting bufp, not by generating three copies.
+\ See SprBlkGlyph.
+SPR_DIG_GLYPHS = 10              \ stride between the two shifts
+
+\ Fully on screen means every column and every scanline lands in the
+\ play area. Anything else is culled rather than clipped for now, so
+\ a droid pops in and out at the edges — see the note by SprSetSlot.
 SPR_MAX_UNIT = PLAY_UNITS - SPR_W       \ 80 - 7 = 73
 SPR_MAX_Y    = PLAY_VIS_ROWS * 8 - SPR_H \ 120 - 21 = 99
 
 \ ============================================================
 \ SprBuildMask — data byte to transparency mask
 \ ============================================================
-\ Only the mask is built at run time now; the shifted artwork is
-\ shipped. A MODE 1 byte holds four pixels, each as a high bit in
+\ The only table still built at run time. A MODE 1 byte holds four
+\ pixels, each as a high bit in
 \ the top nibble and a low bit in the bottom. A pixel is transparent
 \ when BOTH are clear, so fold the low nibble onto the high, invert,
 \ and spread the answer back across both nibbles: AND with that and
 \ the opaque pixels are cleared ready for the sprite to be ORed in.
 ASSERT SPR_MASKTAB + 256 <= BUF_BASE
-
-\ ============================================================
-\ SprBuildShift — the 2 px shifted copy of every stored row
-\ ============================================================
-\ A 2-pixel right shift in MODE 1: pixel n moves to n+2, so within a
-\ byte bits (7,3)<-(5,1) and (6,2)<-(4,0), which is (b AND &CC) >> 2;
-\ the pixels falling off the right reappear as the next byte's pixels
-\ 0 and 1, which is (b AND &33) << 2. The seventh byte of every row
-\ is empty in the source precisely so the spill has somewhere to go,
-\ and the carry is cleared at the start of each row so one row never
-\ bleeds into the next.
-\
-\ Source and destination are both in the bank, which is already
-\ paged in by the time this runs.
-.SprBuildShift
-  LDA #LO(drSprData)  : STA psrc
-  LDA #HI(drSprData)  : STA psrc+1
-  LDA #LO(SPR_SHIFT2) : STA swDst         \ borrowed: PageDataIn has finished
-  LDA #HI(SPR_SHIFT2) : STA swDst+1       \ with it, and it is in zero page
-  LDA #LO(DR_ROWS) : STA sbsRows
-  LDA #HI(DR_ROWS) : STA sbsRows+1
-.sbs_row
-  LDA #0
-  STA sbsCarry
-  LDY #0
-.sbs_byte
-  LDA (psrc),Y
-  PHA
-  AND #&CC
-  LSR A : LSR A
-  ORA sbsCarry
-  STA (swDst),Y
-  PLA
-  AND #&33
-  ASL A : ASL A
-  STA sbsCarry
-  INY
-  CPY #SPR_W
-  BNE sbs_byte
-
-  CLC
-  LDA psrc     : ADC #SPR_W : STA psrc
-  BCC sbs_p
-  INC psrc+1
-.sbs_p
-  CLC
-  LDA swDst    : ADC #SPR_W : STA swDst
-  BCC sbs_d
-  INC swDst+1
-.sbs_d
-  LDA sbsRows
-  BNE sbs_dec
-  DEC sbsRows+1
-.sbs_dec
-  DEC sbsRows
-  LDA sbsRows
-  ORA sbsRows+1
-  BNE sbs_row
-  RTS
-
-.sbsRows  EQUW 0
-.sbsCarry EQUB 0
 
 .SprBuildMask
   LDX #0
@@ -246,20 +200,30 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
   BCS sss_no                    \ off the top or bottom
   STA sprY
 
-  LDX sprSlot                   \ which artwork, and which of the two copies
+\ ONE COPY OF THE ARTWORK, not two. The shifted copy used to be built
+\ into the bank at startup and chosen here by base address; now both
+\ shifts exist as compiled code, and the stored rows are read only by
+\ the wrap fallback — about one row in fifty. Shifting those few on
+\ the fly in SprFetchRow costs nothing that matters and gives back the
+\ 1,743 bytes the second copy occupied, which is where the compiled
+\ digits live.
+  LDX sprSlot
   LDA sprShift,X
-  BEQ sss_flat
-  LDA #LO(SPR_SHIFT2) : STA sprBank
-  LDA #HI(SPR_SHIFT2) : STA sprBank+1
-  JMP sss_digits
-.sss_flat
-  LDA #LO(drSprData) : STA sprBank
-  LDA #HI(drSprData) : STA sprBank+1
-.sss_digits
+  STA sprShiftW
+  STA sprShiftS,X               \ the restore needs the DRAW's shift
   LDY sprType,X                 \ where this type's number block lives
   CLC
-  LDA drDigitLo,Y : ADC sprBank   : STA sprDigit
-  LDA drDigitHi,Y : ADC sprBank+1 : STA sprDigit+1
+  LDA drDigitLo,Y : ADC #LO(drSprData) : STA sprDigit
+  LDA drDigitHi,Y : ADC #HI(drSprData) : STA sprDigit+1
+
+  LDA drDigit0,Y : STA sprDig+0 \ the three glyphs, once per sprite
+  LDA drDigit1,Y : STA sprDig+1
+  LDA drDigit2,Y : STA sprDig+2
+  LDA sprShiftW
+  BEQ sss_g0
+  LDA #10                       \ the shifted half of the glyph table
+.sss_g0
+  STA sprGlyphBase
 
 \ Where this slot's compiled rotor rows live: shift picks the half of
 \ the table, phase picks the group of seven within it. Kept per slot as
@@ -408,9 +372,11 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
 .sfr_phase
   LDX sprRowIdx
   CLC
-  LDA drOfsLo,X : ADC sprBank   : STA psrc
-  LDA drOfsHi,X : ADC sprBank+1 : STA psrc+1
+  LDA drOfsLo,X : ADC #LO(drSprData) : STA psrc
+  LDA drOfsHi,X : ADC #HI(drSprData) : STA psrc+1
 .sfr_copy
+  LDA sprShiftW
+  BNE sfr_shifted
   LDY #SPR_W-1
 .sfr_loop
   LDA (psrc),Y
@@ -421,6 +387,35 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
   DEY
   BPL sfr_loop
   RTS
+
+\ The 2 px shift, done here instead of from a second copy of the
+\ artwork. Forwards, not backwards: the pixels falling off the right
+\ of a byte are the next byte's low two, so the carry runs left to
+\ right and the seventh byte exists to catch the last of it.
+.sfr_shifted
+  LDA #0
+  STA sfrCarry
+  LDY #0
+.sfr_sloop
+  LDA (psrc),Y
+  PHA
+  AND #&CC
+  LSR A : LSR A
+  ORA sfrCarry
+  STA sprRowBuf,Y
+  TAX
+  LDA SPR_MASKTAB,X
+  STA sprRowBuf+SPR_W,Y
+  PLA
+  AND #&33
+  ASL A : ASL A
+  STA sfrCarry
+  INY
+  CPY #SPR_W
+  BNE sfr_sloop
+  RTS
+
+.sfrCarry EQUB 0
 
 .sprMul7 EQUB 0,7,14,21,28,35,42,49
 
@@ -443,6 +438,124 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
 \ Y offsets of the seven columns, for the wrapped paths where the
 \ column index has to live in X.
 .sprMul8 EQUB 0,8,16,24,32,40,48
+
+\ ============================================================
+\ The digit block — sprite rows 6-13, all eight at once
+\ ============================================================
+\ Three glyph routines draw it, called with bufp and svp offset by 0,
+\ 16 and 32: adjacent 4-pixel columns are 8 bytes apart and a glyph is
+\ 8 pixels wide, so a position is two columns along. That is why ten
+\ routines serve 24 droid types — the position is in the pointer, not
+\ in the code.
+\
+\ Each glyph walks its own eight rows, so the block is three walks over
+\ the same eight scanlines plus one for the save. SprBlkSave and
+\ SprBlkRest are the generic passes; the glyphs never save anything.
+\
+\ Only taken when the whole sprite cleared the wrap test. Otherwise all
+\ eight rows go the interpreted way, as they always did.
+SPR_GLYPH_STEP = 2 * UNIT_BYTES
+
+\ Save bufp/svp/sprScan, and put them back. The block runs the same
+\ eight scanlines four times over, so it needs a mark and a return.
+.SprBlkMark
+  LDA bufp   : STA blkPtr
+  LDA bufp+1 : STA blkPtr+1
+  LDA svp    : STA blkSvp
+  LDA sprScan: STA blkScan
+  RTS
+.SprBlkReset
+  LDA blkPtr   : STA bufp
+  LDA blkPtr+1 : STA bufp+1
+  LDA blkSvp   : STA svp
+  LDA blkScan  : STA sprScan
+  RTS
+
+\ All seven columns of all eight rows. Column 6 is only ever written by
+\ a shifted glyph's spill, but saving it unconditionally costs 8 reads
+\ and removes the need to remember which way it went.
+.SprBlkSave
+  LDX #8
+.sbk_row
+  LDY #0*UNIT_BYTES : LDA (bufp),Y : STA (svp),Y
+  LDY #1*UNIT_BYTES : LDA (bufp),Y : STA (svp),Y
+  LDY #2*UNIT_BYTES : LDA (bufp),Y : STA (svp),Y
+  LDY #3*UNIT_BYTES : LDA (bufp),Y : STA (svp),Y
+  LDY #4*UNIT_BYTES : LDA (bufp),Y : STA (svp),Y
+  LDY #5*UNIT_BYTES : LDA (bufp),Y : STA (svp),Y
+  LDY #6*UNIT_BYTES : LDA (bufp),Y : STA (svp),Y
+  JSR SprNextScan
+  DEX
+  BNE sbk_row
+  RTS
+
+.SprBlkRest
+  LDX #8
+.sbr_row
+  LDY #0*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
+  LDY #1*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
+  LDY #2*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
+  LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
+  LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
+  LDY #5*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
+  LDY #6*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
+  JSR SprNextScan
+  DEX
+  BNE sbr_row
+  RTS
+
+\ SprBlkGlyph — draw digit position X (0-2). The glyph numbers and the
+\ shift were worked out once per sprite in SprSetSlot; the restore
+\ never comes here, because putting the background back does not care
+\ what was drawn over it.
+.SprBlkGlyph
+  STX sprDigPos
+  JSR SprBlkReset
+  LDX sprDigPos
+  LDA sprMulStep,X              \ the position, as a byte offset
+  BEQ sbg_at                    \ position 0 needs no adjustment
+  CLC
+  ADC svp : STA svp             \ svp cannot leave its page — see the
+  CLC                           \ assert at the top of the file
+  LDA sprMulStep,X
+  ADC bufp : STA bufp
+  BCC sbg_at
+  INC bufp+1
+.sbg_at
+  LDA sprDig,X
+  CLC
+  ADC sprGlyphBase              \ shift picks the half of the table
+  TAX
+  LDA drGlyphLo,X : STA sbg_call+1
+  LDA drGlyphHi,X : STA sbg_call+2
+.sbg_call
+  JMP &FFFF                     \ tail call: the glyph ends in RTS
+
+.sprMulStep EQUB 0, SPR_GLYPH_STEP, 2*SPR_GLYPH_STEP
+
+\ SprDigitBlock — save the eight rows, then draw the three glyphs over
+\ them. Four walks of the same scanlines, so the position after the
+\ block is taken from the save pass and put back at the end; the glyph
+\ passes each rewind to the mark.
+.SprDigitBlock
+  JSR SprBlkMark
+  JSR SprBlkSave
+  LDA bufp    : STA blkEnd
+  LDA bufp+1  : STA blkEnd+1
+  LDA svp     : STA blkEndSvp
+  LDA sprScan : STA blkEndScan
+  LDX #0
+.sdb_glyph
+  JSR SprBlkGlyph
+  LDX sprDigPos
+  INX
+  CPX #3
+  BNE sdb_glyph
+  LDA blkEnd     : STA bufp
+  LDA blkEnd+1   : STA bufp+1
+  LDA blkEndSvp  : STA svp
+  LDA blkEndScan : STA sprScan
+  RTS
 
 \ ============================================================
 \ SprWraps — does this row's span cross the end of the strip?
@@ -554,7 +667,30 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
   JSR &FFFF
   JMP sd_next
 
+\ ---- the digit block ---------------------------------------
+\ Taken whole when the sprite cleared the wrap test, which is four
+\ times in five. Otherwise the eight rows go one at a time down the
+\ interpreted path, exactly as they always did — the block's glyph
+\ routines address their columns as (bufp),Y and cannot walk a row
+\ that straddles the end of the strip.
 .sd_digit
+  LDA sprNoWrap
+  BEQ sd_digrow
+  LDA sprRow
+  CMP #DR_DIGIT0
+  BNE sd_digrow                 \ only the first row opens the block
+  JSR SprDigitBlock
+  CLC
+  LDA sprRowIdx : ADC #DR_DIGITN : STA sprRowIdx
+  CLC
+  LDA sprRow    : ADC #DR_DIGITN : STA sprRow
+  CMP #SPR_H
+  BNE sd_blkmore
+  JMP sd_done
+.sd_blkmore
+  JMP sd_row
+
+.sd_digrow
   JSR SprFetchRow               \ fetched and blitted as before
   LDA sprNoWrap
   BNE sd_fastrow
@@ -640,7 +776,7 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
   LDA sprScan0,X  : STA sprScan
   LDA sprNoWrapS,X  : STA sprNoWrap   \ the draw's answers, not this frame's:
   LDA sprTabBaseS,X : STA sprTabBase  \ the sprite may since have moved, and
-                                      \ the rotor has certainly turned
+  LDA sprShiftS,X   : STA sprShiftW   \ the rotor has certainly turned
   JSR SprSetSave                \ replays the same walk the draw took
   LDA #0
   STA sprRow
@@ -675,7 +811,23 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
   JSR &FFFF
   JMP sr_next
 
+\ The block restore does not need the glyphs at all — putting the
+\ background back does not care what was drawn over it, so all seven
+\ columns of all eight rows come back in one walk rather than three.
 .sr_digit
+  LDA sprNoWrap
+  BEQ sr_digrow
+  LDA sprRow
+  CMP #DR_DIGIT0
+  BNE sr_digrow
+  JSR SprBlkRest
+  CLC
+  LDA sprRow : ADC #DR_DIGITN : STA sprRow
+  CMP #SPR_H
+  BEQ sr_x
+  JMP sr_row
+
+.sr_digrow
   LDA sprNoWrap
   BNE sr_fastrow
   JSR SprWraps
@@ -790,6 +942,7 @@ SPR_SPIN = 0                    \ frames between phases; full energy = 0
 .sprScan0   SKIP SPR_SLOTS
 .sprNoWrapS SKIP SPR_SLOTS      \ the draw's wrap answer, for the restore
 .sprTabBaseS SKIP SPR_SLOTS     \ the draw's compiled-rotor table base
+.sprShiftS  SKIP SPR_SLOTS      \ the draw's shift
 
 \ ---- working, one sprite at a time --------------------------
 .sprNoWrap  EQUB 0
@@ -799,6 +952,15 @@ SPR_SPIN = 0                    \ frames between phases; full energy = 0
 .sprTmpPtr  EQUW 0
 .sprRowIdx  EQUB 0
 .sprTabBase EQUB 0
-.sprBank    EQUW 0
+.sprShiftW  EQUB 0              \ the shift this draw or restore is using
+.sprGlyphBase EQUB 0            \ 0 or 10: which half of the glyph table
+.sprDig     SKIP 3              \ the droid's three digits, as glyph numbers
+.sprDigPos  EQUB 0
+.blkPtr     EQUW 0              \ the digit block's start, for the rewinds
+.blkSvp     EQUB 0
+.blkScan    EQUB 0
+.blkEnd     EQUW 0              \ and where the block leaves off
+.blkEndSvp  EQUB 0
+.blkEndScan EQUB 0
 .sprDigit   EQUW 0
 .sprRowBuf  SKIP SPR_W * 2
