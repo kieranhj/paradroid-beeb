@@ -100,6 +100,35 @@ computed is the thing to find.
 
 ---
 
+## 4. The player can spawn inside a wall, and is then stuck
+
+**Severity:** blocks play on the affected decks.
+
+**Symptom.** On some decks the player cannot move at all after `LoadDeck` — holding a direction
+for 46 game-loop iterations moves `plyX` by 2 pixels and then nothing. Confirmed on **decks 5 and
+14**; deck 1 is fine.
+
+**Cause.** `CentreOnDeck` (`src/level.asm`) picks the view from the **centroid of the deck's
+non-zero tiles**, and `SetPosFromMap` then drops the player at `posX + PLY_HOME_X`, `posY + PLY_Y`.
+Nothing in that chain asks whether the resulting cell is walkable. On a deck whose tiles happen to
+average out onto a wall — or onto a region the deck does not actually cover — the player lands
+solid and `CheckWalls` zeroes the speed on every axis, every iteration.
+
+**Ruled out.** Not the sprite pool: with `TestDroidsUpdate` NOPed out and slots 1-6 cleared, the
+player is still stuck. Not a Layer 5 regression either — it is a property of `CentreOnDeck`, which
+has not changed since Layer 3.
+
+**The fix is already known and written down.** `tools/export_droids.py` records that **waypoint 0
+of each deck is never used by `InitDeckDroids`** and is there to be the player's spawn point when
+changing deck. Waypoints are walkable by construction, since droids patrol between them. Spawning
+on waypoint 0 and centring the view on that replaces the centroid guess entirely, and the waypoint
+data is already exported (`wpData`, `wpOfsLo/Hi`, `wpCount`). This belongs with the droid-state
+work rather than the blitter.
+
+**Workaround meanwhile:** `TD_DECK = 1` in `main.asm`.
+
+---
+
 ## 3. Top line wrong for one frame when stopping after moving up at full speed
 
 **Severity:** visible, transient.

@@ -133,9 +133,13 @@ FRAMES = 8
 # chained lookup is the player's alone and lives in player.asm.
 PLAYER_SPEED_T = 0x6D97
 
-# Frames per C64 GameLoop iteration, matching PLY_ITER_FRAMES in player.asm.
-# The C64's speeds are per iteration and an iteration is 2-3 frames.
+# The C64's droid speeds are per GameLoop ITERATION. Our loop is locked to
+# FRAME_LOCK fields a pass and the C64 spends ITER_FRAMES fields an iteration,
+# so a speed scales by FRAME_LOCK / ITER_FRAMES. At 2 and 2 they cancel and the
+# per-pass delta is the C64's own value. Keep these in step with FRAME_LOCK in
+# main.asm and PLY_ITER_FRAMES in player.asm.
 ITER_FRAMES = 2
+FRAME_LOCK = 2
 
 DROID_COLOUR = 1            # MODE 1 logical colour of a set bit; see above
 
@@ -614,9 +618,9 @@ def main():
         f.write('.drSpeed\n')
         emit_bytes(f, speeds)
         f.write('.drSpeedF                       \\ (speed * 256) / %d, 8.8\n' % ITER_FRAMES)
-        emit_bytes(f, [(s * 256 // ITER_FRAMES) & 0xFF for s in speeds])
+        emit_bytes(f, [(s * 256 * FRAME_LOCK // ITER_FRAMES) & 0xFF for s in speeds])
         f.write('.drSpeedFHi\n')
-        emit_bytes(f, [(s * 256 // ITER_FRAMES) >> 8 for s in speeds])
+        emit_bytes(f, [(s * 256 * FRAME_LOCK // ITER_FRAMES) >> 8 for s in speeds])
         f.write('\n')
 
         f.write('\\ Droid numbers, for reference: ')

@@ -58,6 +58,17 @@ SWRAM_BASE = &8000
 
 CHAR_BYTES = 16                 \ a character is 16 bytes: two 8-byte halves
 
+\ ---- frame lock ---------------------------------------------
+\ TV fields per game-loop iteration. 2 gives a fixed 25 Hz, which is
+\ the rate the C64's GameLoop actually runs at and the rate every
+\ movement constant in player.asm is expressed in — see WaitVSync for
+\ why this is locked rather than free-running.
+\
+\ Changing it changes how fast the game plays unless PLY_ITER_FRAMES
+\ moves with it: player.asm scales the C64's per-iteration speeds by
+\ FRAME_LOCK / PLY_ITER_FRAMES, so the two cancel at 2 and 2.
+FRAME_LOCK = 2
+
 MAP_COLS   = 64                 \ tile map is 64 x 16 tiles
 MAP_ROWS   = 16
 MAP_CHAR_W = MAP_COLS * 4       \ 256 characters across
@@ -97,6 +108,14 @@ DEBUG_RASTER = FALSE
 \   cyan     everything between: keys, movement, SetCRTCStart and
 \            the edge redraw.
 DEBUG_DRAW   = FALSE
+
+\ TEST_DROIDS parks six static droids around the player at deck load,
+\ so the sprite pool can be looked at and measured before droid.asm
+\ exists. Scaffolding — see src/droidtest.asm.
+TEST_DROIDS  = TRUE
+TD_DECK      = 1                \ CentreOnDeck lands the player somewhere
+                                \ walkable here; on some decks it does not,
+                                \ see BUGS.md
 DBG_SPR      = 5                \ magenta
 DBG_REDRAW   = 6                \ cyan
 
@@ -364,7 +383,11 @@ ORG &1100
   JSR InstallIrq                \ after the load: taking over the IRQ stops
                                 \ the MOS servicing the filing system
 
+IF TEST_DROIDS
+  LDA #TD_DECK : STA deck
+ELSE
   LDA #1 : STA deck
+ENDIF
   LDA #0
   STA prevUp
   STA prevDn
@@ -451,6 +474,9 @@ IF DEBUG_DRAW
   LDA #DBG_SPR : JSR DbgSetBg   \ magenta over the sprite draw
 ENDIF
 
+IF TEST_DROIDS
+  JSR TestDroidsUpdate          \ after the view has settled, before the draw
+ENDIF
   JSR SprAnimateAll             \ last: the buffer is settled, so the save
   JSR SprDrawAll                \ picks up the background the frame will show
 
@@ -523,11 +549,31 @@ ENDIF
 \ VSync — see rt_drawok. Everything the main loop does after this
 \ (edge redraw, parking R12/R13) must land before the play area is
 \ drawn again, so starting 7 rows earlier is 7 rows more headroom.
+\
+\ FRAME_LOCK fields are consumed per iteration, not one, so the loop
+\ runs at a FIXED 25 Hz rather than free-running. That is the C64's
+\ own cadence — its GameLoop iterates every 2-3 fields — and it is
+\ what the movement constants have always been expressed in.
+\
+\ Free-running was the worse of the two. The loop does not fit in a
+\ field once the sprite pool is full, so it quietly took 1.25 fields
+\ an iteration and the player moved 20% slower with droids on screen
+\ than without: the speed became a function of how much was visible.
+\ Locking makes the cost of a droid show up as headroom spent rather
+\ than as movement slowing down.
+\
+\ If an iteration overruns its two fields the flag is already set on
+\ arrival, so it is consumed at once and the next boundary is one
+\ field later. The rate degrades but never exceeds 25 Hz.
 .WaitVSync
+  LDX #FRAME_LOCK
+.wv_field
   LDA drawFlag
-  BEQ WaitVSync
+  BEQ wv_field
   LDA #0
   STA drawFlag
+  DEX
+  BNE wv_field
   RTS
 
 \ ============================================================
@@ -617,6 +663,9 @@ ENDIF
   BPL ld_unsave
   JSR SetCRTCStart
   JSR RedrawAll
+IF TEST_DROIDS
+  JSR TestDroidsInit
+ENDIF
   RTS
 
 INCLUDE "src/rupture.asm"
@@ -625,6 +674,9 @@ INCLUDE "src/scroll.asm"
 INCLUDE "src/level.asm"
 INCLUDE "src/player.asm"
 INCLUDE "src/sprite.asm"
+IF TEST_DROIDS
+INCLUDE "src/droidtest.asm"
+ENDIF
 
 \ ---- absolute working storage ------------------------------
 .rowOfs    EQUW 0               \ row*640 accumulator for RedrawAll

@@ -1312,9 +1312,29 @@ steps, in dependency order:
 2. **Compile the rotor** — done. Rows 0–4 and 15–19 are generated 6502 in the data bank, with the
    pixels and masks baked in as immediates.
 3. **Compile the digits** — done, but it bought less than half what was projected. See below.
-4. **Round-robin updating** — the load-bearing step, and now clearly the only one that closes the
-   gap. Not started.
-5. **Raster-ordered updating** — flicker, and probably `BUGS.md` #3 with it.
+4. **Frame lock to 25 Hz** — done. `FRAME_LOCK = 2` in `main.asm`; `WaitVSync` consumes two fields
+   an iteration instead of one, so one pass of the loop is one C64 GameLoop iteration.
+
+   | loop iterations per 100 fields | free-running | locked |
+   |---|---|---|
+   | player only | 101 (50 Hz) | 50 (25 Hz) |
+   | player + 6 droids | 80 (40 Hz) | 50 (25 Hz) |
+
+   Free-running was the worse option and it took the test droids to show why: the loop does not fit
+   in a field with a full pool, so it stretched to 1.25 fields and **the player moved 20% slower
+   with droids on screen than without**. Speed that depends on what is visible is a worse fault
+   than speed that is merely chunkier.
+
+   Real-time speed is unchanged — `PLY_ACCEL`/`PLY_DECEL`/`PLY_MAXSPD` now scale by
+   `FRAME_LOCK / PLY_ITER_FRAMES`, which cancels at 2 and 2, so the C64's own per-iteration
+   constants apply unmodified. Confirmed in the emulator: `xSpd` tops out at `&0700`, 7.0 px per
+   iteration, the same 175 px/s as 3.5 px/field at 50 Hz. What is given up is the extra smoothness
+   the 50 Hz sampling bought — that was always a bonus over the original, not a requirement.
+
+5. **Round-robin updating** — still the step that buys the pool its headroom, but no longer urgent
+   for correctness now the rate is fixed: 25 Hz gives ~80,000 cycles a pass against ~68,000 spent
+   on seven sprites. Not started.
+6. **Raster-ordered updating** — flicker, and probably `BUGS.md` #3 with it.
 
 **Measured, one sprite, one frame** (User VIA T1 around the two calls; both builds at the same
 position; ±0 across repeats — the emulator is deterministic):

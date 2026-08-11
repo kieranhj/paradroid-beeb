@@ -37,24 +37,28 @@
 \ AnimateDroids or the sound driver have run. An iteration is 2 to 3
 \ frames, drifting towards 3 as a deck fills with droids.
 \
-\ So the original's top speed of 7 px per iteration is about
-\ 3.5 px per FRAME, and its acceleration is halved twice over —
-\ once for velocity, once for time:
+\ The game loop is locked to FRAME_LOCK = 2 fields, so ONE pass of it
+\ is one C64 iteration and the original's constants apply unchanged:
+\ 7 px per iteration, 208/256 accel, 176/256 decel, 0.34 s from a
+\ standing start to top speed. Same motion, same cadence.
 \
-\   per iteration (C64)        per frame (here, at 2 frames/iteration)
-\   accel  208/256 px/it^2     52/256 px/frame^2
-\   decel  176/256 px/it^2     44/256 px/frame^2
-\   max      7    px/it         3.5  px/frame
+\ It did not start that way. The loop used to run every field with
+\ everything halved — 3.5 px per field, quarter acceleration — which
+\ sampled the same motion at 50 Hz and was genuinely smoother than the
+\ original. That is the better-looking option and it was given up for
+\ a reason: with a full sprite pool the loop no longer fits in a
+\ field, so free-running quietly stretched to 1.25 fields an iteration
+\ and the player moved 20% slower with droids on screen than without.
+\ Speed that depends on what is visible is worse than speed that is
+\ merely chunkier, so the rate is now fixed and the smoothness is what
+\ pays for the droids.
 \
-\ Same motion in real time — 0.34 s from a standing start to top
-\ speed either way — but sampled at 50 Hz instead of 25, so it is
-\ smoother than the original rather than merely as fast. It also
-\ halves the redraw work per frame, which is what the frame budget
-\ needed.
-\
-\ PLY_ITER_FRAMES is the one number to change if this reads wrong.
-\ Raise it and everything slows together, keeping the acceleration
-\ curve's shape.
+\ Two numbers set the feel, and they scale together:
+\   FRAME_LOCK       fields per pass of our loop     (main.asm)
+\   PLY_ITER_FRAMES  fields the C64 spends per iteration
+\ Raise FRAME_LOCK alone and the game speeds up while the rate drops;
+\ raise PLY_ITER_FRAMES alone and everything slows together, keeping
+\ the acceleration curve's shape.
 \
 \ Top speed comes from PlayerSpeed_t ($6D97) indexed through
 \ DSpeed_t ($EA40) by droid type. The player starts as droid 001,
@@ -72,10 +76,15 @@ C64_ACCEL  = 208                \ Acceleration_    $6955, per iteration
 C64_DECEL  = 176                \ DecelerationNeg_ $6954, per iteration
 C64_MAXSPD = 7                  \ PlayerSpeed_t[DSpeed_t[0]], px per iteration
 
-\ Velocity divides by the frame count once, acceleration twice.
-PLY_ACCEL  = C64_ACCEL / (PLY_ITER_FRAMES * PLY_ITER_FRAMES)
-PLY_DECEL  = C64_DECEL / (PLY_ITER_FRAMES * PLY_ITER_FRAMES)
-PLY_MAXSPD = (C64_MAXSPD * 256) / PLY_ITER_FRAMES       \ 8.8, so &0380
+\ The C64's numbers are per ITERATION; ours are applied once per
+\ game-loop pass, which is FRAME_LOCK fields long. So the scale factor
+\ is FRAME_LOCK / PLY_ITER_FRAMES — fields we get per pass over fields
+\ the C64 takes per iteration. Velocity scales by it once, acceleration
+\ twice. At FRAME_LOCK = 2 the two cancel and these are the C64's own
+\ values, unmodified.
+PLY_ACCEL  = (C64_ACCEL * FRAME_LOCK * FRAME_LOCK) / (PLY_ITER_FRAMES * PLY_ITER_FRAMES)
+PLY_DECEL  = (C64_DECEL * FRAME_LOCK * FRAME_LOCK) / (PLY_ITER_FRAMES * PLY_ITER_FRAMES)
+PLY_MAXSPD = (C64_MAXSPD * 256 * FRAME_LOCK) / PLY_ITER_FRAMES  \ 8.8
 PLY_MAXNEG = 65536 - PLY_MAXSPD
 
 MAX_PX_X = (MAP_CHAR_W * 8) - 320       \ 1728, view origin
