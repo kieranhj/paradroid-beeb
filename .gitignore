@@ -1,5 +1,6 @@
 # ---- Build output ----
 *.SSD
+*.labels
 *.ssd
 *.dsd
 
