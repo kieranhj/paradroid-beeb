@@ -1578,6 +1578,67 @@ and **B against a Python 2 px shift of A**. Validate `shl2`/`shr2` offline again
 before any 6502 is written, the way the sprite compiler was validated. Sample inside the `WaitVSync`
 spin and exclude the sprite footprint — both traps are recorded in Layer 5.
 
+#### Build log — steps 1 to 4 landed
+
+Steps 1-4 of the work list are in, and verified: **buffer B is a true 2 px shift of buffer A, 0
+differing bytes in 10240**, at odd `mapHX` (137) with `line` = 1 after full-speed diagonal
+scrolling, checked against a Python shift computed from A's own bytes. The unshifted checkpoint
+(step 3, B as a plain duplicate) also came out 0/10240.
+
+Four things worth carrying forward:
+
+- **ACCCON is `IRR TST IFJ ITU Y X E D`, so X is bit 2, not bit 1.** Flipping bit 1 flips E, which
+  only redirects code executing in `&C000-&DFFF` — so every write went to main RAM, both passes drew
+  the same buffer, and shadow stayed the zeros it powered on with. It presents as "the second pass
+  never ran". Settled by reading jsbeeb's `writeAcccon` after three emulator tests disagreed with the
+  model in my head.
+- **Y must be preserved.** The Master boots at `ACCCON = &18` with Hazel paged in at `&C000-&DFFF`
+  and the OS keeps filing-system workspace there. `AcconInit` keeps Y, ITU, IFJ and TST and forces
+  D, X and IRR off.
+- **The tile map moved to `&3800`, on both machines.** The Master build pushed it past `&3000` into
+  the shadowed region, where it collided with the sprite save area. The headroom below `&3000` was
+  **99 bytes, not the 243 recorded above** — that figure was stale. `&3800` is space PARADAT's
+  staging freed; `BuildLevel` runs once per buffer on the Master. It hands ~1K back to the code on
+  the Model B as well, and leaves `&3C00-&47FF` free in both.
+- **`MAX_HX` loses one character on the Master.** B's rightmost 4-pixel column takes its low two
+  pixels from the character beyond the right edge of the view, and at the Model B's limit that
+  character is map column 256, past the end of the tile map row. Cheaper than an edge test in the
+  hottest loop.
+
+**The shift is done with shifts, not tables.** `B[u] = ((A[u] << 2) AND &CC) OR ((A[u+1] >> 2) AND
+&33)`. A pair of 256-byte tables measures the same 41 cycles a byte — the running index is in Y and
+only X is left to index with, so the table form needs the same temporary — and would cost 512 bytes
+below `&3000` plus a build step. The band carries its lookahead between characters rather than
+looking each one up twice, so buffer B costs the same 41 lookups as A's 40, not 80.
+
+#### The measured cost — it does not fit yet, even player-only
+
+Player only, full-speed diagonal, `CheckWalls` poked to `RTS`, both buffers maintained:
+
+| | measured | frame-locked would be |
+|---|---|---|
+| `posX` over 10 fields | **16 px** | 35 |
+| `posY` over 10 fields | **14 px** | 35 |
+
+`xSpd` and `ySpd` were both at `&0700`, so this is the loop stretching to ~4 fields an iteration,
+not the player moving slower. **The "fits comfortably today" estimate above was wrong**, and the
+error was in the drawing, not the sprites: the shifted copy is 41 cycles a byte against `CopyRun`'s
+13, so a band costs ~3× rather than the +60-80% assumed, and `DrawColumn` falls back to the generic
+uncached two-lookup path, which costs more again.
+
+Two clear ways back, in order of value:
+
+- **`DrawColumn`'s fallback.** It pays two uncached `MapChar` calls per cell where the straight path
+  pays one cached `ColCharPtr`. Carrying a second set of the `Col*` hoisted state for `halfX+1`
+  removes that; 32 cells a frame at full diagonal speed makes it worth doing first.
+- **A pre-shifted charset** takes the band from 41 cycles a byte to 29 — store `shr2` of every
+  charset byte and the other half stays an inline `ASL`/`ASL`/`AND`. It is 2192 bytes and needs to be
+  readable with the CPU on shadow, so it goes at `&3C00` in shadow RAM, in the space the tile map
+  move just opened. Both halves pre-shifted would reach 23 cycles but needs 4384 bytes, which does
+  not fit under the panel.
+
+Beyond those, the Layer 4 optimisation backlog (~14K identified) is still unspent.
+
 #### Budget: what can be seen now, and what waits
 
 25 Hz gives ~80,000 cycles a pass, and seven sprites already cost ~67.6 K of it.

@@ -123,6 +123,10 @@
   JSR SetCell                   \ only once: row 0 of this column
   LDA mapYr : STA cellY
 .dc_loop
+IF TARGET_MASTER
+  LDA drawShift
+  BNE dc_shift
+ENDIF
   JSR ColCharPtr
   LDY #7
 .dc_copy
@@ -130,6 +134,18 @@
   STA (bufp),Y
   DEY
   BPL dc_copy
+IF TARGET_MASTER
+  JMP dc_after
+\ Buffer B's column needs the column to its right as well, and the
+\ Col* hoisting holds state for one halfX only — so this drops back to
+\ the generic two-lookup path rather than carrying a second set of it.
+\ 16 cells paying an uncached MapChar each is the obvious thing to fix
+\ if the column redraw becomes the binding cost; the band, which runs
+\ far more often, already avoids it.
+.dc_shift
+  JSR DrawHalfShift             \ halfX and cellY are both already set
+.dc_after
+ENDIF
 
   CLC                           \ next row of the strip
   LDA bufp   : ADC #LO(ROW_BYTES) : STA bufp
@@ -189,6 +205,10 @@
 \ the port: at the top speed of 7 px a frame it runs twice, 40 times
 \ each, every frame.
 .DrawBandRows
+IF TARGET_MASTER
+  LDA drawShift
+  BNE DrawBandRowsS
+ENDIF
   JSR BandSetRow                \ cellY is fixed for the whole pass
   LDA #0
   STA uCount
@@ -243,6 +263,135 @@
   JSR CopyRun
 .dbr_done
   RTS
+
+IF TARGET_MASTER
+\ ============================================================
+\ DrawBandRowsS — the same band, shifted 2 px, for buffer B
+\ ============================================================
+\ Every output unit needs its own source AND the next one along, so
+\ the naive form looks up each character twice and doubles the cost of
+\ the hottest routine in the port. It does not have to: two adjacent
+\ units are the two halves of one character, so of the two units a
+\ character produces, only the RIGHT one reaches past it — and what it
+\ reaches for is the next character, which the loop is about to look
+\ up anyway.
+\
+\ So the loop keeps ONE character in hand and looks one ahead:
+\
+\   left  unit u   = f(cur, cur+8)      both halves of this character
+\   right unit u+1 = f(cur+8, next)     next character's left half
+\
+\ 41 lookups for 80 units, against A's 40. The extra one is the
+\ character past the right edge of the view, which is what MAX_HX is
+\ pulled in by a character to keep inside the tile map.
+\
+\ BandCharPtr writes its result to chp, so the current character has
+\ to be parked across the lookahead — that is what sbCur is for.
+.DrawBandRowsS
+  JSR BandSetRow
+  LDA #0
+  STA uCount
+  JSR SetCell                   \ bufp = display row rCount, unit 0
+
+  LDA mapHX+1                   \ cellX = mapHX >> 1
+  LSR A
+  STA cellX+1
+  LDA mapHX
+  ROR A
+  STA cellX
+
+  JSR BandCharPtr               \ chp = character containing unit 0
+
+  LDA mapHX
+  AND #1
+  STA dbOdd
+  BEQ dbs_whole
+
+\ mapHX odd: unit 0 is this character's RIGHT half on its own, and its
+\ partner is already in the next character.
+  JSR dbs_look                  \ sbNext = next character
+  CLC
+  LDA chp   : ADC #8 : STA chp
+  LDA chp+1 : ADC #0 : STA chp+1
+  LDA sbNext   : STA chp2
+  LDA sbNext+1 : STA chp2+1
+  JSR CopyRunShift
+  JSR BufNextUnit
+  LDA sbNext   : STA chp       \ that next character is now the current one
+  LDA sbNext+1 : STA chp+1
+  LDA #(PLAY_UNITS/2)-1
+  BNE dbs_setn
+.dbs_whole
+  LDA #PLAY_UNITS/2
+.dbs_setn
+  STA dbCount
+
+.dbs_char
+  JSR dbs_look                  \ sbNext = the character after this one
+
+  CLC                           \ left unit: this character's two halves
+  LDA chp   : ADC #8 : STA chp2
+  LDA chp+1 : ADC #0 : STA chp2+1
+  JSR CopyRunShift
+  JSR BufNextUnit
+
+  LDA chp2   : STA chp          \ right unit: right half, then next character
+  LDA chp2+1 : STA chp+1
+  LDA sbNext   : STA chp2
+  LDA sbNext+1 : STA chp2+1
+  JSR CopyRunShift
+  JSR BufNextUnit
+
+  LDA sbNext   : STA chp
+  LDA sbNext+1 : STA chp+1
+  DEC dbCount
+  BNE dbs_char
+
+  LDA dbOdd
+  BEQ dbs_done
+  CLC                           \ trailing LEFT half, partnered by its own
+  LDA chp   : ADC #8 : STA chp2 \ right half — no further lookahead needed
+  LDA chp+1 : ADC #0 : STA chp2+1
+  JSR CopyRunShift
+.dbs_done
+  RTS
+
+\ sbNext = the next character's left half, chp left as it was.
+.dbs_look
+  LDA chp   : STA sbCur
+  LDA chp+1 : STA sbCur+1
+  JSR CellXInc
+  JSR BandCharPtr
+  LDA chp   : STA sbNext
+  LDA chp+1 : STA sbNext+1
+  LDA sbCur   : STA chp
+  LDA sbCur+1 : STA chp+1
+  RTS
+
+\ bandRun shifted bytes at offset bandScan — see the derivation in
+\ screen.asm. 41 cycles a byte against CopyRun's 13, which is the
+\ whole of what buffer B costs over and above buffer A.
+.CopyRunShift
+  LDY bandScan
+  LDX bandRun
+.crs_loop
+  LDA (chp2),Y
+  LSR A : LSR A
+  AND #&33
+  STA shTmp
+  LDA (chp),Y
+  ASL A : ASL A
+  AND #&CC
+  ORA shTmp
+  STA (bufp),Y
+  INY
+  DEX
+  BNE crs_loop
+  RTS
+
+.sbCur  EQUW 0
+.sbNext EQUW 0
+ENDIF
 
 \ ---- band inner helpers ------------------------------------
 \ bandRun bytes at offset bandScan, from the charset to the buffer.

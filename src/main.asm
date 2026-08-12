@@ -31,6 +31,30 @@ VIDEO_ULA_PAL = &FE21           \ palette register, write only
 SYS_VIA_IFR   = &FE4D
 IRQ1V         = &0204
 
+\ ---- Master 128 access control ------------------------------
+\ ACCCON, and only on a Master:
+\
+\   bit    7    6    5    4    3    2    1    0
+\         IRR  TST  IFJ  ITU   Y    X    E    D
+\
+\ D selects which RAM the VIDEO fetches &3000-&7FFF from; X selects
+\ which one the CPU sees there. They are independent, and a write
+\ takes effect instantly — mid-scanline included, though we only ever
+\ change D at VSync.
+\
+\ X IS BIT 2, NOT BIT 1. Getting that wrong flips E instead, which
+\ only redirects code executing in &C000-&DFFF — so every write still
+\ went to main RAM, both passes drew the same buffer, and the shadow
+\ buffer stayed the zeros it powered on with. It presents as "the
+\ second pass never ran", with nothing wrong at the second pass.
+\
+\ ALWAYS WRITE THE WHOLE BYTE FROM acconVal, never read-modify-write
+\ the register: bit 7 (IRR) forces an interrupt if it goes high and we
+\ would have no handler for it.
+ACCCON        = &FE34
+ACC_D         = 1               \ video fetches shadow
+ACC_X         = 4               \ CPU sees shadow at &3000-&7FFF
+
 \ ---- sideways RAM -------------------------------------------
 \ ROMSEL selects which 16K bank appears at &8000-&BFFF. Only one is
 \ visible at a time, so paging our RAM in displaces whatever ROM was
@@ -108,6 +132,26 @@ DEBUG_RASTER = FALSE
 \   cyan     everything between: keys, movement, SetCRTCStart and
 \            the edge redraw.
 DEBUG_DRAW   = FALSE
+
+\ TARGET_MASTER builds the Master 128 variant, which scrolls
+\ horizontally at 2 px instead of 4. Two copies of the play buffer
+\ live at the SAME address, &5800-&7FFF — one in main RAM, one in
+\ shadow — holding the world 2 px apart. Bit 1 of posX then selects
+\ which one the video fetches from, via ACCCON's D bit.
+\
+\ It is not a per-field alternation and not a flicker trick: one
+\ buffer is displayed for the whole iteration and which one is a pure
+\ function of position parity. Nothing in the scroll arithmetic
+\ changes — the CRTC still steps 4 px.
+\
+\ The cost is that either buffer may be the one displayed next, so
+\ both must be current at all times: every edge redraw and every
+\ sprite blit happens twice, once with the CPU seeing main RAM at
+\ &3000-&7FFF and once with it seeing shadow (ACCCON's X bit).
+\
+\ See "Master-only extensions" in PLAN.md. build.ps1 reads this flag
+\ and names the disc image from it.
+TARGET_MASTER = FALSE
 
 \ TEST_DROIDS parks six static droids around the player at deck load,
 \ so the sprite pool can be looked at and measured before droid.asm
@@ -290,7 +334,18 @@ PLY_Y    = 50                   \ scanlines below the top of the view
 \ fly. Those 1,743 bytes are where the compiled digits live.
 
 VIEW_CHARS = 40                 \ 320 px / 8
+IF TARGET_MASTER
+\ One character short of the Model B's limit. Buffer B's rightmost
+\ 4-pixel column takes its bottom two pixels from the character just
+\ BEYOND the right edge of the view, and at the Model B's MAX_HX that
+\ character is map column 256, which does not exist — the lookup
+\ would run off the end of the tile map row. Giving up the last
+\ character of scroll is cheaper than a per-unit edge test in the
+\ hottest loop in the port.
+MAX_HX     = (MAP_CHAR_W - VIEW_CHARS) * 2 - 2
+ELSE
 MAX_HX     = (MAP_CHAR_W - VIEW_CHARS) * 2      \ 432 half-characters
+ENDIF
 MAX_Y      = MAP_CHAR_H - 16                    \ 48 rows
 NUM_DECKS  = 16
 
@@ -319,7 +374,17 @@ swSrc    = &66                  \ sideways-RAM copy source  (2)
 psrc     = &68                  \ sprite row, pixel data    (2)
 swDst    = &6A                  \ sideways-RAM copy dest    (2)
 sprRow   = &6C                  \ sprite row being blitted
+IF TARGET_MASTER
+shTmp    = &6D                  \ the 2 px shift's half-built byte
+\ chp2 is the source for the NEXT 4-pixel column, which the shifted
+\ draw needs alongside chp. Indirect indexed addressing is zero page
+\ only, so it has to live here — and there was one spare byte, not
+\ two. swSrc is PageDataIn's, and PageDataIn runs once at boot and
+\ never again, so the pair is dead by the time anything is drawn.
+chp2     = swSrc
+ELSE
 \ &6D free
+ENDIF
 svp      = &6E                  \ sprite background save pointer (2)
 
 bufp     = &70                  \ buffer write pointer      (2)
@@ -367,6 +432,12 @@ ORG &1100
 
   JSR SetupScreen
 
+IF TARGET_MASTER
+  JSR AcconInit                 \ after the mode change, which is the last
+ENDIF                           \ thing that sets ACCCON behind our back.
+                                \ Leaves the CPU on main RAM, which is where
+                                \ *LOAD and PageDataIn need it
+
   LDX #LO(loadcmd)              \ must follow the mode change: VDU 22
   LDY #HI(loadcmd)              \ clears what the OS thinks is its screen
   JSR OSCLI
@@ -378,7 +449,20 @@ ORG &1100
                                 \ reaches past &4800, over the panel
 
   JSR SprBuildMask              \ AFTER the mode change: VDU 22 clears
-  JSR SprInit                   \ &3000-&7FFF, mask table included
+                                \ &3000-&7FFF, mask table included
+IF TARGET_MASTER
+\ Both live in the shadowed region, so buffer B has its own copy of
+\ each and neither has been written yet. The panel is displayed
+\ whenever D selects shadow, and SprBuildMask's table is read by the
+\ blitter with the CPU on shadow, so both have to exist twice.
+  JSR AcconShadow
+  JSR FillPanel
+  JSR SprBuildMask
+  JSR AcconMain
+ENDIF
+
+  JSR SprInit                   \ pool state is shared: it lives in code
+                                \ space, below the shadowed region
 
   JSR InstallIrq                \ after the load: taking over the IRQ stops
                                 \ the MOS servicing the filing system
@@ -406,7 +490,7 @@ ENDIF
 IF DEBUG_DRAW
   LDA #DBG_SPR : JSR DbgSetBg   \ the restore is sprite time too, and it is
 ENDIF                           \ a third of it — it gets the sprite colour
-  JSR SprRestoreAll             \ before anything moves: the saved pixels
+  JSR SprRestoreBoth            \ before anything moves: the saved pixels
                                 \ belong at the address they were taken from
 IF DEBUG_DRAW
   LDA #DBG_REDRAW : JSR DbgSetBg
@@ -424,7 +508,7 @@ ENDIF
   \ before any drawing — the IRQ latches it at frame row 3, only a
   \ few rows into this window.
   JSR SetCRTCStart
-  JSR DoRedraws
+  JSR DoRedrawsBoth
 
   \ Deck keys are edge triggered: one press steps one deck however
   \ long it is held. A blocking wait-for-release deadlocks if the
@@ -467,7 +551,7 @@ ENDIF
   LDX #KEY_SPACE                \ DEBUG: force a full redraw, to compare
   JSR keydown                   \ the incremental edge draws against it
   BNE ml_notSpc
-  JSR RedrawAll
+  JSR RedrawBoth
 .ml_notSpc
 
 IF DEBUG_DRAW
@@ -478,7 +562,7 @@ IF TEST_DROIDS
   JSR TestDroidsUpdate          \ after the view has settled, before the draw
 ENDIF
   JSR SprAnimateAll             \ last: the buffer is settled, so the save
-  JSR SprDrawAll                \ picks up the background the frame will show
+  JSR SprDrawBoth               \ picks up the background the frame will show
 
 IF DEBUG_DRAW
   JSR DbgDeckBg
@@ -535,6 +619,114 @@ ENDIF
   LDY #&FF
   JSR OSBYTE
   CPY #&FF
+  RTS
+
+IF TARGET_MASTER
+\ ============================================================
+\ ACCCON — which RAM the CPU and the video see at &3000-&7FFF
+\ ============================================================
+\ acconVal is the authoritative copy and both the main loop and the
+\ VSync handler read-modify-write it: the main loop owns X, the IRQ
+\ owns D. Hence the SEI — without it a flip here can be interrupted
+\ between the load and the store and put back a stale D, which shows
+\ as one field displayed at the wrong parity.
+\
+\ Interrupts are otherwise safe to leave running while the CPU is
+\ looking at shadow RAM: the rupture handler touches only the CRTC,
+\ zero page and code below &3000, none of which move.
+\ Y must be preserved, not cleared: the Master runs with Hazel RAM
+\ paged in at &C000-&DFFF (ACCCON reads &18 at boot), and the OS keeps
+\ filing-system workspace there. ITU, IFJ and TST are preserved for
+\ the same reason — they are the machine's, not ours. We own only D,
+\ X and the IRR bit, which is forced off.
+.AcconInit
+  LDA ACCCON
+  AND #&78
+  STA acconVal
+  STA ACCCON
+  RTS
+
+\ The two also carry drawShift, so a pass cannot end up pointed at one
+\ buffer while drawing the other's content.
+.AcconShadow                    \ CPU sees buffer B
+  PHP
+  SEI
+  LDA acconVal : ORA #ACC_X : STA acconVal : STA ACCCON
+  PLP
+  LDA #1 : STA drawShift
+  RTS
+
+.AcconMain                      \ CPU sees buffer A
+  PHP
+  SEI
+  LDA acconVal : AND #&FF - ACC_X : STA acconVal : STA ACCCON
+  PLP
+  LDA #0 : STA drawShift
+  RTS
+ENDIF
+
+\ ============================================================
+\ The doubled drawing passes
+\ ============================================================
+\ Everything that writes into the play buffer goes through one of
+\ these. On a Model B they are straight pass-throughs; on a Master
+\ each runs twice, once per buffer, and every source the draw path
+\ reads — the charset at &0400, the tile map at &2C00, the tile
+\ definitions and compiled sprites in sideways RAM — sits OUTSIDE
+\ &3000-&7FFF, so the second pass needs nothing but the X flip.
+.RedrawBoth
+  JSR RedrawAll
+IF TARGET_MASTER
+  JSR AcconShadow
+  JSR RedrawAll
+  JSR AcconMain
+ENDIF
+  RTS
+
+\ DrawBand consumes bandA/bandN and the column loop consumes
+\ colCount, so the second pass has to be handed the same starting
+\ state rather than what the first one left behind.
+.DoRedrawsBoth
+IF TARGET_MASTER
+  LDA bandA    : STA drSave
+  LDA bandA+1  : STA drSave+1
+  LDA bandN    : STA drSave+2
+  LDA colFirst : STA drSave+3
+  LDA colCount : STA drSave+4
+ENDIF
+  JSR DoRedraws
+IF TARGET_MASTER
+  JSR AcconShadow
+  LDA drSave   : STA bandA
+  LDA drSave+1 : STA bandA+1
+  LDA drSave+2 : STA bandN
+  LDA drSave+3 : STA colFirst
+  LDA drSave+4 : STA colCount
+  JSR DoRedraws
+  JSR AcconMain
+ENDIF
+  RTS
+
+\ The sprite passes need no state juggling: the per-slot draw record
+\ is written identically by both passes, and the saved background
+\ lands in SPR_SAVE, which is itself inside the shadowed region — so
+\ each buffer gets its own save area at the same address for free.
+.SprRestoreBoth
+  JSR SprRestoreAll
+IF TARGET_MASTER
+  JSR AcconShadow
+  JSR SprRestoreAll
+  JSR AcconMain
+ENDIF
+  RTS
+
+.SprDrawBoth
+  JSR SprDrawAll
+IF TARGET_MASTER
+  JSR AcconShadow
+  JSR SprDrawAll
+  JSR AcconMain
+ENDIF
   RTS
 
 \ ============================================================
@@ -647,6 +839,12 @@ ENDIF
   JSR SetPalette
   LDA deck
   JSR BuildLevel
+IF TARGET_MASTER
+  JSR AcconShadow               \ the tile map is inside the shadowed region,
+  LDA deck                      \ so buffer B needs its own. Decoding it twice
+  JSR BuildLevel                \ is cheaper than staging a 1K copy, and both
+  JSR AcconMain                 \ passes read the same RLE from sideways RAM
+ENDIF
   JSR CentreOnDeck
   JSR SetPosFromMap             \ the pixel position is the authority from
                                 \ here on; CentreOnDeck works in characters
@@ -662,7 +860,7 @@ ENDIF
   DEX
   BPL ld_unsave
   JSR SetCRTCStart
-  JSR RedrawAll
+  JSR RedrawBoth
 IF TEST_DROIDS
   JSR TestDroidsInit
 ENDIF
@@ -683,6 +881,11 @@ ENDIF
 .sTmp      EQUW 0
 .vsyncCount EQUB 0              \ bumped by IrqHandler once per field
 .oldIrq1V  EQUW 0
+IF TARGET_MASTER
+.acconVal  EQUB 0               \ live copy of ACCCON — see AcconInit
+.drSave    SKIP 5               \ DoRedrawsBoth's starting state
+.drawShift EQUB 0               \ 0 = drawing buffer A, 1 = buffer B (2 px on)
+ENDIF
 
 .code_end
 
@@ -704,14 +907,30 @@ ORG &0400
 .charset
   SKIP 137 * CHAR_BYTES         \ NUM_CHARS, defined in chardata.asm
 .charset_end
-ORG code_end
-
 \ ---- tile map: 64 x 16, one byte per tile -------------------
 \ MapChar depends on this being page aligned and exactly 1K.
-ALIGN &100
+\
+\ It used to sit immediately above the code, and the code had grown
+\ to within 99 bytes of it. &3800 is the space PARADAT's staging area
+\ freed when it moved into sideways RAM: the staging copy runs from
+\ &3000 to &6B00 but is dead the moment PageDataIn finishes, and the
+\ tile map is not built until LoadDeck, well after that. It sits
+\ above the sprite save area and below the panel.
+\
+\ On a Master this lands inside the shadowed region, so BuildLevel
+\ runs once per buffer and each has its own copy — see LoadDeck. That
+\ is cheaper than the alternatives: the only 1K page-aligned hole
+\ left below &3000 is &0D00, which is DFS's NMI area, and this move
+\ hands ~1K back to the code on both machines instead of spending it.
+ORG &3800
 .tilemap
   SKIP MAP_COLS * MAP_ROWS
 .tilemap_end
+ASSERT (tilemap AND &FF) == 0
+ASSERT tilemap >= SPR_SAVE + SPR_SLOTS * 256
+ASSERT tilemap_end <= PANEL_ADDR
+
+ORG code_end
 
 \ ============================================================
 \ Generated data — in sideways RAM bank 0

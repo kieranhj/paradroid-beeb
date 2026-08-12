@@ -155,6 +155,10 @@
 \   bufp  = destination
 \ ============================================================
 .DrawHalf
+IF TARGET_MASTER
+  LDA drawShift
+  BNE DrawHalfShift
+ENDIF
   JSR HalfPtr
   LDY #7
 .dh_loop
@@ -163,6 +167,67 @@
   DEY
   BPL dh_loop
   RTS
+
+IF TARGET_MASTER
+\ ============================================================
+\ The 2 px shift — how buffer B is drawn
+\ ============================================================
+\ B holds the world 2 pixels further on, so its byte for unit u takes
+\ the bottom two pixels of unit u and the top two of unit u+1:
+\
+\   B[u] = ((A[u] << 2) AND &CC) OR ((A[u+1] >> 2) AND &33)
+\
+\ MODE 1 pixel n is bits 7-n and 3-n, which is why neither mask is
+\ contiguous: shifting left by two pixels moves bits 5,4 to 7,6 and
+\ bits 1,0 to 3,2, and the two bits it drops off the top of each pair
+\ come from the next column.
+\
+\ Done with shifts rather than a pair of 256-byte lookup tables. Both
+\ come to 41 cycles a byte — the table form needs the same temporary,
+\ because the running index is in Y and only X is left to index a
+\ table with — so the tables would buy nothing and cost 512 bytes of
+\ the space below &3000, plus a build step.
+\
+\ Nothing else changes: B is drawn from the tile map exactly as A is,
+\ with the same lookups, because every source the draw path reads
+\ lives outside the shadowed region.
+
+\ HalfPtrPair — chp = source for halfX, chp2 = source for halfX+1
+\ The generic two-lookup form. DrawBandRowsS does better by carrying
+\ the lookahead between characters; this is for the paths that touch
+\ one cell at a time.
+.HalfPtrPair
+  INC halfX
+  BNE hpp_n1
+  INC halfX+1
+.hpp_n1
+  JSR HalfPtr
+  LDA chp   : STA chp2
+  LDA chp+1 : STA chp2+1
+  LDA halfX
+  BNE hpp_n2
+  DEC halfX+1
+.hpp_n2
+  DEC halfX
+  JMP HalfPtr                   \ leaves chp for halfX itself
+
+.DrawHalfShift
+  JSR HalfPtrPair
+  LDY #7
+.dhs_loop
+  LDA (chp2),Y
+  LSR A : LSR A
+  AND #&33
+  STA shTmp
+  LDA (chp),Y
+  ASL A : ASL A
+  AND #&CC
+  ORA shTmp
+  STA (bufp),Y
+  DEY
+  BPL dhs_loop
+  RTS
+ENDIF
 
 \ ============================================================
 \ DrawHalfScan — one SCANLINE of one 4-pixel column cell
@@ -186,6 +251,10 @@
 .DrawHalfPart
   LDA scanY
   BEQ dhp_none                  \ line 0: the row is not split
+IF TARGET_MASTER
+  LDA drawShift
+  BNE dhp_shift
+ENDIF
   JSR HalfPtr
   LDY #0
 .dhp_loop
@@ -196,6 +265,26 @@
   BNE dhp_loop
 .dhp_none
   RTS
+
+IF TARGET_MASTER
+.dhp_shift
+  JSR HalfPtrPair
+  LDY #0
+.dhps_loop
+  LDA (chp2),Y
+  LSR A : LSR A
+  AND #&33
+  STA shTmp
+  LDA (chp),Y
+  ASL A : ASL A
+  AND #&CC
+  ORA shTmp
+  STA (bufp),Y
+  INY
+  CPY scanY
+  BNE dhps_loop
+  RTS
+ENDIF
 
 \ ============================================================
 \ HalfPtr — chp = charset bytes for the cell at (halfX, cellY)
