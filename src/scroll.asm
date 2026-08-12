@@ -119,6 +119,34 @@
   LDA mapHX+1 : ADC #0     : STA halfX+1
   JSR ColSetup
 
+IF TARGET_MASTER
+\ Which partner the shifted column needs, decided once for the whole
+\ column because halfX does not change down it:
+\
+\   halfX even  the partner is the OTHER HALF of the same character,
+\               so chp2 is chp+8 and there is no second lookup at all
+\   halfX odd   the partner is the next character's left half — which
+\               is in the SAME TILE, and so behind the same cached tile
+\               pointer, unless this is the last character of the tile
+\
+\ So 7 columns in 8 cost a few instructions over the straight path.
+\ The eighth crosses a tile boundary and falls back to the generic
+\ per-cell lookup, which is correct but pays an uncached MapChar
+\ twice a row.
+  LDA #0
+  STA colSlow
+  LDA drawShift
+  BEQ dc_setup_x
+  LDA colRight
+  BEQ dc_setup_x                \ even halfX: always fast
+  LDA colSubX
+  CMP #3
+  BNE dc_setup_x
+  LDA #1
+  STA colSlow
+.dc_setup_x
+ENDIF
+
   LDA #0 : STA rCount
   JSR SetCell                   \ only once: row 0 of this column
   LDA mapYr : STA cellY
@@ -136,13 +164,27 @@ ENDIF
   BPL dc_copy
 IF TARGET_MASTER
   JMP dc_after
-\ Buffer B's column needs the column to its right as well, and the
-\ Col* hoisting holds state for one halfX only — so this drops back to
-\ the generic two-lookup path rather than carrying a second set of it.
-\ 16 cells paying an uncached MapChar each is the obvious thing to fix
-\ if the column redraw becomes the binding cost; the band, which runs
-\ far more often, already avoids it.
+
 .dc_shift
+  LDA colSlow
+  BNE dc_slow
+  JSR ColCharPtr                \ cached, exactly as the straight path
+  JSR ColCharPtrS               \ chp2, off the same tile pointer
+  LDY #7
+.dcs_copy
+  LDA (chp2),Y
+  LSR A : LSR A
+  AND #&33
+  STA shTmp
+  LDA (chp),Y
+  ASL A : ASL A
+  AND #&CC
+  ORA shTmp
+  STA (bufp),Y
+  DEY
+  BPL dcs_copy
+  JMP dc_after
+.dc_slow
   JSR DrawHalfShift             \ halfX and cellY are both already set
 .dc_after
 ENDIF

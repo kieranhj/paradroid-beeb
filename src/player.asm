@@ -665,15 +665,24 @@ PLY_REFY = 63                   \ from the view's top edge, sprite top + 13
   STA sprUnit+PLY_SLOT
   RTS
 
-\ dzD rounded up to a whole number of 4-pixel units.
+\ dzD rounded up to a whole scroll step: 4 pixels on a Model B, 2 on a
+\ Master, where the second buffer halves the grain. This is what makes
+\ bit 1 of posX meaningful — round to 4 and it is always 0, buffer B
+\ is never selected, and the whole scheme is invisible.
+IF TARGET_MASTER
+DZ_GRAIN = 2
+ELSE
+DZ_GRAIN = 4
+ENDIF
+
 .DzRoundUnits
   CLC
-  LDA dzD : ADC #3 : STA dzD
+  LDA dzD : ADC #DZ_GRAIN-1 : STA dzD
   BCC dzr_1
   INC dzD+1
 .dzr_1
   LDA dzD
-  AND #&FC
+  AND #&FF - (DZ_GRAIN-1)
   STA dzD
   RTS
 

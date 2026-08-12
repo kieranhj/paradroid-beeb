@@ -1611,6 +1611,25 @@ only X is left to index with, so the table form needs the same temporary — and
 below `&3000` plus a build step. The band carries its lookahead between characters rather than
 looking each one up twice, so buffer B costs the same 41 lookups as A's 40, not 80.
 
+#### Steps 6 and 8's rounding — parity is live
+
+`DzRoundUnits` rounded the view to whole 4 px units, so bit 1 of `posX` was always 0 and buffer B
+could never be selected. `DZ_GRAIN` is now 2 on a Master, and that one constant is what makes the
+whole scheme visible. The parity is parked with `crtcHi`/`crtcLo`/`line` under the same `SEI` in
+`SetCRTCStart` and consumed by the VSync handler, so it cannot be split across frames the way
+`line`/`scrollS` were in Layer 3d.
+
+Confirmed: with `posX` moved from 524 to 526 and nothing redrawn, `acconVal` reads `&19` and the
+whole view steps 2 px. That is the technique working — a scroll step with no drawing at all.
+
+**The sprite is not yet per-buffer, and it shows.** Both buffers get the sprite at the same
+buffer-relative offset, so on odd parity it lands 2 px from where it belongs. Step 7 is what fixes
+it, and the shape is now clear: the input side is a two-line transform in `SprSetSlot`
+(`shift 1 → shift 0, same unit`; `shift 0 → shift 1, one unit back`), but the seven per-slot
+**draw-record** arrays have to be duplicated per buffer, because `SprRestoreSlot` replays the draw's
+own record and the two buffers' records differ. Culling can differ between them too, so `sprSaved`
+is one of the seven.
+
 #### The measured cost — it does not fit yet, even player-only
 
 Player only, full-speed diagonal, `CheckWalls` poked to `RTS`, both buffers maintained:
@@ -1626,18 +1645,33 @@ error was in the drawing, not the sprites: the shifted copy is 41 cycles a byte 
 13, so a band costs ~3× rather than the +60-80% assumed, and `DrawColumn` falls back to the generic
 uncached two-lookup path, which costs more again.
 
-Two clear ways back, in order of value:
+**`DrawColumn`'s fallback is fixed** and it did not need a second set of the `Col*` state after all.
+The partner column is the *other half of the same character* when `halfX` is even, so `chp2` is just
+`chp + 8`; when `halfX` is odd it is the next character along, which is behind the **same cached tile
+pointer** unless this is the last character of the tile. So 7 columns in 8 cost a few instructions
+over the straight path and only the eighth falls back to the generic per-cell lookup.
 
-- **`DrawColumn`'s fallback.** It pays two uncached `MapChar` calls per cell where the straight path
-  pays one cached `ColCharPtr`. Carrying a second set of the `Col*` hoisted state for `halfX+1`
-  removes that; 32 cells a frame at full diagonal speed makes it worth doing first.
+**Measured after that fix: 100,000 cycles an iteration against a 79,872-cycle budget — 25% over.**
+(Measured by neutering `WaitVSync` so the loop free-runs, then timing `posY`, which advances exactly
+`ySpd` per iteration. The px-per-10-fields figures above cannot show this: the overrun quantises to
+whole fields, so they read 16/14 both before and after the column fix.)
+
+~20,000 cycles have to come out. What is on the table:
+
 - **A pre-shifted charset** takes the band from 41 cycles a byte to 29 — store `shr2` of every
   charset byte and the other half stays an inline `ASL`/`ASL`/`AND`. It is 2192 bytes and needs to be
   readable with the CPU on shadow, so it goes at `&3C00` in shadow RAM, in the space the tile map
   move just opened. Both halves pre-shifted would reach 23 cycles but needs 4384 bytes, which does
-  not fit under the panel.
-
-Beyond those, the Layer 4 optimisation backlog (~14K identified) is still unspent.
+  not fit under the panel. Worth roughly 6,700 cycles on a full-speed diagonal band plus ~3,000 on
+  the columns.
+- **The Layer 4 optimisation backlog**, ~14K identified and still unspent — and worth close to
+  double here, because inlining `CopyRun`/`BufNextUnit`/`CellXInc` saves the same call overhead on
+  both passes.
+- **`FRAME_LOCK = 3`** is the escape hatch if the cycles cannot be found: 119,808 cycles an
+  iteration, which 100,000 fits inside, with real-time speed preserved because `player.asm` scales
+  its constants by `FRAME_LOCK / PLY_ITER_FRAMES`. It buys a stable rate at the cost of 16.7 Hz,
+  which is the wrong trade when the thing being judged is smoothness — but a stable 16.7 Hz is a
+  far better thing to look at than a free-running 12.5.
 
 #### Budget: what can be seen now, and what waits
 

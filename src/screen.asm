@@ -112,10 +112,22 @@
 \ different points in the frame (fire 1 and, formerly, VSync), so
 \ letting the IRQ see one updated and not the other shows a frame
 \ at a position that never existed.
+\ On a Master the buffer parity is part of the position too, and the
+\ most easily broken part: the CRTC address and `line` place the view
+\ to 4 px and a scanline, and bit 1 of posX places it to the last 2 px.
+\ Latched anywhere else and the display shows one field at an address
+\ from this frame with a parity from the next — a 2 px shudder that
+\ would read as the technique not working.
   SEI
   LDA sTmp+1 : STA crtcHi
   LDA sTmp   : STA crtcLo
   LDA line   : STA pline
+IF TARGET_MASTER
+  LDA posX
+  LSR A
+  AND #1                        \ 0 = show buffer A, 1 = show buffer B
+  STA pAccD
+ENDIF
   CLI
   RTS
 
@@ -497,6 +509,53 @@ ENDIF
   INC chp+1
 .ccp_x
   RTS
+
+IF TARGET_MASTER
+\ ============================================================
+\ ColCharPtrS — chp2, the partner column, for the 2 px shift
+\ ============================================================
+\ Must be called immediately after ColCharPtr for the same row: it
+\ reuses the tile pointer that call left in tdp rather than looking
+\ the tile up again. That is what makes it cheap, and it is only
+\ sound because DrawColumn has already established that the partner
+\ is inside the same tile — see the colSlow test there.
+\
+\ Two cases, and the first is nearly free:
+\   halfX even  partner is the same character's right half: chp + 8
+\   halfX odd   partner is the next character along, one further into
+\               the same tile row
+.ColCharPtrS
+  LDA colRight
+  BNE ccs_next
+
+  CLC
+  LDA chp   : ADC #8 : STA chp2
+  LDA chp+1 : ADC #0 : STA chp2+1
+  RTS
+
+.ccs_next
+  LDA cellY
+  AND #3
+  ASL A : ASL A
+  SEC                           \ colSubX + 1, the next character in the
+  ADC colSubX                   \ tile row — SEC/ADC adds the 1 for free
+  TAY
+  LDA (tdp),Y                   \ tdp is ColCharPtr's, from this same row
+
+  TAX
+  LDA charRemap,X
+  PHA
+  AND #&0F
+  ASL A : ASL A : ASL A : ASL A
+  STA chp2
+  PLA
+  LSR A : LSR A : LSR A : LSR A
+  CLC : ADC #HI(charset)
+  STA chp2+1
+  RTS
+
+.colSlow    EQUB 0              \ partner crosses a tile: use the slow path
+ENDIF
 
 .colTileCol EQUB 0
 .colSubX    EQUB 0

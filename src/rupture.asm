@@ -55,6 +55,9 @@ ENDIF
   STA ruptState
   STA line
   STA iline
+IF TARGET_MASTER
+  STA pAccD
+ENDIF
   RTS
 
 \ ============================================================
@@ -64,6 +67,17 @@ ENDIF
 IF DEBUG_RASTER
   LDA #5 : JSR DbgSetBg         \ magenta from here down
 ENDIF
+IF TARGET_MASTER
+\ Which buffer this field displays, from the same park as R12/R13.
+\ Every fetch of the field still to come happens after this point, so
+\ VSync is the whole of the window — no need for it to be early.
+  LDA acconVal
+  AND #&FF - ACC_D
+  ORA pAccD
+  STA acconVal
+  STA ACCCON
+ENDIF
+
 \ The tail cycle's own R4 and R5. It is 8 rows in, so R4 = 12 is
 \ still ahead of C4. Its R6 and R7 were set at fire 3, last cycle.
   LDA #4  : STA CRTC_ADDR : LDA #TAIL_R4 : STA CRTC_DATA
@@ -306,3 +320,6 @@ ENDIF
 .line      EQUB 0               \ sub-row scroll offset, 0-7 — the live value
 .pline     EQUB 0               \ parked with crtcHi/Lo by SetCRTCStart
 .iline     EQUB 0               \ latched from pline at fire 1, used all frame
+IF TARGET_MASTER
+.pAccD     EQUB 0               \ parked buffer parity, consumed at VSync
+ENDIF

@@ -151,12 +151,12 @@ DEBUG_DRAW   = FALSE
 \
 \ See "Master-only extensions" in PLAN.md. build.ps1 reads this flag
 \ and names the disc image from it.
-TARGET_MASTER = FALSE
+TARGET_MASTER = TRUE
 
 \ TEST_DROIDS parks six static droids around the player at deck load,
 \ so the sprite pool can be looked at and measured before droid.asm
 \ exists. Scaffolding — see src/droidtest.asm.
-TEST_DROIDS  = TRUE
+TEST_DROIDS  = FALSE
 TD_DECK      = 1                \ CentreOnDeck lands the player somewhere
                                 \ walkable here; on some decks it does not,
                                 \ see BUGS.md
