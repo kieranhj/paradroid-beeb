@@ -42,7 +42,7 @@ sampled mid-redraw.
 | | |
 |---|---|
 | 1 px sprite positioning | Needs four shifted copies, 1820 bytes — waiting on `PARADAT` moving to sideways RAM. 2 px matches the C64 artwork's own pixel size. |
-| 2 px world scrolling | Parked, Master-only via shadow RAM. Feasible and cheap to switch; costs +60–80% on all drawing because both buffers must stay current. See **Master-only extensions**. |
+| 2 px world scrolling | Master-only via shadow RAM, and now **planned in full** — see **Master-only extensions**. Costs +60–80% on all drawing because both buffers must stay current, so it fits today with the player alone but not with a full droid pool. Two free perceptual A/Bs come first: at 25 Hz the frame rate may already be the coarser quantum. |
 | Play area is 320 × 120, not 128 | Consequence of the single hardware wrap — see Layer 3d. Getting the row back needs the 20K wrap or per-cycle wrap bits. **KC's call.** |
 | Vertical granularity | 1 scanline against 4 px horizontal is lopsided. 2 or 4 scanlines costs nothing extra. Decide when there is a droid to move. |
 | `$D021` is an assumption | Marked `[assumed]` in `export_bbc.py`. First suspect if deck colours look wrong on hardware. |
@@ -1458,41 +1458,139 @@ path stays readable. **None of these are on the critical path.** `PLAN.md`'s tar
 with two sideways RAM banks; anything here either forks the rendering path or makes the port
 Master-only, and that is a decision not yet taken.
 
-### ⏸ 2 px horizontal scrolling, via shadow RAM
+### 2 px horizontal scrolling, via shadow RAM — planned, not started
 
 The scheme Layer 4a rules out on a Model B — two 10K circular strips, a second copy of the map
-offset by 2 px, alternating which one R12/R13 points at. It fails there because a circular strip's
+offset by 2 px, choosing which one R12/R13 points at. It fails there because a circular strip's
 period must equal the hardware wrap span and only one wrap region exists. It is not a compromise
 version of that idea; it is the *same* idea, which the Master can actually host.
 
 **The mechanism.** Both buffers sit at the same address, `&5800–&7FFF`: one in main RAM, one in
-shadow. Same 10K wrap, same R12/R13, same scroll arithmetic, same everything — the only difference
-between displaying A and displaying B is one bit of ACCCON (`&FE34`): `D` selects which RAM the
-video fetches from, `X` selects which one the CPU sees at `&3000–&7FFF`. So none of the addressing
-problems that kill it on a Model B arise; we are not fitting two strips into one wrap region, we are
-using the same region twice over. Flip `D` in the VSync handler and the view is 2 px further along.
+shadow. Same 10K wrap, same R12/R13, same `scrollS`, same `line`, same scroll arithmetic — the only
+difference between displaying A and displaying B is one bit of ACCCON (`&FE34`): `D` selects which
+RAM the video fetches from, `X` selects which one the CPU sees at `&3000–&7FFF`. So none of the
+addressing problems that kill it on a Model B arise; we are not fitting two strips into one wrap
+region, we are using the same region twice over.
+
+- **A** holds the world at the 4 px-aligned origin `mapHX * 4`, exactly as today.
+- **B** holds the same origin **+ 2 px**.
+- `posX` quantises to 2 px, and **bit 1 of `posX` selects the buffer.** 0 → A, 1 → B.
+
+**This is not a per-field alternation and not a flicker trick.** One buffer is displayed for the
+whole iteration and which one is a pure function of position parity. Nothing in the scroll
+arithmetic changes; the CRTC still steps 4 px and the 2 px comes entirely from the choice of buffer.
 
 **Confirmed by KC, not assumed:**
 - The Master's screen wrap is driven the same way as the Model B's — the System VIA addressable
-  latch — so the 10K/`&5800` setting and everything derived from it carries over unchanged.
+  latch — so the 10K/`&5800` setting and everything derived from it carries over unchanged, **and it
+  holds for shadow fetches too**. This was the gating question; had it failed, the scheme died.
 - Writing ACCCON's `D` bit takes effect **instantly**, including mid-scanline. Per-field switching
   is therefore trivially safe; mid-scanline switching is a whole other technique and a conversation
   for another day.
+- `D` and `X` are independent, and ACCCON must be written whole from a shadow copy — never
+  read-modify-written — because bit 7 (IRR) forces an interrupt.
+- **The current Model B build already runs on a Master.** So the `&1100` code base, the `&0400`
+  charset, SWRAM banks 4/5 and the IRQ1V takeover all survive MOS 3.20, and none of them are on the
+  work list below. IRQ timing differences from the 65C12 and the MOS handler are taken as negligible
+  for now; if the rupture drifts, `T1_PROBE` is still the way to re-derive `T1_TUNE`, and the rule
+  is to err **late** rather than early.
 
-**Why it is parked: cost, not feasibility.** Either buffer might be the one displayed next field, so
-both must be current at all times. Every edge redraw and every sprite blit happens twice.
+#### Before building it: is the 4 px quantum actually what is wrong?
 
-- It is cheaper than a straight doubling. B's exposed edges can be produced by *shifting bytes out
-  of A* rather than redrawing from the tile map, which skips the tile → character → charset
-  lookups — and those are the expensive half of a band, not the copying. Call it +60–80% on the
-  drawing rather than +100%.
-- Even so that is roughly +12–16K cycles a frame against about 5K spare. It needs the optimisation
-  backlog at the end of Layer 4 spent (~14K identified) or a smaller play area, or both.
+At `FRAME_LOCK = 2` the world updates 25 times a second, and **the temporal quantum may already be
+coarser than the spatial one** — in which case halving the spatial one buys much less than the
++60–80% drawing cost is worth.
 
-**Revisit when** the frame budget has real headroom — most likely after `PARADAT` moves to sideways
-RAM and Layer 4's inlining work is done — or if the target ever moves to the Master. The dead-zone
-camera already fixes the case that actually looked bad (the world lurching when you creep), so this
-buys smoothness at moderate speeds rather than curing a defect.
+The A/B that settles this needs no new code, because the vertical axis is *already* fine-grained at
+the same rate: hold M and then X at the same low speed and compare. If vertical reads visibly
+smoother, granularity is the bottleneck and this is worth building. If it reads about as chunky, the
+bottleneck is 25 Hz and the lever is `FRAME_LOCK`, not shadow RAM. A second free probe — force
+horizontal to 8 px steps for one build — calibrates the perceptual slope 8 → 4 and so predicts what
+4 → 2 is worth.
+
+**Run both of these before writing any of the below.**
+
+#### The 2 px shift is two tables
+
+MODE 1 pixel *n* takes bits `7-n` and `3-n`, so shifting a 4 px column left by 2 px pulls the other
+two pixels out of the next column:
+
+```
+B[u] = ((A[u] << 2) AND &CC)  OR  ((A[u+1] >> 2) AND &33)
+```
+
+Two 256-byte tables built at startup like `SPR_MASKTAB`. They must live **below `&3000`** — the
+~1.1 K free at `&0C90–&10FF` — so they are readable under either `X` setting.
+
+#### Correction: B cannot be produced by shifting bytes out of A
+
+The paragraph this section used to carry said B's exposed edges could be made by shifting bytes out
+of A rather than redrawing from the tile map. **On a Master that is not available**: `X` maps one
+buffer or the other into `&3000–&7FFF`, never both, so no loop can read A and write B.
+
+The way out is better than the thing it replaces. Every source the draw path reads lives *outside*
+`&3000–&7FFF` — charset at `&0400`, tile map at `&2C00`, `tiledefs` and `charRemap` in SWRAM at
+`&8000` — so **B can be drawn from the tile map with `X = 1` and no cross-buffer reads at all.** It
+is the same routine with a different inner copy loop: same lookups, and the copy goes from ~13
+cycles a byte to ~28. The +60–80% estimate stands; only the reason for it changes.
+
+So the architecture is one sentence: **run the existing drawing code twice, with ACCCON `X` flipped,
+B using the shifted copy loop and the other compiled sprite shift.**
+
+#### What the memory map does for us, and to us
+
+| Region | Effect of the `X` flip |
+|---|---|
+| `SPR_SAVE = &3000` | inside the shadow region, so **each buffer gets its own sprite save area at the same address, for no code at all** |
+| Panel `&4800`, mask table `&5700` | also inside it — so both must be **built twice**, once per `X`. Cheap, and a silent-corruption trap if missed |
+| Tile map `&2C00`, charset `&0400`, code `&1100`, ZP, stack, SWRAM | outside it — unaffected, which is what makes the paragraph above work |
+| `PARADAT` staging at `&3000–&4707` | inside it, but dead after `PageDataIn`, and the load runs with `X = 0`. No action |
+| `sprSaved` flags (in code space) | **shared** between the buffers. Correct only while A and B are always drawn in lockstep — a real trap if B is ever skipped |
+
+#### Work list, in dependency order
+
+1. **`TARGET_MASTER` build flag** and a separate SSD. Not a runtime detect — the draw path forks.
+2. `shl2`/`shr2` tables below `&3000`; an ACCCON shadow-copy byte with set/flip helpers.
+3. **Init duplication:** `FillPanel` and `SprBuildMask` under both `X` settings, and `LoadDeck`'s
+   initial `RedrawAll` run for both.
+4. **Shifted copy loop** in `DrawBandRows`, `DrawColumn`, `DrawHalf*` and `RedrawAll`, selected by a
+   flag — duplicated inner loops, not a per-byte branch. **Right-edge case:** B's last unit needs the
+   character one beyond the view, and at `MAX_HX` that is map column 64, which does not exist. Clamp
+   `MAX_HX` by one half-character or feed a blank.
+5. **Main-loop sequencing**, six `X` flips an iteration — each an `LDA`/`STA`, so the flipping itself
+   is free:
+   `[X=0 restore A] [X=1 restore B] [move] [X=0 redraw A] [X=1 redraw B] [X=0 sprites A] [X=1 sprites B]`
+6. **Parity is part of the position and must be latched with it.** Park the `D` value alongside
+   `crtcLo`/`crtcHi`/`line` under the same `SEI` in `SetCRTCStart`, and have the VSync handler write
+   ACCCON from the park. Skip this and the display shows one field at a parity that belongs to the
+   next position — a one-field flicker indistinguishable from "the technique does not work". This is
+   the same bug Layer 3d already paid for once with `line`/`scrollS`.
+7. **Sprites** use the two existing compiled shift variants (`SPR_SHIFT0`/`SPR_SHIFT2`), chosen per
+   buffer from the parity. No new sprite data, no new tables.
+8. **Revisit the dead-zone camera** — this is the point of the exercise. With 2 px world scroll, try
+   pinning the player and compare against the dead zone, which exists only because 4 px lurched.
+
+#### Verification
+
+Extend the only oracle that has ever caught a drawing bug here. Dump **both** 10K buffers after
+full-speed diagonal scrolling at odd `mapHX` and `line != 0`; check A against `RedrawAll` as today,
+and **B against a Python 2 px shift of A**. Validate `shl2`/`shr2` offline against a reference shift
+before any 6502 is written, the way the sprite compiler was validated. Sample inside the `WaitVSync`
+spin and exclude the sprite footprint — both traps are recorded in Layer 5.
+
+#### Budget: what can be seen now, and what waits
+
+25 Hz gives ~80,000 cycles a pass, and seven sprites already cost ~67.6 K of it.
+
+| configuration | rough cost | verdict |
+|---|---|---|
+| player only, both buffers | ~19.3 K sprites, plus the redraw at ~+70% | **fits comfortably today** |
+| 7 droids, both buffers | ~135 K on sprites alone | ~1.7× over — needs round-robin updating (Layer 5 step 5) first |
+
+So the feel can be judged now, without spending the optimisation backlog, by building the spike with
+`TEST_DROIDS = FALSE`. What that spike cannot answer is whether it survives a full droid pool; that
+judgement waits on round-robin updating. Re-baseline both numbers on a Master with the User VIA T1
+harness before committing — the figures above are Model B measurements.
 
 ## `src/` as it stands
 
