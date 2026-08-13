@@ -150,11 +150,28 @@
   RTS
 
 \ ============================================================
-\ DrawBandRows — bandRun scanlines of ONE display row, full width
+\ COPYCELL — one 4-pixel column cell: 8 bytes, chp -> bufp
+\ ============================================================
+\ Unrolled, and the loop counter goes with it. A cell is ALWAYS the
+\ whole 8 scanlines now, so the run and the offset that CopyRun took
+\ as variables are both constants, and paying 18 cycles a byte to
+\ support a case that no longer occurs was the single largest waste
+\ in the band: 13 a byte is the floor for (zp),Y on both sides.
+\
+\ Y is reloaded per byte rather than incremented — same 13 cycles,
+\ and it leaves no ordering dependency between the pairs.
+MACRO COPYCELL
+  FOR n, 0, 7
+    LDY #n
+    LDA (chp),Y
+    STA (bufp),Y
+  NEXT
+ENDMACRO
+
+\ ============================================================
+\ DrawBandRows — ONE display row, full width, all 8 scanlines
 \   rCount   = display row
-\   bandScan = first scanline within it
-\   bandRun  = how many, 1..8, never crossing the row
-\   cellY    = map character row to take them from
+\   cellY    = map character row to take it from
 \ ============================================================
 \ Walks CHARACTERS, not units. Two adjacent units are the two halves
 \ of one character, so looking the character up once and drawing
@@ -166,8 +183,12 @@
 \ a left half, with 39 whole characters between them.
 \
 \ Everything the loop touches is inline. This is the hottest code in
-\ the port: at the top speed of 7 px a frame it runs twice, 40 times
-\ each, every frame.
+\ the port: it runs 40 times a pass on 7 passes in 8, and its cost is
+\ what the scroll rate is made of.
+\
+\ The two copies in the loop are inlined and the two edge cases call
+\ CopyCell, because they run once a pass against the loop's 40 and
+\ the 12 cycles of call are not worth 48 bytes each.
 .DrawBandRows
   JSR BandSetRow                \ cellY is fixed for the whole pass
   LDA #0
@@ -192,7 +213,7 @@
   BCC dbr_l1
   INC chp+1
 .dbr_l1
-  JSR CopyRun
+  JSR CopyCell
   JSR BufNextUnit
   JSR CellXInc
   LDA #(PLAY_UNITS/2)-1
@@ -204,14 +225,14 @@
 
 .dbr_char
   JSR BandCharPtr
-  JSR CopyRun                   \ left half
+  COPYCELL                      \ left half
   JSR BufNextUnit
   CLC
   LDA chp : ADC #8 : STA chp
   BCC dbr_l2
   INC chp+1
 .dbr_l2
-  JSR CopyRun                   \ right half
+  COPYCELL                      \ right half
   JSR BufNextUnit
   JSR CellXInc
   DEC dbCount
@@ -220,23 +241,14 @@
   LDA dbOdd
   BEQ dbr_done
   JSR BandCharPtr               \ trailing left half
-  JSR CopyRun
+  JSR CopyCell
 .dbr_done
   RTS
 
 \ ---- band inner helpers ------------------------------------
-\ bandRun bytes at offset bandScan, from the charset to the buffer.
-\ Source and destination are both 8-byte units indexed the same way,
-\ so one Y serves both.
-.CopyRun
-  LDY bandScan
-  LDX bandRun
-.cr_loop
-  LDA (chp),Y
-  STA (bufp),Y
-  INY
-  DEX
-  BNE cr_loop
+\ The callable form, for the two edge halves only.
+.CopyCell
+  COPYCELL
   RTS
 
 \ BUF_END is page aligned, so the wrap test is one compare on the
@@ -298,9 +310,6 @@
   BEQ dor_nb
   LDA #0
   STA bandDo
-  STA bandScan
-  LDA #8
-  STA bandRun
   LDA bandRow : STA cellY
   LDA bandRc  : STA rCount
   JSR DrawBandRows
@@ -321,8 +330,6 @@
 .bandDo    EQUB 0               \ a character row was crossed: draw one
 .bandRow   EQUB 0               \ which map character row
 .bandRc    EQUB 0               \ and which display row it lands in
-.bandScan  EQUB 0
-.bandRun   EQUB 0
 .colFirst  EQUB 0
 .colCount  EQUB 0
 .dbOdd     EQUB 0               \ mapHX odd: the row starts on a right half

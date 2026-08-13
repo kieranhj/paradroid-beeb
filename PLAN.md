@@ -17,9 +17,10 @@ pathfinding and sprite slot allocation. There is ~10,000 cycles of identified bu
 optimisation listed at the end of Layer 4; spend it when droids start competing for the frame.
 
 The level draw was measured and rewritten on 2026-08-13: the band brings in **whole character
-rows** on the pass that crosses into them, rather than the scanlines a move exposed. Full-diagonal
-redraw went 38,472 → 28,143 cycles a pass, the split row stopped existing, and 230 bytes came back.
-See *The level draw* under Layer 4's frame budget.
+rows** on the pass that crosses into them, rather than the scanlines a move exposed, and the copy
+that fills a cell was unrolled once its run length became constant. Full-diagonal redraw went
+38,472 → **24,249** cycles a pass and vertical 28,527 → **15,280**; the split row stopped existing.
+See *The level draw* under Layer 4's frame budget, which also lists what is left.
 
 **Before trusting any speed number, read the speed model section of Layer 4.** The C64's constants
 are per `GameLoop` iteration and an iteration is 2–3 frames, not 1. Every droid speed in
@@ -1280,14 +1281,14 @@ the bank, in rough order of value, for when droids start competing for the frame
 
 | | worth |
 |---|---|
-| Inline `CopyRun` / `BufNextUnit` / `CellXInc` — 60 cycles of call overhead per character | ~2,400 |
 | Sprite: precompose the current phase instead of `PlyFetchRow` per row | ~2,500 |
 | Cache the previous frame's 40 row pointers — group 2 of frame N is group 1 of frame N+1 | ~2,300 |
-| Unroll `DrawColumn`'s 8-byte copy | ~1,100 |
 | Replace `keydown`'s OSBYTE `&81` with a direct System VIA matrix scan | ~2,000 |
+| Inline `BufNextUnit` / `CellXInc` — 36 cycles of call overhead per character | ~1,440 |
+| Unroll `DrawColumn`'s 8-byte copy | ~1,100 |
 
-The first and last of those moved when the band went to whole rows: only one band pass runs per
-game pass now, so inlining is worth half what it was.
+`CopyRun` was the top line and is done — see *The level draw* below for what it was worth and what
+is left behind it.
 
 **The deadlines are staggered and tighter than a frame**, which matters more than the frame total:
 an **up**-band and the columns both display at `P+64`, so they share only 192 scanlines (24,576
@@ -1318,6 +1319,38 @@ and wrap test 26, loop control 18. It spends 40% of its time copying against the
 because one lookup serves 8 bytes there instead of 2.
 
 Per byte written: band 51 cycles, column 40, against a floor of ~18 for the copy loop itself.
+
+##### `CopyRun` unrolled — the parameterisation outlived its case
+
+`CopyRun` took `bandScan` and `bandRun` as variables and cost 18 cycles a byte to do it. After the
+whole-row change `DrawBandRows` has one caller which always passes 0 and 8, so that generality was
+being paid 640 times a band pass to support a case that no longer occurs. Unrolled into a `COPYCELL`
+macro with an immediate `Y` — 13 cycles a byte, the floor for `(zp),Y` on both sides — and inlined
+at the two sites inside the loop. The two edge halves of an odd `mapHX` call `CopyCell` instead:
+they run once a pass against the loop's 40, and 12 cycles of call is not worth 48 bytes each.
+`bandScan` and `bandRun` are deleted.
+
+| per pass, 7 px | scanline bands | whole rows | + unrolled copy |
+|---|---|---|---|
+| vertical | 28,527 | 19,655 | **15,280** |
+| full diagonal | 38,472 | 28,143 | **24,249** |
+| one band pass | 31,505 *(peak, 2 rows)* | 22,311 | **17,290** |
+
+**−5,021 a band pass for +114 bytes**, against −4,560 predicted. Cumulatively the level draw is
+**46% cheaper vertically and 37% on a diagonal** than it was at the start of the day. Columns are
+untouched and measure 5,260, confirming the change is where it was meant to be.
+
+Where a character's 414 cycles now go: pixel copy 176 (43%), `BandCharPtr` 99 (24%), two
+`BufNextUnit` 66 (16%), `CellXInc` and loop 28, `chp + 8` 13, `Y` setup 32. Copy loop overhead has
+gone from 146 to 32.
+
+Still in the bank, in order:
+
+| | per band pass |
+|---|---|
+| `charRemap` unpack → two tables indexed by character code, 41 cycles → 16 (+256 bytes of bank; also −400 a column) | ~1,000 |
+| Inline `BufNextUnit` and `CellXInc` — 36 cycles of call per character | ~1,440 |
+| Copy both halves as one 16-byte run: source is contiguous and so is the destination, killing `chp + 8` and one `BufNextUnit` per character. **Needs the buffer wrap handled first** — it always lands on a unit boundary, so it can fall between a character's two halves; the fix is to find the straddling character in the prologue and split the loop around it | ~1,840 |
 
 ##### Whole rows, not exposed scanlines
 
@@ -1405,6 +1438,19 @@ from now on:
 | odd `mapHX` (137), `line` = 1, down-right diagonal | **0 differences in 10240** |
 | odd `mapHX` (107), `line` = 4, up-left then down — `line` wrapped both ways | **0 differences in 10240** |
 | even `mapHX` (142), `line` = 3, after an 11M-cycle diagonal through the vertical clamp | **0 differences in 10240** |
+
+and again after `CopyRun` was unrolled, covering both branches of the odd/even split:
+
+| | result |
+|---|---|
+| odd `mapHX` (137), `line` = 1 — leading and trailing halves, 39 whole characters | **0 differences in 10240** |
+| even `mapHX` (180), `line` = 1, deck 2 — the plain 40-character loop | **0 differences in 10240** |
+
+> **Let the view SETTLE before the first dump, and check it has not moved between the two.** A run
+> that dumped two passes after releasing the keys reported 66 differing bytes; the view had coasted
+> one unit between the dumps, so the two were of different scroll positions. Record `mapHX`,
+> `mapYr`, `line` and `scrollS` with each dump and compare them before believing a diff. Deck 2 is
+> the easy way to an even `mapHX`: it centres at 180.
 
 Then the clean build with sprites live: diagonal scrolling and a deck change both render correctly,
 no torn top or bottom row.
