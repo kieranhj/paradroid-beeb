@@ -1443,11 +1443,12 @@ restore, at 33-37 cycles each. Three changes, each verified byte-identical befor
 | read the scanline from `bufp AND 7` | 6,038 | 3,177 | 9,215 |
 | inline the walk as the `SCANSTEP` macro | 5,773 | 2,939 | 8,712 |
 | stop the loops after the last drawing row | 5,587 | 2,879 | 8,466 |
-| eight row pointers, so the glyphs stop walking | 5,093 | 2,913 | **8,006** |
+| eight row pointers, so the glyphs stop walking | 5,093 | 2,913 | 8,006 |
+| sequence dispatch + straight-line sprite shape | 4,566 | 2,454 | **7,020** |
 
-**−1,610 cycles, 16.7%.** Seven sprites cost 56.0K of the 80,000-cycle pass, against 67.3K. The
-walk is down from 2,433 to about 800, and from 25% of a sprite to under 10%. Code is 44 bytes
-smaller than where it started and the bank 157 bytes smaller.
+**−2,596 cycles, 27.0%.** Seven sprites cost 49.1K of the 79,872-cycle pass, against 67.3K. The
+walk is down from 2,433 to about 800, and from 25% of a sprite to under 10%; dispatch and the
+row loop, 2,000 between them, are down to a few hundred.
 
 The restore's +34 on the last row is the ±50 code-layout noise floor, not a regression: nothing
 in the restore path changed, only its addresses.
@@ -1472,11 +1473,48 @@ a position, and it is what lets one set of pointers serve all three. The same tr
 shifted glyphs' spill into a shared column still lands correctly: position *p* column 2 and
 position *p+1* column 0 are both Y = (*p*+1)·16.
 
-From here the per-sprite cost is roughly 3,400 of real pixel movement plus ~4,600 of everything
-else, and the remaining large items are the per-row dispatch (~1,000) and the 21-row interpreter
-loop (~1,150). Both are structural: they go only if a whole sprite is compiled per type, phase
-and alignment, which is the 25K option deliberately not taken. **The update rate is the whole
-remaining problem** — round-robin, then raster-ordered.
+#### Step 3b — dispatch and the row loop
+
+Dispatch (~1,000) and the 21-row interpreter loop (~1,150) looked structural — removable only by
+compiling a whole sprite per type × phase × alignment, the 25K option deliberately not taken.
+They were not, because of one observation: **the ten rotor rows a sprite draws are fixed once its
+shift and phase are known.** The sequence is a property of (shift, phase) — sixteen of them — not
+of the sprite, so it can be listed rather than derived per row.
+
+Two changes fall out of that:
+
+- **`drSeqLo/Hi`, ten addresses per (shift, phase) in drawing order.** Dispatch becomes an indexed
+  read and a poke: no row→slot lookup, no add, no row counter. The list is indexed by **X**, not
+  Y — the compiled rows use A and Y and would eat an index kept in Y.
+- **The fast path writes the shape out.** A sprite that cleared the wrap test has no row that
+  *can* wrap, so its shape is a constant: five rotor rows, a blank, the digit block, a blank,
+  five more. That removes the row counter, the blank-row lookup and the end test from every
+  iteration — everything the loop did to discover what it already knew.
+
+The interpreted loop stays for the one sprite in five that fails the wrap test, since only a
+per-row test can decide which rows fall back. But it now runs *only* with `sprNoWrap` clear, so it
+drops that test from every row and its digit-block arm goes entirely — the block never opens
+there.
+
+**−986 cycles for +192 bytes of bank** (640 of lists against 448 of dispatch tables deleted). The
+alternatives were costed and rejected: fully unrolled `JSR` programs per (shift, phase) buy ~1,220
+for ~2,150 bytes, and putting the walk inside every compiled routine buys ~1,360 for ~2,370 —
+neither fits, and neither survives the fact that the fallback path keeps the old tables alive.
+Both become affordable only with a second bank paged in for the sprite phase.
+
+> **The tile map now has a fixed home at `&3800`.** It used to sit at the next page boundary after
+> `code_end` — fine while the code was small, and silently over the sprite save areas at `&3000`
+> when it was not. This step is what made it not: the first build put it at `&2D00–&3100`, on top
+> of slot 0's saved background, with no assert to catch it. There are asserts now. `&3700–&47FF`
+> is clear, and the move takes code headroom from 143 bytes to 1,005 — the constraint that would
+> have blocked the next layer regardless.
+
+**What is left.** Per sprite is now ~3,400 of real pixel movement and ~3,600 of everything else,
+of which the largest single items are the six inactive slots scanned every frame (~630) and the
+per-slot setup (~480). Nothing structural remains that does not need a bank. **The update rate is
+the whole remaining problem** — round-robin, then raster-ordered — and it is worth noting that
+round-robin halves all of the above for nothing, which is why it comes before any further
+compiling.
 
 > **Measuring across builds.** Average over ~128 passes, not 16: the rotor phase cycles every 8
 > and the per-phase spread is a few hundred cycles, so a short average is biased by which phases
