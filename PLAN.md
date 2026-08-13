@@ -1429,6 +1429,51 @@ So the loop finishes very close to a raster deadline at that point, and a miss a
 `ruptState` machine rather than merely costing a frame. Worth understanding before the budget gets
 spent.
 
+#### Step 3a — the scanline walk
+
+A static cycle model built from the generated code (reconciling to within 3% of the measured
+totals) put **`SprNextScan` at 2,433 cycles, 25% of the per-sprite cost** — the single biggest
+line item, ahead of the play-buffer reads and writes at 17%. 42 calls in a draw and 21 in a
+restore, at 33-37 cycles each. Three changes, each verified byte-identical before the next:
+
+| | draw | restore | total |
+|---|---:|---:|---:|
+| after step 3 | 6,345 | 3,271 | 9,616 |
+| drop dead `svp` work in the glyph passes | 6,226 | 3,226 | 9,452 |
+| read the scanline from `bufp AND 7` | 6,038 | 3,177 | 9,215 |
+| inline the walk as the `SCANSTEP` macro | 5,773 | 2,939 | **8,712** |
+
+**−904 cycles, 9.4%.** Seven sprites cost 61.0K of the 80,000-cycle pass, against 67.3K. The walk
+is down from 2,433 to 1,712 and from 25% of a sprite to 20%.
+
+The three are worth distinguishing. The first was *dead work*: glyphs address everything as
+`(bufp),Y` and never read `svp`, so 21 walks a frame were maintaining a value that
+`SprDigitBlock` then overwrote. The second was *redundant state*: every term of `bufp` is a
+multiple of 8 except the scanline, so `bufp AND 7` **is** the scanline and the counter beside it
+was never needed. Only the third was ordinary cycle-shaving.
+
+**What is left.** Compiling bought the rotor and the digits; this bought the walk. The remaining
+1,712 is nearly all the digit block's four passes over the same eight scanlines, and the way out
+is eight zero-page row pointers built once per block, so the glyphs address `(rowp3),Y` and do not
+walk at all — same cycle count per access, same code size, ~1,000 cycles. Its tax is the three
+glyph *positions*, currently reached by offsetting one pointer and then needing to offset eight.
+That is the next thing to try, and it does not need the bank space the per-type option wanted.
+
+> **Measuring across builds.** Average over ~128 passes, not 16: the rotor phase cycles every 8
+> and the per-phase spread is a few hundred cycles, so a short average is biased by which phases
+> it caught. There is also a ±50-cycle floor between builds from `abs,X` lookups landing on
+> different sides of a page boundary once the code shifts.
+
+> **Drive the scroll by patching `ReadKeys`, not by holding a key.** A keypress injected at a
+> fixed cycle count lands a pass earlier or later once the code speed changes, and the two runs
+> then diverge for reasons that have nothing to do with the change under test. Half an hour went
+> into a 38-byte difference that was entirely this.
+
+> **Check `code_end` against the stub address after every build.** The measurement and input
+> stubs live between `code_end` and the tile map at `&2C00`. Step 3a moved `code_end` from `&2B7B`
+> to `&2BA4`, and a stub left at `&2BA0` lands on `vsyncCount` and `oldIrq1V` — which reads
+> exactly like a sprite bug that only appears when scrolling.
+
 ### Layer 6 — Droids
 `RunDroids`, `dMd0_droid`, sprite slot allocation, pathfinding. Droids move and chase.
 
