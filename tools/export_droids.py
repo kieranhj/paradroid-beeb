@@ -527,6 +527,22 @@ def emit_glyph_code(f, mem):
             rows = glyph_rows(d)
             if shift:
                 rows = [shift_row(r) for r in rows]
+            # A GLYPH SAVES WHAT IT COVERS. The block used to save all seven
+            # columns in a pass of its own, because under a shift a glyph
+            # was expected to spill into the next position's first byte -
+            # and then neither position could own the shared column. It
+            # never spills: every glyph's rightmost two pixels are blank,
+            # so the three positions are disjoint (columns 0-1, 2-3, 4-5)
+            # and column 6 is never written at all. The assert below is
+            # what keeps that true.
+            #
+            # So the save folds into the draw, where the byte is being
+            # loaded anyway. All SIXTEEN positions are saved, transparent
+            # ones included, so SprBlkRest can stay generic over six
+            # columns rather than having to know what was drawn.
+            assert all(len(row) < 3 or row[2] == 0 for row in rows), (
+                'glyph %d shift %d spills into column 2; the digit block '
+                'assumes the three positions are disjoint' % (d, shift))
             f.write('.drGlyph%d_%d\n' % (shift, d))
             for n, row in enumerate(rows):
                 # Row n of the block has its own pointer, so nothing walks.
@@ -534,18 +550,22 @@ def emit_glyph_code(f, mem):
                 # drYcolN,X turns it into a Y offset - see the digit block
                 # header in sprite.asm.
                 ptr = 'rowp+%d' % (2 * n)
-                for col, b in enumerate(row):
-                    if not b:
-                        continue
+                sav = 'rowq+%d' % (2 * n)
+                for col in range(2):
+                    b = row[col]
                     m = mode1_mask(b)
                     f.write('  LDY drYcol%d,X\n' % col)
+                    f.write('  LDA (%s),Y : STA (%s),Y\n' % (ptr, sav))
+                    size += 7
+                    if not b:
+                        continue            # saved, nothing drawn over it
                     if m == 0:
                         f.write('  LDA #&%02X : STA (%s),Y\n' % (b, ptr))
-                        size += 7
+                        size += 4
                     else:
-                        f.write('  LDA (%s),Y : AND #&%02X : ORA #&%02X'
-                                ' : STA (%s),Y\n' % (ptr, m, b, ptr))
-                        size += 11
+                        f.write('  AND #&%02X : ORA #&%02X : STA (%s),Y\n'
+                                % (m, b, ptr))
+                        size += 6
             f.write('  RTS\n')
             size += 1
 

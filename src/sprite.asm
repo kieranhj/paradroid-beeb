@@ -527,48 +527,28 @@ ENDMACRO
 \ SprBlkSave, which walks svp itself. Eight rows starting anywhere in a
 \ character row cross into the next one at most once, so the expensive
 \ arm is taken once per block rather than once per row.
+\ BOTH SETS, AND THE ADVANCE IS THE ORDINARY ONE. rowq is the same eight
+\ rows in the save area, which the glyphs need because they now save the
+\ bytes they draw rather than leaving it to a pass of their own. The
+\ save area mirrors screen geometry, so the same Y addresses both — that
+\ is the property the whole blitter is built on, and it is why one loop
+\ can fill both tables with one SCANSTEP between rows.
+\
+\ It walks bufp and svp all eight rows and does NOT put them back: eight
+\ steps from row 6 leaves them on row 14, which is exactly where the
+\ caller wants them. The separate save pass used to do that walking.
 .SprBuildRowPtrs
   LDX #0
 .brp_row
   LDA bufp   : STA rowp,X
   LDA bufp+1 : STA rowp+1,X
+  LDA svp    : STA rowq,X
+  LDA svp+1  : STA rowq+1,X
+  SCANSTEP
   INX
   INX
   CPX #16
-  BEQ brp_done
-  INC bufp
-  BNE brp_nc
-  INC bufp+1
-.brp_nc
-  LDA bufp
-  AND #7
-  BNE brp_row                   \ still inside this character row
-  CLC
-  LDA bufp   : ADC #LO(ROW_BYTES-8) : STA bufp
-  LDA bufp+1 : ADC #HI(ROW_BYTES-8) : STA bufp+1
-  JSR WrapBufFwd
-  JMP brp_row
-.brp_done
-  LDA rowp   : STA bufp         \ back to the first row, for SprBlkSave
-  LDA rowp+1 : STA bufp+1
-  RTS
-
-\ All seven columns of all eight rows. Column 6 is only ever written by
-\ a shifted glyph's spill, but saving it unconditionally costs 8 reads
-\ and removes the need to remember which way it went.
-.SprBlkSave
-  LDX #8
-.sbk_row
-  LDY #0*UNIT_BYTES : LDA (bufp),Y : STA (svp),Y
-  LDY #1*UNIT_BYTES : LDA (bufp),Y : STA (svp),Y
-  LDY #2*UNIT_BYTES : LDA (bufp),Y : STA (svp),Y
-  LDY #3*UNIT_BYTES : LDA (bufp),Y : STA (svp),Y
-  LDY #4*UNIT_BYTES : LDA (bufp),Y : STA (svp),Y
-  LDY #5*UNIT_BYTES : LDA (bufp),Y : STA (svp),Y
-  LDY #6*UNIT_BYTES : LDA (bufp),Y : STA (svp),Y
-  SCANSTEP
-  DEX
-  BNE sbk_row
+  BNE brp_row
   RTS
 
 .SprBlkRest
@@ -580,7 +560,6 @@ ENDMACRO
   LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #5*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #6*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   SCANSTEP
   DEX
   BNE sbr_row
@@ -609,8 +588,7 @@ ENDMACRO
 \ leaves bufp and svp on row 14 for the caller; the glyphs run off the
 \ row pointers and disturb neither.
 .SprDigitBlock
-  JSR SprBuildRowPtrs
-  JSR SprBlkSave
+  JSR SprBuildRowPtrs           \ and leaves bufp/svp on row 14
   LDX #0
 .sdb_glyph
   JSR SprBlkGlyph

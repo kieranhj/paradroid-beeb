@@ -362,6 +362,8 @@ KEY_SPACE  = &9D                \ -99
 \ glyphs address every byte as (rowp+2r),Y and never walk. Built once
 \ per block by SprBuildRowPtrs; see the header in sprite.asm.
 rowp     = &50                  \ &50-&5F: 8 pointers, one per block row
+rowq     = &40                  \ &40-&4F: the same eight rows in the SAVE
+                                \ area, so a glyph can save what it draws
 
 sprScan  = &64                  \ sprite's STARTING scanline in its char row;
                                 \ the walk reads its position from bufp AND 7

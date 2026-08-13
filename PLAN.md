@@ -1446,9 +1446,11 @@ restore, at 33-37 cycles each. Three changes, each verified byte-identical befor
 | eight row pointers, so the glyphs stop walking | 5,093 | 2,913 | 8,006 |
 | sequence dispatch + straight-line sprite shape | 4,566 | 2,454 | 7,020 |
 | own bank; walk into the rows, rows into a program | 4,300 | 2,243 | 6,543 |
-| merged restore halves, tail calls | 4,283 | 2,095 | **6,378** |
+| merged restore halves, tail calls | 4,283 | 2,095 | 6,378 |
+| the glyphs save what they draw | 3,844 | 1,970 | **5,814** |
 
-**−3,238 cycles, 33.7%.** Seven sprites cost 44.6K of the 79,872-cycle pass, against 67.3K. The
+**−3,802 cycles, 39.5%.** Seven sprites cost 40.7K of the 79,872-cycle pass — just over half of
+it — against 67.3K. The
 walk is down from 2,433 to about 800, and from 25% of a sprite to under 10%; dispatch and the
 row loop, 2,000 between them, are down to a couple of hundred.
 
@@ -1564,7 +1566,35 @@ call site.
 > The play buffer being identical is the proof it does not matter: the save area exists only to be
 > read back into the buffer, so a differing byte that was ever read would show up there.
 
-**What is left.** Per sprite is now ~3,400 of real pixel movement and ~3,100 of everything else,
+#### Step 3d — the glyphs save what they draw
+
+The digit block still saved all seven columns of all eight rows in a pass of its own before the
+glyphs drew. That existed for a stated reason: under a 2 px shift a glyph was expected to spill
+into the next position's first byte, so two positions would share a column and neither could own
+saving it.
+
+**It never spills.** Every glyph's rightmost two pixels are blank, so the generated code uses
+relative columns 0 and 1 and never 2 — 120 and 143 uses of `drYcol0`/`drYcol1` against **zero** of
+`drYcol2`. The three positions are therefore disjoint (columns 0-1, 2-3, 4-5) and column 6 is
+never written at all. The premise the hoisted save was protecting against was vacuous for this
+artwork all along.
+
+So the save folds into the draw, where the byte is being loaded anyway: one extra `STA (rowq),Y`
+per position. All sixteen of a glyph's positions are saved, transparent ones included, so
+`SprBlkRest` stays generic — over six columns now, not seven. `SprBlkSave` is gone entirely, and
+with it a whole extra walk of the eight scanlines: `SprBuildRowPtrs` now fills both pointer sets
+in one pass and leaves `bufp`/`svp` on row 14, which is exactly where the save pass used to leave
+them.
+
+**−564 cycles**, better than the ~500 estimated, because deleting the save pass took its eight
+`SCANSTEP`s with it. Cost: 16 more bytes of zero page for `rowq`, and the glyph code grows from
+2.7K to 3.7K.
+
+> The blitter now depends on a property of the *artwork* rather than of the geometry, so the
+> exporter asserts it: a glyph that ever emitted a lit pixel in column 2 would corrupt its
+> neighbour's saved background silently.
+
+**What is left.** Per sprite is now ~3,000 of real pixel movement and ~2,800 of everything else,
 of which the largest single items are the six inactive slots scanned every frame (~630) and the
 per-slot setup (~480). Nothing structural remains.
 **The update rate is the whole remaining problem** — round-robin, then raster-ordered — and it is worth noting that
