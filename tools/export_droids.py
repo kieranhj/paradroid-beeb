@@ -333,8 +333,9 @@ def emit_rotor_code(f, rows, slots, row_slot):
                 else:
                     f.write('  AND #&%02X : ORA #&%02X : STA (bufp),Y\n' % (m, b))
                     draw_bytes += 12
+            f.write('  SCANSTEP\n')      # C: the walk lives in the row
             f.write('  RTS\n')
-            draw_bytes += 1
+            draw_bytes += 18
 
         sets = []
         for key, row in sorted(rows.items()):
@@ -350,8 +351,9 @@ def emit_rotor_code(f, rows, slots, row_slot):
                 f.write('  LDY #%d*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y\n'
                         % col)
                 rest_bytes += 6
+            f.write('  SCANSTEP\n')      # C: the walk lives in the row
             f.write('  RTS\n')
-            rest_bytes += 1
+            rest_bytes += 18
 
     def rest_for(shift, key):
         data = shift_row(rows[key]) if shift else rows[key]
@@ -382,6 +384,41 @@ def emit_rotor_code(f, rows, slots, row_slot):
             for phase in range(FRAMES):
                 f.write('  EQUB ' + ','.join(
                     pick(shift, slots[phase][row_slot[r]]) for r in seq_rows) + '\n')
+    # ---- B: one straight-line program per (shift, phase) -------------
+    # Every rotor routine now ends by walking, so a program is just the ten
+    # calls in drawing order with the digit block in the middle - no index,
+    # no counter, no end test. The two explicit walks are the blank rows 5
+    # and 14; the block does its own eight.
+    for kind, tab, blk, pick in (
+            ('drPrg',  'drPrgLo',  'SprDigitBlock',
+             lambda s_, k: labels[(s_, k)]),
+            ('drRPrg', 'drRPrgLo', 'SprBlkRest',
+             lambda s_, k: rest_for(s_, k))):
+        f.write('\n')
+        for shift in (0, 1):
+            for phase in range(FRAMES):
+                f.write('.%s%d_%d\n' % (kind, shift, phase))
+                for n, r in enumerate(seq_rows):
+                    if n == 5:
+                        f.write('  SCANSTEP\n')          # row 5, blank
+                        f.write('  JSR %s\n' % blk)      # rows 6-13
+                        f.write('  SCANSTEP\n')          # row 14, blank
+                    f.write('  JSR %s\n'
+                            % pick(shift, slots[phase][row_slot[r]]))
+                f.write('  RTS\n')
+
+    # Indexed by the SAME sprSeqBase the fallback uses, so entering a program
+    # costs a table read and a poke and no arithmetic at all. Only every tenth
+    # entry can be reached; the rest are filled to keep the table square.
+    f.write('\n')
+    for name, kind, half in (('drPrgLo', 'drPrg', 'LO'), ('drPrgHi', 'drPrg', 'HI'),
+                             ('drRPrgLo', 'drRPrg', 'LO'), ('drRPrgHi', 'drRPrg', 'HI')):
+        f.write('.%s\n' % name)
+        for shift in (0, 1):
+            for phase in range(FRAMES):
+                f.write('  EQUB ' + ','.join(
+                    ['%s(%s%d_%d)' % (half, kind, shift, phase)] * len(seq_rows)) + '\n')
+
     f.write('\n')
     f.write('\\ Sprite row -> position in that sequence; &FF means the row is\n'
             '\\ not the rotor\'s (a digit row, or one of the three blank ones).\n'

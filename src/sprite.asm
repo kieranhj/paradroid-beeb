@@ -635,45 +635,6 @@ ENDMACRO
 \ so this must not step past its last row. That is what keeps the two
 \ halves composable and the last row of the sprite from walking off the
 \ end — see the note by sprBlankRow.
-\ Written out twice rather than made a macro: a self-modified JSR has
-\ to name its own operand, and a macro body cannot declare the label to
-\ name it with. The two differ only in which table they read.
-.SprRotor5
-  TXA
-  CLC
-  ADC #5
-  STA sprSeqEnd
-.sro_row
-  LDA drSeqLo,X : STA sro_call+1
-  LDA drSeqHi,X : STA sro_call+2
-  INX
-.sro_call
-  JSR &FFFF
-  CPX sprSeqEnd
-  BEQ sro_done
-  SCANSTEP
-  JMP sro_row
-.sro_done
-  RTS
-
-.SprRestore5
-  TXA
-  CLC
-  ADC #5
-  STA sprSeqEnd
-.srr_row
-  LDA drRSeqLo,X : STA srr_call+1
-  LDA drRSeqHi,X : STA srr_call+2
-  INX
-.srr_call
-  JSR &FFFF
-  CPX sprSeqEnd
-  BEQ srr_done
-  SCANSTEP
-  JMP srr_row
-.srr_done
-  RTS
-
 \ ============================================================
 \ SprWraps — does this row's span cross the end of the strip?
 \ Carry set = yes, take the slow path.
@@ -770,15 +731,10 @@ ENDMACRO
   LDA sprNoWrap
   BEQ sd_loop
   LDX sprSeqBase
-  JSR SprRotor5                 \ rows 0-4, leaving X on the second run
-  STX sprSeqX
-  SCANSTEP                      \ row 4 -> 5, the blank one
-  SCANSTEP                      \ row 5 -> 6
-  JSR SprDigitBlock             \ rows 6-13, leaves bufp/svp on row 14
-  SCANSTEP                      \ row 14 -> 15
-  LDX sprSeqX
-  JSR SprRotor5                 \ rows 15-19; row 20 is blank, so no walk
-  RTS
+  LDA drPrgLo,X : STA sd_prg+1
+  LDA drPrgHi,X : STA sd_prg+2
+.sd_prg
+  JMP &FFFF                     \ tail call: the program ends in RTS
 
 \ ---- the wrap fallback -------------------------------------
 .sd_loop
@@ -820,7 +776,7 @@ ENDMACRO
   LDA drSeqHi,X : STA sd_call+2
 .sd_call
   JSR &FFFF
-  JMP sd_next
+  JMP sd_nextnw
 
 .sd_digrow
   JSR SprFetchRow               \ fetched and blitted as before
@@ -878,14 +834,27 @@ ENDMACRO
   LDA sprTmpPtr   : STA bufp
   LDA sprTmpPtr+1 : STA bufp+1
 
+\ TWO TAILS, because a compiled row now walks on its own account — the
+\ walk was moved inside the generated routines so the straight-line
+\ programs need nothing between their calls. Rows that went through one
+\ come here already advanced; blank rows and the interpreted paths do
+\ not. The walk still sits after the end test either way, so the last
+\ row does not step off the end.
+.sd_nextnw                      \ the row walked itself
+  INC sprRowIdx
+  INC sprRow
+  LDA sprRow
+  CMP #SPR_LASTROW
+  BEQ sd_done
+  JMP sd_row
 .sd_next
   INC sprRowIdx
   INC sprRow
   LDA sprRow
   CMP #SPR_LASTROW
   BEQ sd_done
-  SCANSTEP                      \ after the test: there is a next row to
-  JMP sd_row                    \ walk to, so the step is never wasted
+  SCANSTEP
+  JMP sd_row
 .sd_done
   RTS
 
@@ -913,15 +882,10 @@ ENDMACRO
   LDA sprNoWrap
   BEQ sr_loop
   LDX sprSeqBase
-  JSR SprRestore5               \ rows 0-4
-  STX sprSeqX
-  SCANSTEP                      \ row 4 -> 5, the blank one
-  SCANSTEP                      \ row 5 -> 6
-  JSR SprBlkRest                \ rows 6-13, leaves bufp/svp on row 14
-  SCANSTEP                      \ row 14 -> 15
-  LDX sprSeqX
-  JSR SprRestore5               \ rows 15-19
-  RTS
+  LDA drRPrgLo,X : STA sr_prg+1
+  LDA drRPrgHi,X : STA sr_prg+2
+.sr_prg
+  JMP &FFFF                     \ tail call: the program ends in RTS
 
 .sr_loop
   LDA #0
@@ -955,7 +919,7 @@ ENDMACRO
   LDA drRSeqHi,X : STA sr_call+2
 .sr_call
   JSR &FFFF
-  JMP sr_next
+  JMP sr_nextnw
 
 .sr_digrow
   JSR SprWraps
@@ -994,6 +958,12 @@ ENDMACRO
   LDA sprTmpPtr   : STA bufp
   LDA sprTmpPtr+1 : STA bufp+1
 
+.sr_nextnw                      \ the row walked itself — see sd_nextnw
+  INC sprRow
+  LDA sprRow
+  CMP #SPR_LASTROW
+  BEQ sr_x
+  JMP sr_row
 .sr_next
   INC sprRow
   LDA sprRow
