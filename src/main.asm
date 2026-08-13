@@ -125,9 +125,10 @@ DEBUG_DRAW   = FALSE
 \ cycles of the 80,000 in a pass. Anything that had to mask, or that
 \ spanned more than one byte per row, would start measuring itself.
 \
-\ It costs 117 BYTES of main RAM, which leaves 26 before the tile map
-\ at &2C00. That is the reason it is off by default rather than always
-\ on: there is no room for it and anything else at the same time.
+\ It costs 117 bytes of main RAM. That used to be nearly all of what was
+\ left; since the tile map was given a fixed home at &3800 the code has
+\ room to &3000, so it is off by default out of tidiness rather than
+\ necessity.
 DEBUG_VSYNC  = FALSE
 
 \ TEST_DROIDS parks six static droids around the player at deck load,
@@ -738,10 +739,25 @@ ORG code_end
 
 \ ---- tile map: 64 x 16, one byte per tile -------------------
 \ MapChar depends on this being page aligned and exactly 1K.
-ALIGN &100
+\
+\ PLACED, NOT FLOATED. It used to sit at the next page boundary after
+\ code_end, which was fine while the code was small and silently walked
+\ into the sprite save areas at &3000 when it was not — a corruption
+\ with no assert to catch it. &3700-&47FF is clear: the save areas end
+\ at &36FF, SPR_MASKTAB is at &5700 and the panel starts at &4800. That
+\ gives the code the whole of &1100-&3000 instead of whatever was left.
+\
+\ It is above DATA_LOAD, so the PARADAT staging copy runs straight over
+\ it — harmless, because PageDataIn is done long before LoadDeck calls
+\ BuildLevel to fill it in, the same argument the panel and the mask
+\ table rely on.
+ORG &3800
 .tilemap
   SKIP MAP_COLS * MAP_ROWS
 .tilemap_end
+ASSERT tilemap >= SPR_SAVE + SPR_SLOTS * 256
+ASSERT tilemap_end <= PANEL_ADDR
+ASSERT code_end <= SPR_SAVE
 
 \ ============================================================
 \ Generated data — in sideways RAM bank 0
@@ -768,7 +784,7 @@ INCLUDE "src/data/droids.asm"
 
 ASSERT DR_W == SPR_W            \ sprite.asm declares these ahead of the
 ASSERT DR_H == SPR_H            \ generated data; keep the two in step
-ASSERT DR_TABSHIFT == SPR_TABSHIFT
+ASSERT DR_SEQSHIFT == SPR_SEQSHIFT
 ASSERT DR_GLYPHS == SPR_DIG_GLYPHS
 
 DATA_PAGES = (data_end - data_start + 255) DIV 256

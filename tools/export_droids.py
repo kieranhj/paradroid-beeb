@@ -358,24 +358,42 @@ def emit_rotor_code(f, rows, slots, row_slot):
         cols = tuple(i for i, b in enumerate(data) if b)
         return rest_labels[(shift, cols)]
 
+    # ---- dispatch, in ROW order rather than by slot -------------------
+    # The ten rotor rows a sprite draws are fixed once its shift and phase
+    # are known, so the sequence is a property of (shift, phase) - sixteen
+    # of them - not of the sprite. Listing them in the order they are drawn
+    # lets SprRotor5 walk the list with one index and no row->slot lookup,
+    # where the slot-indexed table needed a lookup and an add per row.
+    #
+    # Rows 0-4 then 15-19: the bottom half visits slots 4,3,2,5,6, which is
+    # the top half's 2,3,4 reversed with the two end rows swapped, so it
+    # cannot share entries with the top - hence ten, not seven.
+    seq_rows = [0, 1, 2, 3, 4, 15, 16, 17, 18, 19]
     f.write('\n')
-    f.write('\\ Dispatch, at index shift*%d + phase*7 + slot.\n' % (FRAMES * 7))
-    for name, pick in (('drDrawLo', lambda s, k: 'LO(%s)' % labels[(s, k)]),
-                       ('drDrawHi', lambda s, k: 'HI(%s)' % labels[(s, k)]),
-                       ('drRestLo', lambda s, k: 'LO(%s)' % rest_for(s, k)),
-                       ('drRestHi', lambda s, k: 'HI(%s)' % rest_for(s, k))):
+    f.write('\\ Rotor dispatch, at index shift*%d + phase*%d + n, where n\n'
+            % (FRAMES * len(seq_rows), len(seq_rows)))
+    f.write('\\ counts the ten drawn rotor rows in drawing order.\n')
+    for name, pick in (('drSeqLo',  lambda s, k: 'LO(%s)' % labels[(s, k)]),
+                       ('drSeqHi',  lambda s, k: 'HI(%s)' % labels[(s, k)]),
+                       ('drRSeqLo', lambda s, k: 'LO(%s)' % rest_for(s, k)),
+                       ('drRSeqHi', lambda s, k: 'HI(%s)' % rest_for(s, k))):
         f.write('.%s\n' % name)
         for shift in (0, 1):
             for phase in range(FRAMES):
-                f.write('  EQUB ' + ','.join(pick(shift, k)
-                                             for k in slots[phase]) + '\n')
+                f.write('  EQUB ' + ','.join(
+                    pick(shift, slots[phase][row_slot[r]]) for r in seq_rows) + '\n')
     f.write('\n')
-    f.write('\\ Sprite row -> rotor slot; &FF means the row is not the rotor\'s\n')
-    f.write('\\ (a digit row, or one of the three always-blank ones).\n')
-    f.write('.drRotSlot\n')
-    emit_bytes(f, row_slot, per_line=SPRITE_ROWS)
-    f.write('.drMul7                         \\ phase * 7\n')
-    emit_bytes(f, [7 * p for p in range(FRAMES)], per_line=FRAMES)
+    f.write('\\ Sprite row -> position in that sequence; &FF means the row is\n'
+            '\\ not the rotor\'s (a digit row, or one of the three blank ones).\n'
+            '\\ Only the wrap fallback needs it - the fast path knows the\n'
+            '\\ shape and walks the list straight through.\n')
+    seq_idx = [0xFF] * SPRITE_ROWS
+    for n, r in enumerate(seq_rows):
+        seq_idx[r] = n
+    f.write('.drSeqIdx\n')
+    emit_bytes(f, seq_idx, per_line=SPRITE_ROWS)
+    f.write('.drMul10                        \\ phase * %d\n' % len(seq_rows))
+    emit_bytes(f, [len(seq_rows) * p for p in range(FRAMES)], per_line=FRAMES)
     f.write('\n')
 
     return draw_bytes, rest_bytes
@@ -606,8 +624,8 @@ def main():
         f.write('\\ of the play strip has its columns out of address order and\n')
         f.write('\\ falls back to it, so drOfs and the rotor rows in drSprData\n')
         f.write('\\ are still live.\n')
-        f.write('DR_TABSHIFT = %d                \\ table stride between the two shifts\n'
-                % (FRAMES * 7))
+        f.write('DR_SEQSHIFT = %d                \\ sequence stride between the shifts\n'
+                % (FRAMES * 10))
         f.write('DR_GLYPHS   = 10                '
                 '\\ digit glyphs, and the shift stride\n')
         rotor_rows, rotor_slots, rotor_rowslot = build_rotor_code(mem, frames, bottoms)

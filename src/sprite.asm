@@ -114,10 +114,17 @@ SPR_WRAPLIM = BUF_END - SPR_SPAN
 \
 \ Two copies exist, not eight: unshifted and shifted 2 px, since the
 \ immediates cannot be shifted at run time the way the artwork can.
-\ SPR_TABSHIFT is the stride between them in the dispatch tables —
-\ declared here and checked against the generated DR_TABSHIFT in
+\ SPR_SEQSHIFT is the stride between them in the dispatch tables —
+\ declared here and checked against the generated DR_SEQSHIFT in
 \ main.asm, the same way SPR_W and SPR_H are.
-SPR_TABSHIFT = 56               \ 8 phases * 7 distinct rows
+\
+\ DISPATCH IS BY SEQUENCE, NOT BY SLOT. The ten rotor rows a sprite
+\ draws are fixed once its shift and phase are known, so the whole
+\ sequence is a property of (shift, phase) — sixteen of them — and not
+\ of the sprite. drSeqLo/Hi list the ten addresses in drawing order,
+\ so the fast path walks them with one index and needs no row->slot
+\ lookup, no add, and no row counter. See SprRotor5.
+SPR_SEQSHIFT = 80               \ 8 phases * 10 drawn rotor rows
 
 \ ============================================================
 \ THE DIGITS ARE COMPILED TOO, BUT PER GLYPH
@@ -225,23 +232,23 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
 .sss_g0
   STA sprGlyphBase
 
-\ Where this slot's compiled rotor rows live: shift picks the half of
-\ the table, phase picks the group of seven within it. Kept per slot as
-\ well as in the working variable, because RESTORE runs a frame later —
-\ by which time the phase has advanced and the shift may have changed,
-\ and the background must be put back the way it was taken.
+\ Where this slot's rotor SEQUENCE starts: shift picks the half of the
+\ table, phase picks the run of ten within it. Kept per slot as well as
+\ in the working variable, because RESTORE runs a frame later — by which
+\ time the phase has advanced and the shift may have changed, and the
+\ background must be put back the way it was taken.
   LDA sprShift,X
-  BEQ sss_tab0
-  LDA #SPR_TABSHIFT
-  BNE sss_tab                   \ always
-.sss_tab0
+  BEQ sss_seq0
+  LDA #SPR_SEQSHIFT
+  BNE sss_seq                   \ always
+.sss_seq0
   LDA #0
-.sss_tab
+.sss_seq
   LDY sprFrame,X
   CLC
-  ADC drMul7,Y
-  STA sprTabBase
-  STA sprTabBaseS,X
+  ADC drMul10,Y
+  STA sprSeqBase
+  STA sprSeqBaseS,X
   CLC
   RTS
 
@@ -613,6 +620,61 @@ ENDMACRO
   RTS
 
 \ ============================================================
+\ SprRotor5 / SprRestore5 — five rotor rows straight off the list
+\ ============================================================
+\ Entered with X on the first of five entries in drSeqLo/Hi, and leaves
+\ it on the sixth — so the two halves of a sprite are two calls with
+\ nothing in between but the index the first one left behind.
+\
+\ THE LIST IS INDEXED BY X, NOT Y, because the compiled rows use A and
+\ Y and would eat an index kept in Y. X they never touch. The end test
+\ compares X against a computed limit rather than counting down in a
+\ second register, for the same reason.
+\
+\ Five rows, four walks: the caller walks into the block and out of it,
+\ so this must not step past its last row. That is what keeps the two
+\ halves composable and the last row of the sprite from walking off the
+\ end — see the note by sprBlankRow.
+\ Written out twice rather than made a macro: a self-modified JSR has
+\ to name its own operand, and a macro body cannot declare the label to
+\ name it with. The two differ only in which table they read.
+.SprRotor5
+  TXA
+  CLC
+  ADC #5
+  STA sprSeqEnd
+.sro_row
+  LDA drSeqLo,X : STA sro_call+1
+  LDA drSeqHi,X : STA sro_call+2
+  INX
+.sro_call
+  JSR &FFFF
+  CPX sprSeqEnd
+  BEQ sro_done
+  SCANSTEP
+  JMP sro_row
+.sro_done
+  RTS
+
+.SprRestore5
+  TXA
+  CLC
+  ADC #5
+  STA sprSeqEnd
+.srr_row
+  LDA drRSeqLo,X : STA srr_call+1
+  LDA drRSeqHi,X : STA srr_call+2
+  INX
+.srr_call
+  JSR &FFFF
+  CPX sprSeqEnd
+  BEQ srr_done
+  SCANSTEP
+  JMP srr_row
+.srr_done
+  RTS
+
+\ ============================================================
 \ SprWraps — does this row's span cross the end of the strip?
 \ Carry set = yes, take the slow path.
 \ ============================================================
@@ -684,6 +746,32 @@ ENDMACRO
 
   JSR SprSetSave                \ svp = this slot's block 0, scanline sprScan
 
+\ ---- the fast path -----------------------------------------
+\ A sprite that cleared the wrap test up front has no row that can
+\ straddle the end of the strip, so no row needs testing and the shape
+\ of a sprite is a constant: five rotor rows, a blank, the digit block,
+\ a blank, five more rotor rows. Writing that shape out removes the
+\ row counter, the blank-row table lookup, the row->slot lookup and the
+\ end test from all twelve iterations — everything the interpreted loop
+\ below does to work out what it already knows.
+\
+\ Four sprites in five come through here. The fifth keeps the loop,
+\ because only a per-row test can decide which rows fall back.
+  LDA sprNoWrap
+  BEQ sd_loop
+  LDX sprSeqBase
+  JSR SprRotor5                 \ rows 0-4, leaving X on the second run
+  STX sprSeqX
+  SCANSTEP                      \ row 4 -> 5, the blank one
+  SCANSTEP                      \ row 5 -> 6
+  JSR SprDigitBlock             \ rows 6-13, leaves bufp/svp on row 14
+  SCANSTEP                      \ row 14 -> 15
+  LDX sprSeqX
+  JSR SprRotor5                 \ rows 15-19; row 20 is blank, so no walk
+  RTS
+
+\ ---- the wrap fallback -------------------------------------
+.sd_loop
   LDX sprSlot
   LDA sprFrame,X                \ phase*21, the row walk increments it
   TAY
@@ -701,54 +789,31 @@ ENDMACRO
 \ Y = col*8, so it needs the seven columns to be eight bytes apart in
 \ address order. A row straddling the end of the strip is not, and
 \ there is no way to express the walk in baked-in immediates — so that
-\ row alone drops back to the interpreted slow path. See SprCalcAddr:
-\ four sprites in five clear the whole test up front.
+\ row alone drops back to the interpreted slow path.
+\
+\ This loop only ever runs with sprNoWrap clear, so it does not test
+\ it: the fast path above took every sprite that cleared the test.
+\ For the same reason the digit block never opens here — all eight of
+\ its rows go one at a time, exactly as they always did.
 .sd_notblank
-  LDA drRotSlot,X
-  BMI sd_digit
+  LDA drSeqIdx,X
+  BMI sd_digrow
   CLC
-  ADC sprTabBase                \ the index, worked out before the wrap test
+  ADC sprSeqBase                \ the index, worked out before the wrap test
   TAX                           \ so it survives in X — SprWraps touches only A
-  LDA sprNoWrap
-  BNE sd_comp
   JSR SprWraps
   BCC sd_comp
   JSR SprFetchRow               \ clobbers X, but sd_slow reloads it
   JMP sd_slow
 .sd_comp
-  LDA drDrawLo,X : STA sd_call+1
-  LDA drDrawHi,X : STA sd_call+2
+  LDA drSeqLo,X : STA sd_call+1
+  LDA drSeqHi,X : STA sd_call+2
 .sd_call
   JSR &FFFF
   JMP sd_next
 
-\ ---- the digit block ---------------------------------------
-\ Taken whole when the sprite cleared the wrap test, which is four
-\ times in five. Otherwise the eight rows go one at a time down the
-\ interpreted path, exactly as they always did — the block's glyph
-\ routines address their columns as (bufp),Y and cannot walk a row
-\ that straddles the end of the strip.
-.sd_digit
-  LDA sprNoWrap
-  BEQ sd_digrow
-  LDA sprRow
-  CMP #DR_DIGIT0
-  BNE sd_digrow                 \ only the first row opens the block
-  JSR SprDigitBlock
-  CLC
-  LDA sprRowIdx : ADC #DR_DIGITN : STA sprRowIdx
-  CLC
-  LDA sprRow    : ADC #DR_DIGITN : STA sprRow
-  CMP #SPR_LASTROW
-  BNE sd_blkmore
-  JMP sd_done
-.sd_blkmore
-  JMP sd_row
-
 .sd_digrow
   JSR SprFetchRow               \ fetched and blitted as before
-  LDA sprNoWrap
-  BNE sd_fastrow
   JSR SprWraps
   BCS sd_slow
 .sd_fastrow
@@ -830,9 +895,25 @@ ENDMACRO
   LDA sprPtr0Hi,X : STA bufp+1
   LDA sprScan0,X  : STA sprScan
   LDA sprNoWrapS,X  : STA sprNoWrap   \ the draw's answers, not this frame's:
-  LDA sprTabBaseS,X : STA sprTabBase  \ the sprite may since have moved, and
+  LDA sprSeqBaseS,X : STA sprSeqBase  \ the sprite may since have moved, and
   LDA sprShiftS,X   : STA sprShiftW   \ the rotor has certainly turned
   JSR SprSetSave                \ replays the same walk the draw took
+
+\ The same shape as the draw took, replayed — see SprDrawSlot.
+  LDA sprNoWrap
+  BEQ sr_loop
+  LDX sprSeqBase
+  JSR SprRestore5               \ rows 0-4
+  STX sprSeqX
+  SCANSTEP                      \ row 4 -> 5, the blank one
+  SCANSTEP                      \ row 5 -> 6
+  JSR SprBlkRest                \ rows 6-13, leaves bufp/svp on row 14
+  SCANSTEP                      \ row 14 -> 15
+  LDX sprSeqX
+  JSR SprRestore5               \ rows 15-19
+  RTS
+
+.sr_loop
   LDA #0
   STA sprRow
 .sr_row
@@ -849,42 +930,24 @@ ENDMACRO
 \ The wrap answer is the draw's own, replayed: same start pointer,
 \ same walk, so the same rows take the same path both times and the
 \ save and the restore always agree.
+\ As on the draw side, this loop only ever runs with sprNoWrap clear,
+\ so it does not test it and the block never opens here.
 .sr_notblank
-  LDA drRotSlot,X
-  BMI sr_digit
+  LDA drSeqIdx,X
+  BMI sr_digrow
   CLC
-  ADC sprTabBase
+  ADC sprSeqBase
   TAX
-  LDA sprNoWrap
-  BNE sr_comp
   JSR SprWraps
   BCS sr_slow
 .sr_comp
-  LDA drRestLo,X : STA sr_call+1
-  LDA drRestHi,X : STA sr_call+2
+  LDA drRSeqLo,X : STA sr_call+1
+  LDA drRSeqHi,X : STA sr_call+2
 .sr_call
   JSR &FFFF
   JMP sr_next
 
-\ The block restore does not need the glyphs at all — putting the
-\ background back does not care what was drawn over it, so all seven
-\ columns of all eight rows come back in one walk rather than three.
-.sr_digit
-  LDA sprNoWrap
-  BEQ sr_digrow
-  LDA sprRow
-  CMP #DR_DIGIT0
-  BNE sr_digrow
-  JSR SprBlkRest
-  CLC
-  LDA sprRow : ADC #DR_DIGITN : STA sprRow
-  CMP #SPR_LASTROW
-  BEQ sr_x
-  JMP sr_row
-
 .sr_digrow
-  LDA sprNoWrap
-  BNE sr_fastrow
   JSR SprWraps
   BCS sr_slow
 .sr_fastrow
@@ -996,7 +1059,7 @@ SPR_SPIN = 0                    \ frames between phases; full energy = 0
 .sprPtr0Hi  SKIP SPR_SLOTS
 .sprScan0   SKIP SPR_SLOTS
 .sprNoWrapS SKIP SPR_SLOTS      \ the draw's wrap answer, for the restore
-.sprTabBaseS SKIP SPR_SLOTS     \ the draw's compiled-rotor table base
+.sprSeqBaseS SKIP SPR_SLOTS     \ the draw's rotor-sequence base
 .sprShiftS  SKIP SPR_SLOTS      \ the draw's shift
 
 \ ---- working, one sprite at a time --------------------------
@@ -1006,7 +1069,9 @@ SPR_SPIN = 0                    \ frames between phases; full energy = 0
 .sprY       EQUB 0
 .sprTmpPtr  EQUW 0
 .sprRowIdx  EQUB 0
-.sprTabBase EQUB 0
+.sprSeqBase EQUB 0
+.sprSeqEnd  EQUB 0              \ SprRotor5's end index
+.sprSeqX    EQUB 0              \ the index across the digit block
 .sprShiftW  EQUB 0              \ the shift this draw or restore is using
 .sprGlyphBase EQUB 0            \ 0 or 10: which half of the glyph table
 .sprDig     SKIP 3              \ the droid's three digits, as glyph numbers
