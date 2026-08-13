@@ -147,26 +147,6 @@
   LDA rCount
   CMP #PLAY_ROWS
   BNE dc_loop
-
-\ Display row 0 is the SPLIT row: scanlines line..7 are the top of
-\ the view and belong to map row mapYr, which the loop above just
-\ wrote — but scanlines 0..line-1 belong to map row mapYr+16 and
-\ have just been clobbered. They are invisible now, so the damage
-\ does not show until `line` wraps and this row rotates round to the
-\ bottom of the window. That is the mess a diagonal scroll leaves.
-  LDA line
-  BEQ dc_done
-  STA scanY
-  LDA #0
-  STA rCount
-  JSR SetCell                   \ back to display row 0, same column
-  CLC
-  LDA mapHX   : ADC uCount : STA halfX
-  LDA mapHX+1 : ADC #0     : STA halfX+1
-  CLC
-  LDA mapYr : ADC #PLAY_ROWS : STA cellY
-  JSR DrawHalfPart
-.dc_done
   RTS
 
 \ ============================================================
@@ -285,53 +265,6 @@
   RTS
 
 \ ============================================================
-\ DrawBand — bandN scanlines from absolute map pixel row bandA
-\ ============================================================
-\ Split into at most two character rows. bandN never exceeds the top
-\ speed, so in practice that is one boundary at most, but the loop
-\ does not depend on it.
-.DrawBand
-.db_loop
-  LDA bandA+1 : STA dbTmp+1     \ M = bandA >> 3
-  LDA bandA   : STA dbTmp
-  LSR dbTmp+1 : ROR dbTmp
-  LSR dbTmp+1 : ROR dbTmp
-  LSR dbTmp+1 : ROR dbTmp
-  LDA dbTmp
-  STA cellY
-  SEC                           \ display row = (M - mapYr) AND 15
-  SBC mapYr
-  AND #PLAY_ROWS-1
-  STA rCount
-
-  LDA bandA                     \ first scanline within that row
-  AND #7
-  STA bandScan
-
-  LDA #8                        \ run = min(bandN, 8 - bandScan)
-  SEC
-  SBC bandScan
-  CMP bandN
-  BCC db_run
-  LDA bandN
-.db_run
-  STA bandRun
-
-  JSR DrawBandRows
-
-  CLC                           \ on past what was drawn
-  LDA bandA : ADC bandRun : STA bandA
-  BCC db_nc
-  INC bandA+1
-.db_nc
-  LDA bandN
-  SEC
-  SBC bandRun
-  STA bandN
-  BNE db_loop
-  RTS
-
-\ ============================================================
 \ DoRedraws — draw whatever the move exposed
 \ ============================================================
 \ The band goes first: it is the top or bottom edge of the strip,
@@ -342,10 +275,35 @@
 \ because SetCRTCStart has to park the address BEFORE any drawing.
 \ A band costs most of the window; drawing first pushed the park
 \ past VSync and split the line/scrollS pair across two frames.
+\
+\ WHOLE ROWS, NOT EXPOSED SCANLINES. A band's cost is almost entirely
+\ its 40-character lookup walk — ~10,950 cycles against ~1,371 for a
+\ scanline of copying across the width — and drawing only what the
+\ move exposed paid that walk on every pass that moved at all, twice
+\ whenever the exposed scanlines straddled a character boundary,
+\ which is 7 passes in 8 at top speed. Measured at 2.03 walks per map
+\ row against a floor of 1.
+\
+\ So the strip holds WHOLE map rows: display row r is map row
+\ mapYr+r, all eight scanlines, and the only thing that exposes new
+\ vertical content is mapYr itself changing. The row that has to be
+\ drawn is the one the move vacated, and it is vacated exactly when
+\ its replacement's first scanline becomes visible — see ApplyMove.
+\
+\ That also retires the split row: no display row holds two map rows
+\ any more, so DrawColumn and RedrawAll no longer need their repair
+\ passes, and a full redraw is a valid oracle at any value of `line`.
 .DoRedraws
-  LDA bandN
+  LDA bandDo
   BEQ dor_nb
-  JSR DrawBand                  \ leaves bandN at 0
+  LDA #0
+  STA bandDo
+  STA bandScan
+  LDA #8
+  STA bandRun
+  LDA bandRow : STA cellY
+  LDA bandRc  : STA rCount
+  JSR DrawBandRows
 .dor_nb
 
   LDA colCount
@@ -360,14 +318,13 @@
 .dor_nc
   RTS
 
-.bandA     EQUW 0               \ absolute map pixel row, first exposed
-.bandN     EQUB 0               \ scanlines to draw; 0 = nothing to do
+.bandDo    EQUB 0               \ a character row was crossed: draw one
+.bandRow   EQUB 0               \ which map character row
+.bandRc    EQUB 0               \ and which display row it lands in
 .bandScan  EQUB 0
-.scanY     EQUB 0               \ DrawColumn's split-row repair depth
 .bandRun   EQUB 0
 .colFirst  EQUB 0
 .colCount  EQUB 0
-.dbTmp     EQUW 0
 .dbOdd     EQUB 0               \ mapHX odd: the row starts on a right half
 .dbCount   EQUB 0
 .sDelta    EQUW 0

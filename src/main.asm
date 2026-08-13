@@ -117,8 +117,9 @@ DEBUG_RASTER = FALSE
 \ next frame) — if a band reaches into the play area, that work is
 \ overrunning its window.
 \
-\ Two bands, because the sprites and the edge redraw are separate
-\ budgets and the sprite pool is the one still being cut down:
+\ Three bands — the sprites, the level draw and everything else are
+\ separate budgets, and the two that matter are the ones that grow
+\ with what is happening rather than with the code:
 \
 \   magenta  SprRestoreAll, then SprAnimateAll + SprDrawAll. Two
 \            bands, one either side of the redraw, because that is
@@ -127,8 +128,18 @@ DEBUG_RASTER = FALSE
 \            has to follow the redraw so the save picks up settled
 \            background. Restore is about a third of the sprite cost,
 \            so leaving it untinted would flatter the total.
-\   cyan     everything between: keys, movement, SetCRTCStart and
-\            the edge redraw.
+\   yellow   DoRedraws — the level draw, and the only band that
+\            changes with which way the view is moving. Nothing when
+\            standing still; a thin band for horizontal, since a
+\            column is 16 cells; a much fatter one on the pass that
+\            crosses a character row, which brings in a whole row of
+\            40. Its width IS the cost of a scroll direction, so
+\            steering while watching it is the cheapest way to see
+\            the asymmetry between the axes.
+\   cyan     everything else between the sprite bands: keys,
+\            movement, wall probes and SetCRTCStart. This one should
+\            barely move — if it grows, the growth is in code that
+\            runs every pass regardless.
 DEBUG_DRAW   = FALSE
 
 \ DEBUG_VSYNC writes the number of FIELDS the last main-loop iteration
@@ -153,15 +164,56 @@ DEBUG_DRAW   = FALSE
 \ necessity.
 DEBUG_VSYNC  = FALSE
 
+\ DEBUG_TIME measures one routine in CYCLES, which DEBUG_DRAW cannot:
+\ its bands are only visible where the CRTC is displaying something,
+\ so they show where work FINISHES rather than how long it took.
+\
+\ jsbeeb breakpoints have never fired in this project, so the method
+\ is a User VIA T1 bracket. T1 free-runs at 1 MHz whether or not its
+\ interrupt is enabled, and USR_VIA_IER is cleared at boot, so nothing
+\ else touches it. The System VIA is off limits — T1 there drives the
+\ rupture.
+\
+\   cycles = 2 * ((before - after) AND &FFFF) - DBG_T_OVERHEAD
+\
+\ The counter runs DOWN and at half the CPU clock, hence the subtract
+\ and the doubling. DBG_T_OVERHEAD is the bracket measuring itself,
+\ confirmed by timing a pass with nothing to draw.
+\
+\ Two things make a reading mean something:
+\
+\ ONE CALL SITE AT A TIME. Instrumenting two reliably hangs the main
+\ loop. Move the JSR inside TimeCall rather than adding a second.
+\
+\ DRIVE THE SCROLL BY POKING dbgSpdX/dbgSpdY, NOT BY HOLDING A KEY.
+\ A keypress injected at a fixed cycle count lands a pass earlier or
+\ later once the code speed changes, and two runs then diverge for
+\ reasons that have nothing to do with the change under test. A poked
+\ speed is exact, needs no acceleration ramp, and CheckWalls is
+\ skipped while it is set so a wall cannot cut the run short. Both
+\ zero gives the keys back.
+\
+\ dbgBands and dbgCols count the WORK, so cost per band pass and per
+\ column comes out of one run rather than needing a controlled one.
+\ Read the addresses out of the beebasm listing after every build —
+\ they shift constantly.
+\
+\ Emulation is deterministic, so one sample is exact. Averaging still
+\ matters for anything a sprite touches: the rotor phase cycles every
+\ 8 passes and the per-phase spread is a few hundred cycles.
+DEBUG_TIME   = FALSE
+DBG_T_OVERHEAD = 46
+
 \ TEST_DROIDS parks six static droids around the player at deck load,
 \ so the sprite pool can be looked at and measured before droid.asm
 \ exists. Scaffolding — see src/droidtest.asm.
-TEST_DROIDS  = TRUE
+TEST_DROIDS  = FALSE
 TD_DECK      = 1                \ CentreOnDeck lands the player somewhere
                                 \ walkable here; on some decks it does not,
                                 \ see BUGS.md
-DBG_SPR      = 5                \ magenta
-DBG_REDRAW   = 6                \ cyan
+DBG_SPR      = 5                \ magenta — the sprite pool
+DBG_LEVEL    = 3                \ yellow  — DoRedraws, the level draw
+DBG_REDRAW   = 6                \ cyan    — keys, movement, CRTC park
 
 \ ---- screen geometry ---------------------------------------
 \ These live here rather than in screen.asm/rupture.asm because
@@ -310,6 +362,8 @@ SYS_VIA_T1LH = &FE47            \ latch only — does not reload the counter
 SYS_VIA_ACR  = &FE4B
 SYS_VIA_IER  = &FE4E
 USR_VIA_IER  = &FE6E
+USR_VIA_T1CL = &FE64            \ free-running 1 MHz counter — DEBUG_TIME
+USR_VIA_T1CH = &FE65
 
 \ ---- sprite scratch, above the panel and below the play buffer ----
 \ &5480-&57FF is the ~900 bytes left over between the panel's last
@@ -479,16 +533,31 @@ ENDIF
   \ Z / X left-right, K / M up-down. The keys feed a direction pair
   \ and the direction pair feeds an accelerating speed, so the view
   \ position moves by 0-7 pixels a frame rather than a fixed step.
+IF DEBUG_TIME
+  JSR DbgSpeedOverride          \ a poked speed takes the controls over
+  BNE ml_poked                  \ and skips the walls; zero gives them back
+ENDIF
   JSR ReadKeys
   JSR CalcSpeed
   JSR CheckWalls                \ before the move, as the C64 does: it
-  JSR ApplyMove                 \ zeroes the speed the move would apply
+.ml_poked                       \ zeroes the speed the move would apply
+  JSR ApplyMove
 
   \ Park the CRTC address ONCE, with every axis accounted for, and
   \ before any drawing — the IRQ latches it at frame row 3, only a
   \ few rows into this window.
   JSR SetCRTCStart
+IF DEBUG_DRAW
+  LDA #DBG_LEVEL : JSR DbgSetBg \ the level draw on its own: it is the
+ENDIF                           \ band that varies with the direction
+IF DEBUG_TIME
+  JSR TimeCall                  \ TimeCall calls DoRedraws — see its header
+ELSE
   JSR DoRedraws
+ENDIF
+IF DEBUG_DRAW
+  LDA #DBG_REDRAW : JSR DbgSetBg
+ENDIF
 
   \ Deck keys are edge triggered: one press steps one deck however
   \ long it is held. A blocking wait-for-release deadlocks if the
@@ -742,6 +811,84 @@ INCLUDE "src/player.asm"
 INCLUDE "src/sprite.asm"
 IF TEST_DROIDS
 INCLUDE "src/droidtest.asm"
+ENDIF
+
+IF DEBUG_TIME
+\ ============================================================
+\ TimeCall — bracket ONE routine with the User VIA T1 counter
+\ ============================================================
+\ To measure something else, change the JSR below and move the call
+\ site in the main loop. Do not add a second bracket — see the note
+\ on DEBUG_TIME.
+\
+\ The 16-bit read is not atomic: if the low byte wraps between the two
+\ reads the high byte is one too high, worth 1024 cycles. That is a
+\ ~1% chance per reading and 0.1% of a typical total, so it is left
+\ alone rather than paid for on every pass.
+\
+\ Reading it out, per run:
+\   dbgAcc / dbgN     ticks per pass; cycles = 2*ticks - DBG_T_OVERHEAD
+\   dbgBands, dbgCols what that bought — band passes and columns drawn
+\
+\ Zero dbgAcc..dbgCols to start a run, poke dbgSpdX/Y, let it run a
+\ known number of passes, read them back.
+.TimeCall
+  LDA bandDo                    \ the work this pass is about to do
+  CLC : ADC dbgBands : STA dbgBands
+  BCC tc_b
+  INC dbgBands+1
+.tc_b
+  LDA colCount
+  CLC : ADC dbgCols : STA dbgCols
+  BCC tc_c
+  INC dbgCols+1
+.tc_c
+  LDA USR_VIA_T1CL : STA dbgT0
+  LDA USR_VIA_T1CH : STA dbgT0+1
+
+  JSR DoRedraws                 \ <-- the routine under test
+
+  LDA USR_VIA_T1CL : STA dbgT1
+  LDA USR_VIA_T1CH : STA dbgT1+1
+  SEC                           \ the counter runs down
+  LDA dbgT0   : SBC dbgT1   : STA dbgD
+  LDA dbgT0+1 : SBC dbgT1+1 : STA dbgD+1
+  CLC                          \ 24-bit: 16 would wrap in ~10 passes
+  LDA dbgAcc   : ADC dbgD   : STA dbgAcc
+  LDA dbgAcc+1 : ADC dbgD+1 : STA dbgAcc+1
+  LDA dbgAcc+2 : ADC #0     : STA dbgAcc+2
+  INC dbgN
+  RTS
+
+\ ============================================================
+\ DbgSpeedOverride — a poked speed instead of the controls
+\ Z set if nothing is poked, in which case the keys still work.
+\ ============================================================
+.DbgSpeedOverride
+  LDA dbgSpdX
+  ORA dbgSpdX+1
+  ORA dbgSpdY
+  ORA dbgSpdY+1
+  BEQ dso_x
+  LDA dbgSpdX   : STA xSpd
+  LDA dbgSpdX+1 : STA xSpd+1
+  LDA dbgSpdY   : STA ySpd
+  LDA dbgSpdY+1 : STA ySpd+1
+  LDA #1                        \ Z clear: the caller skips CheckWalls
+.dso_x
+  RTS
+
+.dbgSpdX   EQUW 0               \ 8.8 px per pass; &0700 is top speed
+.dbgSpdY   EQUW 0
+.dbgT0     EQUW 0
+.dbgT1     EQUW 0
+.dbgD      EQUW 0
+.dbgAcc    EQUB 0
+           EQUB 0
+           EQUB 0               \ 24-bit sum of T1 ticks
+.dbgN      EQUB 0               \ passes accumulated
+.dbgBands  EQUW 0               \ band passes drawn over those passes
+.dbgCols   EQUW 0               \ columns drawn
 ENDIF
 
 \ ---- absolute working storage ------------------------------

@@ -13,8 +13,13 @@ direction including full diagonal. 16 decks, per-deck palette and charset built 
 up/down, cursor up/down change deck, SPACE forces a full redraw.
 
 **Next up: Layer 5, droids** — the same movement model applied to non-player droids, plus
-pathfinding and sprite slot allocation. There is ~14,000 cycles of identified but unclaimed
+pathfinding and sprite slot allocation. There is ~10,000 cycles of identified but unclaimed
 optimisation listed at the end of Layer 4; spend it when droids start competing for the frame.
+
+The level draw was measured and rewritten on 2026-08-13: the band brings in **whole character
+rows** on the pass that crosses into them, rather than the scanlines a move exposed. Full-diagonal
+redraw went 38,472 → 28,143 cycles a pass, the split row stopped existing, and 230 bytes came back.
+See *The level draw* under Layer 4's frame budget.
 
 **Before trusting any speed number, read the speed model section of Layer 4.** The C64's constants
 are per `GameLoop` iteration and an iteration is 2–3 frames, not 1. Every droid speed in
@@ -22,14 +27,16 @@ are per `GameLoop` iteration and an iteration is 2–3 frames, not 1. Every droi
 
 Three things anything drawing into the play buffer has to know:
 
-1. **Display row 0 is a split row** — it can hold two map rows at once, in disjoint scanline
-   ranges. Anything writing whole cells into it must repair scanlines `0..line-1` from map row
-   `mapYr+16`, the way `DrawColumn` and `RedrawAll` do. This has already caused one bug. The player
-   sprite sidesteps it by construction: it sits in strip rows 6-9 and cannot reach rows 0 or 15.
+1. **Display row *r* holds map row `mapYr + r`, all eight scanlines.** That is the strip's
+   invariant and it is now unconditional — there is no split row. It used to be one: display row 0
+   aliased map rows `mapYr` and `mapYr+16` in disjoint scanline ranges, and everything writing a
+   whole cell into it needed a repair pass. That went with the whole-row band; see *The level draw*
+   below. Anything new drawing into the buffer inherits the simple rule.
 2. **Adjacent 4-pixel columns are 8 bytes apart, not 1.** Consecutive bytes within a column are
    consecutive scanlines. This cost a build.
 3. **The draw window is frame rows 23 → 8 of the next frame**, released by `drawFlag` at `P+184`
-   when the play area stops displaying. Everything shares it, and it is already full.
+   when the play area stops displaying. Everything shares it. `DEBUG_DRAW` tints it: magenta the
+   sprites, yellow the level draw, cyan everything else.
 
 **Verification that actually works here:** diff the play buffer against `RedrawAll` at the same
 position (SPACE), byte for byte. Screenshots have repeatedly said "fine" when it was not. Drive it
@@ -1273,15 +1280,107 @@ the bank, in rough order of value, for when droids start competing for the frame
 
 | | worth |
 |---|---|
-| Inline `CopyRun` / `BufNextUnit` / `CellXInc` — 72 cycles of call overhead per character | ~5,800 |
+| Inline `CopyRun` / `BufNextUnit` / `CellXInc` — 60 cycles of call overhead per character | ~2,400 |
 | Sprite: precompose the current phase instead of `PlyFetchRow` per row | ~2,500 |
 | Cache the previous frame's 40 row pointers — group 2 of frame N is group 1 of frame N+1 | ~2,300 |
-| Unroll `DrawColumn`'s 8-byte copy | ~1,300 |
+| Unroll `DrawColumn`'s 8-byte copy | ~1,100 |
 | Replace `keydown`'s OSBYTE `&81` with a direct System VIA matrix scan | ~2,000 |
+
+The first and last of those moved when the band went to whole rows: only one band pass runs per
+game pass now, so inlining is worth half what it was.
 
 **The deadlines are staggered and tighter than a frame**, which matters more than the frame total:
 an **up**-band and the columns both display at `P+64`, so they share only 192 scanlines (24,576
 cycles), while a **down**-band has until `P+184` of the next frame.
+
+#### The level draw — where its time goes, measured
+
+Measured 2026-08-13 with **`DEBUG_TIME`** in `main.asm` — a User VIA T1 bracket around one routine,
+plus a poked `dbgSpdX`/`dbgSpdY` that takes the controls over and skips `CheckWalls`, so a run is
+exact and repeatable in a way a held key is not. Its header carries the arithmetic and the two
+rules that make a reading mean anything (one call site; poke, do not press). One game pass is
+2 fields = **79,872 cycles**; top speed is 7 px a pass.
+
+The band's cost separates cleanly into a per-row entry fee and a per-scanline copy, fitted from
+three vertical speeds whose bands each fall inside one character row (1, 2 and 4 px a pass):
+
+```
+band = 10,954 per DrawBandRows pass  +  1,371 per scanline across the 320 px width
+```
+
+Per character across the 40-character width that is **274 fixed + 34 a scanline**. The fixed part,
+by static count: `BandCharPtr` 99 (36%), two `BufNextUnit` 66, two `CopyRun` call+setup 34,
+`CellXInc` 20, `chp + 8` 13, loop control 8. **Half of it is JSR/RTS and pointer arithmetic, not
+lookups** — which is what makes the inlining line in the table above real.
+
+A column is **5,005 cycles**, 313 per 8-byte cell: `ColCharPtr` ~114, the copy 129, pointer advance
+and wrap test 26, loop control 18. It spends 40% of its time copying against the band's 23%,
+because one lookup serves 8 bytes there instead of 2.
+
+Per byte written: band 51 cycles, column 40, against a floor of ~18 for the copy loop itself.
+
+##### Whole rows, not exposed scanlines
+
+`DrawBand` used to draw exactly the scanlines a move exposed, splitting them across two character
+rows whenever they straddled a boundary — which at 7 px a pass is 7 passes in 8. That paid the
+40-character lookup walk **2.03 times per map row** against a floor of 1, measured.
+
+It now draws one whole character row, and only on the pass that crosses into it. The copy volume is
+identical at every speed — all 8 scanlines of every row get drawn either way — so the whole saving
+is the eliminated duplicate walk, and it is worth **~10,000 cycles a pass at any non-zero vertical
+speed**, including 1 px/pass where the old scheme paid a full walk to move one scanline.
+
+| per pass, 7 px | before | after | |
+|---|---|---|---|
+| horizontal | 8,920 | 8,759 | −2% |
+| vertical | 28,527 | **19,655** | **−31%** |
+| full diagonal | 38,472 | **28,143** | **−27%** |
+| band passes per 42 game passes | 73 | **37** | one per crossing |
+| cost of one band pass | — | 22,311 | model says 21,922 |
+
+Peak improves as well as average — the worst pass was 2 rows + 7 scanlines = 31,505, and is now
+1 row + 8 = 22,311 — which matters more, because the deadline is per pass and staggered.
+
+**It costs no window height, and that is the part worth understanding.** The handover is exactly
+clean with the 16-row strip: going down, when `mapYr` reaches `M+1` the window starts at
+`(M+1)*8 + line'`, so map row `M` is wholly above it at the moment map row `M+16` — which occupies
+the same physical row, since old relative 0 is new relative 15 — needs its first scanline. Going
+up, `line < d` is precisely the condition for the decrement and also the condition for the bottom
+row having left the window. The 16th row already given up to smooth scrolling *is* the slack this
+needs.
+
+**And it retires the split row.** Every physical row now holds one map row entire, so
+`DrawColumn`'s repair pass, `RedrawAll`'s repair pass, and `DrawHalfScan`/`DrawHalfPart` are all
+deleted — **230 bytes**, and `RedrawAll` becomes a valid oracle at any value of `line`, which it
+was not. **BUGS #1 should be moot**; re-run its tests before closing it.
+
+The one new constraint: a pass must cross at most one row boundary, or the second crossing is never
+drawn and the strip holds a stale row that only shows when it scrolls into view. `ASSERT
+PLY_MAXSPD <= 8 * 256` in `player.asm` fails the build rather than leaving that to be discovered in
+play.
+
+##### The budget, and one measurement trap
+
+Stationary with seven sprites live, the loop is **idle 40,729 of 79,872 cycles**, corroborating the
+39,212 measured during the sprite work. The full-diagonal level draw was consuming 38,472 of that —
+95% of the standing headroom — and now consumes 28,143, leaving ~12,600.
+
+*Do not measure idle while scrolling to check this.* `TestDroidsUpdate` pins the test droids to
+world positions, so they leave the view within ~10 passes and the sprite cost collapses; measured
+idle under a diagonal was a flattering 24,583. The 95% figure is the sum of two independently
+measured quantities, which is the right way round.
+
+##### Reading `DEBUG_DRAW`
+
+The bands only appear where the CRTC is displaying something. From `drawFlag` release at `P+184`
+through VSync to the next panel at `P+312`, nothing is display-enabled — R6 has already ended the
+play cycle and the tail displays no rows — so that whole stretch is black whatever the palette
+says. The panel is the first place a tint can land, 128 scanlines after the loop starts.
+
+So the yellow band shows **where the level draw finishes, not how long it took**. No yellow means
+it ended before `P+312`, not that it was free: horizontal scrolling shows no bands at all. Yellow
+reaching into the play area means the draw is still writing while the raster reads — on a
+row-crossing pass it currently does, by about five rows.
 
 #### Verified
 
@@ -1296,6 +1395,24 @@ vertical directions:
 In both runs some bytes differed and every one was inside the sprite's own footprint, where the
 rotor had spun between the two dumps. Compute that footprint and exclude it rather than staring at
 the diff wondering — it depends on `scrollS`, `line` and `plyUnit`.
+
+Re-verified after the whole-row band, this time with `JSR SprDrawAll` poked to NOPs so the rotor
+could not pollute the diff at all — simpler than computing the footprint, and worth doing that way
+from now on:
+
+| | result |
+|---|---|
+| odd `mapHX` (137), `line` = 1, down-right diagonal | **0 differences in 10240** |
+| odd `mapHX` (107), `line` = 4, up-left then down — `line` wrapped both ways | **0 differences in 10240** |
+| even `mapHX` (142), `line` = 3, after an 11M-cycle diagonal through the vertical clamp | **0 differences in 10240** |
+
+Then the clean build with sprites live: diagonal scrolling and a deck change both render correctly,
+no torn top or bottom row.
+
+> **jsbeeb will not boot an unpadded SSD.** It hangs in the DFS FDC poll at `&ACAE` loading
+> `PARASPR`, because beebasm's image ends mid-track and jsbeeb will not read the last partial one.
+> It reproduces from BASIC with `*LOAD PARASPR`, so it is not the game. Pad a copy to 200K before
+> handing it to the emulator. This cost an hour before it was recognised as an emulator problem.
 
 ### Layer 5 — Droid movement
 `GetNewDir`, `AdvanceMapPos`, `CheckDroidAdvance` and the waypoint logic — the same speed model
@@ -1732,8 +1849,8 @@ Single-pass flat build, everything included from `main.asm`. No linker.
 |---|---|
 | `main.asm` | **Live.** Constants, memory map, main loop, IRQ dispatch. Geometry constants live here because beebasm resolves them in file order and the other files need them. |
 | `rupture.asm` | **Live.** Three-cycle vertical rupture, the T1 state machine, `FillPanel`, `DbgSetBg`. |
-| `screen.asm` | **Live.** `SetupScreen`, `SetCRTCStart`, `DrawHalf`/`DrawHalfScan`/`DrawHalfPart`, `HalfPtr`, `MapChar`, `RedrawAll`, buffer wrapping. |
-| `scroll.asm` | **Live.** Offset tables, `SetCell`, `DrawScanline`, `DrawColumn`, the four scroll directions, `DoRedraws`. |
+| `screen.asm` | **Live.** `SetupScreen`, `SetCRTCStart`, `DrawHalf`, `HalfPtr`, `BandSetRow`/`BandCharPtr`, `ColSetup`/`ColCharPtr`, `MapChar`, `RedrawAll`, buffer wrapping. |
+| `scroll.asm` | **Live.** Offset tables, `SetCell`, `DrawColumn`, `DrawBandRows`, `DoRedraws`. |
 | `level.asm` | **Live.** Deck decode, `BuildCharset`, `BuildLUTs`, `SetPalette`, `CentreOnDeck`. |
 | `zeropage.asm` | **Dead** — not included. Inherited scaffolding; the live ZP map is in `main.asm`. |
 | `hardware.asm` | **Dead** — not included. Inherited; live register definitions are in `main.asm`. |

@@ -11,6 +11,13 @@ Found 2026-08-10 while verifying the Layer 5 sprite save-geometry change (`3f69b
 
 ## 1. `RedrawAll`'s split-row repair has no effect — the debug oracle is wrong
 
+> **Probably moot as of 2026-08-13, not fixed.** The band now draws whole character rows, so no
+> display row aliases two map rows, and both repair passes — `RedrawAll`'s and `DrawColumn`'s —
+> were deleted along with `DrawHalfPart`. `RedrawAll` is now sixteen whole rows from `mapYr`, which
+> *is* the strip's invariant, and it diffed byte-identical against incremental scrolling at
+> `line` = 1, 3 and 4. The contradiction below was never resolved, so this entry stays until
+> someone re-runs its own tests and confirms there is nothing left to explain.
+
 **Severity:** does not affect the game. Affects verification only — but it affects *every*
 layer's verification, which is why it is first.
 

@@ -106,8 +106,9 @@ shadow-RAM double buffering. Do not build on them.
 ## Reference documents
 
 - `PLAN.md` — the live plan; decisions, layers, status
-- `BUGS.md` — open defects, with the evidence and what has been ruled out. Read it before
-  trusting the SPACE debug redraw as an oracle: it is wrong on the split row when `line != 0`
+- `BUGS.md` — open defects, with the evidence and what has been ruled out. It used to warn that the
+  SPACE debug redraw was wrong on the split row when `line != 0`; the split row no longer exists,
+  so `RedrawAll` is a valid oracle at any scroll position — but read the entry's own caveat
 - `ANNOTATION.md` — analysis of the C64 original: memory map, subroutines, hardware, data tables
 - `GRAPHICS.md` — graphics extraction reference for the MODE 1 conversion
 - `C:\Users\khcon\OneDrive\BEEB\Projects\llm-beeb-wiki` — BBC hardware knowledge base; consult for

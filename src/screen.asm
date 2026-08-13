@@ -164,38 +164,10 @@
   BPL dh_loop
   RTS
 
-\ ============================================================
-\ DrawHalfScan — one SCANLINE of one 4-pixel column cell
-\ As DrawHalf, but copies only scanline scanY. Both source and
-\ destination are 8-byte units indexed the same way, so the
-\ scanline number is the offset in each.
-\ ============================================================
-.DrawHalfScan
-  JSR HalfPtr
-  LDY scanY
-  LDA (chp),Y
-  STA (bufp),Y
-  RTS
-
-\ ============================================================
-\ DrawHalfPart — scanlines 0..scanY-1 of one 4-pixel column cell
-\ The part of the split row that is ABOVE the visible top edge and
-\ therefore belongs to map row mapYr+16, not mapYr. Anything that
-\ writes a whole cell into display row 0 has to put this back.
-\ ============================================================
-.DrawHalfPart
-  LDA scanY
-  BEQ dhp_none                  \ line 0: the row is not split
-  JSR HalfPtr
-  LDY #0
-.dhp_loop
-  LDA (chp),Y
-  STA (bufp),Y
-  INY
-  CPY scanY
-  BNE dhp_loop
-.dhp_none
-  RTS
+\ DrawHalfScan and DrawHalfPart lived here: single-scanline and
+\ partial-cell writes, both of them only ever used to repair the
+\ split row. The strip holds whole map rows now, so there is no
+\ split row and nothing needs repairing — see DoRedraws.
 
 \ ============================================================
 \ HalfPtr — chp = charset bytes for the cell at (halfX, cellY)
@@ -508,21 +480,10 @@
 .ra_done
   LDA #0 : STA rowOfs : STA rowOfs+1
 
-\ The loop above wrote 16 whole rows from mapYr, which is only right
-\ when line = 0. Otherwise display row 0 is split, and its scanlines
-\ 0..line-1 belong to map row mapYr+16. Putting that back here means
-\ a full redraw is a true repair at ANY scroll position — which also
-\ makes it a valid oracle to diff the incremental scrolling against
-\ at any value of line, not just 0.
-  LDA line
-  BEQ ra_nosplit
-  LDA #0
-  STA rCount
-  STA bandScan
-  LDA line
-  STA bandRun
-  CLC
-  LDA mapYr : ADC #PLAY_ROWS : STA cellY
-  JSR DrawBandRows
-.ra_nosplit
+\ Sixteen whole rows from mapYr IS the strip's invariant now — display
+\ row r holds map row mapYr+r entire — so this is a true repair at any
+\ scroll position and needs no split-row pass after it. That makes it
+\ a valid oracle to diff the incremental scrolling against at any
+\ value of `line`, which it was not while the strip aliased map rows
+\ mapYr and mapYr+16 into display row 0.
   RTS

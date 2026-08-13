@@ -87,6 +87,13 @@ PLY_DECEL  = (C64_DECEL * FRAME_LOCK * FRAME_LOCK) / (PLY_ITER_FRAMES * PLY_ITER
 PLY_MAXSPD = (C64_MAXSPD * 256 * FRAME_LOCK) / PLY_ITER_FRAMES  \ 8.8
 PLY_MAXNEG = 65536 - PLY_MAXSPD
 
+\ The redraw brings in ONE whole character row per pass, because a
+\ pass can cross at most one row boundary. At 8 px or more it could
+\ cross two, the second would never be drawn, and the strip would
+\ hold a stale row that only shows once it scrolls into view — so
+\ this is a hard ceiling on the vertical speed, not a preference.
+ASSERT PLY_MAXSPD <= 8 * 256
+
 MAX_PX_X = (MAP_CHAR_W * 8) - 320       \ 1728, view origin
 MAX_PX_Y = MAX_Y * 8                    \ 384; mapYr must not pass MAX_Y,
                                         \ or the split row reads map row 64
@@ -501,6 +508,13 @@ PLY_REFY = 63                   \ from the view's top edge, sprite top + 13
   ASL sDelta : ROL sDelta+1
   ASL sDelta : ROL sDelta+1
 
+\ dRows is also what says whether a character row has to be drawn, so
+\ the band is recorded here rather than from the pixel delta. Crossing
+\ a row boundary is the ONLY thing that exposes new vertical content:
+\ within a row the strip already holds all 8 scanlines, drawn when the
+\ row was brought in.
+  LDA #0
+  STA bandDo
   SEC                           \ dRows = mapYr - oldMapYr, in [-1, 1]
   LDA mapYr
   SBC oldMapYr
@@ -509,11 +523,25 @@ PLY_REFY = 63                   \ from the view's top edge, sprite top + 13
   CLC
   LDA sDelta   : ADC #LO(ROW_BYTES) : STA sDelta
   LDA sDelta+1 : ADC #HI(ROW_BYTES) : STA sDelta+1
-  JMP am_norow
+
+  CLC                           \ down: the new bottom row, mapYr+15, into
+  LDA mapYr : ADC #PLAY_ROWS-1  \ display row 15 — the one map row mapYr-1
+  STA bandRow                   \ has just vacated
+  LDA #PLAY_ROWS-1
+  STA bandRc
+  JMP am_haverow
 .am_rowup
   SEC
   LDA sDelta   : SBC #LO(ROW_BYTES) : STA sDelta
   LDA sDelta+1 : SBC #HI(ROW_BYTES) : STA sDelta+1
+
+  LDA mapYr                     \ up: the new top row, into display row 0
+  STA bandRow
+  LDA #0
+  STA bandRc
+.am_haverow
+  LDA #1
+  STA bandDo
 .am_norow
   JSR ScrollAddS
 
@@ -538,39 +566,6 @@ PLY_REFY = 63                   \ from the view's top edge, sprite top + 13
   LDA #0
   STA colFirst                  \ the leftmost |dUnits| columns
 .am_nocols
-
-\ Vertically, |dy| scanlines at the leading edge, named by absolute
-\ map pixel row so that DrawBand can place them without caring which
-\ display row they land in.
-\   down: rows [oldPosY + 128, posY + 128)
-\   up:   rows [posY, oldPosY)
-  SEC
-  LDA posY   : SBC oldPosY   : STA amDY
-  LDA posY+1 : SBC oldPosY+1 : STA amDY+1
-  LDA amDY
-  ORA amDY+1
-  BEQ am_noband
-  LDA amDY+1
-  BMI am_up
-
-  LDA amDY                      \ moving down: the new bottom edge
-  STA bandN
-  CLC
-  LDA oldPosY   : ADC #LO(PLAY_ROWS*8) : STA bandA
-  LDA oldPosY+1 : ADC #HI(PLAY_ROWS*8) : STA bandA+1
-  RTS
-.am_up
-  LDA amDY                      \ bandN = -amDY
-  EOR #&FF
-  CLC
-  ADC #1
-  STA bandN
-  LDA posY   : STA bandA
-  LDA posY+1 : STA bandA+1
-  RTS
-.am_noband
-  LDA #0
-  STA bandN
   RTS
 
 \ ============================================================
@@ -772,7 +767,7 @@ PLY_REFY = 63                   \ from the view's top edge, sprite top + 13
   STA ySpd : STA ySpd+1
   STA posXf : STA posYf : STA plyXf
   STA line
-  STA bandN
+  STA bandDo
   STA colCount
   RTS
 
@@ -796,4 +791,3 @@ PLY_REFY = 63                   \ from the view's top edge, sprite top + 13
 .axDir     EQUB 0
 .amTmp     EQUW 0
 .amDU      EQUB 0
-.amDY      EQUW 0
