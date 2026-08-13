@@ -385,28 +385,75 @@ def emit_rotor_code(f, rows, slots, row_slot):
                 f.write('  EQUB ' + ','.join(
                     pick(shift, slots[phase][row_slot[r]]) for r in seq_rows) + '\n')
     # ---- B: one straight-line program per (shift, phase) -------------
-    # Every rotor routine now ends by walking, so a program is just the ten
-    # calls in drawing order with the digit block in the middle - no index,
-    # no counter, no end test. The two explicit walks are the blank rows 5
-    # and 14; the block does its own eight.
-    for kind, tab, blk, pick in (
-            ('drPrg',  'drPrgLo',  'SprDigitBlock',
-             lambda s_, k: labels[(s_, k)]),
-            ('drRPrg', 'drRPrgLo', 'SprBlkRest',
-             lambda s_, k: rest_for(s_, k))):
-        f.write('\n')
-        for shift in (0, 1):
-            for phase in range(FRAMES):
-                f.write('.%s%d_%d\n' % (kind, shift, phase))
-                for n, r in enumerate(seq_rows):
-                    if n == 5:
-                        f.write('  SCANSTEP\n')          # row 5, blank
-                        f.write('  JSR %s\n' % blk)      # rows 6-13
-                        f.write('  SCANSTEP\n')          # row 14, blank
-                    f.write('  JSR %s\n'
-                            % pick(shift, slots[phase][row_slot[r]]))
-                f.write('  RTS\n')
+    # Every rotor routine ends by walking, so a program is just the calls in
+    # drawing order with the digit block in the middle - no index, no counter,
+    # no end test. The two explicit walks are the blank rows 5 and 14; the
+    # block does its own eight.
+    #
+    # THE LAST CALL IS A JMP. The program ends in RTS, so a JSR followed by
+    # that RTS is a tail call written the long way: 9 cycles instead of 18,
+    # and one byte shorter.
+    #
+    # THE RESTORE HALVES ARE MERGED. A restore routine is keyed on the COLUMN
+    # SET, and the ten rows of a sprite draw only four distinct sets, so the
+    # sequence comes out as five identical pairs - 00,00 02,02 03 | 03 02,02
+    # 01,01. It also depends only on (shift, phase>>2), because that is all
+    # the column set depends on. So instead of ten calls there are two, to a
+    # routine per half with all five rows inlined: eight routines cover every
+    # shift and phase. That is 8 of the 10 JSR/RTS pairs gone.
+    #
+    # The draw gets none of this: its ten rows are ten DIFFERENT routines
+    # (00,02,04,05,06 | 06,05,04,03,01), and merging them would mean a copy
+    # per phase of the rows that are currently shared.
+    def rest_cols(shift, key):
+        data = shift_row(rows[key]) if shift else rows[key]
+        return tuple(i for i, b in enumerate(data) if b)
 
+    f.write('\n')
+    f.write('\\ Five rows of restore inlined. Only the column set matters, and\n')
+    f.write('\\ that depends on shift and phase>>2 alone - so eight of these\n')
+    f.write('\\ cover all sixteen sequences. The last row of the bottom half\n')
+    f.write('\\ does not walk: nothing reads the pointers after it.\n')
+    for shift in (0, 1):
+        for arr in (0, 1):
+            phase = arr * 4
+            for half, half_rows in ((0, seq_rows[:5]), (1, seq_rows[5:])):
+                f.write('.drRHalf%d_%d_%d\n' % (shift, arr, half))
+                for n, r in enumerate(half_rows):
+                    key = slots[phase][row_slot[r]]
+                    for col in rest_cols(shift, key):
+                        f.write('  LDY #%d*UNIT_BYTES : LDA (svp),Y'
+                                ' : STA (bufp),Y\n' % col)
+                        rest_bytes += 6
+                    if not (half == 1 and n == len(half_rows) - 1):
+                        f.write('  SCANSTEP\n')
+                        rest_bytes += 17
+                f.write('  RTS\n')
+                rest_bytes += 1
+
+    f.write('\n')
+    for shift in (0, 1):
+        for phase in range(FRAMES):
+            f.write('.drPrg%d_%d\n' % (shift, phase))
+            for n, r in enumerate(seq_rows):
+                if n == 5:
+                    f.write('  SCANSTEP\n')                 # row 5, blank
+                    f.write('  JSR SprDigitBlock\n')         # rows 6-13
+                    f.write('  SCANSTEP\n')                 # row 14, blank
+                op = 'JMP' if n == len(seq_rows) - 1 else 'JSR'
+                f.write('  %s %s\n' % (op, labels[(shift, slots[phase][row_slot[r]])]))
+
+    f.write('\n')
+    for shift in (0, 1):
+        for phase in range(FRAMES):
+            f.write('.drRPrg%d_%d\n' % (shift, phase))
+            f.write('  JSR drRHalf%d_%d_0\n' % (shift, phase >> 2))
+            f.write('  SCANSTEP\n')
+            f.write('  JSR SprBlkRest\n')
+            f.write('  SCANSTEP\n')
+            f.write('  JMP drRHalf%d_%d_1\n' % (shift, phase >> 2))
+
+    f.write('\n')
     # Indexed by the SAME sprSeqBase the fallback uses, so entering a program
     # costs a table read and a poke and no arithmetic at all. Only every tenth
     # entry can be reached; the rest are filled to keep the table square.

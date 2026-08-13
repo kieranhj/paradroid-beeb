@@ -1445,9 +1445,10 @@ restore, at 33-37 cycles each. Three changes, each verified byte-identical befor
 | stop the loops after the last drawing row | 5,587 | 2,879 | 8,466 |
 | eight row pointers, so the glyphs stop walking | 5,093 | 2,913 | 8,006 |
 | sequence dispatch + straight-line sprite shape | 4,566 | 2,454 | 7,020 |
-| own bank; walk into the rows, rows into a program | 4,300 | 2,243 | **6,543** |
+| own bank; walk into the rows, rows into a program | 4,300 | 2,243 | 6,543 |
+| merged restore halves, tail calls | 4,283 | 2,095 | **6,378** |
 
-**−3,073 cycles, 32.0%.** Seven sprites cost 45.8K of the 79,872-cycle pass, against 67.3K. The
+**−3,238 cycles, 33.7%.** Seven sprites cost 44.6K of the 79,872-cycle pass, against 67.3K. The
 walk is down from 2,433 to about 800, and from 25% of a sprite to under 10%; dispatch and the
 row loop, 2,000 between them, are down to a couple of hundred.
 
@@ -1529,7 +1530,20 @@ With the space, the two options costed and rejected at step 3b both land:
   table read, a poke and a `JMP` — the program ends in `RTS`, so the tail call returns straight to
   `SprDrawSlot`'s caller. A rotor row costs a `JSR` and an `RTS`.
 
-**−477 cycles for 15 pages of bank.** Less than the −1,220/−1,360 those options were worth against
+Then two more, both from reading the generated programs rather than the model. **A `JSR`
+immediately before the program's closing `RTS` is a tail call written the long way** — `JMP`
+instead, 9 cycles and a byte cheaper, on both sides. And **the restore's ten calls are five
+identical pairs**: a restore routine is keyed on the column set, only four sets exist, and which
+one a row uses depends on nothing but shift and *phase>>2*. So the ten collapse to two calls into
+a routine per half with all five rows inlined — eight routines cover all sixteen sequences, 8 of
+the 10 `JSR`/`RTS` pairs gone, and the bottom half can simply omit its final walk because nothing
+reads the pointers after it. That last point collects the 42 cycles the unroll had been wasting.
+
+The draw gets only the tail call: its ten rows are ten *different* routines (00,02,04,05,06 |
+06,05,04,03,01), and merging them would need a copy per phase of the rows that are currently
+shared.
+
+**−477 cycles for the bank move and the unroll, then −165 more for the roll-up.** Less than the −1,220/−1,360 those options were worth against
 the step-5 baseline, because step 3b's sequence dispatch had already taken most of it — worth
 knowing before costing an option twice.
 
@@ -1552,8 +1566,7 @@ call site.
 
 **What is left.** Per sprite is now ~3,400 of real pixel movement and ~3,100 of everything else,
 of which the largest single items are the six inactive slots scanned every frame (~630) and the
-per-slot setup (~480) — plus 42 cycles the programs waste walking after their last row, which
-wants a no-walk variant of the four end-kind routines to collect. Nothing structural remains.
+per-slot setup (~480). Nothing structural remains.
 **The update rate is the whole remaining problem** — round-robin, then raster-ordered — and it is worth noting that
 round-robin halves all of the above for nothing, which is why it comes before any further
 compiling.
