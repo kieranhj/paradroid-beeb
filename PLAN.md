@@ -19,10 +19,12 @@ optimisation listed at the end of Layer 4; spend it when droids start competing 
 The level draw was measured and rewritten on 2026-08-13, in four steps: the band brings in **whole
 character rows** on the pass that crosses into them rather than the scanlines a move exposed; the
 copy that fills a cell was unrolled once its run length became constant; the `charRemap` unpack
-became a precomputed table; and a character's two halves became one 16-byte run. Full-diagonal
-redraw went 38,472 → **20,482** cycles a pass and vertical 28,527 → **12,225**, and the split row
-stopped existing on the way. More than half a character's cost is now the pixel copy itself. See
-*The level draw* under Layer 4's frame budget, which also lists what is left.
+became a precomputed table; and a character's two halves became one 16-byte run, with `CellXInc`
+inlined behind it. Full-diagonal redraw went 38,472 → **20,065** cycles a pass and vertical
+28,527 → **11,803**, and the split row stopped existing on the way. More than half a character's
+cost is now the pixel copy itself. **The next one worth doing is walking the tile row instead of
+`cellX`, worth ~2,240 a band pass** — see *The level draw* under Layer 4's frame budget, which sets
+out why it needs its own pass rather than being tacked on.
 
 **Before trusting any speed number, read the speed model section of Layer 4.** The C64's constants
 are per `GameLoop` iteration and an iteration is 2–3 frames, not 1. Every droid speed in
@@ -1417,26 +1419,57 @@ not-taken `BCS` at 2 cycles rather than a taken `BCC` at 3.
 
 **−2,359 a band pass for +23 bytes**, against −2,320 predicted.
 
+##### `CellXInc` inlined, and the copy walks Y instead of reloading it
+
+`CellXInc` is 8 cycles of work behind 12 of `JSR` and `RTS`. Inlining it in the loop would have
+pushed the branch at the bottom past its 128-byte reach, so `COPYCELL`/`COPYCHAR` changed from
+`LDY #n` per byte to a single `LDY #0` and `INY` between: **identical at 13 cycles a byte** — `LDY
+#n` and `INY` are both 2 — but 5 bytes a copy against 6. That paid for the inlining twice over and
+the build came out **19 bytes smaller**.
+
+| per pass, 7 px | + 16-byte run | + inlined `CellXInc` |
+|---|---|---|
+| vertical | 12,225 | **11,803** |
+| full diagonal | 20,482 | **20,065** |
+| one band pass | 13,878 | **13,398** |
+
+**−480 a band pass**, exactly as predicted.
+
 ##### Where the level draw stands
 
 | per pass, 7 px | start of 2026-08-13 | now | |
 |---|---|---|---|
-| vertical | 28,527 | **12,225** | **−57%** |
-| full diagonal | 38,472 | **20,482** | **−47%** |
+| vertical | 28,527 | **11,803** | **−59%** |
+| full diagonal | 38,472 | **20,065** | **−48%** |
 
-A character costs 330 cycles, and **more than half of it is now the pixel copy** (176), against a
-third when the day started: `BandCharPtr` 74, buffer advance and wrap test 20, `CellXInc` 20, loop
-control 8. The band has stopped being a lookup walk that happens to copy some bytes.
+A character costs 318 cycles and **more than half of it is the pixel copy** (176), against a third
+when the day started: `BandCharPtr` 74, buffer advance and wrap test 20, `cellX` and loop control
+16, `Y` walk 32. The band has stopped being a lookup walk that happens to copy some bytes.
 
-Still in the bank, and it is thinner than it was:
+##### What is left, and the one worth doing next
+
+**Walk the tile row, not `cellX`** — worth about **2,240 a band pass**, five times anything else on
+the list. `BandCharPtr` spends most of its 74 cycles rediscovering where it is: derive the tile
+column from `cellX`, compare it against the cache, then rebuild `(cellX AND 3) + subRowOfs` as an
+index into the tile. But **a tile is 4 characters wide and those 4 codes are 4 consecutive bytes of
+`tiledefs`**. Restructured as 10 tiles × 4 characters, the inner four are `LDA (tdp),Y : INY` —
+about 25 cycles a character plus ~12 amortised for the tile — against 94 now, and `cellX`
+disappears entirely along with `CellXInc`.
+
+The catch is that a row of 40 characters starting at an arbitrary `cellX` covers 11 tiles with a
+partial one at each end, and that has to compose with the existing odd-`mapHX` half at each end. Two
+nested special cases in the routine that has already produced three bugs, so it wants its own pass
+and the full odd/even, wrapping and non-wrapping diff matrix — not a tack-on.
+
+Smaller and duller, for after that:
 
 | | per band pass |
 |---|---|
-| Inline `CellXInc` and `BandCharPtr`'s own call — 24 cycles a character | ~960 |
+| Inline `BandCharPtr`'s call — 12 cycles a character. Needs its body as a macro, and beebasm cannot uniquify the label inside it, so the body would have to lose its internal branch first | ~480 |
 | Self-modify the copy's addresses to use `abs,Y` instead of `(zp),Y` — 11 cycles a byte instead of 13, less the patching. Marginal, and it is self-modifying code in the hottest loop in the port | ~1,000 |
 
-Beyond that the band is close to its floor: 13 cycles a byte is what `(zp),Y` on both sides costs,
-and 640 bytes have to move.
+Beyond those the band is at its floor: 13 cycles a byte is what `(zp),Y` on both sides costs, and
+640 bytes have to move — 8,320 cycles of the 13,398.
 
 ##### Whole rows, not exposed scanlines
 

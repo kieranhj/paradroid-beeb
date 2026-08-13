@@ -158,13 +158,18 @@
 \ support a case that no longer occurs was the single largest waste
 \ in the band: 13 a byte is the floor for (zp),Y on both sides.
 \
-\ Y is reloaded per byte rather than incremented — same 13 cycles,
-\ and it leaves no ordering dependency between the pairs.
+\ Y is walked with INY rather than reloaded per byte. Both come to 13
+\ cycles a byte — LDY #n is 2 and so is INY — but the walk is 5 bytes
+\ a copy against 6, and in the loop that difference is what keeps the
+\ branch at the bottom in range.
 MACRO COPYCELL
+  LDY #0
   FOR n, 0, 7
-    LDY #n
     LDA (chp),Y
     STA (bufp),Y
+    IF n < 7
+      INY
+    ENDIF
   NEXT
 ENDMACRO
 
@@ -204,10 +209,13 @@ ENDMACRO
 \ it is ever false, and that should not depend on another routine's
 \ arithmetic staying the way it is.
 MACRO COPYCHAR
+  LDY #0
   FOR n, 0, 15
-    LDY #n
     LDA (chp),Y
     STA (bufp),Y
+    IF n < 15
+      INY
+    ENDIF
   NEXT
 ENDMACRO
 
@@ -279,7 +287,10 @@ ENDMACRO
   CMP #HI(BUF_END)              \ lands on a character boundary, so bufp
   BCS dbr_wrap                  \ arrives exactly ON it, never past
 .dbr_now
-  JSR CellXInc
+  INC cellX                     \ inline: CellXInc is 8 cycles of work
+  BNE dbr_cx                    \ behind 12 of JSR and RTS
+  INC cellX+1
+.dbr_cx
   DEC dbCount
   BNE dbr_char
 
