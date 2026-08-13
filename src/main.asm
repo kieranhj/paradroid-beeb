@@ -109,6 +109,27 @@ DEBUG_RASTER = FALSE
 \            the edge redraw.
 DEBUG_DRAW   = FALSE
 
+\ DEBUG_VSYNC writes the number of FIELDS the last main-loop iteration
+\ consumed as a single digit in the top-left corner of the panel — the
+\ static half of the screen, so it does not scroll away and does not
+\ have to be restored under a sprite.
+\
+\ FRAME_LOCK is the nominal reading: a 2 means the iteration fitted its
+\ two fields. A 3 or more means it overran and WaitVSync found the flag
+\ already set, so the rate degraded to 16.7 Hz, 12.5 Hz and so on. This
+\ is the cheap always-on companion to DEBUG_DRAW: that one shows WHICH
+\ work overruns, this one shows THAT it did, without a screenshot.
+\
+\ Deliberately tiny — a 4x5 digit is one MODE 1 byte per scanline, so
+\ drawing it is five unmasked stores and the whole thing costs ~80
+\ cycles of the 80,000 in a pass. Anything that had to mask, or that
+\ spanned more than one byte per row, would start measuring itself.
+\
+\ It costs 117 BYTES of main RAM, which leaves 26 before the tile map
+\ at &2C00. That is the reason it is off by default rather than always
+\ on: there is no room for it and anything else at the same time.
+DEBUG_VSYNC  = FALSE
+
 \ TEST_DROIDS parks six static droids around the player at deck load,
 \ so the sprite pool can be looked at and measured before droid.asm
 \ exists. Scaffolding — see src/droidtest.asm.
@@ -409,6 +430,9 @@ ENDIF
   \ edge redraw and the R12/R13 park both have to land before the
   \ play area is drawn again.
   JSR WaitVSync
+IF DEBUG_VSYNC
+  JSR DbgFrameCount             \ the boundary has just happened, so this
+ENDIF                           \ counts the iteration that has finished
 IF DEBUG_DRAW
   LDA #DBG_SPR : JSR DbgSetBg   \ the restore is sprite time too, and it is
 ENDIF                           \ a third of it — it gets the sprite colour

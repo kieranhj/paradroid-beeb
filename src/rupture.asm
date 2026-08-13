@@ -299,6 +299,65 @@ IF DEBUG_RASTER OR DEBUG_DRAW
   JMP DbgSetBg
 ENDIF
 
+IF DEBUG_VSYNC
+\ ============================================================
+\ DbgFrameCount — fields per main-loop iteration, top-left of the panel
+\ ============================================================
+\ vsyncCount is already bumped once per field by IrqHandler's CA1 arm,
+\ so the reading is just the difference across one iteration. Called
+\ immediately after WaitVSync returns, where that boundary has just
+\ happened, so the digit describes the iteration that has finished.
+\
+\ ONE BYTE PER SCANLINE IS THE WHOLE TRICK. A MODE 1 byte is four
+\ pixels and consecutive bytes within a character cell are consecutive
+\ scanlines, so a 4x5 digit is five bytes at five consecutive
+\ addresses — five loads and five stores, no masking, no row stride,
+\ and nothing to save or restore because the panel does not scroll.
+\
+\ Nine or more all read as 9: the point is to notice an overrun, and by
+\ the time an iteration is taking nine fields the exact number is not
+\ the interesting part.
+.DbgFrameCount
+  LDA vsyncCount
+  TAX                           \ this iteration's mark, for next time
+  SEC
+  SBC dbgLastVs
+  STX dbgLastVs
+  CMP #10
+  BCC dfc_digit
+  LDA #9
+.dfc_digit
+  TAX
+  LDA dbgMul5,X
+  TAX
+  LDA dbgFont+0,X : STA PANEL_ADDR+0
+  LDA dbgFont+1,X : STA PANEL_ADDR+1
+  LDA dbgFont+2,X : STA PANEL_ADDR+2
+  LDA dbgFont+3,X : STA PANEL_ADDR+3
+  LDA dbgFont+4,X : STA PANEL_ADDR+4
+  RTS
+
+.dbgLastVs EQUB 0
+.dbgMul5   EQUB 0,5,10,15,20,25,30,35,40,45
+
+\ 4x5 digits, one row per byte. A row is four pixels: bit 3 is the
+\ leftmost. Logical colour 3 wants both of a pixel's bits set, and
+\ those sit four apart in a MODE 1 byte, so the pattern goes in both
+\ nibbles — which is exactly what multiplying by 17 does.
+DBG_PX = 17
+.dbgFont
+  EQUB %1111 * DBG_PX, %1001 * DBG_PX, %1001 * DBG_PX, %1001 * DBG_PX, %1111 * DBG_PX
+  EQUB %0100 * DBG_PX, %1100 * DBG_PX, %0100 * DBG_PX, %0100 * DBG_PX, %1110 * DBG_PX
+  EQUB %1111 * DBG_PX, %0001 * DBG_PX, %1111 * DBG_PX, %1000 * DBG_PX, %1111 * DBG_PX
+  EQUB %1111 * DBG_PX, %0001 * DBG_PX, %0111 * DBG_PX, %0001 * DBG_PX, %1111 * DBG_PX
+  EQUB %1001 * DBG_PX, %1001 * DBG_PX, %1111 * DBG_PX, %0001 * DBG_PX, %0001 * DBG_PX
+  EQUB %1111 * DBG_PX, %1000 * DBG_PX, %1111 * DBG_PX, %0001 * DBG_PX, %1111 * DBG_PX
+  EQUB %1111 * DBG_PX, %1000 * DBG_PX, %1111 * DBG_PX, %1001 * DBG_PX, %1111 * DBG_PX
+  EQUB %1111 * DBG_PX, %0001 * DBG_PX, %0010 * DBG_PX, %0100 * DBG_PX, %0100 * DBG_PX
+  EQUB %1111 * DBG_PX, %1001 * DBG_PX, %1111 * DBG_PX, %1001 * DBG_PX, %1111 * DBG_PX
+  EQUB %1111 * DBG_PX, %1001 * DBG_PX, %1111 * DBG_PX, %0001 * DBG_PX, %1111 * DBG_PX
+ENDIF
+
 .ruptState EQUB 0               \ which rupture stage the next T1 fire is
 .drawFlag  EQUB 0               \ set when the play area is off-display
 .crtcHi    EQUB 0               \ play-area start for the play cycle,
