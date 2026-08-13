@@ -87,7 +87,7 @@ ASSERT SPR_SAVE + SPR_SLOTS * 256 <= PANEL_ADDR
 \ so the furthest byte a slot can reach is block 3 + the widest Y +
 \ the deepest scanline = 3*56 + 48 + 7 = 223. Slots are page-aligned
 \ and 223 < 256, so svp never leaves its page and neither does
-\ (svp),Y — which is why the advances in SprNextScan carry nothing.
+\ (svp),Y — which is why the advances in SCANSTEP carry nothing.
 ASSERT 3 * SPR_BLOCK + (SPR_W - 1) * UNIT_BYTES + 7 < 256
 
 \ A row's 7 columns span 49 bytes, so the fast path needs the whole
@@ -107,7 +107,7 @@ SPR_WRAPLIM = BUF_END - SPR_SPAN
 \
 \ Normally a compiled sprite needs eight variants, one per vertical
 \ alignment. This one needs one. Within a character row a byte is at
-\ col*8 + scan; the scan part is carried by bufp, which SprNextScan
+\ col*8 + scan; the scan part is carried by bufp, which SCANSTEP
 \ advances in step with svp, so Y is always col*8 whatever the
 \ alignment. That is the whole reason the save area was moved into
 \ screen geometry first.
@@ -327,23 +327,45 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
 \ a counter in step with the thing it could be read from. The same
 \ holds for svp (a save block is 56 bytes, a column 8), so either
 \ pointer could answer; bufp is the one already in hand.
-.SprNextScan
+\ IT IS A MACRO, NOT A SUBROUTINE. Only four places walk with svp in
+\ hand — the two row loops and the two block passes — so there are four
+\ expansions of seventeen bytes, and a JSR/RTS pair costs 12 of the 33
+\ cycles a step used to take. The glyphs cannot do this: SprNextScanB
+\ has 140 call sites in the bank and inlining there would cost 2.7K.
+\
+\ The row crossing stays out of line. It is taken on one step in six,
+\ it is 23 bytes, and putting it behind a JSR keeps the macro small
+\ enough to be worth expanding four times.
+\
+\ P%+4 and P%+5 skip the following instruction rather than name a
+\ label: a macro body cannot declare one, because the second expansion
+\ would redefine it. 4 = the 2-byte BNE plus the 2-byte zero-page INC;
+\ 5 = the 2-byte BNE plus the 3-byte JSR.
+\
+\ Not called NEXTSCAN: NEXT is a BeebASM keyword (FOR..NEXT), and a
+\ macro whose name starts with it fails at the invocation with a bare
+\ "Bad expression" pointing at the use, not the definition.
+MACRO SCANSTEP
   INC svp
   INC bufp
-  BNE sns_nc
+  BNE P%+4
   INC bufp+1
-.sns_nc
   LDA bufp
   AND #7
-  BNE sns_x                     \ still inside this character row
+  BNE P%+5                      \ still inside this character row
+  JSR SprScanRow
+ENDMACRO
+
+\ The crossing tail. Entered with bufp already advanced onto what would
+\ be scanline 8, so both pointers move on by stride-8 rather than
+\ stride-7, and WrapBufFwd's RTS returns to the macro site.
+.SprScanRow
   CLC
   LDA svp    : ADC #SPR_BLOCK-8     : STA svp
   CLC
   LDA bufp   : ADC #LO(ROW_BYTES-8) : STA bufp
   LDA bufp+1 : ADC #HI(ROW_BYTES-8) : STA bufp+1
   JMP WrapBufFwd
-.sns_x
-  RTS
 
 \ ============================================================
 \ SprNextScanB — advance bufp ALONE by one scanline
@@ -521,7 +543,7 @@ SPR_GLYPH_STEP = 2 * UNIT_BYTES
   LDY #4*UNIT_BYTES : LDA (bufp),Y : STA (svp),Y
   LDY #5*UNIT_BYTES : LDA (bufp),Y : STA (svp),Y
   LDY #6*UNIT_BYTES : LDA (bufp),Y : STA (svp),Y
-  JSR SprNextScan
+  SCANSTEP
   DEX
   BNE sbk_row
   RTS
@@ -536,7 +558,7 @@ SPR_GLYPH_STEP = 2 * UNIT_BYTES
   LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #5*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #6*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  JSR SprNextScan
+  SCANSTEP
   DEX
   BNE sbr_row
   RTS
@@ -782,7 +804,7 @@ SPR_GLYPH_STEP = 2 * UNIT_BYTES
 
 .sd_next
   INC sprRowIdx
-  JSR SprNextScan
+  SCANSTEP
   INC sprRow
   LDA sprRow
   CMP #SPR_H
@@ -899,7 +921,7 @@ SPR_GLYPH_STEP = 2 * UNIT_BYTES
   LDA sprTmpPtr+1 : STA bufp+1
 
 .sr_next
-  JSR SprNextScan
+  SCANSTEP
   INC sprRow
   LDA sprRow
   CMP #SPR_H
