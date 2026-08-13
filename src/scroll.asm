@@ -237,9 +237,12 @@ ENDMACRO
 \ the port: it runs 40 times a pass on 7 passes in 8, and its cost is
 \ what the scroll rate is made of.
 \
-\ The two copies in the loop are inlined and the two edge cases call
-\ CopyCell, because they run once a pass against the loop's 40 and
-\ the 12 cycles of call are not worth 48 bytes each.
+\ The copy in the loop is inlined. The two edge halves of an odd mapHX
+\ run once a pass against the loop's 40, so 12 cycles of call is not
+\ worth 41 bytes each: the leading one calls CopyCell, and the trailing
+\ one is the LAST thing this routine does, so it falls into CopyCell
+\ instead and shares its RTS. See the note there — that fallthrough is
+\ positional and nothing may come between them.
 .DrawBandRows
   JSR BandSetRow                \ cellY is fixed for the whole pass
   LDA #0
@@ -368,7 +371,19 @@ ENDMACRO
   LDA #&FF                      \ dbTile has moved on without it, so make
   STA tileCol                   \ BandCharPtr's cache miss rather than
   JSR BandCharPtr               \ trust a stale column
-  JSR CopyCell
+
+\ ---- band inner helpers ------------------------------------
+\ The callable form of the 8-byte copy, and also the tail of
+\ DrawBandRows: the trailing left half above ends with JSR BandCharPtr
+\ and then RUNS ON INTO THIS. dbr_done is the same RTS, which is where
+\ the even-mapHX case branches when there is no trailing half at all.
+\
+\ ORDER IS LOAD BEARING. Putting anything between the JSR BandCharPtr
+\ above and the COPYCELL below — or moving CopyCell elsewhere in the
+\ file — silently draws whatever happens to be there into the last
+\ column of every odd-mapHX row. Nothing would fail to assemble.
+.CopyCell
+  COPYCELL
 .dbr_done
   RTS
 
@@ -380,13 +395,6 @@ ENDMACRO
   LDA bufp   : SBC #LO(BUF_SIZE) : STA bufp
   LDA bufp+1 : SBC #HI(BUF_SIZE) : STA bufp+1
   JMP dbr_now
-
-\ ---- band inner helpers ------------------------------------
-\ The callable form, for the two edge halves only.
-.CopyCell
-  COPYCELL
-  RTS
-
 \ BUF_END is page aligned, so the wrap test is one compare on the
 \ high byte and costs 5 cycles when it does not fire — which is
 \ 159 times out of 160.
