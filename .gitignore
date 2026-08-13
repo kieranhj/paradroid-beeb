@@ -2,6 +2,8 @@
 *.SSD
 *.ssd
 *.dsd
+compile.txt
+*.labels
 
 # ---- Third-party tools (fetch locally, see README) ----
 bin/

@@ -45,6 +45,16 @@ Put `beebasm.exe` in `bin/`, then:
 .\build.ps1 -Run     # assemble and launch in b-em
 ```
 
+Or, without PowerShell:
+
+```
+make.bat            :: assemble to PARADROID.SSD
+make.bat run        :: assemble and launch in b-em
+./make.sh           # same, for sh / Git Bash / Linux
+```
+
+Both honour `BEEBASM` and `BEM` environment variables if your tools live elsewhere.
+
 Or directly:
 
 ```
