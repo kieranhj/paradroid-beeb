@@ -1442,10 +1442,15 @@ restore, at 33-37 cycles each. Three changes, each verified byte-identical befor
 | drop dead `svp` work in the glyph passes | 6,226 | 3,226 | 9,452 |
 | read the scanline from `bufp AND 7` | 6,038 | 3,177 | 9,215 |
 | inline the walk as the `SCANSTEP` macro | 5,773 | 2,939 | 8,712 |
-| stop the loops after the last drawing row | 5,587 | 2,879 | **8,466** |
+| stop the loops after the last drawing row | 5,587 | 2,879 | 8,466 |
+| eight row pointers, so the glyphs stop walking | 5,093 | 2,913 | **8,006** |
 
-**−1,150 cycles, 12.0%.** Seven sprites cost 59.3K of the 80,000-cycle pass, against 67.3K. The
-walk is down from 2,433 to about 1,470, and from 25% of a sprite to 17%.
+**−1,610 cycles, 16.7%.** Seven sprites cost 56.0K of the 80,000-cycle pass, against 67.3K. The
+walk is down from 2,433 to about 800, and from 25% of a sprite to under 10%. Code is 44 bytes
+smaller than where it started and the bank 157 bytes smaller.
+
+The restore's +34 on the last row is the ±50 code-layout noise floor, not a regression: nothing
+in the restore path changed, only its addresses.
 
 They are worth distinguishing. The first was *dead work*: glyphs address everything as
 `(bufp),Y` and never read `svp`, so 21 walks a frame were maintaining a value that
@@ -1456,12 +1461,22 @@ whole iteration and the advance into it drew nothing anyone reads. Only the thir
 cycle-shaving — and it was the largest single win, which is worth remembering before assuming
 the clever ones pay best.
 
-**What is left.** Compiling bought the rotor and the digits; this bought the walk. The remaining
-~1,470 is nearly all the digit block's four passes over the same eight scanlines, and the way out
-is eight zero-page row pointers built once per block, so the glyphs address `(rowp3),Y` and do not
-walk at all — same cycle count per access, same code size, ~1,000 cycles. Its tax is the three
-glyph *positions*, currently reached by offsetting one pointer and then needing to offset eight.
-That is the next thing to try, and it does not need the bank space the per-type option wanted.
+**What is left.** Compiling bought the rotor and the digits; these five bought the walk, and the
+walk is now spent — what remains of it is `SprBlkSave`/`SprBlkRest`'s 16 steps and the 26 in the
+row loops, all of them advancing to a row that genuinely draws.
+
+The step-5 tax was worth naming: three glyph *positions* would have meant offsetting eight
+pointers each, which is most of the win. Moving the position out of the pointer and into Y
+(`LDY drYcol0,X`, position held in X across the glyph) costs two cycles a column instead of ~100
+a position, and it is what lets one set of pointers serve all three. The same trick is why the
+shifted glyphs' spill into a shared column still lands correctly: position *p* column 2 and
+position *p+1* column 0 are both Y = (*p*+1)·16.
+
+From here the per-sprite cost is roughly 3,400 of real pixel movement plus ~4,600 of everything
+else, and the remaining large items are the per-row dispatch (~1,000) and the 21-row interpreter
+loop (~1,150). Both are structural: they go only if a whole sprite is compiled per type, phase
+and alignment, which is the 25K option deliberately not taken. **The update rate is the whole
+remaining problem** — round-robin, then raster-ordered.
 
 > **Measuring across builds.** Average over ~128 passes, not 16: the rotor phase cycles every 8
 > and the per-phase spread is a few hundred cycles, so a short average is biased by which phases
@@ -1483,9 +1498,16 @@ That is the next thing to try, and it does not need the bank space the per-type 
 > cycle count — and once the code speed changes, the two builds are not in the same pass when it
 > lands. Step 4's builds parked **three passes apart**. The signature is unmistakable once seen:
 > every rotor row of every sprite differs and the digit rows match exactly, because the rotor
-> depends on phase and the digits on type. Zero `sprFrame` and `sprDelay` after settling and
-> before installing the park. Safe to do mid-run — the restore replays `sprTabBaseS`, which
-> records the phase the draw actually used.
+> depends on phase and the digits on type. Zero `sprFrame` and `sprDelay` before the counted
+> passes. Safe to do mid-run — the restore replays `sprTabBaseS`, which records the phase the
+> draw actually used.
+>
+> **And anchor it at a LOGICAL point, not a cycle count.** Zeroing `sprFrame` mid-pass lands
+> either side of `SprAnimateAll` depending on where that build happens to be, so the two runs
+> still come out one phase apart — the same signature, and step 5 hit it after step 4 had already
+> established the rule. Park first, zero while parked, then resume: write `JMP` *the park
+> routine's own resume path* over the self-park, run ~2000 cycles to let the CPU out, and put the
+> self-park back. Check afterwards that `sprFrame` is exactly `passes MOD 8`.
 
 ### Layer 6 — Droids
 `RunDroids`, `dMd0_droid`, sprite slot allocation, pathfinding. Droids move and chase.
