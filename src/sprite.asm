@@ -303,8 +303,16 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
 \ nothing needs no background saved and none restored, so all three
 \ are skipped in both passes — 14% of the rows, for the price of one
 \ table lookup on the other 18.
+\
+\ THE LAST ROW IS ONE OF THEM, so both loops stop at SPR_LASTROW
+\ rather than SPR_H. Row 20 costs an iteration that tests a table,
+\ writes nothing and then advances the pointers to a scanline no one
+\ reads — and the row 19 → 20 advance is dead for the same reason.
+\ Hence the walk in the loop tails sits AFTER the end test, not
+\ before it: the last row drawn does not step off the end.
 .sprBlankRow
   EQUB 0,0,0,0,0,1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,1
+SPR_LASTROW = SPR_H - 1         \ ...because that entry is the 1 at the end
 
 \ ============================================================
 \ SprNextScan — advance bufp AND svp by one scanline
@@ -738,7 +746,7 @@ SPR_GLYPH_STEP = 2 * UNIT_BYTES
   LDA sprRowIdx : ADC #DR_DIGITN : STA sprRowIdx
   CLC
   LDA sprRow    : ADC #DR_DIGITN : STA sprRow
-  CMP #SPR_H
+  CMP #SPR_LASTROW
   BNE sd_blkmore
   JMP sd_done
 .sd_blkmore
@@ -804,12 +812,12 @@ SPR_GLYPH_STEP = 2 * UNIT_BYTES
 
 .sd_next
   INC sprRowIdx
-  SCANSTEP
   INC sprRow
   LDA sprRow
-  CMP #SPR_H
+  CMP #SPR_LASTROW
   BEQ sd_done
-  JMP sd_row
+  SCANSTEP                      \ after the test: there is a next row to
+  JMP sd_row                    \ walk to, so the step is never wasted
 .sd_done
   RTS
 
@@ -877,7 +885,7 @@ SPR_GLYPH_STEP = 2 * UNIT_BYTES
   JSR SprBlkRest
   CLC
   LDA sprRow : ADC #DR_DIGITN : STA sprRow
-  CMP #SPR_H
+  CMP #SPR_LASTROW
   BEQ sr_x
   JMP sr_row
 
@@ -921,11 +929,11 @@ SPR_GLYPH_STEP = 2 * UNIT_BYTES
   LDA sprTmpPtr+1 : STA bufp+1
 
 .sr_next
-  SCANSTEP
   INC sprRow
   LDA sprRow
-  CMP #SPR_H
+  CMP #SPR_LASTROW
   BEQ sr_x
+  SCANSTEP
   JMP sr_row
 .sr_x
   RTS
