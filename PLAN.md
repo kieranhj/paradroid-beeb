@@ -1441,19 +1441,23 @@ restore, at 33-37 cycles each. Three changes, each verified byte-identical befor
 | after step 3 | 6,345 | 3,271 | 9,616 |
 | drop dead `svp` work in the glyph passes | 6,226 | 3,226 | 9,452 |
 | read the scanline from `bufp AND 7` | 6,038 | 3,177 | 9,215 |
-| inline the walk as the `SCANSTEP` macro | 5,773 | 2,939 | **8,712** |
+| inline the walk as the `SCANSTEP` macro | 5,773 | 2,939 | 8,712 |
+| stop the loops after the last drawing row | 5,587 | 2,879 | **8,466** |
 
-**−904 cycles, 9.4%.** Seven sprites cost 61.0K of the 80,000-cycle pass, against 67.3K. The walk
-is down from 2,433 to 1,712 and from 25% of a sprite to 20%.
+**−1,150 cycles, 12.0%.** Seven sprites cost 59.3K of the 80,000-cycle pass, against 67.3K. The
+walk is down from 2,433 to about 1,470, and from 25% of a sprite to 17%.
 
-The three are worth distinguishing. The first was *dead work*: glyphs address everything as
+They are worth distinguishing. The first was *dead work*: glyphs address everything as
 `(bufp),Y` and never read `svp`, so 21 walks a frame were maintaining a value that
 `SprDigitBlock` then overwrote. The second was *redundant state*: every term of `bufp` is a
 multiple of 8 except the scanline, so `bufp AND 7` **is** the scanline and the counter beside it
-was never needed. Only the third was ordinary cycle-shaving.
+was never needed. The fourth was *work off the end*: row 20 is blank for every droid, so its
+whole iteration and the advance into it drew nothing anyone reads. Only the third was ordinary
+cycle-shaving — and it was the largest single win, which is worth remembering before assuming
+the clever ones pay best.
 
 **What is left.** Compiling bought the rotor and the digits; this bought the walk. The remaining
-1,712 is nearly all the digit block's four passes over the same eight scanlines, and the way out
+~1,470 is nearly all the digit block's four passes over the same eight scanlines, and the way out
 is eight zero-page row pointers built once per block, so the glyphs address `(rowp3),Y` and do not
 walk at all — same cycle count per access, same code size, ~1,000 cycles. Its tax is the three
 glyph *positions*, currently reached by offsetting one pointer and then needing to offset eight.
@@ -1473,6 +1477,15 @@ That is the next thing to try, and it does not need the bank space the per-type 
 > stubs live between `code_end` and the tile map at `&2C00`. Step 3a moved `code_end` from `&2B7B`
 > to `&2BA4`, and a stub left at `&2BA0` lands on `vsyncCount` and `oldIrq1V` — which reads
 > exactly like a sprite bug that only appears when scrolling.
+
+> **Anchor the rotor phase before the counted passes.** The oracle parks the game after N passes
+> by patching the `JMP` at the bottom of the main loop, but that patch is installed at a fixed
+> cycle count — and once the code speed changes, the two builds are not in the same pass when it
+> lands. Step 4's builds parked **three passes apart**. The signature is unmistakable once seen:
+> every rotor row of every sprite differs and the digit rows match exactly, because the rotor
+> depends on phase and the digits on type. Zero `sprFrame` and `sprDelay` after settling and
+> before installing the park. Safe to do mid-run — the restore replays `sprTabBaseS`, which
+> records the phase the draw actually used.
 
 ### Layer 6 — Droids
 `RunDroids`, `dMd0_droid`, sprite slot allocation, pathfinding. Droids move and chase.
