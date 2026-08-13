@@ -314,7 +314,8 @@ KEY_SPACE  = &9D                \ -99
 \ &70-&8F was the original allocation and is full. With BASIC not
 \ running and the MOS reduced to OSBYTE &81, the whole of &00-&8F
 \ is ours, so the sprite blitter extends downwards from &68.
-sprScan  = &64                  \ scanline within the char row
+sprScan  = &64                  \ sprite's STARTING scanline in its char row;
+                                \ the walk reads its position from bufp AND 7
 swSrc    = &66                  \ sideways-RAM copy source  (2)
 psrc     = &68                  \ sprite row, pixel data    (2)
 swDst    = &6A                  \ sideways-RAM copy dest    (2)

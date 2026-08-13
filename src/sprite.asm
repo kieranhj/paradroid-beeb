@@ -317,26 +317,33 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
 \ would otherwise need eight compiled variants of every sprite.
 \
 \ svp needs no carry handling — see the assert at the top of the file.
+\
+\ THE SCANLINE IS IN bufp, so it is not counted separately. Every term
+\ of bufp is a multiple of 8 — BUF_BASE is &5800, a row is 640 bytes, a
+\ column is 8, and the wrap subtracts 10240 — except the scanline
+\ itself, so `bufp AND 7` IS the scanline, always. Advance first and
+\ ask afterwards: landing on a multiple of 8 means the row just ended.
+\ That is one byte of state and five cycles a step cheaper than keeping
+\ a counter in step with the thing it could be read from. The same
+\ holds for svp (a save block is 56 bytes, a column 8), so either
+\ pointer could answer; bufp is the one already in hand.
 .SprNextScan
-  LDA sprScan
-  CMP #7
-  BEQ sns_row
-  INC sprScan
   INC svp
   INC bufp
-  BNE sns_x
+  BNE sns_nc
   INC bufp+1
+.sns_nc
+  LDA bufp
+  AND #7
+  BNE sns_x                     \ still inside this character row
+  CLC
+  LDA svp    : ADC #SPR_BLOCK-8     : STA svp
+  CLC
+  LDA bufp   : ADC #LO(ROW_BYTES-8) : STA bufp
+  LDA bufp+1 : ADC #HI(ROW_BYTES-8) : STA bufp+1
+  JMP WrapBufFwd
 .sns_x
   RTS
-.sns_row
-  LDA #0
-  STA sprScan
-  CLC
-  LDA svp    : ADC #SPR_BLOCK-7     : STA svp
-  CLC
-  LDA bufp   : ADC #LO(ROW_BYTES-7) : STA bufp
-  LDA bufp+1 : ADC #HI(ROW_BYTES-7) : STA bufp+1
-  JMP WrapBufFwd
 
 \ ============================================================
 \ SprNextScanB — advance bufp ALONE by one scanline
@@ -352,22 +359,19 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
 \ the two walk the same row-crossing pattern, and the glyph passes
 \ have to land on the same scanlines SprBlkSave did.
 .SprNextScanB
-  LDA sprScan
-  CMP #7
-  BEQ snb_row
-  INC sprScan
   INC bufp
-  BNE snb_x
+  BNE snb_nc
   INC bufp+1
+.snb_nc
+  LDA bufp
+  AND #7
+  BNE snb_x
+  CLC
+  LDA bufp   : ADC #LO(ROW_BYTES-8) : STA bufp
+  LDA bufp+1 : ADC #HI(ROW_BYTES-8) : STA bufp+1
+  JMP WrapBufFwd
 .snb_x
   RTS
-.snb_row
-  LDA #0
-  STA sprScan
-  CLC
-  LDA bufp   : ADC #LO(ROW_BYTES-7) : STA bufp
-  LDA bufp+1 : ADC #HI(ROW_BYTES-7) : STA bufp+1
-  JMP WrapBufFwd
 
 \ ============================================================
 \ SprNextUnit — bufp on to the next 4-pixel column, wrapping
@@ -487,21 +491,21 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
 \ eight rows go the interpreted way, as they always did.
 SPR_GLYPH_STEP = 2 * UNIT_BYTES
 
-\ Save bufp/sprScan, and put them back. The block runs the same
-\ eight scanlines four times over, so it needs a mark and a return.
+\ Save bufp, and put it back. The block runs the same eight scanlines
+\ four times over, so it needs a mark and a return.
 \
-\ svp is NOT marked: only the three glyph passes rewind here, and a
-\ glyph never reads or writes svp. Whatever the glyphs leave in it is
-\ overwritten from blkEndSvp when SprDigitBlock finishes.
+\ bufp alone is the whole mark. The scanline rides in its low three
+\ bits, so restoring the pointer restores the walk position with it;
+\ and svp is not marked at all, because only the three glyph passes
+\ rewind here and a glyph never reads or writes svp — whatever they
+\ leave in it is overwritten from blkEndSvp when the block finishes.
 .SprBlkMark
   LDA bufp   : STA blkPtr
   LDA bufp+1 : STA blkPtr+1
-  LDA sprScan: STA blkScan
   RTS
 .SprBlkReset
   LDA blkPtr   : STA bufp
   LDA blkPtr+1 : STA bufp+1
-  LDA blkScan  : STA sprScan
   RTS
 
 \ All seven columns of all eight rows. Column 6 is only ever written by
@@ -573,7 +577,6 @@ SPR_GLYPH_STEP = 2 * UNIT_BYTES
   LDA bufp    : STA blkEnd
   LDA bufp+1  : STA blkEnd+1
   LDA svp     : STA blkEndSvp
-  LDA sprScan : STA blkEndScan
   LDX #0
 .sdb_glyph
   JSR SprBlkGlyph
@@ -584,7 +587,6 @@ SPR_GLYPH_STEP = 2 * UNIT_BYTES
   LDA blkEnd     : STA bufp
   LDA blkEnd+1   : STA bufp+1
   LDA blkEndSvp  : STA svp
-  LDA blkEndScan : STA sprScan
   RTS
 
 \ ============================================================
@@ -987,9 +989,7 @@ SPR_SPIN = 0                    \ frames between phases; full energy = 0
 .sprDig     SKIP 3              \ the droid's three digits, as glyph numbers
 .sprDigPos  EQUB 0
 .blkPtr     EQUW 0              \ the digit block's start, for the rewinds
-.blkScan    EQUB 0
 .blkEnd     EQUW 0              \ and where the block leaves off
 .blkEndSvp  EQUB 0
-.blkEndScan EQUB 0
 .sprDigit   EQUW 0
 .sprRowBuf  SKIP SPR_W * 2
