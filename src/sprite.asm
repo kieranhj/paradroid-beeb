@@ -53,6 +53,11 @@
 \ ============================================================
 
 SPR_SLOTS = 7                   \ slot 0 = player, 1-6 = the droid pool
+IF TARGET_MASTER
+SPR_RECS  = SPR_SLOTS * 2       \ one draw record per slot PER BUFFER
+ELSE
+SPR_RECS  = SPR_SLOTS
+ENDIF
 SPR_W     = 7                   \ 24 px, plus one byte for the 2 px shift
 SPR_H     = 21                  \ scanlines
 SPR_BYTES = SPR_W * SPR_H       \ 147 bytes of background per slot
@@ -184,6 +189,7 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
 \ per-sprite cost is being measured.
 .SprSetSlot
   STX sprSlot
+  SETREC
   LDA sprActive,X
   BNE sss_live
 .sss_no
@@ -191,6 +197,33 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
   RTS
 .sss_live
   LDA sprUnit,X
+  LDY sprShift,X
+IF TARGET_MASTER
+\ Buffer B holds the world 2 px further on, so the sprite has to sit
+\ 2 px further LEFT in it to stay at the same place in the world. In
+\ 4-pixel units with a 2 px shift on top, subtracting 2 px is:
+\
+\   shift 1  ->  shift 0, same unit
+\   shift 0  ->  shift 1, one unit back
+\
+\ so the two buffers genuinely use different compiled shifts, and at
+\ unit 0 the borrow makes the unit &FF, which the cull below catches
+\ as an unsigned compare — the sprite really has left the screen in
+\ that buffer and not in the other.
+  LDX drawShift
+  BEQ sss_pos
+  CPY #0
+  BNE sss_bshift
+  SEC
+  SBC #1
+  LDY #1
+  BNE sss_pos                   \ always: unit 0 borrows to &FF
+.sss_bshift
+  LDY #0
+.sss_pos
+  LDX sprSlot
+ENDIF
+  STY sprShiftW                 \ this buffer's shift, not the slot's
   CMP #SPR_MAX_UNIT + 1
   BCS sss_no                    \ off the left or right (unsigned: also
                                 \ catches the wrapped negative case)
@@ -207,10 +240,10 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
 \ the fly in SprFetchRow costs nothing that matters and gives back the
 \ 1,743 bytes the second copy occupied, which is where the compiled
 \ digits live.
-  LDX sprSlot
-  LDA sprShift,X
-  STA sprShiftW
+  RECX
+  LDA sprShiftW
   STA sprShiftS,X               \ the restore needs the DRAW's shift
+  LDX sprSlot
   LDY sprType,X                 \ where this type's number block lives
   CLC
   LDA drDigitLo,Y : ADC #LO(drSprData) : STA sprDigit
@@ -230,7 +263,7 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
 \ well as in the working variable, because RESTORE runs a frame later —
 \ by which time the phase has advanced and the shift may have changed,
 \ and the background must be put back the way it was taken.
-  LDA sprShift,X
+  LDA sprShiftW
   BEQ sss_tab0
   LDA #SPR_TABSHIFT
   BNE sss_tab                   \ always
@@ -241,6 +274,7 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
   CLC
   ADC drMul7,Y
   STA sprTabBase
+  RECX
   STA sprTabBaseS,X
   CLC
   RTS
@@ -614,13 +648,13 @@ SPR_GLYPH_STEP = 2 * UNIT_BYTES
 .SprDrawSlot
   JSR SprSetSlot
   BCC sd_go
-  LDX sprSlot                   \ culled: make sure the stale background
+  RECX                        \ culled: make sure the stale background
   LDA #0                        \ is not put back somewhere it never came
-  STA sprSaved,X                \ from
-  RTS
+  STA sprSaved,X                \ from. Culling is per buffer: at the edge
+  RTS                           \ a slot can be off one and on the other
 .sd_go
   JSR SprCalcAddr
-  LDX sprSlot
+  RECX
   LDA bufp    : STA sprPtr0Lo,X
   LDA bufp+1  : STA sprPtr0Hi,X
   LDA sprScan : STA sprScan0,X
@@ -766,11 +800,13 @@ SPR_GLYPH_STEP = 2 * UNIT_BYTES
 \ time this runs the sprite may have moved, and the pixels belong
 \ where they were taken from.
 .SprRestoreSlot
+  STX sprSlot
+  SETREC
+  RECX
   LDA sprSaved,X
   BNE sr_go
   RTS
 .sr_go
-  STX sprSlot
   LDA sprPtr0Lo,X : STA bufp
   LDA sprPtr0Hi,X : STA bufp+1
   LDA sprScan0,X  : STA sprScan
@@ -915,13 +951,19 @@ SPR_SPIN = 0                    \ frames between phases; full energy = 0
   LDA #0
 .si_loop
   STA sprActive,X
-  STA sprSaved,X
   STA sprFrame,X
   STA sprDelay,X
   STA sprType,X
   STA sprShift,X
   DEX
   BPL si_loop
+
+  LDX #SPR_RECS-1               \ both buffers' records on a Master
+  LDA #0
+.si_rec
+  STA sprSaved,X
+  DEX
+  BPL si_rec
 
   LDA #1 : STA sprActive+PLY_SLOT
   LDA #0 : STA sprType+PLY_SLOT   \ droid 001
@@ -936,13 +978,18 @@ SPR_SPIN = 0                    \ frames between phases; full energy = 0
 .sprScrY    SKIP SPR_SLOTS      \ scanlines below the top of the view
 .sprFrame   SKIP SPR_SLOTS      \ rotor phase 0-7
 .sprDelay   SKIP SPR_SLOTS
-.sprSaved   SKIP SPR_SLOTS      \ 0 until the slot has been drawn once
-.sprPtr0Lo  SKIP SPR_SLOTS      \ where the last draw started
-.sprPtr0Hi  SKIP SPR_SLOTS
-.sprScan0   SKIP SPR_SLOTS
-.sprNoWrapS SKIP SPR_SLOTS      \ the draw's wrap answer, for the restore
-.sprTabBaseS SKIP SPR_SLOTS     \ the draw's compiled-rotor table base
-.sprShiftS  SKIP SPR_SLOTS      \ the draw's shift
+\ ---- the draw record, one set per buffer --------------------
+\ Everything SprRestoreSlot replays. On a Master there are two sets,
+\ indexed slot + sprRecOfs, because the two buffers hold the sprite
+\ 2 px apart: different shift, sometimes a different unit, and at the
+\ screen edge one may have culled the slot while the other drew it.
+.sprSaved   SKIP SPR_RECS       \ 0 until the slot has been drawn once
+.sprPtr0Lo  SKIP SPR_RECS       \ where the last draw started
+.sprPtr0Hi  SKIP SPR_RECS
+.sprScan0   SKIP SPR_RECS
+.sprNoWrapS SKIP SPR_RECS       \ the draw's wrap answer, for the restore
+.sprTabBaseS SKIP SPR_RECS      \ the draw's compiled-rotor table base
+.sprShiftS  SKIP SPR_RECS       \ the draw's shift
 
 \ ---- working, one sprite at a time --------------------------
 .sprNoWrap  EQUB 0

@@ -1622,13 +1622,47 @@ whole scheme visible. The parity is parked with `crtcHi`/`crtcLo`/`line` under t
 Confirmed: with `posX` moved from 524 to 526 and nothing redrawn, `acconVal` reads `&19` and the
 whole view steps 2 px. That is the technique working — a scroll step with no drawing at all.
 
-**The sprite is not yet per-buffer, and it shows.** Both buffers get the sprite at the same
-buffer-relative offset, so on odd parity it lands 2 px from where it belongs. Step 7 is what fixes
-it, and the shape is now clear: the input side is a two-line transform in `SprSetSlot`
-(`shift 1 → shift 0, same unit`; `shift 0 → shift 1, one unit back`), but the seven per-slot
-**draw-record** arrays have to be duplicated per buffer, because `SprRestoreSlot` replays the draw's
-own record and the two buffers' records differ. Culling can differ between them too, so `sprSaved`
-is one of the seven.
+#### Step 7 — the sprite is per-buffer
+
+Buffer B holds the world 2 px further on, so the sprite must sit 2 px further LEFT in it. In
+4-pixel units with a 2 px shift on top that is:
+
+| buffer A | buffer B |
+|---|---|
+| shift 1, unit *u* | shift 0, unit *u* |
+| shift 0, unit *u* | shift 1, unit *u-1* |
+
+So the two buffers genuinely use *different compiled shifts*, and at unit 0 the borrow makes the
+unit `&FF`, which the existing unsigned cull catches — the sprite really has left the screen in one
+buffer and not the other.
+
+The input side is a few lines in `SprSetSlot`. The part that is not: **the seven per-slot draw-record
+arrays are now per buffer**, indexed `slot + sprRecOfs`, because `SprRestoreSlot` replays the draw's
+own record and the two buffers' records differ — different shift, sometimes a different unit, a
+different wrap answer, and at the edge one may have culled the slot while the other drew it. That
+last one is why `sprSaved` is one of the seven. `SETREC`/`RECX` macros do the indexing and collapse
+to the plain slot number on a Model B.
+
+**Verified, and the whole-buffer oracle covers the sprite for free**: if the sprite is at the right
+place in B, then B is a true 2 px shift of A *including the sprite's own pixels*, because shifting
+the picture shifts the sprite with it. Both `SprAnimateAll` calls run before either draw, so the
+rotor phase is the same in both and there is nothing to exclude from the diff — unlike the Layer 4
+runs, where the footprint had to be computed and skipped.
+
+| test | result |
+|---|---|
+| sprite drawn, even `mapHX` (136), `line` = 1 | **0 differing of 10240** |
+| sprite disabled and restored, same position | **0 differing of 10240** |
+
+The second one is the per-buffer *restore*: had B's restore replayed A's record, B would no longer
+be a clean shift of A.
+
+*Not clean, and not ours:* the restored buffer against a SPACE-forced `RedrawAll` differs in 38
+bytes, all on one scanline of the split row at `line = 1`. That is `BUGS.md` #1, the oracle defect —
+the differing scanline count has always equalled `line`, and one scanline for `line` = 1 is exactly
+that. It is not sprite-shaped either: a sprite is 7 units wide and this is 38 units across a single
+scanline. The re-observation did sharpen the entry, though, and `BUGS.md` now records that the
+scanline *index* looks off by one from what was written down.
 
 #### The measured cost — it does not fit yet, even player-only
 

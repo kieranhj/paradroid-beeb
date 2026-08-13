@@ -18,6 +18,13 @@ layer's verification, which is why it is first.
 whenever `line != 0`. They are always in the same place: display row 0, scanlines
 `0..line-1` — the split character row.
 
+> **The scanline range above may be off by one.** Re-observed 2026-08-12 on the Master build at
+> `line == 1`: exactly **one** scanline differs, as this entry predicts, but it is display row 0
+> scanline **1**, not scanline 0. The *count* has always matched `line`, and that is what makes it
+> the same defect. Whether the range is `0..line-1` or `1..line` decides which map row the repair
+> should be writing, so settle it before fixing the repair itself. 38 of 80 units differed, not all
+> 80, which is another detail the entry does not explain.
+
 **Who is wrong.** `RedrawAll`. The incremental scrolling is correct.
 
 **Evidence.**

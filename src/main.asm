@@ -415,6 +415,30 @@ bcSrc    = src
 bcDst    = mapptr
 bcDst2   = tdp
 
+\ The sprite's per-slot DRAW RECORD is per buffer on a Master. The two
+\ buffers hold the sprite 2 px apart, so the pointer, the shift and
+\ even whether the slot was drawn at all can differ between them — and
+\ SprRestoreSlot replays the draw's own record, so it has to be handed
+\ the right one. The record arrays are twice as long and indexed by
+\ slot + sprRecOfs; SETREC works that index out and RECX loads it.
+\ On a Model B both collapse to the slot number.
+MACRO SETREC
+IF TARGET_MASTER
+  CLC
+  LDA sprSlot
+  ADC sprRecOfs
+  STA sprRecIdx
+ENDIF
+ENDMACRO
+
+MACRO RECX
+IF TARGET_MASTER
+  LDX sprRecIdx
+ELSE
+  LDX sprSlot
+ENDIF
+ENDMACRO
+
 MACRO CRTC reg, val
   LDA #reg : STA CRTC_ADDR : LDA #val : STA CRTC_DATA
 ENDMACRO
@@ -654,6 +678,7 @@ IF TARGET_MASTER
   LDA acconVal : ORA #ACC_X : STA acconVal : STA ACCCON
   PLP
   LDA #1 : STA drawShift
+  LDA #SPR_SLOTS : STA sprRecOfs
   RTS
 
 .AcconMain                      \ CPU sees buffer A
@@ -662,6 +687,7 @@ IF TARGET_MASTER
   LDA acconVal : AND #&FF - ACC_X : STA acconVal : STA ACCCON
   PLP
   LDA #0 : STA drawShift
+  STA sprRecOfs
   RTS
 ENDIF
 
@@ -853,7 +879,7 @@ ENDIF
   STA scrollS+1                 \ writes whole rows, so buffer row 0 must
   STA line                      \ not be a split row
   STA iline
-  LDX #SPR_SLOTS-1              \ the saved backgrounds belong to the deck
+  LDX #SPR_RECS-1               \ the saved backgrounds belong to the deck
   LDA #0                        \ we are leaving; RedrawAll replaces them
 .ld_unsave
   STA sprSaved,X
@@ -885,6 +911,8 @@ IF TARGET_MASTER
 .acconVal  EQUB 0               \ live copy of ACCCON — see AcconInit
 .drSave    SKIP 5               \ DoRedrawsBoth's starting state
 .drawShift EQUB 0               \ 0 = drawing buffer A, 1 = buffer B (2 px on)
+.sprRecOfs EQUB 0               \ 0 or SPR_SLOTS — see SETREC
+.sprRecIdx EQUB 0
 ENDIF
 
 .code_end
