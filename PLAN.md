@@ -1331,10 +1331,13 @@ steps, in dependency order:
    iteration, the same 175 px/s as 3.5 px/field at 50 Hz. What is given up is the extra smoothness
    the 50 Hz sampling bought — that was always a bonus over the original, not a requirement.
 
-5. **Round-robin updating** — still the step that buys the pool its headroom, but no longer urgent
-   for correctness now the rate is fixed: 25 Hz gives ~80,000 cycles a pass against ~68,000 spent
-   on seven sprites. Not started.
-6. **Raster-ordered updating** — flicker, and probably `BUGS.md` #3 with it.
+5. **Round-robin updating** — **dropped, on measurement.** It was the step that bought the pool
+   its headroom when seven sprites cost 68K of an 80K pass. They now cost 40.7K and the loop
+   spends **39,212 of its 79,872 cycles idle — 49% of the pass** (T1 around `WaitVSync`, seven
+   sprites live, averaged over 127 passes). There is nothing left to buy. See *Why not
+   round-robin* below before reviving it.
+6. **Raster-ordered updating** — flicker, and probably `BUGS.md` #3 with it. Still open, and now
+   the only sprite-pool work outstanding.
 
 **Measured, one sprite, one frame** (User VIA T1 around the two calls; both builds at the same
 position; ±0 across repeats — the emulator is deterministic):
@@ -1596,10 +1599,34 @@ them.
 
 **What is left.** Per sprite is now ~3,000 of real pixel movement and ~2,800 of everything else,
 of which the largest single items are the six inactive slots scanned every frame (~630) and the
-per-slot setup (~480). Nothing structural remains.
-**The update rate is the whole remaining problem** — round-robin, then raster-ordered — and it is worth noting that
-round-robin halves all of the above for nothing, which is why it comes before any further
-compiling.
+per-slot setup (~480). Nothing structural remains, and nothing needs to.
+
+#### Why not round-robin
+
+Every earlier note here treated round-robin as the next step and the biggest remaining lever. It
+is neither, and the reason is the work above. **The loop spends 39,212 of its 79,872 cycles idle
+— 49% of the pass** with all seven sprites live. Round-robin would buy back ~20K of a budget that
+already has 39K spare.
+
+It is also not free, which the earlier notes never costed:
+
+- **Overlap.** The order — restore *all*, scroll, draw *all* — exists because drawing one sprite
+  while another is still on screen captures the second one's pixels into the first one's save
+  area, and restoring it later stamps them permanently into the buffer. Round-robin breaks that
+  invariant by construction, and the corruption is permanent rather than transient.
+- **Scroll bands.** A sprite left undrawn keeps its correct world position — the buffer is
+  circular and the world moves with it — but if `DoRedraws` repaints a band over it, its saved
+  background is stale and restoring it writes old pixels over new. That only shows while
+  scrolling, which is where the oracle is weakest.
+- **Visible cost.** At four slots of seven a pass, droids animate and move at ~14 Hz against the
+  player's 25.
+
+If a later layer does eat the headroom, measure first: `RunDroids`, pathfinding and slot
+allocation are budgeted at ~14,000 cycles on the C64, which would still leave ~25K spare. The
+cheap half-step, if it is ever needed, is not round-robin but **skipping a sprite that provably
+cannot have changed** — same screen position, same rotor phase, no scroll, no overlapping sprite
+redrawn. That is correct with no visual cost at all, though it only pays when droids are
+stationary or low-energy, since `SPR_SPIN = 0` advances a full-energy rotor every pass.
 
 > **Measuring across builds.** Average over ~128 passes, not 16: the rotor phase cycles every 8
 > and the per-phase spread is a few hundred cycles, so a short average is biased by which phases
