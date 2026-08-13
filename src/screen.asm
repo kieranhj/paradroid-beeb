@@ -243,6 +243,39 @@
   RTS
 
 \ ============================================================
+\ Address tables — tile number and tile row to their base addresses
+\ ============================================================
+\ Both of these were being computed by hand at every use: PHA, AND,
+\ four or six ASLs, PLA, matching LSRs, ADC. Thirty-five cycles to
+\ multiply by 16 and thirty to multiply by 64, when the operands run
+\ over 32 and 16 values respectively.
+\
+\ They are pure functions of `tiledefs` and `tilemap`, both fixed at
+\ assembly time, so unlike CHAR_PTR_LO/HI they need no builder and no
+\ RAM — 96 bytes of the code image and beebasm fills them in.
+\
+\ Not aligned: at 32 and 16 entries a page boundary costs one cycle on
+\ the entries past it, and only on paths that already run once every
+\ four rows or once a tile. Alignment would cost more bytes than the
+\ cycles are worth.
+.tdpLo
+  FOR t, 0, 31
+    EQUB LO(tiledefs + t * 16)
+  NEXT
+.tdpHi
+  FOR t, 0, 31
+    EQUB HI(tiledefs + t * 16)
+  NEXT
+.mapRowLo
+  FOR r, 0, MAP_ROWS-1
+    EQUB LO(tilemap + r * MAP_COLS)
+  NEXT
+.mapRowHi
+  FOR r, 0, MAP_ROWS-1
+    EQUB HI(tilemap + r * MAP_COLS)
+  NEXT
+
+\ ============================================================
 \ BandSetRow / BandCharPtr — the same lookup as HalfPtrLeft, with
 \ everything that depends only on cellY hoisted out
 \ ============================================================
@@ -261,14 +294,9 @@
 .BandSetRow
   LDA cellY                     \ row base: tilemap + (cellY>>2)*64
   LSR A : LSR A
-  STA mcTmp
-  AND #3
-  ASL A : ASL A : ASL A : ASL A : ASL A : ASL A
-  STA maprow
-  LDA mcTmp
-  LSR A : LSR A
-  CLC : ADC #HI(tilemap)
-  STA maprow+1
+  TAX
+  LDA mapRowLo,X : STA maprow
+  LDA mapRowHi,X : STA maprow+1
 
   LDA cellY                     \ (cellY AND 3) * 4, the row within a tile
   AND #3
@@ -292,15 +320,10 @@
   BEQ bcp_hit
   STA tileCol
   TAY
-  LDA (maprow),Y                \ tile number
-  PHA                           \ tdp = tiledefs + tile*16
-  AND #&0F
-  ASL A : ASL A : ASL A : ASL A
-  STA tdp
-  PLA
-  LSR A : LSR A : LSR A : LSR A
-  CLC : ADC #HI(tiledefs)
-  STA tdp+1
+  LDA (maprow),Y                \ tile number -> its tiledefs base
+  TAX
+  LDA tdpLo,X : STA tdp
+  LDA tdpHi,X : STA tdp+1
 .bcp_hit
   LDA cellX
   AND #3
@@ -341,62 +364,21 @@
   LDA cellX
   AND #3
   STA colSubX
-  LDA halfX                     \ which half of the character
-  AND #1
-  STA colRight
+  LDA halfX                     \ which half of the character, as the 0
+  AND #1                        \ or 8 that gets added to its address —
+  ASL A : ASL A : ASL A         \ constant for the whole column, so the
+  STA colHalf                   \ row loop adds it instead of testing it
   LDA #&FF
   STA colTileRow                \ no tile row can match: force a miss
   RTS
 
-.ColCharPtr                     \ cellY -> chp
-  LDA cellY
-  LSR A : LSR A                 \ tile row
-  CMP colTileRow
-  BEQ ccp_hit
-  STA colTileRow
-  PHA
-  AND #3
-  ASL A : ASL A : ASL A : ASL A : ASL A : ASL A
-  STA maprow
-  PLA
-  LSR A : LSR A
-  CLC : ADC #HI(tilemap)
-  STA maprow+1
-  LDY colTileCol
-  LDA (maprow),Y                \ tile number
-  PHA
-  AND #&0F
-  ASL A : ASL A : ASL A : ASL A
-  STA tdp
-  PLA
-  LSR A : LSR A : LSR A : LSR A
-  CLC : ADC #HI(tiledefs)
-  STA tdp+1
-.ccp_hit
-  LDA cellY
-  AND #3
-  ASL A : ASL A
-  CLC
-  ADC colSubX
-  TAY
-  LDA (tdp),Y                   \ character code
-
-  TAX
-  LDA CHAR_PTR_LO,X : STA chp
-  LDA CHAR_PTR_HI,X : STA chp+1
-
-  LDA colRight
-  BEQ ccp_x
-  CLC
-  LDA chp : ADC #8 : STA chp
-  BCC ccp_x
-  INC chp+1
-.ccp_x
-  RTS
+\ ColCharPtr lived here. It had one caller and ran 16 times a column,
+\ so it is inlined into DrawColumn — with the tile-row miss out of
+\ line, which is what keeps that loop's branch in range.
 
 .colTileCol EQUB 0
 .colSubX    EQUB 0
-.colRight   EQUB 0
+.colHalf    EQUB 0              \ 0 or 8: the half of the character
 .colTileRow EQUB 0
 
 \ ============================================================

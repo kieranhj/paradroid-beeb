@@ -46,6 +46,76 @@
   NEXT
 
 \ ============================================================
+\ COPYCELL — one 4-pixel column cell: 8 bytes, chp -> bufp
+\ ============================================================
+\ Unrolled, and the loop counter goes with it. A cell is ALWAYS the
+\ whole 8 scanlines now, so the run and the offset that CopyRun took
+\ as variables are both constants, and paying 18 cycles a byte to
+\ support a case that no longer occurs was the single largest waste
+\ in the band: 13 a byte is the floor for (zp),Y on both sides.
+\
+\ Y is walked with INY rather than reloaded per byte. Both come to 13
+\ cycles a byte — LDY #n is 2 and so is INY — but the walk is 5 bytes
+\ a copy against 6, and in a loop that difference is what keeps the
+\ branch at the bottom in range.
+MACRO COPYCELL
+  LDY #0
+  FOR n, 0, 7
+    LDA (chp),Y
+    STA (bufp),Y
+    IF n < 7
+      INY
+    ENDIF
+  NEXT
+ENDMACRO
+
+\ ============================================================
+\ COPYCHAR — a WHOLE character: both halves, 16 bytes, in one run
+\ ============================================================
+\ A character's two halves are 16 consecutive bytes in the charset,
+\ and the two units they go to are 16 consecutive bytes in the strip.
+\ So one Y running 0-15 addresses both, and the `chp + 8` and the
+\ BufNextUnit that used to sit between the halves are simply gone —
+\ 46 cycles a character for nothing.
+\
+\ THE ONE CONDITION: the strip's wrap must not fall BETWEEN the two
+\ halves, or the second half would be written 8 bytes past &8000, into
+\ sideways RAM. It never does, and that is a property of the geometry
+\ rather than luck:
+\
+\   Units from the row start to the wrap is W = 1280 - off/8, where
+\   off = (scrollS + rCount*640) MOD 10240. rCount*640 is 80 units, so
+\   W = -scrollS/8 = scrollS/8  (mod 2).
+\
+\   Characters begin at even units when mapHX is even and at odd units
+\   when it is odd — unit 0 is then a right half on its own. So the
+\   wrap lands on a character boundary exactly when
+\
+\       scrollS/8 == mapHX  (mod 2)
+\
+\   and that is INVARIANT. Both sides move by dUnits on a horizontal
+\   step; a vertical step moves scrollS/8 by 80 and mapHX not at all,
+\   and 80 is even. scrollS wraps at 1280 units, also even. sDelta is
+\   computed FROM the mapHX difference, so even a clamp that stops
+\   mapHX moves scrollS by exactly as much.
+\
+\ LoadDeck establishes it — see the scrollS parity there. It is set
+\ explicitly rather than inherited from CentreOnDeck happening to
+\ produce an even mapHX, because this loop writes out of the buffer if
+\ it is ever false, and that should not depend on another routine's
+\ arithmetic staying the way it is.
+MACRO COPYCHAR
+  LDY #0
+  FOR n, 0, 15
+    LDA (chp),Y
+    STA (bufp),Y
+    IF n < 15
+      INY
+    ENDIF
+  NEXT
+ENDMACRO
+
+\ ============================================================
 \ ScrollAddS — scrollS += sDelta, signed, kept in [0, BUF_SIZE)
 \ ============================================================
 \ sDelta is dUnits*8 + dRows*640, so at most +/-656 — one wrap
@@ -113,6 +183,11 @@
 \ halfX is constant down a column, so the lookup is set up once and
 \ the row walk is a 640-byte pointer add rather than a fresh SetCell
 \ per row.
+\
+\ ColCharPtr is inlined: it had one caller and ran 16 times a column,
+\ so the JSR and RTS were 12 cycles of the ~270 a row cost. The tile
+\ row it reads only changes every 4 rows, so that path is out of line
+\ at dc_newtile — which also keeps this loop's branch within reach.
 .DrawColumn
   CLC                           \ halfX = mapHX + uCount
   LDA mapHX   : ADC uCount : STA halfX
@@ -122,14 +197,25 @@
   LDA #0 : STA rCount
   JSR SetCell                   \ only once: row 0 of this column
   LDA mapYr : STA cellY
+
 .dc_loop
-  JSR ColCharPtr
-  LDY #7
-.dc_copy
-  LDA (chp),Y
-  STA (bufp),Y
-  DEY
-  BPL dc_copy
+  LDA cellY                     \ tile row; changes once every 4
+  LSR A : LSR A
+  CMP colTileRow
+  BNE dc_newtile
+.dc_tile
+  LDA cellY                     \ (cellY AND 3)*4 + colSubX, the
+  AND #3                        \ character within the tile
+  ASL A : ASL A
+  CLC
+  ADC colSubX
+  TAY
+  LDA (tdp),Y                   \ character code
+  TAX                           \ -> its charset address, precomputed,
+  CLC                           \ plus 0 or 8 for which half we are in
+  LDA CHAR_PTR_LO,X : ADC colHalf : STA chp
+  LDA CHAR_PTR_HI,X : ADC #0      : STA chp+1
+  COPYCELL
 
   CLC                           \ next row of the strip
   LDA bufp   : ADC #LO(ROW_BYTES) : STA bufp
@@ -149,75 +235,19 @@
   BNE dc_loop
   RTS
 
-\ ============================================================
-\ COPYCELL — one 4-pixel column cell: 8 bytes, chp -> bufp
-\ ============================================================
-\ Unrolled, and the loop counter goes with it. A cell is ALWAYS the
-\ whole 8 scanlines now, so the run and the offset that CopyRun took
-\ as variables are both constants, and paying 18 cycles a byte to
-\ support a case that no longer occurs was the single largest waste
-\ in the band: 13 a byte is the floor for (zp),Y on both sides.
-\
-\ Y is walked with INY rather than reloaded per byte. Both come to 13
-\ cycles a byte — LDY #n is 2 and so is INY — but the walk is 5 bytes
-\ a copy against 6, and in the loop that difference is what keeps the
-\ branch at the bottom in range.
-MACRO COPYCELL
-  LDY #0
-  FOR n, 0, 7
-    LDA (chp),Y
-    STA (bufp),Y
-    IF n < 7
-      INY
-    ENDIF
-  NEXT
-ENDMACRO
-
-\ ============================================================
-\ COPYCHAR — a WHOLE character: both halves, 16 bytes, in one run
-\ ============================================================
-\ A character's two halves are 16 consecutive bytes in the charset,
-\ and the two units they go to are 16 consecutive bytes in the strip.
-\ So one Y running 0-15 addresses both, and the `chp + 8` and the
-\ BufNextUnit that used to sit between the halves are simply gone —
-\ 46 cycles a character for nothing.
-\
-\ THE ONE CONDITION: the strip's wrap must not fall BETWEEN the two
-\ halves, or the second half would be written 8 bytes past &8000, into
-\ sideways RAM. It never does, and that is a property of the geometry
-\ rather than luck:
-\
-\   Units from the row start to the wrap is W = 1280 - off/8, where
-\   off = (scrollS + rCount*640) MOD 10240. rCount*640 is 80 units, so
-\   W = -scrollS/8 = scrollS/8  (mod 2).
-\
-\   Characters begin at even units when mapHX is even and at odd units
-\   when it is odd — unit 0 is then a right half on its own. So the
-\   wrap lands on a character boundary exactly when
-\
-\       scrollS/8 == mapHX  (mod 2)
-\
-\   and that is INVARIANT. Both sides move by dUnits on a horizontal
-\   step; a vertical step moves scrollS/8 by 80 and mapHX not at all,
-\   and 80 is even. scrollS wraps at 1280 units, also even. sDelta is
-\   computed FROM the mapHX difference, so even a clamp that stops
-\   mapHX moves scrollS by exactly as much.
-\
-\ LoadDeck establishes it — see the scrollS parity there. It is set
-\ explicitly rather than inherited from CentreOnDeck happening to
-\ produce an even mapHX, because this loop writes out of the buffer if
-\ it is ever false, and that should not depend on another routine's
-\ arithmetic staying the way it is.
-MACRO COPYCHAR
-  LDY #0
-  FOR n, 0, 15
-    LDA (chp),Y
-    STA (bufp),Y
-    IF n < 15
-      INY
-    ENDIF
-  NEXT
-ENDMACRO
+\ Once every four rows, and out of line so the common path is a
+\ not-taken BNE. A holds the new tile row on entry.
+.dc_newtile
+  STA colTileRow
+  TAX
+  LDA mapRowLo,X : STA maprow
+  LDA mapRowHi,X : STA maprow+1
+  LDY colTileCol
+  LDA (maprow),Y                \ tile number -> its tiledefs base
+  TAX
+  LDA tdpLo,X : STA tdp
+  LDA tdpHi,X : STA tdp+1
+  JMP dc_tile
 
 \ ============================================================
 \ DrawBandRows — ONE display row, full width, all 8 scanlines
@@ -309,15 +339,11 @@ ENDMACRO
 .dbr_tile
   LDY dbTile                    \ tile number -> tdp, row folded in
   LDA (maprow),Y
-  PHA
-  AND #&0F
-  ASL A : ASL A : ASL A : ASL A
-  CLC : ADC subRowOfs           \ <= 240 + 12: cannot carry
+  TAX
+  CLC
+  LDA tdpLo,X : ADC subRowOfs   \ <= 240 + 12: cannot carry
   STA tdp
-  PLA
-  LSR A : LSR A : LSR A : LSR A
-  CLC : ADC #HI(tiledefs)
-  STA tdp+1
+  LDA tdpHi,X : STA tdp+1
   INC dbTile
 
   SEC                           \ n = min(4 - sub, remaining)
