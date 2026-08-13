@@ -314,6 +314,11 @@ KEY_SPACE  = &9D                \ -99
 \ &70-&8F was the original allocation and is full. With BASIC not
 \ running and the MOS reduced to OSBYTE &81, the whole of &00-&8F
 \ is ours, so the sprite blitter extends downwards from &68.
+\ The digit block's eight scanlines, one pointer each, so the compiled
+\ glyphs address every byte as (rowp+2r),Y and never walk. Built once
+\ per block by SprBuildRowPtrs; see the header in sprite.asm.
+rowp     = &50                  \ &50-&5F: 8 pointers, one per block row
+
 sprScan  = &64                  \ sprite's STARTING scanline in its char row;
                                 \ the walk reads its position from bufp AND 7
 swSrc    = &66                  \ sideways-RAM copy source  (2)

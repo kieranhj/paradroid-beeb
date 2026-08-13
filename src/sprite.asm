@@ -338,8 +338,8 @@ SPR_LASTROW = SPR_H - 1         \ ...because that entry is the 1 at the end
 \ IT IS A MACRO, NOT A SUBROUTINE. Only four places walk with svp in
 \ hand — the two row loops and the two block passes — so there are four
 \ expansions of seventeen bytes, and a JSR/RTS pair costs 12 of the 33
-\ cycles a step used to take. The glyphs cannot do this: SprNextScanB
-\ has 140 call sites in the bank and inlining there would cost 2.7K.
+\ cycles a step used to take. The glyphs do not walk at all — see
+\ SprBuildRowPtrs.
 \
 \ The row crossing stays out of line. It is taken on one step in six,
 \ it is 23 bytes, and putting it behind a JSR keeps the macro small
@@ -374,34 +374,6 @@ ENDMACRO
   LDA bufp   : ADC #LO(ROW_BYTES-8) : STA bufp
   LDA bufp+1 : ADC #HI(ROW_BYTES-8) : STA bufp+1
   JMP WrapBufFwd
-
-\ ============================================================
-\ SprNextScanB — advance bufp ALONE by one scanline
-\ ============================================================
-\ The compiled glyphs address every byte as (bufp),Y and never
-\ touch svp: the digit block hoists the save into SprBlkSave and
-\ the restore into SprBlkRest, so a glyph has no background to
-\ put anywhere. Keeping svp in step through 21 glyph walks was
-\ therefore work whose result nothing read — SprDigitBlock
-\ overwrites svp from blkEndSvp when the block finishes.
-\
-\ Identical to SprNextScan otherwise, and it must stay identical:
-\ the two walk the same row-crossing pattern, and the glyph passes
-\ have to land on the same scanlines SprBlkSave did.
-.SprNextScanB
-  INC bufp
-  BNE snb_nc
-  INC bufp+1
-.snb_nc
-  LDA bufp
-  AND #7
-  BNE snb_x
-  CLC
-  LDA bufp   : ADC #LO(ROW_BYTES-8) : STA bufp
-  LDA bufp+1 : ADC #HI(ROW_BYTES-8) : STA bufp+1
-  JMP WrapBufFwd
-.snb_x
-  RTS
 
 \ ============================================================
 \ SprNextUnit — bufp on to the next 4-pixel column, wrapping
@@ -507,35 +479,71 @@ ENDMACRO
 \ ============================================================
 \ The digit block — sprite rows 6-13, all eight at once
 \ ============================================================
-\ Three glyph routines draw it, called with bufp and svp offset by 0,
-\ 16 and 32: adjacent 4-pixel columns are 8 bytes apart and a glyph is
-\ 8 pixels wide, so a position is two columns along. That is why ten
-\ routines serve 24 droid types — the position is in the pointer, not
-\ in the code.
+\ Three glyph routines draw it. Adjacent 4-pixel columns are 8 bytes
+\ apart and a glyph is 8 pixels wide, so a position is two columns
+\ along. That is why ten routines serve 24 droid types — the position
+\ is not in the code.
 \
-\ Each glyph walks its own eight rows, so the block is three walks over
-\ the same eight scanlines plus one for the save. SprBlkSave and
-\ SprBlkRest are the generic passes; the glyphs never save anything.
+\ THE GLYPHS DO NOT WALK. The block is eight known scanlines, so
+\ SprBuildRowPtrs works out all eight addresses once and each compiled
+\ row addresses its own: row r is (rowp+2r),Y. Three glyph passes over
+\ eight rows used to cost 21 calls to a scanline-advance routine, which
+\ was the largest single item left in a sprite; now they cost one build.
+\
+\ THE POSITION IS IN Y, NOT IN THE POINTER. Y = pos*16 + col*8, which
+\ tops out at 40 and so still fits the one save-area page. The glyph
+\ therefore holds the position in X across its whole body and loads
+\ `LDY drYcol0,X` where it used to load an immediate — two cycles more
+\ per column, against offsetting eight pointers per position. It is
+\ also why the three positions can share one set of pointers, and why
+\ the shifted glyphs' spill into a shared column still lands on the
+\ right byte: position p column 2 and position p+1 column 0 both come
+\ out at Y = (p+1)*16.
 \
 \ Only taken when the whole sprite cleared the wrap test. Otherwise all
 \ eight rows go the interpreted way, as they always did.
-SPR_GLYPH_STEP = 2 * UNIT_BYTES
 
-\ Save bufp, and put it back. The block runs the same eight scanlines
-\ four times over, so it needs a mark and a return.
-\
-\ bufp alone is the whole mark. The scanline rides in its low three
-\ bits, so restoring the pointer restores the walk position with it;
-\ and svp is not marked at all, because only the three glyph passes
-\ rewind here and a glyph never reads or writes svp — whatever they
-\ leave in it is overwritten from blkEndSvp when the block finishes.
-.SprBlkMark
-  LDA bufp   : STA blkPtr
-  LDA bufp+1 : STA blkPtr+1
-  RTS
-.SprBlkReset
-  LDA blkPtr   : STA bufp
-  LDA blkPtr+1 : STA bufp+1
+\ Y for column 0, 1 and 2 of each of the three digit positions. Column 2
+\ is only reachable by a shifted glyph's spill, and no glyph currently
+\ needs it — the exporter skips transparent bytes and every glyph's
+\ rightmost two pixels are blank — but the table costs three bytes and
+\ removes the question.
+.drYcol0 EQUB 0, 16, 32
+.drYcol1 EQUB 8, 24, 40
+.drYcol2 EQUB 16, 32, 48
+
+\ ============================================================
+\ SprBuildRowPtrs — the block's eight scanline addresses
+\ ============================================================
+\ Called with bufp on the block's first row, and leaves it there. The
+\ walk is the same one SCANSTEP does, minus svp: this runs before
+\ SprBlkSave, which walks svp itself. Eight rows starting anywhere in a
+\ character row cross into the next one at most once, so the expensive
+\ arm is taken once per block rather than once per row.
+.SprBuildRowPtrs
+  LDX #0
+.brp_row
+  LDA bufp   : STA rowp,X
+  LDA bufp+1 : STA rowp+1,X
+  INX
+  INX
+  CPX #16
+  BEQ brp_done
+  INC bufp
+  BNE brp_nc
+  INC bufp+1
+.brp_nc
+  LDA bufp
+  AND #7
+  BNE brp_row                   \ still inside this character row
+  CLC
+  LDA bufp   : ADC #LO(ROW_BYTES-8) : STA bufp
+  LDA bufp+1 : ADC #HI(ROW_BYTES-8) : STA bufp+1
+  JSR WrapBufFwd
+  JMP brp_row
+.brp_done
+  LDA rowp   : STA bufp         \ back to the first row, for SprBlkSave
+  LDA rowp+1 : STA bufp+1
   RTS
 
 \ All seven columns of all eight rows. Column 6 is only ever written by
@@ -575,48 +583,33 @@ SPR_GLYPH_STEP = 2 * UNIT_BYTES
 \ shift were worked out once per sprite in SprSetSlot; the restore
 \ never comes here, because putting the background back does not care
 \ what was drawn over it.
+\
+\ X SURVIVES INTO THE GLYPH and is the position it draws at, so the
+\ table index goes in Y instead. Nothing here touches bufp: the glyph
+\ addresses the row pointers, and the position is an offset in Y.
 .SprBlkGlyph
-  STX sprDigPos
-  JSR SprBlkReset
-  LDX sprDigPos
-  LDA sprMulStep,X              \ the position, as a byte offset
-  BEQ sbg_at                    \ position 0 needs no adjustment
-  CLC
-  ADC bufp : STA bufp           \ bufp only: the glyph does not save
-  BCC sbg_at
-  INC bufp+1
-.sbg_at
   LDA sprDig,X
   CLC
   ADC sprGlyphBase              \ shift picks the half of the table
-  TAX
-  LDA drGlyphLo,X : STA sbg_call+1
-  LDA drGlyphHi,X : STA sbg_call+2
+  TAY
+  LDA drGlyphLo,Y : STA sbg_call+1
+  LDA drGlyphHi,Y : STA sbg_call+2
 .sbg_call
   JMP &FFFF                     \ tail call: the glyph ends in RTS
 
-.sprMulStep EQUB 0, SPR_GLYPH_STEP, 2*SPR_GLYPH_STEP
-
 \ SprDigitBlock — save the eight rows, then draw the three glyphs over
-\ them. Four walks of the same scanlines, so the position after the
-\ block is taken from the save pass and put back at the end; the glyph
-\ passes each rewind to the mark.
+\ them. The save pass is the only one that walks, so it is also what
+\ leaves bufp and svp on row 14 for the caller; the glyphs run off the
+\ row pointers and disturb neither.
 .SprDigitBlock
-  JSR SprBlkMark
+  JSR SprBuildRowPtrs
   JSR SprBlkSave
-  LDA bufp    : STA blkEnd
-  LDA bufp+1  : STA blkEnd+1
-  LDA svp     : STA blkEndSvp
   LDX #0
 .sdb_glyph
   JSR SprBlkGlyph
-  LDX sprDigPos
   INX
   CPX #3
   BNE sdb_glyph
-  LDA blkEnd     : STA bufp
-  LDA blkEnd+1   : STA bufp+1
-  LDA blkEndSvp  : STA svp
   RTS
 
 \ ============================================================
@@ -1017,9 +1010,5 @@ SPR_SPIN = 0                    \ frames between phases; full energy = 0
 .sprShiftW  EQUB 0              \ the shift this draw or restore is using
 .sprGlyphBase EQUB 0            \ 0 or 10: which half of the glyph table
 .sprDig     SKIP 3              \ the droid's three digits, as glyph numbers
-.sprDigPos  EQUB 0
-.blkPtr     EQUW 0              \ the digit block's start, for the rewinds
-.blkEnd     EQUW 0              \ and where the block leaves off
-.blkEndSvp  EQUB 0
 .sprDigit   EQUW 0
 .sprRowBuf  SKIP SPR_W * 2

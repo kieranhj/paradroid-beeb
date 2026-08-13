@@ -395,15 +395,17 @@ def emit_glyph_code(f, mem):
     so ten routines cover all 24 types - and the three positions are reached
     by offsetting bufp, not by generating three copies.
 
-    A glyph walks its own eight rows, so this needs no per-type trampoline and
-    nothing is generated at run time.
+    A GLYPH DOES NOT WALK. The block is eight known scanlines, so
+    SprBuildRowPtrs works out all eight addresses once and row n addresses
+    (rowp+2n),Y. Three glyph passes over eight rows used to cost 21 calls to
+    a scanline-advance routine; now they cost one build, shared.
 
-    DRAW ONLY, no saving - which is also why the walk between rows is
-    SprNextScanB rather than SprNextScan. A glyph addresses everything as
-    (bufp),Y and never reads svp, so advancing svp in step through these
-    21 walks produced a value nothing looked at.
+    The POSITION rides in X for the whole routine and drYcolN,X turns it into
+    a Y offset of pos*16 + col*8. That costs two cycles a column against
+    offsetting eight pointers per position, and it is what lets the three
+    positions share one set of pointers.
 
-    The 2 px shift spills each glyph into the next
+    DRAW ONLY, no saving. The 2 px shift spills each glyph into the next
     one's first byte, so under a shift the three glyphs share columns 2 and 4
     - and whichever glyph writes a shared column first would have to be the
     one that saves it, which is not a property a glyph knows about itself.
@@ -425,23 +427,23 @@ def emit_glyph_code(f, mem):
                 rows = [shift_row(r) for r in rows]
             f.write('.drGlyph%d_%d\n' % (shift, d))
             for n, row in enumerate(rows):
+                # Row n of the block has its own pointer, so nothing walks.
+                # X holds the digit POSITION for the whole routine and
+                # drYcolN,X turns it into a Y offset - see the digit block
+                # header in sprite.asm.
+                ptr = 'rowp+%d' % (2 * n)
                 for col, b in enumerate(row):
                     if not b:
                         continue
                     m = mode1_mask(b)
-                    f.write('  LDY #%d*UNIT_BYTES\n' % col)
+                    f.write('  LDY drYcol%d,X\n' % col)
                     if m == 0:
-                        f.write('  LDA #&%02X : STA (bufp),Y\n' % b)
-                        size += 6
+                        f.write('  LDA #&%02X : STA (%s),Y\n' % (b, ptr))
+                        size += 7
                     else:
-                        f.write('  LDA (bufp),Y : AND #&%02X : ORA #&%02X'
-                                ' : STA (bufp),Y\n' % (m, b))
-                        size += 10
-                if n != 7:
-                    # SprNextScanB, not SprNextScan: a glyph never touches
-                    # svp, so keeping it in step here is work nothing reads.
-                    f.write('  JSR SprNextScanB\n')
-                    size += 3
+                        f.write('  LDA (%s),Y : AND #&%02X : ORA #&%02X'
+                                ' : STA (%s),Y\n' % (ptr, m, b, ptr))
+                        size += 11
             f.write('  RTS\n')
             size += 1
 
