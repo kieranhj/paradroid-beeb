@@ -699,7 +699,14 @@ ENDMACRO
 \ Restore walks slots backwards and draw walks forwards, so where
 \ two sprites overlap the one drawn last is the one restored first
 \ and the background comes back in the order it was covered.
+\ THE SPRITE BANK IS PAGED IN HERE, not by the caller. Everything the
+\ blitter reads out of sideways RAM — artwork, the compiled rows, the
+\ glyphs, the sequence lists — is in SWRAM_SPR, and everything else in
+\ the game reads SWRAM_DATA, so the swap belongs at the two doors into
+\ the blitter rather than scattered up the call chain. 8 cycles each
+\ way, twice a pass.
 .SprRestoreAll
+  PAGEBANK SWRAM_SPR
   LDX #SPR_SLOTS-1
 .sra_loop
   STX sprIter
@@ -707,9 +714,11 @@ ENDMACRO
   LDX sprIter
   DEX
   BPL sra_loop
+  PAGEBANK SWRAM_DATA
   RTS
 
 .SprDrawAll
+  PAGEBANK SWRAM_SPR
   LDX #0
 .sda_loop
   STX sprIter
@@ -718,6 +727,7 @@ ENDMACRO
   INX
   CPX #SPR_SLOTS
   BNE sda_loop
+  PAGEBANK SWRAM_DATA
   RTS
 
 \ ============================================================

@@ -52,9 +52,31 @@ IRQ1V         = &0204
 \ but a fixed pair is fine while the machine is a known quantity.
 ROMSEL     = &FE30
 ROMSHAD    = &F4
-SWRAM_DATA = 4                  \ bank holding PARADAT
-SWRAM_CODE = 5                  \ reserved: paged code, Layers 9-11
+SWRAM_DATA = 4                  \ tiles, levels, palettes, droid game data
+SWRAM_SPR  = 5                  \ the whole sprite blitter: artwork and code
 SWRAM_BASE = &8000
+
+\ ---- two banks, swapped twice a pass ------------------------
+\ The blitter outgrew what was left of one bank once every rotor row
+\ and every glyph became compiled code, so the sprite half moved out
+\ on its own. Only one bank is visible at a time, which is workable
+\ because the two halves are never wanted at once: DoRedraws reads
+\ tiles and charRemap, the blitter reads none of that, and the two
+\ run at different points in the pass.
+\
+\ SprRestoreAll and SprDrawAll page SWRAM_SPR in and SWRAM_DATA back
+\ out around themselves, so the data bank is what everything else
+\ sees and no caller has to know. Two swaps a pass, 8 cycles each.
+\
+\ The IRQ is the thing that would break this, and does not: RuptVSync
+\ and RuptTimer touch the CRTC, the VIA and their own variables, and
+\ read nothing out of either bank. Checked, because an interrupt that
+\ read tile data would corrupt at random with the sprite bank in.
+MACRO PAGEBANK bank
+  LDA #bank
+  STA ROMSHAD                   \ both, always — see the note above
+  STA ROMSEL
+ENDMACRO
 
 CHAR_BYTES = 16                 \ a character is 16 bytes: two 8-byte halves
 
@@ -398,9 +420,18 @@ ORG &1100
   LDX #LO(loadcmd)              \ must follow the mode change: VDU 22
   LDY #HI(loadcmd)              \ clears what the OS thinks is its screen
   JSR OSCLI
+  LDA #SWRAM_DATA               \ PARADAT lands at &3000 and is copied up
+  LDX #DATA_PAGES               \ into SWRAM; the staging area is free after
+  JSR PageBankIn
 
-  JSR PageDataIn                \ PARADAT lands at &3000 and is copied up
-                                \ into SWRAM; the staging area is free after
+  LDX #LO(loadspr)              \ and again for the sprite bank, staged over
+  LDY #HI(loadspr)              \ the same &3000. The filing system pages
+  JSR OSCLI                     \ DFS in and out around its own call and
+  LDA #SWRAM_SPR                \ restores from ROMSHAD, which PageBankIn
+  LDX #SPR_PAGES                \ has kept honest, so the second load is no
+  JSR PageBankIn                \ different from the first
+
+  PAGEBANK SWRAM_DATA           \ the data bank is the resting state
 
   JSR FillPanel                 \ after the staging area is done with: it
                                 \ reaches past &4800, over the panel
@@ -520,6 +551,9 @@ ENDIF
 .loadcmd
   EQUS "LOAD PARADAT"
   EQUB 13
+.loadspr
+  EQUS "LOAD PARASPR"
+  EQUB 13
 
 \ ============================================================
 \ PageDataIn — move PARADAT from &3000 into sideways RAM bank 0
@@ -535,8 +569,8 @@ ENDIF
 \ cannot be paged out during play. That displaces BASIC, which we
 \ never return to, and not DFS, which lives in its own socket and
 \ which the MOS pages in and back out around each of its own calls.
-.PageDataIn
-  LDA #SWRAM_DATA
+\ Called twice, once per bank: A selects it, X is the page count.
+.PageBankIn
   STA ROMSHAD                   \ both, always — see the note at the top
   STA ROMSEL
 
@@ -544,7 +578,6 @@ ENDIF
   LDA #HI(DATA_LOAD) : STA swSrc+1
   LDA #LO(SWRAM_BASE): STA swDst
   LDA #HI(SWRAM_BASE): STA swDst+1
-  LDX #DATA_PAGES
 .pdi_page
   LDY #0
 .pdi_byte
@@ -779,8 +812,33 @@ INCLUDE "src/data/chardata.asm"
 INCLUDE "src/data/colours.asm"
 INCLUDE "src/data/tiledefs.asm"
 INCLUDE "src/data/levels.asm"
-INCLUDE "src/data/droids.asm"
+INCLUDE "src/data/droidgame.asm"
 .data_end
+
+\ SAVED HERE, NOT AT THE BOTTOM. SAVE writes out whatever the assembled
+\ image holds at the time it runs, and the sprite bank below is about to
+\ overwrite these same addresses — so a SAVE left until the end would
+\ write the sprite bank's bytes into PARADAT. CLEAR releases beebasm's
+\ overwrite guard; it does not give the two banks separate storage.
+SAVE "PARADAT", data_start, data_end, DATA_LOAD, DATA_LOAD
+
+\ ============================================================
+\ The sprite bank — artwork and compiled blitter code
+\ ============================================================
+\ A second ORG at &8000: both banks appear at the same addresses, and
+\ each label resolves to the address it will have when ITS bank is
+\ paged in. Nothing here is reachable while SWRAM_DATA is selected,
+\ which is why SprDrawAll and SprRestoreAll swap around themselves.
+\
+\ CLEAR is what lets the same addresses be assembled twice — beebasm
+\ tracks which bytes have been written and refuses to overwrite them,
+\ which is exactly the guard you want everywhere except here.
+CLEAR SWRAM_BASE, SWRAM_BASE + &4000
+ORG SWRAM_BASE
+.spr_start
+INCLUDE "src/data/droids.asm"
+.spr_end
+SAVE "PARASPR", spr_start, spr_end, DATA_LOAD, DATA_LOAD
 
 ASSERT DR_W == SPR_W            \ sprite.asm declares these ahead of the
 ASSERT DR_H == SPR_H            \ generated data; keep the two in step
@@ -788,7 +846,9 @@ ASSERT DR_SEQSHIFT == SPR_SEQSHIFT
 ASSERT DR_GLYPHS == SPR_DIG_GLYPHS
 
 DATA_PAGES = (data_end - data_start + 255) DIV 256
+SPR_PAGES  = (spr_end - spr_start + 255) DIV 256
 ASSERT data_end <= SWRAM_BASE + &4000
+ASSERT spr_end  <= SWRAM_BASE + &4000
 
 \ The staging copy overruns the panel, the mask table and the bottom
 \ of the play buffer, and that is fine: PageDataIn is the FIRST thing
@@ -801,6 +861,8 @@ ASSERT data_end <= SWRAM_BASE + &4000
 \ would mean the data no longer fits where it is going.
 ASSERT DATA_PAGES * 256 <= &4000
 ASSERT DATA_LOAD + DATA_PAGES * 256 <= &8000
+ASSERT SPR_PAGES * 256 <= &4000
+ASSERT DATA_LOAD + SPR_PAGES * 256 <= &8000
 
 ASSERT charset_end - charset == NUM_CHARS * CHAR_BYTES
 
@@ -808,6 +870,7 @@ PRINT "code    ", ~start, "-", ~code_end
 PRINT "tilemap ", ~tilemap, "-", ~tilemap_end
 PRINT "charset ", ~charset, "-", ~charset_end
 PRINT "data    ", ~data_start, "-", ~data_end, " (SWRAM bank", SWRAM_DATA, ",", DATA_PAGES, "pages )"
+PRINT "sprite  ", ~spr_start, "-", ~spr_end, " (SWRAM bank", SWRAM_SPR, ",", SPR_PAGES, "pages )"
 
 SAVE "PARA",    start,      code_end, start
-SAVE "PARADAT", data_start, data_end, DATA_LOAD, DATA_LOAD
+\ PARADAT and PARASPR are saved where they are assembled, above.
