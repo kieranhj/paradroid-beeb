@@ -42,7 +42,7 @@ sampled mid-redraw.
 | | |
 |---|---|
 | 1 px sprite positioning | Needs four shifted copies, 1820 bytes — waiting on `PARADAT` moving to sideways RAM. 2 px matches the C64 artwork's own pixel size. |
-| 2 px world scrolling | Master-only via shadow RAM, and now **planned in full** — see **Master-only extensions**. Costs +60–80% on all drawing because both buffers must stay current, so it fits today with the player alone but not with a full droid pool. Two free perceptual A/Bs come first: at 25 Hz the frame rate may already be the coarser quantum. |
+| 2 px world scrolling | **Built, verified, and paused** on a Master — `TARGET_MASTER` in `main.asm`. Correct to the byte; 25% over the frame budget, so it runs at ~12.5 Hz. See **Master-only extensions** for the as-built write-up and the ordered list of what is left. |
 | Play area is 320 × 120, not 128 | Consequence of the single hardware wrap — see Layer 3d. Getting the row back needs the 20K wrap or per-cycle wrap bits. **KC's call.** |
 | Vertical granularity | 1 scanline against 4 px horizontal is lopsided. 2 or 4 scanlines costs nothing extra. Decide when there is a droid to move. |
 | `$D021` is an assumption | Marked `[assumed]` in `export_bbc.py`. First suspect if deck colours look wrong on hardware. |
@@ -181,9 +181,9 @@ palettes. Judge that from a conversion, not from the C64 screenshots.
 | `&0100–&01FF` | 256 B | stack |
 | `&0400–&0C90` | 2192 B | MODE 1 charset, built at deck load — reclaimed OS workspace |
 | `&0C90–&10FF` | ~1.1 K free | rest of the reclaimed OS workspace |
-| `&1100–&2B0D` | 6.5 K | code + sprite data (`PARA`). DFS random-access buffer space, safe for `*LOAD` |
-| `&2B0D–&2BFF` | **243 B free** | |
-| `&2C00–&3000` | 1 K | tile map, built at deck load |
+| `&1100–&2AB3` | 6.5 K | code + sprite data (`PARA`). DFS random-access buffer space, safe for `*LOAD` |
+| `&2AB3–&3000` | **1.3 K free** | was 99 bytes until the tile map moved out — regenerate from `build.ps1`, these numbers move every layer |
+| `&3800–&3C00` | 1 K | tile map, built at deck load. Moved here from `&2C00`: this is space PARADAT's staging freed, and it hands the code back the 1 K it was running out of |
 | `&3000–&4707` | 5.8 K | `PARADAT`: C64 char data, colour schemes, tile defs, deck RLE |
 | `&4800–&547F` | 3.2 K | panel — 5 rows × 640, displayed by rupture cycle 1 |
 | `&5480–&5647` | 455 B | the player sprite, shifted 2 px right — built at startup |
@@ -1229,6 +1229,9 @@ the table, because Layer 4 moved them twice:
 | `&1100-&2B0D` | code + sprite data |
 | `&2B0D-&2BFF` | **free — 243 bytes** |
 | `&2C00-&3000` | tile map |
+
+> Superseded. The 243 bytes were down to 99 by the time the Master work started, and the tile map has
+> since moved to `&3800`. See the memory budget near the top of this document.
 | `&3000-&4707` | `PARADAT`, loaded after the mode change |
 
 **243 bytes is the whole of the headroom below `&3000`**, and Layer 5 has to fit droid state and
@@ -1458,268 +1461,204 @@ path stays readable. **None of these are on the critical path.** `PLAN.md`'s tar
 with two sideways RAM banks; anything here either forks the rendering path or makes the port
 Master-only, and that is a decision not yet taken.
 
-### 2 px horizontal scrolling, via shadow RAM — planned, not started
+### 2 px horizontal scrolling, via shadow RAM — ⏸ PAUSED, working and verified, 25% over budget
 
-The scheme Layer 4a rules out on a Model B — two 10K circular strips, a second copy of the map
-offset by 2 px, choosing which one R12/R13 points at. It fails there because a circular strip's
-period must equal the hardware wrap span and only one wrap region exists. It is not a compromise
-version of that idea; it is the *same* idea, which the Master can actually host.
+**Status at the pause (2026-08-12).** The scheme is built and correct. Buffer B is a true 2 px shift
+of buffer A, byte for byte, sprite included, and the display selects between them from the view
+position. What it is not is fast enough: an iteration costs ~100,000 cycles against a 79,872-cycle
+budget, so the loop stretches to about 4 fields instead of 2 and the game runs at roughly 12.5 Hz.
+**Everything outstanding is optimisation, not correctness** — see *What is outstanding* at the end.
 
-**The mechanism.** Both buffers sit at the same address, `&5800–&7FFF`: one in main RAM, one in
-shadow. Same 10K wrap, same R12/R13, same `scrollS`, same `line`, same scroll arithmetic — the only
-difference between displaying A and displaying B is one bit of ACCCON (`&FE34`): `D` selects which
-RAM the video fetches from, `X` selects which one the CPU sees at `&3000–&7FFF`. So none of the
-addressing problems that kill it on a Model B arise; we are not fitting two strips into one wrap
-region, we are using the same region twice over.
+Build it with `TARGET_MASTER = TRUE` in `src/main.asm`; `build.ps1` reads that flag and names the
+image `PARADROID-M.SSD`. `TEST_DROIDS` is off in the paused state — the droid pool does not fit and
+never did at this cost.
 
-- **A** holds the world at the 4 px-aligned origin `mapHX * 4`, exactly as today.
+#### The mechanism
+
+Two copies of the play buffer at the **same address**, `&5800–&7FFF`: one in main RAM, one in
+shadow. Same 10K wrap, same R12/R13, same `scrollS`, same `line`, same scroll arithmetic.
+
+- **A** holds the world at the 4 px-aligned origin `mapHX * 4`, exactly as the Model B does.
 - **B** holds the same origin **+ 2 px**.
-- `posX` quantises to 2 px, and **bit 1 of `posX` selects the buffer.** 0 → A, 1 → B.
+- **Bit 1 of `posX` selects which one the video fetches**, through ACCCON's D bit.
 
-**This is not a per-field alternation and not a flicker trick.** One buffer is displayed for the
-whole iteration and which one is a pure function of position parity. Nothing in the scroll
-arithmetic changes; the CRTC still steps 4 px and the 2 px comes entirely from the choice of buffer.
+This is not a per-field alternation and not a flicker trick: one buffer is displayed for the whole
+iteration and which one is a pure function of position parity. The CRTC still steps 4 px; the last
+2 px of resolution come from the choice of buffer. Either buffer may be the one displayed next, so
+both are kept current at all times — every edge redraw and every sprite blit happens twice, once
+with the CPU seeing main RAM at `&3000–&7FFF` and once with it seeing shadow (ACCCON's X bit).
 
-**Confirmed by KC, not assumed:**
-- The Master's screen wrap is driven the same way as the Model B's — the System VIA addressable
-  latch — so the 10K/`&5800` setting and everything derived from it carries over unchanged, **and it
-  holds for shadow fetches too**. This was the gating question; had it failed, the scheme died.
-- Writing ACCCON's `D` bit takes effect **instantly**, including mid-scanline. Per-field switching
-  is therefore trivially safe; mid-scanline switching is a whole other technique and a conversation
-  for another day.
-- `D` and `X` are independent, and ACCCON must be written whole from a shadow copy — never
-  read-modify-written — because bit 7 (IRR) forces an interrupt.
-- **The current Model B build already runs on a Master.** So the `&1100` code base, the `&0400`
-  charset, SWRAM banks 4/5 and the IRQ1V takeover all survive MOS 3.20, and none of them are on the
-  work list below. IRQ timing differences from the 65C12 and the MOS handler are taken as negligible
-  for now; if the rupture drifts, `T1_PROBE` is still the way to re-derive `T1_TUNE`, and the rule
-  is to err **late** rather than early.
+The Model B cannot host this, and the reason is not the second buffer: a circular strip only works
+because its period equals the hardware wrap span, and there is exactly one wrap region. On a Master
+both buffers live at the same address, so the wrap is shared and the switch is one bit.
 
-#### Before building it: is the 4 px quantum actually what is wrong?
+#### Hardware facts, confirmed rather than assumed
 
-At `FRAME_LOCK = 2` the world updates 25 times a second, and **the temporal quantum may already be
-coarser than the spatial one** — in which case halving the spatial one buys much less than the
-+60–80% drawing cost is worth.
+- The System VIA addressable latch drives the screen wrap on a Master exactly as on a Model B,
+  **and it holds for shadow fetches**. This was the gating question; had it failed the scheme died.
+- **ACCCON is `IRR TST IFJ ITU Y X E D`, so X is bit 2 and D is bit 0.** Flipping bit 1 flips E,
+  which only redirects code executing in `&C000–&DFFF`; every write then still lands in main RAM,
+  both passes draw the same buffer, and shadow keeps the zeros it powered on with. It presents as
+  "the second pass never ran", with nothing whatever wrong at the second pass. Cost half a day.
+- **Y must be preserved.** The Master boots at `ACCCON = &18` with Hazel paged in at `&C000–&DFFF`
+  and the OS keeps filing-system workspace there. `AcconInit` keeps Y, ITU, IFJ and TST, and forces
+  D, X and IRR off. IRR is bit 7 and forces an interrupt we have no handler for, so ACCCON is always
+  written whole from `acconVal` and never read-modify-written.
+- Writing D takes effect instantly, mid-scanline included. We only ever change it at VSync, where
+  every fetch of the field still to come is ahead of us, so the window is the whole handler.
+- The existing Model B build already ran on a Master unmodified, so `&1100`, the `&0400` charset,
+  SWRAM banks 4/5 and the IRQ1V takeover all survive MOS 3.20. 65C12 timing differences are taken as
+  negligible; if the rupture ever drifts, `T1_PROBE` re-derives `T1_TUNE` and the rule is to err late.
 
-The A/B that settles this needs no new code, because the vertical axis is *already* fine-grained at
-the same rate: hold M and then X at the same low speed and compare. If vertical reads visibly
-smoother, granularity is the bottleneck and this is worth building. If it reads about as chunky, the
-bottleneck is 25 Hz and the lever is `FRAME_LOCK`, not shadow RAM. A second free probe — force
-horizontal to 8 px steps for one build — calibrates the perceptual slope 8 → 4 and so predicts what
-4 → 2 is worth.
-
-**Run both of these before writing any of the below.**
-
-#### The 2 px shift is two tables
-
-MODE 1 pixel *n* takes bits `7-n` and `3-n`, so shifting a 4 px column left by 2 px pulls the other
-two pixels out of the next column:
+#### The 2 px shift
 
 ```
-B[u] = ((A[u] << 2) AND &CC)  OR  ((A[u+1] >> 2) AND &33)
+B[u] = ((A[u] << 2) AND &CC) OR ((A[u+1] >> 2) AND &33)
 ```
 
-Two 256-byte tables built at startup like `SPR_MASKTAB`. They must live **below `&3000`** — the
-~1.1 K free at `&0C90–&10FF` — so they are readable under either `X` setting.
+MODE 1 pixel *n* is bits `7-n` and `3-n`, which is why neither mask is contiguous: shifting left by
+two pixels moves bits 5,4 to 7,6 and bits 1,0 to 3,2, and the two bits dropped off each pair come
+from the next column.
 
-#### Correction: B cannot be produced by shifting bytes out of A
+**Done with shifts, not lookup tables.** Both forms measure 41 cycles a byte — the running index is
+in Y and only X is left to index a table with, so the table form needs the same temporary — and the
+tables would have cost 512 bytes of the space below `&3000` plus a build step.
 
-The paragraph this section used to carry said B's exposed edges could be made by shifting bytes out
-of A rather than redrawing from the tile map. **On a Master that is not available**: `X` maps one
-buffer or the other into `&3000–&7FFF`, never both, so no loop can read A and write B.
+**B is drawn from the tile map, not derived from A.** An earlier version of this plan assumed B's
+exposed edges could be made by shifting bytes out of A. Shadow paging forbids it: X maps one buffer
+or the other, never both, so no loop can read A and write B. It does not matter, because every
+source the draw path reads — charset at `&0400`, tile map at `&3800`, tile definitions and compiled
+sprites in sideways RAM — lives outside `&3000–&7FFF`. B's draw is the same routine with a different
+inner copy loop, run with X set.
 
-The way out is better than the thing it replaces. Every source the draw path reads lives *outside*
-`&3000–&7FFF` — charset at `&0400`, tile map at `&2C00`, `tiledefs` and `charRemap` in SWRAM at
-`&8000` — so **B can be drawn from the tile map with `X = 1` and no cross-buffer reads at all.** It
-is the same routine with a different inner copy loop: same lookups, and the copy goes from ~13
-cycles a byte to ~28. The +60–80% estimate stands; only the reason for it changes.
+Two places avoid the naive doubling of lookups:
 
-So the architecture is one sentence: **run the existing drawing code twice, with ACCCON `X` flipped,
-B using the shifted copy loop and the other compiled sprite shift.**
+- **The band carries its lookahead.** Two adjacent units are the two halves of one character, so of
+  the two units a character produces only the right one reaches past it — and what it reaches for is
+  the next character, which the loop is about to look up anyway. `DrawBandRowsS` keeps one character
+  in hand and looks one ahead: 41 lookups for 80 units, against A's 40.
+- **The column rides the cached tile pointer.** When `halfX` is even the partner column is the other
+  half of the same character, so `chp2` is `chp + 8` and there is no second lookup at all. When it is
+  odd the partner is the next character along, which is behind the same cached tile pointer unless
+  this is the last character of the tile. So 7 columns in 8 cost a few instructions over the straight
+  path, and only the eighth falls back to the generic per-cell lookup.
 
-#### What the memory map does for us, and to us
+#### The sprite is per buffer
 
-| Region | Effect of the `X` flip |
-|---|---|
-| `SPR_SAVE = &3000` | inside the shadow region, so **each buffer gets its own sprite save area at the same address, for no code at all** |
-| Panel `&4800`, mask table `&5700` | also inside it — so both must be **built twice**, once per `X`. Cheap, and a silent-corruption trap if missed |
-| Tile map `&2C00`, charset `&0400`, code `&1100`, ZP, stack, SWRAM | outside it — unaffected, which is what makes the paragraph above work |
-| `PARADAT` staging at `&3000–&4707` | inside it, but dead after `PageDataIn`, and the load runs with `X = 0`. No action |
-| `sprSaved` flags (in code space) | **shared** between the buffers. Correct only while A and B are always drawn in lockstep — a real trap if B is ever skipped |
-
-#### Work list, in dependency order
-
-1. **`TARGET_MASTER` build flag** and a separate SSD. Not a runtime detect — the draw path forks.
-2. `shl2`/`shr2` tables below `&3000`; an ACCCON shadow-copy byte with set/flip helpers.
-3. **Init duplication:** `FillPanel` and `SprBuildMask` under both `X` settings, and `LoadDeck`'s
-   initial `RedrawAll` run for both.
-4. **Shifted copy loop** in `DrawBandRows`, `DrawColumn`, `DrawHalf*` and `RedrawAll`, selected by a
-   flag — duplicated inner loops, not a per-byte branch. **Right-edge case:** B's last unit needs the
-   character one beyond the view, and at `MAX_HX` that is map column 64, which does not exist. Clamp
-   `MAX_HX` by one half-character or feed a blank.
-5. **Main-loop sequencing**, six `X` flips an iteration — each an `LDA`/`STA`, so the flipping itself
-   is free:
-   `[X=0 restore A] [X=1 restore B] [move] [X=0 redraw A] [X=1 redraw B] [X=0 sprites A] [X=1 sprites B]`
-6. **Parity is part of the position and must be latched with it.** Park the `D` value alongside
-   `crtcLo`/`crtcHi`/`line` under the same `SEI` in `SetCRTCStart`, and have the VSync handler write
-   ACCCON from the park. Skip this and the display shows one field at a parity that belongs to the
-   next position — a one-field flicker indistinguishable from "the technique does not work". This is
-   the same bug Layer 3d already paid for once with `line`/`scrollS`.
-7. **Sprites** use the two existing compiled shift variants (`SPR_SHIFT0`/`SPR_SHIFT2`), chosen per
-   buffer from the parity. No new sprite data, no new tables.
-8. **Revisit the dead-zone camera** — this is the point of the exercise. With 2 px world scroll, try
-   pinning the player and compare against the dead zone, which exists only because 4 px lurched.
-
-#### Verification
-
-Extend the only oracle that has ever caught a drawing bug here. Dump **both** 10K buffers after
-full-speed diagonal scrolling at odd `mapHX` and `line != 0`; check A against `RedrawAll` as today,
-and **B against a Python 2 px shift of A**. Validate `shl2`/`shr2` offline against a reference shift
-before any 6502 is written, the way the sprite compiler was validated. Sample inside the `WaitVSync`
-spin and exclude the sprite footprint — both traps are recorded in Layer 5.
-
-#### Build log — steps 1 to 4 landed
-
-Steps 1-4 of the work list are in, and verified: **buffer B is a true 2 px shift of buffer A, 0
-differing bytes in 10240**, at odd `mapHX` (137) with `line` = 1 after full-speed diagonal
-scrolling, checked against a Python shift computed from A's own bytes. The unshifted checkpoint
-(step 3, B as a plain duplicate) also came out 0/10240.
-
-Four things worth carrying forward:
-
-- **ACCCON is `IRR TST IFJ ITU Y X E D`, so X is bit 2, not bit 1.** Flipping bit 1 flips E, which
-  only redirects code executing in `&C000-&DFFF` — so every write went to main RAM, both passes drew
-  the same buffer, and shadow stayed the zeros it powered on with. It presents as "the second pass
-  never ran". Settled by reading jsbeeb's `writeAcccon` after three emulator tests disagreed with the
-  model in my head.
-- **Y must be preserved.** The Master boots at `ACCCON = &18` with Hazel paged in at `&C000-&DFFF`
-  and the OS keeps filing-system workspace there. `AcconInit` keeps Y, ITU, IFJ and TST and forces
-  D, X and IRR off.
-- **The tile map moved to `&3800`, on both machines.** The Master build pushed it past `&3000` into
-  the shadowed region, where it collided with the sprite save area. The headroom below `&3000` was
-  **99 bytes, not the 243 recorded above** — that figure was stale. `&3800` is space PARADAT's
-  staging freed; `BuildLevel` runs once per buffer on the Master. It hands ~1K back to the code on
-  the Model B as well, and leaves `&3C00-&47FF` free in both.
-- **`MAX_HX` loses one character on the Master.** B's rightmost 4-pixel column takes its low two
-  pixels from the character beyond the right edge of the view, and at the Model B's limit that
-  character is map column 256, past the end of the tile map row. Cheaper than an edge test in the
-  hottest loop.
-
-**The shift is done with shifts, not tables.** `B[u] = ((A[u] << 2) AND &CC) OR ((A[u+1] >> 2) AND
-&33)`. A pair of 256-byte tables measures the same 41 cycles a byte — the running index is in Y and
-only X is left to index with, so the table form needs the same temporary — and would cost 512 bytes
-below `&3000` plus a build step. The band carries its lookahead between characters rather than
-looking each one up twice, so buffer B costs the same 41 lookups as A's 40, not 80.
-
-#### Steps 6 and 8's rounding — parity is live
-
-`DzRoundUnits` rounded the view to whole 4 px units, so bit 1 of `posX` was always 0 and buffer B
-could never be selected. `DZ_GRAIN` is now 2 on a Master, and that one constant is what makes the
-whole scheme visible. The parity is parked with `crtcHi`/`crtcLo`/`line` under the same `SEI` in
-`SetCRTCStart` and consumed by the VSync handler, so it cannot be split across frames the way
-`line`/`scrollS` were in Layer 3d.
-
-Confirmed: with `posX` moved from 524 to 526 and nothing redrawn, `acconVal` reads `&19` and the
-whole view steps 2 px. That is the technique working — a scroll step with no drawing at all.
-
-#### Step 7 — the sprite is per-buffer
-
-Buffer B holds the world 2 px further on, so the sprite must sit 2 px further LEFT in it. In
-4-pixel units with a 2 px shift on top that is:
+B holds the world 2 px further on, so the sprite must sit 2 px further **left** in it:
 
 | buffer A | buffer B |
 |---|---|
 | shift 1, unit *u* | shift 0, unit *u* |
 | shift 0, unit *u* | shift 1, unit *u-1* |
 
-So the two buffers genuinely use *different compiled shifts*, and at unit 0 the borrow makes the
-unit `&FF`, which the existing unsigned cull catches — the sprite really has left the screen in one
-buffer and not the other.
+The two buffers therefore use *different compiled shifts*, and at unit 0 the borrow makes the unit
+`&FF`, which the existing unsigned cull catches — the sprite really has left the screen in one buffer
+and not in the other.
 
-The input side is a few lines in `SprSetSlot`. The part that is not: **the seven per-slot draw-record
-arrays are now per buffer**, indexed `slot + sprRecOfs`, because `SprRestoreSlot` replays the draw's
-own record and the two buffers' records differ — different shift, sometimes a different unit, a
-different wrap answer, and at the edge one may have culled the slot while the other drew it. That
-last one is why `sprSaved` is one of the seven. `SETREC`/`RECX` macros do the indexing and collapse
-to the plain slot number on a Model B.
+That forces **the seven per-slot draw-record arrays to be per buffer**, indexed `slot + sprRecOfs`,
+because `SprRestoreSlot` replays the draw's own record and the two records differ: different shift,
+sometimes a different unit, a different wrap answer, and at the edge one buffer may have culled the
+slot while the other drew it. That last case is why `sprSaved` is one of the seven. The `SETREC` and
+`RECX` macros do the indexing and collapse to the plain slot number on a Model B.
 
-**Verified, and the whole-buffer oracle covers the sprite for free**: if the sprite is at the right
-place in B, then B is a true 2 px shift of A *including the sprite's own pixels*, because shifting
-the picture shifts the sprite with it. Both `SprAnimateAll` calls run before either draw, so the
-rotor phase is the same in both and there is nothing to exclude from the diff — unlike the Layer 4
-runs, where the footprint had to be computed and skipped.
+#### What the memory map does for us, and to us
+
+| Region | Effect |
+|---|---|
+| `SPR_SAVE = &3000` | inside the shadowed region, so each buffer gets its own sprite save area at the same address for no code at all |
+| Panel `&4800`, mask table `&5700` | also inside it, so both are **built twice**, once per X. Cheap, and a silent-corruption trap if ever missed |
+| Tile map, **moved to `&3800`** | it used to sit above the code, which had grown to within 99 bytes of it — not the 243 an older table here claimed. `&3800` is space PARADAT's staging freed. It is inside the shadowed region, so `BuildLevel` runs once per buffer |
+| `&3C00–&47FF` | ~3K free in **both** banks, which is where the pre-shifted charset goes |
+| Charset `&0400`, code `&1100`, ZP, stack, SWRAM | outside the region — untouched, which is what lets B draw from the tile map |
+| `MAX_HX` | one character shorter on a Master. B's rightmost column takes its low two pixels from the character beyond the right edge of the view, and at the Model B's limit that character is map column 256, past the end of the tile map row |
+
+`DZ_GRAIN` is the other load-bearing constant: `DzRoundUnits` rounded the view to whole 4 px units,
+so bit 1 of `posX` was always 0 and buffer B could never be selected. It is 2 on a Master, and that
+one number is what makes the whole scheme visible.
+
+**Parity is part of the position.** It is parked with `crtcHi`/`crtcLo`/`line` under the same `SEI`
+in `SetCRTCStart` and consumed by the VSync handler. Latched anywhere else and the display shows one
+field at an address from this frame with a parity from the next — a 2 px shudder that would read as
+the technique not working. This is the same trap `line`/`scrollS` fell into in Layer 3d.
+
+#### Verified
+
+Buffer B diffed against a 2 px shift of buffer A computed independently in Python, over the whole
+10240 bytes, after full-speed diagonal scrolling:
 
 | test | result |
 |---|---|
-| sprite drawn, even `mapHX` (136), `line` = 1 | **0 differing of 10240** |
-| sprite disabled and restored, same position | **0 differing of 10240** |
+| unshifted checkpoint (B a plain duplicate), before the shift landed | 0 / 10240 |
+| after right+down, odd `mapHX` (137), `line` = 1 | **0 / 10240** |
+| after left+up, odd `mapHX` (121), `line` = 1 | **0 / 10240** |
+| sprite **drawn**, even `mapHX` (136), `line` = 1 | **0 / 10240** |
+| sprite disabled and restored, same position | **0 / 10240** |
 
-The second one is the per-buffer *restore*: had B's restore replayed A's record, B would no longer
-be a clean shift of A.
+The sprite-drawn run is a complete test of its position for free: if the sprite is in the right place
+in B then B is a true shift of A *including the sprite's own pixels*, because shifting the picture
+shifts the sprite with it. Both `SprAnimateAll` calls precede both draws, so the rotor phase is
+identical in the two buffers and there is nothing to exclude from the diff — unlike the Layer 4 runs,
+where the footprint had to be computed and skipped.
 
-*Not clean, and not ours:* the restored buffer against a SPACE-forced `RedrawAll` differs in 38
-bytes, all on one scanline of the split row at `line = 1`. That is `BUGS.md` #1, the oracle defect —
-the differing scanline count has always equalled `line`, and one scanline for `line` = 1 is exactly
-that. It is not sprite-shaped either: a sprite is 7 units wide and this is 38 units across a single
-scanline. The re-observation did sharpen the entry, though, and `BUGS.md` now records that the
-scanline *index* looks off by one from what was written down.
+Two supporting checks worth keeping:
 
-#### The measured cost — it does not fit yet, even player-only
+- The shadow mapping is genuinely honoured by the emulator's memory access, not silently ignored:
+  `A5 5A` written to `&5800` under X reads back as zeros with X clear. Without that, "0 differing"
+  would have meant "the same buffer dumped twice".
+- Moving `posX` by 2 with **nothing redrawn** steps the whole view 2 px and sets `acconVal` to `&19`.
+  A scroll step with no drawing at all is the clearest demonstration of what the scheme buys.
 
-Player only, full-speed diagonal, `CheckWalls` poked to `RTS`, both buffers maintained:
+*Known and not ours:* the restored buffer differs from a SPACE-forced `RedrawAll` in 38 bytes on one
+scanline of the split row at `line` = 1. That is `BUGS.md` #1, the oracle defect — the differing
+scanline count has always equalled `line`. It is not sprite-shaped either: 38 units across a single
+scanline, where a sprite is 7 units wide. Re-observing it did sharpen the entry, and `BUGS.md` now
+records that its scanline *index* looks off by one from what is actually seen.
 
-| | measured | frame-locked would be |
-|---|---|---|
-| `posX` over 10 fields | **16 px** | 35 |
-| `posY` over 10 fields | **14 px** | 35 |
+#### The cost, measured
 
-`xSpd` and `ySpd` were both at `&0700`, so this is the loop stretching to ~4 fields an iteration,
-not the player moving slower. **The "fits comfortably today" estimate above was wrong**, and the
-error was in the drawing, not the sprites: the shifted copy is 41 cycles a byte against `CopyRun`'s
-13, so a band costs ~3× rather than the +60-80% assumed, and `DrawColumn` falls back to the generic
-uncached two-lookup path, which costs more again.
+**~100,000 cycles an iteration against a 79,872-cycle budget — 25% over.** Player only, full-speed
+diagonal, `CheckWalls` poked to `RTS`.
 
-**`DrawColumn`'s fallback is fixed** and it did not need a second set of the `Col*` state after all.
-The partner column is the *other half of the same character* when `halfX` is even, so `chp2` is just
-`chp + 8`; when `halfX` is odd it is the next character along, which is behind the **same cached tile
-pointer** unless this is the last character of the tile. So 7 columns in 8 cost a few instructions
-over the straight path and only the eighth falls back to the generic per-cell lookup.
+Measured by neutering `WaitVSync` so the loop free-runs and then timing `posY`, which advances
+exactly `ySpd` per iteration. **Do it that way and not by pixels-per-field:** the overrun quantises
+to whole fields, so the px-per-10-fields figure read 16 and 14 both before and after the column
+optimisation and could not see a real improvement at all.
 
-**Measured after that fix: 100,000 cycles an iteration against a 79,872-cycle budget — 25% over.**
-(Measured by neutering `WaitVSync` so the loop free-runs, then timing `posY`, which advances exactly
-`ySpd` per iteration. The px-per-10-fields figures above cannot show this: the overrun quantises to
-whole fields, so they read 16/14 both before and after the column fix.)
+The old +60–80% estimate for the drawing was wrong, and the error was in the drawing rather than the
+sprites: the shifted copy is 41 cycles a byte against `CopyRun`'s 13, so a band costs roughly 3×.
 
-~20,000 cycles have to come out. What is on the table:
+#### What is outstanding
 
-- **A pre-shifted charset** takes the band from 41 cycles a byte to 29 — store `shr2` of every
-  charset byte and the other half stays an inline `ASL`/`ASL`/`AND`. It is 2192 bytes and needs to be
-  readable with the CPU on shadow, so it goes at `&3C00` in shadow RAM, in the space the tile map
-  move just opened. Both halves pre-shifted would reach 23 cycles but needs 4384 bytes, which does
-  not fit under the panel. Worth roughly 6,700 cycles on a full-speed diagonal band plus ~3,000 on
-  the columns.
-- **The Layer 4 optimisation backlog**, ~14K identified and still unspent — and worth close to
-  double here, because inlining `CopyRun`/`BufNextUnit`/`CellXInc` saves the same call overhead on
-  both passes.
-- **`FRAME_LOCK = 3`** is the escape hatch if the cycles cannot be found: 119,808 cycles an
-  iteration, which 100,000 fits inside, with real-time speed preserved because `player.asm` scales
-  its constants by `FRAME_LOCK / PLY_ITER_FRAMES`. It buys a stable rate at the cost of 16.7 Hz,
-  which is the wrong trade when the thing being judged is smoothness — but a stable 16.7 Hz is a
-  far better thing to look at than a free-running 12.5.
+In the order they should be taken up:
 
-#### Budget: what can be seen now, and what waits
+1. **Pre-shifted charset — the next thing to do.** Store `shr2` of every charset byte and leave the
+   other half as the inline `ASL`/`ASL`/`AND`; the band goes from 41 cycles a byte to 29. It is 2192
+   bytes and must be readable with the CPU on shadow, so it goes at `&3C00` in shadow RAM, in the
+   space the tile map move opened. Worth ~6,700 cycles on a full-speed diagonal band plus ~3,000 on
+   the columns. Both halves pre-shifted would reach 23 cycles a byte but needs 4384 bytes, which does
+   not fit under the panel.
+2. **The Layer 4 optimisation backlog**, ~14K identified and still unspent — and worth close to
+   double here, because inlining `CopyRun`/`BufNextUnit`/`CellXInc` saves the same call overhead on
+   both passes.
+3. **Round-robin sprite updating** (Layer 5 step 5), which is what the droid pool needs on either
+   machine and needs twice as much here.
+4. **The dead-zone camera.** It exists only because the scroll was 4 px and the world lurched at low
+   speed. With 2 px it should shrink or go, and the player pin back towards centre — but that is a
+   judgement to make once the frame rate is honest, not before.
+5. **`FRAME_LOCK = 3` is the escape hatch** if the cycles cannot be found: 119,808 cycles an
+   iteration, which 100,000 fits inside, with real-time speed preserved because `player.asm` scales
+   its constants by `FRAME_LOCK / PLY_ITER_FRAMES`. A stable 16.7 Hz is the wrong trade when the
+   thing being judged is smoothness, but it is a far better thing to look at than a free-running
+   12.5 Hz.
 
-25 Hz gives ~80,000 cycles a pass, and seven sprites already cost ~67.6 K of it.
-
-| configuration | rough cost | verdict |
-|---|---|---|
-| player only, both buffers | ~19.3 K sprites, plus the redraw at ~+70% | **fits comfortably today** |
-| 7 droids, both buffers | ~135 K on sprites alone | ~1.7× over — needs round-robin updating (Layer 5 step 5) first |
-
-So the feel can be judged now, without spending the optimisation backlog, by building the spike with
-`TEST_DROIDS = FALSE`. What that spike cannot answer is whether it survives a full droid pool; that
-judgement waits on round-robin updating. Re-baseline both numbers on a Master with the User VIA T1
-harness before committing — the figures above are Model B measurements.
+**And the question that was never answered.** Two free perceptual A/Bs were proposed before any of
+this was built and were skipped: hold M then X at the same low speed and compare, since the vertical
+axis is already fine-grained at the same 25 Hz; and force horizontal to 8 px for one build to
+calibrate the slope 8 → 4. At 25 Hz the temporal quantum may simply be coarser than the spatial one,
+in which case 2 px buys less than it costs and the lever is `FRAME_LOCK`. That question is now
+cheaper to answer than it was, because a working 2 px build exists to compare against — but it is
+still the question that decides whether any of the optimisation above is worth spending.
 
 ## `src/` as it stands
 
@@ -1741,3 +1680,13 @@ Single-pass flat build, everything included from `main.asm`. No linker.
 Five of these ten files are not in the build. Worth deleting the three dead ones and the two retired
 ones before Layer 4 adds more, so that what is on disc is what runs — but check nothing wanted is
 buried in them first.
+
+This table predates Layer 4 and is missing `player.asm`, `sprite.asm` and `droidtest.asm`, all of
+which are live.
+
+**The Master fork is `IF TARGET_MASTER` blocks, not separate files** — in `main.asm` (ACCCON, the
+doubled drawing passes, `SETREC`/`RECX`), `screen.asm` (`HalfPtrPair`, `DrawHalfShift`,
+`ColCharPtrS`, the parity park), `scroll.asm` (`DrawBandRowsS`, `CopyRunShift`, the shifted column),
+`rupture.asm` (D written at VSync), `player.asm` (`DZ_GRAIN`) and `sprite.asm` (the per-buffer draw
+record). With the flag off, every one of them assembles to nothing and the Model B build is byte for
+byte what it was — which is checked by building both after any change here.
