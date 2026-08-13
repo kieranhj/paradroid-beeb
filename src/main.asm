@@ -435,7 +435,7 @@ swSrc    = &66                  \ sideways-RAM copy source  (2)
 psrc     = &68                  \ sprite row, pixel data    (2)
 swDst    = &6A                  \ sideways-RAM copy dest    (2)
 sprRow   = &6C                  \ sprite row being blitted
-\ &6D free
+dbIdx    = &6D                  \ DrawBandRows: character within the tile row
 svp      = &6E                  \ sprite background save pointer (2)
 
 bufp     = &70                  \ buffer write pointer      (2)
@@ -452,11 +452,11 @@ halfX    = &82                  \ working X, half-chars     (2)
 cellX    = &84                  \ working X, characters     (2)
 mapYr    = &86                  \ viewport Y, character rows
 cellY    = &87                  \ working Y, character rows
-halfSel  = &88                  \ 0 = left half, 1 = right
+dbN      = &88                  \ DrawBandRows: characters left in this tile
 uCount   = &89
 rCount   = &8A
 deck     = &8B
-dirty    = &8C
+dbCount  = &8C                  \ DrawBandRows: characters left in the row
 prevUp   = &8D
 prevDn   = &8E
 mcTmp    = &8F

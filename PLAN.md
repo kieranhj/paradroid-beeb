@@ -20,11 +20,11 @@ The level draw was measured and rewritten on 2026-08-13, in four steps: the band
 character rows** on the pass that crosses into them rather than the scanlines a move exposed; the
 copy that fills a cell was unrolled once its run length became constant; the `charRemap` unpack
 became a precomputed table; and a character's two halves became one 16-byte run, with `CellXInc`
-inlined behind it. Full-diagonal redraw went 38,472 → **20,065** cycles a pass and vertical
-28,527 → **11,803**, and the split row stopped existing on the way. More than half a character's
-cost is now the pixel copy itself. **The next one worth doing is walking the tile row instead of
-`cellX`, worth ~2,240 a band pass** — see *The level draw* under Layer 4's frame budget, which sets
-out why it needs its own pass rather than being tacked on.
+inlined behind it; and the row is walked as tiles of four characters rather than through `cellX`.
+Full-diagonal redraw went 38,472 → **19,172** cycles a pass and vertical 28,527 → **10,787**, and
+the split row stopped existing on the way. **Two thirds of what is left is the byte movement
+itself**, so the band is close to done and the next real gains are elsewhere — the sprite pool, or
+`keydown`'s OSBYTE. See *The level draw* under Layer 4's frame budget.
 
 **Before trusting any speed number, read the speed model section of Layer 4.** The C64's constants
 are per `GameLoop` iteration and an iteration is 2–3 frames, not 1. Every droid speed in
@@ -1446,30 +1446,56 @@ A character costs 318 cycles and **more than half of it is the pixel copy** (176
 when the day started: `BandCharPtr` 74, buffer advance and wrap test 20, `cellX` and loop control
 16, `Y` walk 32. The band has stopped being a lookup walk that happens to copy some bytes.
 
-##### What is left, and the one worth doing next
+##### Walking the tile row instead of `cellX` — and why it paid half what was predicted
 
-**Walk the tile row, not `cellX`** — worth about **2,240 a band pass**, five times anything else on
-the list. `BandCharPtr` spends most of its 74 cycles rediscovering where it is: derive the tile
-column from `cellX`, compare it against the cache, then rebuild `(cellX AND 3) + subRowOfs` as an
+`BandCharPtr` spent most of its 74 cycles rediscovering where it already was: derive the tile
+column from `cellX`, compare it against a cache, then rebuild `(cellX AND 3) + subRowOfs` as an
 index into the tile. But **a tile is 4 characters wide and those 4 codes are 4 consecutive bytes of
-`tiledefs`**. Restructured as 10 tiles × 4 characters, the inner four are `LDA (tdp),Y : INY` —
-about 25 cycles a character plus ~12 amortised for the tile — against 94 now, and `cellX`
-disappears entirely along with `CellXInc`.
+`tiledefs`**. The row is now walked as tiles of four, with the tile's row folded into `tdp` when it
+is built — `(tile AND 15)*16` is at most 240 and `subRowOfs` at most 12, so the add cannot carry —
+which leaves the four characters at `Y` = 0..3. `cellX` is no longer maintained across the row at
+all; the trailing half of an odd `mapHX` recomputes it, and forces `tileCol` to miss rather than
+trusting a stale column.
 
-The catch is that a row of 40 characters starting at an arbitrary `cellX` covers 11 tiles with a
-partial one at each end, and that has to compose with the existing odd-`mapHX` half at each end. Two
-nested special cases in the routine that has already produced three bugs, so it wants its own pass
-and the full odd/even, wrapping and non-wrapping diff matrix — not a tack-on.
+A row of 40 characters starting anywhere covers eleven tiles with a partial one at each end, so
+each tile draws `min(4 - sub, remaining)` and every tile after the first starts at 0. That composes
+with the odd-`mapHX` halves without a second special case.
 
-Smaller and duller, for after that:
+| per pass, 7 px | + inlined `CellXInc` | + tile walk |
+|---|---|---|
+| vertical | 11,803 | **10,787** |
+| full diagonal | 20,065 | **19,172** |
+| one band pass | 13,398 | **12,245** |
+
+**−1,153 a band pass for +111 bytes.** The estimate here was **2,240 and it came in at half that**,
+for a reason worth recording: the per-tile block is 111 cycles, not the ~61 first counted, because
+the walk's state does not fit in zero page and `LDY abs`/`INC abs` are a cycle or two dearer than
+their zero-page forms — plus the `min()` is 46 of those 111. Moving `dbN` and `dbCount` into the
+slots `halfSel` and `dirty` had been holding since both were retired recovered 162 of it. **Count
+the addressing modes, not just the instructions, before quoting a saving.**
+
+##### Where the level draw stands
+
+| per pass, 7 px | start of 2026-08-13 | now | |
+|---|---|---|---|
+| vertical | 28,527 | **10,787** | **−62%** |
+| full diagonal | 38,472 | **19,172** | **−50%** |
+
+Of a band pass's 12,245 cycles, **8,320 is the irreducible byte movement** — 13 cycles a byte is
+what `(zp),Y` on both sides costs and 640 bytes have to move. Two thirds of what is left is the
+copy itself.
+
+Still in the bank, all of it now small:
 
 | | per band pass |
 |---|---|
-| Inline `BandCharPtr`'s call — 12 cycles a character. Needs its body as a macro, and beebasm cannot uniquify the label inside it, so the body would have to lose its internal branch first | ~480 |
-| Self-modify the copy's addresses to use `abs,Y` instead of `(zp),Y` — 11 cycles a byte instead of 13, less the patching. Marginal, and it is self-modifying code in the hottest loop in the port | ~1,000 |
+| Hoist the `min(4 - sub, remaining)` out of the nine middle tiles by splitting head / full / tail | ~400 |
+| Inline `BandCharPtr`'s call for the two edge halves — 12 cycles, twice a pass | ~24 |
+| Self-modify the copy's addresses to use `abs,Y` instead of `(zp),Y` — 11 cycles a byte instead of 13, less the patching. Self-modifying code in the hottest loop in the port | ~1,000 |
 
-Beyond those the band is at its floor: 13 cycles a byte is what `(zp),Y` on both sides costs, and
-640 bytes have to move — 8,320 cycles of the 13,398.
+The first two are not worth the code paths. The third is the only one with real money in it and it
+is the least pleasant. **The band is close enough to done that the next real gains are elsewhere** —
+the sprite pool, or `keydown`'s OSBYTE `&81`.
 
 ##### Whole rows, not exposed scanlines
 

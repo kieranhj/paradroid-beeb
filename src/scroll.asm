@@ -274,8 +274,72 @@ ENDMACRO
 .dbr_setn
   STA dbCount
 
+\ ---- the tile walk ------------------------------------------
+\ A TILE IS FOUR CHARACTERS WIDE AND THOSE FOUR CODES ARE FOUR
+\ CONSECUTIVE BYTES of tiledefs. BandCharPtr did not use that: it
+\ derived the tile column from cellX, compared it against a cache, and
+\ rebuilt (cellX AND 3) + subRowOfs as an index, every character —
+\ about 40 cycles of rediscovering where it already was.
+\
+\ So the row is walked as tiles of four instead. The tile's row within
+\ tiledefs is folded into tdp when it is built, which leaves the four
+\ characters at Y = 0..3 and costs nothing: (tile AND 15)*16 is at
+\ most 240 and subRowOfs at most 12, so the add cannot carry.
+\
+\ A 40-character row starting anywhere covers eleven tiles with a
+\ partial one at each end, so each tile draws min(4 - sub, remaining)
+\ characters and every tile after the first starts at sub 0.
+\
+\ cellX is no longer maintained across the row — the trailing half
+\ recomputes it — so the INC that used to run per character is gone
+\ with everything else.
+  LDA cellX+1                   \ tile column = cellX >> 2
+  LSR A
+  LDA cellX
+  ROR A
+  LSR A
+  STA dbTile
+  LDA cellX                     \ first character within that tile
+  AND #3
+  STA dbSub
+
+.dbr_tile
+  LDY dbTile                    \ tile number -> tdp, row folded in
+  LDA (maprow),Y
+  PHA
+  AND #&0F
+  ASL A : ASL A : ASL A : ASL A
+  CLC : ADC subRowOfs           \ <= 240 + 12: cannot carry
+  STA tdp
+  PLA
+  LSR A : LSR A : LSR A : LSR A
+  CLC : ADC #HI(tiledefs)
+  STA tdp+1
+  INC dbTile
+
+  SEC                           \ n = min(4 - sub, remaining)
+  LDA #4
+  SBC dbSub
+  CMP dbCount
+  BCC dbr_n
+  LDA dbCount
+.dbr_n
+  STA dbN
+  LDA dbCount
+  SEC
+  SBC dbN
+  STA dbCount
+  LDA dbSub
+  STA dbIdx
+  LDA #0
+  STA dbSub                     \ every later tile starts at its first
+
 .dbr_char
-  JSR BandCharPtr
+  LDY dbIdx
+  LDA (tdp),Y                   \ character code
+  TAX                           \ -> its charset address, precomputed
+  LDA CHAR_PTR_LO,X : STA chp
+  LDA CHAR_PTR_HI,X : STA chp+1
   COPYCHAR                      \ both halves, one run
 
   CLC                           \ on two units, to the next character
@@ -287,16 +351,23 @@ ENDMACRO
   CMP #HI(BUF_END)              \ lands on a character boundary, so bufp
   BCS dbr_wrap                  \ arrives exactly ON it, never past
 .dbr_now
-  INC cellX                     \ inline: CellXInc is 8 cycles of work
-  BNE dbr_cx                    \ behind 12 of JSR and RTS
-  INC cellX+1
-.dbr_cx
-  DEC dbCount
+  INC dbIdx
+  DEC dbN
   BNE dbr_char
 
+  LDA dbCount
+  BEQ dbr_tail
+  JMP dbr_tile
+
+.dbr_tail
   LDA dbOdd
   BEQ dbr_done
-  JSR BandCharPtr               \ trailing left half
+  CLC                           \ the trailing left half is the character
+  LDA cellX   : ADC #(PLAY_UNITS/2)-1 : STA cellX   \ 39 past the first
+  LDA cellX+1 : ADC #0 : STA cellX+1                \ whole one
+  LDA #&FF                      \ dbTile has moved on without it, so make
+  STA tileCol                   \ BandCharPtr's cache miss rather than
+  JSR BandCharPtr               \ trust a stale column
   JSR CopyCell
 .dbr_done
   RTS
@@ -398,5 +469,9 @@ ENDMACRO
 .colFirst  EQUB 0
 .colCount  EQUB 0
 .dbOdd     EQUB 0               \ mapHX odd: the row starts on a right half
-.dbCount   EQUB 0
+.dbTile    EQUB 0               \ tile column being walked
+.dbSub     EQUB 0               \ first character within it, 0 after the first
+\ dbN and dbCount are in zero page — they are read and written several
+\ times a tile and dbN once more a character. They took the slots
+\ halfSel and dirty had been holding since before either was retired.
 .sDelta    EQUW 0
