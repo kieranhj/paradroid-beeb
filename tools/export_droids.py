@@ -398,7 +398,12 @@ def emit_glyph_code(f, mem):
     A glyph walks its own eight rows, so this needs no per-type trampoline and
     nothing is generated at run time.
 
-    DRAW ONLY, no saving. The 2 px shift spills each glyph into the next
+    DRAW ONLY, no saving - which is also why the walk between rows is
+    SprNextScanB rather than SprNextScan. A glyph addresses everything as
+    (bufp),Y and never reads svp, so advancing svp in step through these
+    21 walks produced a value nothing looked at.
+
+    The 2 px shift spills each glyph into the next
     one's first byte, so under a shift the three glyphs share columns 2 and 4
     - and whichever glyph writes a shared column first would have to be the
     one that saves it, which is not a property a glyph knows about itself.
@@ -433,7 +438,9 @@ def emit_glyph_code(f, mem):
                                 ' : STA (bufp),Y\n' % (m, b))
                         size += 10
                 if n != 7:
-                    f.write('  JSR SprNextScan\n')
+                    # SprNextScanB, not SprNextScan: a glyph never touches
+                    # svp, so keeping it in step here is work nothing reads.
+                    f.write('  JSR SprNextScanB\n')
                     size += 3
             f.write('  RTS\n')
             size += 1

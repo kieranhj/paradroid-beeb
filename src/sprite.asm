@@ -339,6 +339,37 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
   JMP WrapBufFwd
 
 \ ============================================================
+\ SprNextScanB — advance bufp ALONE by one scanline
+\ ============================================================
+\ The compiled glyphs address every byte as (bufp),Y and never
+\ touch svp: the digit block hoists the save into SprBlkSave and
+\ the restore into SprBlkRest, so a glyph has no background to
+\ put anywhere. Keeping svp in step through 21 glyph walks was
+\ therefore work whose result nothing read — SprDigitBlock
+\ overwrites svp from blkEndSvp when the block finishes.
+\
+\ Identical to SprNextScan otherwise, and it must stay identical:
+\ the two walk the same row-crossing pattern, and the glyph passes
+\ have to land on the same scanlines SprBlkSave did.
+.SprNextScanB
+  LDA sprScan
+  CMP #7
+  BEQ snb_row
+  INC sprScan
+  INC bufp
+  BNE snb_x
+  INC bufp+1
+.snb_x
+  RTS
+.snb_row
+  LDA #0
+  STA sprScan
+  CLC
+  LDA bufp   : ADC #LO(ROW_BYTES-7) : STA bufp
+  LDA bufp+1 : ADC #HI(ROW_BYTES-7) : STA bufp+1
+  JMP WrapBufFwd
+
+\ ============================================================
 \ SprNextUnit — bufp on to the next 4-pixel column, wrapping
 \ ============================================================
 .SprNextUnit
@@ -456,18 +487,20 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
 \ eight rows go the interpreted way, as they always did.
 SPR_GLYPH_STEP = 2 * UNIT_BYTES
 
-\ Save bufp/svp/sprScan, and put them back. The block runs the same
+\ Save bufp/sprScan, and put them back. The block runs the same
 \ eight scanlines four times over, so it needs a mark and a return.
+\
+\ svp is NOT marked: only the three glyph passes rewind here, and a
+\ glyph never reads or writes svp. Whatever the glyphs leave in it is
+\ overwritten from blkEndSvp when SprDigitBlock finishes.
 .SprBlkMark
   LDA bufp   : STA blkPtr
   LDA bufp+1 : STA blkPtr+1
-  LDA svp    : STA blkSvp
   LDA sprScan: STA blkScan
   RTS
 .SprBlkReset
   LDA blkPtr   : STA bufp
   LDA blkPtr+1 : STA bufp+1
-  LDA blkSvp   : STA svp
   LDA blkScan  : STA sprScan
   RTS
 
@@ -515,10 +548,7 @@ SPR_GLYPH_STEP = 2 * UNIT_BYTES
   LDA sprMulStep,X              \ the position, as a byte offset
   BEQ sbg_at                    \ position 0 needs no adjustment
   CLC
-  ADC svp : STA svp             \ svp cannot leave its page — see the
-  CLC                           \ assert at the top of the file
-  LDA sprMulStep,X
-  ADC bufp : STA bufp
+  ADC bufp : STA bufp           \ bufp only: the glyph does not save
   BCC sbg_at
   INC bufp+1
 .sbg_at
@@ -957,7 +987,6 @@ SPR_SPIN = 0                    \ frames between phases; full energy = 0
 .sprDig     SKIP 3              \ the droid's three digits, as glyph numbers
 .sprDigPos  EQUB 0
 .blkPtr     EQUW 0              \ the digit block's start, for the rewinds
-.blkSvp     EQUB 0
 .blkScan    EQUB 0
 .blkEnd     EQUW 0              \ and where the block leaves off
 .blkEndSvp  EQUB 0
