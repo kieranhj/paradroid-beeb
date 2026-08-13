@@ -497,15 +497,9 @@ ENDMACRO
 .dor_nc
   RTS
 
-.bandDo    EQUB 0               \ a character row was crossed: draw one
-.bandRow   EQUB 0               \ which map character row
-.bandRc    EQUB 0               \ and which display row it lands in
-.colFirst  EQUB 0
-.colCount  EQUB 0
-.dbOdd     EQUB 0               \ mapHX odd: the row starts on a right half
-.dbTile    EQUB 0               \ tile column being walked
-.dbSub     EQUB 0               \ first character within it, 0 after the first
-\ dbN and dbCount are in zero page — they are read and written several
-\ times a tile and dbN once more a character. They took the slots
-\ halfSel and dirty had been holding since before either was retired.
-.sDelta    EQUW 0
+\ bandDo/bandRow/bandRc, colFirst/colCount, dbOdd/dbTile/dbSub and
+\ sDelta are all in zero page now — see the level draw block in
+\ main.asm. dbTile and dbSub are the ones that pay for it: they are
+\ read every tile of every band.
+\ dbN and dbCount are there too, in the slots halfSel and dirty had
+\ been holding since before either was retired.

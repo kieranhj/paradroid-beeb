@@ -337,8 +337,8 @@
   LDA CHAR_PTR_HI,X : STA chp+1
   RTS
 
-.subRowOfs EQUB 0
-.tileCol   EQUB 0
+\ subRowOfs and tileCol are in zero page — see the level draw block in
+\ main.asm for why.
 
 \ ============================================================
 \ ColSetup / ColCharPtr — the mirror image, for a column
@@ -376,10 +376,8 @@
 \ so it is inlined into DrawColumn — with the tile-row miss out of
 \ line, which is what keeps that loop's branch in range.
 
-.colTileCol EQUB 0
-.colSubX    EQUB 0
-.colHalf    EQUB 0              \ 0 or 8: the half of the character
-.colTileRow EQUB 0
+\ colTileCol, colSubX, colHalf and colTileRow are in zero page — the
+\ last three are read once per row of every column drawn.
 
 \ ============================================================
 \ MapChar — character code at map cell (cellX, cellY)

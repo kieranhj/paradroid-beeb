@@ -425,6 +425,29 @@ KEY_SPACE  = &9D                \ -99
 \ The digit block's eight scanlines, one pointer each, so the compiled
 \ glyphs address every byte as (rowp+2r),Y and never walk. Built once
 \ per block by SprBuildRowPtrs; see the header in sprite.asm.
+\ ---- level draw ---------------------------------------------
+\ &00-&3F is untouched language workspace and these are all read
+\ inside loops, which is the only reason they are here: an absolute
+\ read is 4 cycles against 3, and colSubX, colHalf and colTileRow are
+\ read once per row of every column drawn, dbTile and dbSub once per
+\ tile of every band. The rest are their neighbours and cost nothing
+\ to bring along.
+subRowOfs = &00                 \ (cellY AND 3)*4, the row within a tile
+tileCol   = &01                 \ BandCharPtr's cached tile column
+colTileCol = &02                \ DrawColumn: its fixed tile column
+colSubX   = &03                 \ and character within the tile
+colHalf   = &04                 \ 0 or 8: which half of the character
+colTileRow = &05                \ cached tile row, changes every 4
+dbTile    = &06                 \ DrawBandRows: tile column being walked
+dbSub     = &07                 \ first character within it
+dbOdd     = &08                 \ mapHX odd: row starts on a right half
+bandDo    = &09                 \ a character row was crossed
+bandRow   = &0A                 \ which map character row
+bandRc    = &0B                 \ and which display row it lands in
+colFirst  = &0C                 \ first column exposed by the move
+colCount  = &0D                 \ how many
+sDelta    = &0E                 \ scrollS delta for the move       (2)
+
 rowp     = &50                  \ &50-&5F: 8 pointers, one per block row
 rowq     = &40                  \ &40-&4F: the same eight rows in the SAVE
                                 \ area, so a glyph can save what it draws

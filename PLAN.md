@@ -1474,12 +1474,42 @@ their zero-page forms — plus the `min()` is 46 of those 111. Moving `dbN` and 
 slots `halfSel` and `dirty` had been holding since both were retired recovered 162 of it. **Count
 the addressing modes, not just the instructions, before quoting a saving.**
 
+##### DrawColumn, and the zero page nobody was using
+
+`ColCharPtr` had one caller and ran 16 times a column, so it is inlined with its tile-row miss out
+of line; the 8-byte copy uses `COPYCELL`; and the two multiplies became tables. `tdp = tiledefs +
+tile*16` was 35 cycles of `PHA`/`AND`/four `ASL`s/`PLA`/four `LSR`s/`ADC` over 32 possible tiles,
+and `maprow = tilemap + tileRow*64` was 30 over 16. Both are pure functions of labels fixed at
+assembly time, so unlike `CHAR_PTR` they need **no builder and no RAM** — 96 bytes of the code image
+that beebasm fills in. `colRight` went too: it is constant down a whole column, so `ColSetup` now
+stores 0 or 8 in `colHalf` and the row loop adds it to the `CHAR_PTR` read instead of testing it.
+
+Then **`&00-&3F` turned out to be entirely unused** — 64 bytes of language workspace nothing had
+ever claimed. Everything the draw loops read went into it: `colSubX`, `colHalf` and `colTileRow` are
+read once per row of every column, `dbTile` and `dbSub` once per tile of every band. An absolute
+read is 4 cycles against 3, and the operand is a byte shorter, so the build **shrank 79 bytes**
+while getting faster.
+
+| per pass, 7 px | + tile walk | + DrawColumn | + zero page |
+|---|---|---|---|
+| one column | 4,663 | 3,811 | **3,764** |
+| one band pass | 12,245 | 12,244 | **12,138** |
+| horizontal | 8,067 | 6,594 | **6,513** |
+
+> **One result does not add up and is recorded rather than explained.** The same `tdp` table was
+> applied to the band's tile walk, where it should have been worth ~190 a band pass; the band
+> measured 12,244 against 12,245. The column on the same build moved by the predicted amount, and
+> the zero page move afterwards moved the band by 106 — so the harness is sensitive at that scale
+> and the table genuinely did nothing there. Unexplained. Worth a controlled check before trusting
+> any further reasoning about the band's tile block.
+
 ##### Where the level draw stands
 
 | per pass, 7 px | start of 2026-08-13 | now | |
 |---|---|---|---|
-| vertical | 28,527 | **10,787** | **−62%** |
-| full diagonal | 38,472 | **19,172** | **−50%** |
+| vertical | 28,527 | **10,701** | **−62%** |
+| horizontal | 8,920 | **6,513** | **−27%** |
+| full diagonal | 38,472 | **~19,000** | **−51%** |
 
 Of a band pass's 12,245 cycles, **8,320 is the irreducible byte movement** — 13 cycles a byte is
 what `(zp),Y` on both sides costs and 640 bytes have to move. Two thirds of what is left is the
