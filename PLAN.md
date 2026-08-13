@@ -16,11 +16,12 @@ up/down, cursor up/down change deck, SPACE forces a full redraw.
 pathfinding and sprite slot allocation. There is ~10,000 cycles of identified but unclaimed
 optimisation listed at the end of Layer 4; spend it when droids start competing for the frame.
 
-The level draw was measured and rewritten on 2026-08-13: the band brings in **whole character
-rows** on the pass that crosses into them, rather than the scanlines a move exposed, and the copy
-that fills a cell was unrolled once its run length became constant. Full-diagonal redraw went
-38,472 → **24,249** cycles a pass and vertical 28,527 → **15,280**; the split row stopped existing.
-See *The level draw* under Layer 4's frame budget, which also lists what is left.
+The level draw was measured and rewritten on 2026-08-13, in three steps: the band brings in **whole
+character rows** on the pass that crosses into them rather than the scanlines a move exposed; the
+copy that fills a cell was unrolled once its run length became constant; and the `charRemap` unpack
+became a precomputed table. Full-diagonal redraw went 38,472 → **22,810** cycles a pass and vertical
+28,527 → **14,304** — half. The split row stopped existing on the way. See *The level draw* under
+Layer 4's frame budget, which also lists what is left.
 
 **Before trusting any speed number, read the speed model section of Layer 4.** The C64's constants
 are per `GameLoop` iteration and an iteration is 2–3 frames, not 1. Every droid speed in
@@ -194,6 +195,7 @@ palettes. Judge that from a conversion, not from the C64 screenshots.
 | `&2C00–&3000` | 1 K | tile map, built at deck load |
 | `&3000–&4707` | 5.8 K | `PARADAT`: C64 char data, colour schemes, tile defs, deck RLE |
 | `&4800–&547F` | 3.2 K | panel — 5 rows × 640, displayed by rupture cycle 1 |
+| `&5500–&56FF` | 512 B | `CHAR_PTR_LO`/`HI` — character code → charset address, built at startup |
 | `&5480–&5647` | 455 B | the player sprite, shifted 2 px right — built at startup |
 | `&5647–&56FF` | **185 B free** | |
 | `&5700–&57FF` | 256 B | data byte → transparency mask table — built at startup |
@@ -1344,13 +1346,49 @@ Where a character's 414 cycles now go: pixel copy 176 (43%), `BandCharPtr` 99 (2
 `BufNextUnit` 66 (16%), `CellXInc` and loop 28, `chp + 8` 13, `Y` setup 32. Copy loop overhead has
 gone from 146 to 32.
 
+##### `charRemap` precomputed — address arithmetic beat the lookup it followed
+
+`charRemap` packs the used-character index into a byte, and every one of the three lookup paths
+unpacked it into a 16-bit pointer at the point of use: `PHA`, `AND`, four `ASL`s, `PLA`, four
+`LSR`s, `ADC`. **41 cycles of address arithmetic per character drawn — more than the tile-map
+lookup it follows**, which is cached three calls in four and costs ~11 amortised. That is the shape
+worth remembering: the expensive part of "decoding a tile" was not the decoding.
+
+`BuildCharPtrs` folds it into `CHAR_PTR_LO`/`CHAR_PTR_HI` at startup, so a lookup is `TAX` and two
+indexed loads: **16 cycles**. Both tables are page aligned, so the `abs,X` never crosses a page.
+They cost 512 bytes at `&5500-&56FF`, of the scratch between the panel and the strip that nothing
+else wanted, and the code came out 3 bytes *smaller* — three unpack blocks deleted against one
+builder added.
+
+It is a pure function of `charRemap` and the charset base, both fixed for the whole run, so it is
+built once rather than per deck: `BuildCharset` rewrites the charset's *contents* per deck, never
+its address. `charRemap` is now read only at startup — `tiledefs` is what still pins the data bank
+in during play.
+
+| per pass, 7 px | + unrolled copy | + precomputed pointers |
+|---|---|---|
+| horizontal | 8,759 | **8,067** |
+| vertical | 15,280 | **14,304** |
+| full diagonal | 24,249 | **22,810** |
+| one band pass | 17,290 | **16,237** |
+| one column | 5,005 | **4,663** |
+
+**−1,053 a band pass and −342 a column**, against −1,000 and −400 predicted. This one helps every
+path that draws a character, which the previous two did not.
+
+##### Where the level draw stands
+
+| per pass, 7 px | start of 2026-08-13 | now | |
+|---|---|---|---|
+| vertical | 28,527 | **14,304** | **−50%** |
+| full diagonal | 38,472 | **22,810** | **−41%** |
+
 Still in the bank, in order:
 
 | | per band pass |
 |---|---|
-| `charRemap` unpack → two tables indexed by character code, 41 cycles → 16 (+256 bytes of bank; also −400 a column) | ~1,000 |
-| Inline `BufNextUnit` and `CellXInc` — 36 cycles of call per character | ~1,440 |
 | Copy both halves as one 16-byte run: source is contiguous and so is the destination, killing `chp + 8` and one `BufNextUnit` per character. **Needs the buffer wrap handled first** — it always lands on a unit boundary, so it can fall between a character's two halves; the fix is to find the straddling character in the prologue and split the loop around it | ~1,840 |
+| Inline `BufNextUnit` and `CellXInc` — 36 cycles of call per character | ~1,440 |
 
 ##### Whole rows, not exposed scanlines
 

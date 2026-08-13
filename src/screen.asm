@@ -170,6 +170,40 @@
 \ split row and nothing needs repairing — see DoRedraws.
 
 \ ============================================================
+\ BuildCharPtrs — character code -> its address in the charset
+\ ============================================================
+\ charRemap packs the used-character index into one byte and every
+\ lookup then unpacked it into a 16-bit pointer: PHA, AND, four ASLs,
+\ PLA, four LSRs, ADC. Forty-one cycles of address arithmetic per
+\ character drawn, which was more than the tile-map lookup it follows
+\ (that one is cached three calls in four and costs ~11 amortised).
+\
+\ Precomputing both bytes turns it into two indexed loads and two
+\ stores, 16 cycles. It is a pure function of charRemap and the
+\ charset base, both fixed for the whole run, so it is built once at
+\ startup rather than per deck — BuildCharset rewrites the charset's
+\ CONTENTS per deck, never its address.
+\
+\ Costs 512 bytes of the scratch between the panel and the strip.
+\ Nothing else wanted that space and every character drawn pays for
+\ it, on both the band and the column paths.
+.BuildCharPtrs
+  LDX #0
+.bcp_loop
+  LDA charRemap,X
+  PHA
+  AND #&0F
+  ASL A : ASL A : ASL A : ASL A
+  STA CHAR_PTR_LO,X
+  PLA
+  LSR A : LSR A : LSR A : LSR A
+  CLC : ADC #HI(charset)
+  STA CHAR_PTR_HI,X
+  INX
+  BNE bcp_loop
+  RTS
+
+\ ============================================================
 \ HalfPtr — chp = charset bytes for the cell at (halfX, cellY)
 \ ============================================================
 .HalfPtr
@@ -203,16 +237,9 @@
 
   JSR MapChar                   \ -> A = character code
 
-  TAX                           \ index through the used-character remap
-  LDA charRemap,X
-  PHA
-  AND #&0F
-  ASL A : ASL A : ASL A : ASL A
-  STA chp
-  PLA
-  LSR A : LSR A : LSR A : LSR A
-  CLC : ADC #HI(charset)
-  STA chp+1
+  TAX                           \ straight to its charset address
+  LDA CHAR_PTR_LO,X : STA chp
+  LDA CHAR_PTR_HI,X : STA chp+1
   RTS
 
 \ ============================================================
@@ -282,16 +309,9 @@
   TAY
   LDA (tdp),Y                   \ character code
 
-  TAX                           \ chp = charset + remap(code)*16
-  LDA charRemap,X
-  PHA
-  AND #&0F
-  ASL A : ASL A : ASL A : ASL A
-  STA chp
-  PLA
-  LSR A : LSR A : LSR A : LSR A
-  CLC : ADC #HI(charset)
-  STA chp+1
+  TAX                           \ -> its charset address, precomputed
+  LDA CHAR_PTR_LO,X : STA chp
+  LDA CHAR_PTR_HI,X : STA chp+1
   RTS
 
 .subRowOfs EQUB 0
@@ -362,15 +382,8 @@
   LDA (tdp),Y                   \ character code
 
   TAX
-  LDA charRemap,X
-  PHA
-  AND #&0F
-  ASL A : ASL A : ASL A : ASL A
-  STA chp
-  PLA
-  LSR A : LSR A : LSR A : LSR A
-  CLC : ADC #HI(charset)
-  STA chp+1
+  LDA CHAR_PTR_LO,X : STA chp
+  LDA CHAR_PTR_HI,X : STA chp+1
 
   LDA colRight
   BEQ ccp_x

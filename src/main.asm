@@ -60,9 +60,9 @@ SWRAM_BASE = &8000
 \ The blitter outgrew what was left of one bank once every rotor row
 \ and every glyph became compiled code, so the sprite half moved out
 \ on its own. Only one bank is visible at a time, which is workable
-\ because the two halves are never wanted at once: DoRedraws reads
-\ tiles and charRemap, the blitter reads none of that, and the two
-\ run at different points in the pass.
+\ because the two halves are never wanted at once: DoRedraws reads the
+\ tile data, the blitter reads none of it, and the two run at
+\ different points in the pass.
 \
 \ SprRestoreAll and SprDrawAll page SWRAM_SPR in and SWRAM_DATA back
 \ out around themselves, so the data bank is what everything else
@@ -365,14 +365,24 @@ USR_VIA_IER  = &FE6E
 USR_VIA_T1CL = &FE64            \ free-running 1 MHz counter — DEBUG_TIME
 USR_VIA_T1CH = &FE65
 
-\ ---- sprite scratch, above the panel and below the play buffer ----
+\ ---- scratch, above the panel and below the play buffer ----
 \ &5480-&57FF is the ~900 bytes left over between the panel's last
-\ row and the start of the 10K strip. Only the mask table lives here
-\ now: it is a pure function of a byte, so building it at startup is
-\ cheaper than shipping it. The 2 px shifted artwork used to be built
-\ here too, but at 1743 bytes for 24 droid types it no longer fits —
-\ it ships pre-shifted in sideways RAM instead. &5480-&56FF is free.
+\ row and the start of the 10K strip. Everything here is a pure
+\ function of data we already have, so it is built at startup rather
+\ than shipped. The 2 px shifted artwork used to be built here too,
+\ but at 1743 bytes for 24 droid types it no longer fits — it ships
+\ pre-shifted in sideways RAM instead. &5480-&54FF is free.
+\
+\ Both character tables are PAGE ALIGNED, so `LDA charPtrLo,X` never
+\ crosses a page and always costs 4 cycles. They are read once per
+\ character drawn — 40 times a band pass — so the extra cycle would
+\ be worth more than the 128 bytes of alignment.
+CHAR_PTR_LO = &5500             \ character code -> charset address
+CHAR_PTR_HI = &5600
 SPR_MASKTAB = &5700             \ data byte -> its transparency mask
+ASSERT CHAR_PTR_LO >= PANEL_ADDR + PANEL_BYTES
+ASSERT CHAR_PTR_HI == CHAR_PTR_LO + 256
+ASSERT CHAR_PTR_HI + 256 <= SPR_MASKTAB
 
 \ The player is a droid like any other, in slot 0. Its screen Y never
 \ changes: vertical scrolling is 1 scanline, so the C64's arrangement
@@ -492,6 +502,8 @@ ORG &1100
   JSR FillPanel                 \ after the staging area is done with: it
                                 \ reaches past &4800, over the panel
 
+  JSR BuildCharPtrs             \ needs the data bank in, and the staging
+                                \ copy finished — it reaches past &5500
   JSR SprBuildMask              \ AFTER the mode change: VDU 22 clears
   JSR SprInit                   \ &3000-&7FFF, mask table included
 
@@ -635,9 +647,11 @@ ENDIF
 \ system is working, the MOS has the DFS ROM paged in at &8000, so
 \ the bytes would land in the ROM socket and be discarded.
 \
-\ The data bank stays selected from here on. MapChar reads
-\ `tiledefs` and DrawHalf reads `charRemap` every frame, so it
-\ cannot be paged out during play. That displaces BASIC, which we
+\ The data bank stays selected from here on. Every character drawn
+\ reads `tiledefs` through it, so it cannot be paged out during play.
+\ (`charRemap` used to be read every frame too; it is now folded into
+\ CHAR_PTR_LO/HI at startup and never touched again.) That displaces
+\ BASIC, which we
 \ never return to, and not DFS, which lives in its own socket and
 \ which the MOS pages in and back out around each of its own calls.
 \ Called twice, once per bank: A selects it, X is the page count.
