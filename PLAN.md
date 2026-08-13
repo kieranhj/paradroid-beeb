@@ -16,12 +16,13 @@ up/down, cursor up/down change deck, SPACE forces a full redraw.
 pathfinding and sprite slot allocation. There is ~10,000 cycles of identified but unclaimed
 optimisation listed at the end of Layer 4; spend it when droids start competing for the frame.
 
-The level draw was measured and rewritten on 2026-08-13, in three steps: the band brings in **whole
+The level draw was measured and rewritten on 2026-08-13, in four steps: the band brings in **whole
 character rows** on the pass that crosses into them rather than the scanlines a move exposed; the
-copy that fills a cell was unrolled once its run length became constant; and the `charRemap` unpack
-became a precomputed table. Full-diagonal redraw went 38,472 → **22,810** cycles a pass and vertical
-28,527 → **14,304** — half. The split row stopped existing on the way. See *The level draw* under
-Layer 4's frame budget, which also lists what is left.
+copy that fills a cell was unrolled once its run length became constant; the `charRemap` unpack
+became a precomputed table; and a character's two halves became one 16-byte run. Full-diagonal
+redraw went 38,472 → **20,482** cycles a pass and vertical 28,527 → **12,225**, and the split row
+stopped existing on the way. More than half a character's cost is now the pixel copy itself. See
+*The level draw* under Layer 4's frame budget, which also lists what is left.
 
 **Before trusting any speed number, read the speed model section of Layer 4.** The C64's constants
 are per `GameLoop` iteration and an iteration is 2–3 frames, not 1. Every droid speed in
@@ -1376,19 +1377,66 @@ in during play.
 **−1,053 a band pass and −342 a column**, against −1,000 and −400 predicted. This one helps every
 path that draws a character, which the previous two did not.
 
+##### One 16-byte run a character — and why no loop split was needed
+
+A character's two halves are 16 consecutive bytes in the charset, and the two units they go to are
+16 consecutive bytes in the strip. So one `Y` running 0-15 addresses both, and the `chp + 8` and
+the `BufNextUnit` that sat between the halves are simply gone.
+
+The obstacle looked like the buffer wrap: it lands on a *unit* boundary, so it could fall between a
+character's two halves, and the second half would then be written 8 bytes past `&8000` — into
+sideways RAM, not a wrong pixel. The plan was to find the straddling character in the prologue and
+split the loop around it. **It turns out not to be possible.** Units from the row start to the wrap
+is `W = 1280 - off/8` where `off = (scrollS + rCount*640) MOD 10240`; `rCount*640` is 80 units, so
+`W ≡ scrollS/8 (mod 2)`. Characters begin at even units when `mapHX` is even and odd units when it
+is odd. So the wrap lands on a character boundary exactly when
+
+```
+scrollS/8 == mapHX   (mod 2)
+```
+
+and that is invariant: both sides move by `dUnits` horizontally, a vertical step moves `scrollS/8`
+by 80 and `mapHX` not at all, `scrollS` wraps at 1280 units, and 80, 1280 and 0 are all even. Even
+a clamp is safe, because `sDelta` is computed *from* the `mapHX` difference rather than alongside
+it.
+
+`LoadDeck` now sets `scrollS` to 0 or 8 to match `mapHX`'s parity instead of always 0. As things
+stand that is a no-op — `CentreOnDeck` produces `charX * 2`, always even — but the consequence of
+the invariant being false is a write outside the buffer, and that should not rest on another
+routine's arithmetic staying as it is.
+
+The per-character wrap test stays, at 8 cycles; only the *mid-character* case had to be excluded.
+Its fixup moved out of line, which keeps the loop's branch in range and makes the common path a
+not-taken `BCS` at 2 cycles rather than a taken `BCC` at 3.
+
+| per pass, 7 px | + precomputed pointers | + 16-byte run |
+|---|---|---|
+| vertical | 14,304 | **12,225** |
+| full diagonal | 22,810 | **20,482** |
+| one band pass | 16,237 | **13,878** |
+
+**−2,359 a band pass for +23 bytes**, against −2,320 predicted.
+
 ##### Where the level draw stands
 
 | per pass, 7 px | start of 2026-08-13 | now | |
 |---|---|---|---|
-| vertical | 28,527 | **14,304** | **−50%** |
-| full diagonal | 38,472 | **22,810** | **−41%** |
+| vertical | 28,527 | **12,225** | **−57%** |
+| full diagonal | 38,472 | **20,482** | **−47%** |
 
-Still in the bank, in order:
+A character costs 330 cycles, and **more than half of it is now the pixel copy** (176), against a
+third when the day started: `BandCharPtr` 74, buffer advance and wrap test 20, `CellXInc` 20, loop
+control 8. The band has stopped being a lookup walk that happens to copy some bytes.
+
+Still in the bank, and it is thinner than it was:
 
 | | per band pass |
 |---|---|
-| Copy both halves as one 16-byte run: source is contiguous and so is the destination, killing `chp + 8` and one `BufNextUnit` per character. **Needs the buffer wrap handled first** — it always lands on a unit boundary, so it can fall between a character's two halves; the fix is to find the straddling character in the prologue and split the loop around it | ~1,840 |
-| Inline `BufNextUnit` and `CellXInc` — 36 cycles of call per character | ~1,440 |
+| Inline `CellXInc` and `BandCharPtr`'s own call — 24 cycles a character | ~960 |
+| Self-modify the copy's addresses to use `abs,Y` instead of `(zp),Y` — 11 cycles a byte instead of 13, less the patching. Marginal, and it is self-modifying code in the hottest loop in the port | ~1,000 |
+
+Beyond that the band is close to its floor: 13 cycles a byte is what `(zp),Y` on both sides costs,
+and 640 bytes have to move.
 
 ##### Whole rows, not exposed scanlines
 

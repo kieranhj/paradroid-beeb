@@ -169,6 +169,49 @@ MACRO COPYCELL
 ENDMACRO
 
 \ ============================================================
+\ COPYCHAR — a WHOLE character: both halves, 16 bytes, in one run
+\ ============================================================
+\ A character's two halves are 16 consecutive bytes in the charset,
+\ and the two units they go to are 16 consecutive bytes in the strip.
+\ So one Y running 0-15 addresses both, and the `chp + 8` and the
+\ BufNextUnit that used to sit between the halves are simply gone —
+\ 46 cycles a character for nothing.
+\
+\ THE ONE CONDITION: the strip's wrap must not fall BETWEEN the two
+\ halves, or the second half would be written 8 bytes past &8000, into
+\ sideways RAM. It never does, and that is a property of the geometry
+\ rather than luck:
+\
+\   Units from the row start to the wrap is W = 1280 - off/8, where
+\   off = (scrollS + rCount*640) MOD 10240. rCount*640 is 80 units, so
+\   W = -scrollS/8 = scrollS/8  (mod 2).
+\
+\   Characters begin at even units when mapHX is even and at odd units
+\   when it is odd — unit 0 is then a right half on its own. So the
+\   wrap lands on a character boundary exactly when
+\
+\       scrollS/8 == mapHX  (mod 2)
+\
+\   and that is INVARIANT. Both sides move by dUnits on a horizontal
+\   step; a vertical step moves scrollS/8 by 80 and mapHX not at all,
+\   and 80 is even. scrollS wraps at 1280 units, also even. sDelta is
+\   computed FROM the mapHX difference, so even a clamp that stops
+\   mapHX moves scrollS by exactly as much.
+\
+\ LoadDeck establishes it — see the scrollS parity there. It is set
+\ explicitly rather than inherited from CentreOnDeck happening to
+\ produce an even mapHX, because this loop writes out of the buffer if
+\ it is ever false, and that should not depend on another routine's
+\ arithmetic staying the way it is.
+MACRO COPYCHAR
+  FOR n, 0, 15
+    LDY #n
+    LDA (chp),Y
+    STA (bufp),Y
+  NEXT
+ENDMACRO
+
+\ ============================================================
 \ DrawBandRows — ONE display row, full width, all 8 scanlines
 \   rCount   = display row
 \   cellY    = map character row to take it from
@@ -225,15 +268,17 @@ ENDMACRO
 
 .dbr_char
   JSR BandCharPtr
-  COPYCELL                      \ left half
-  JSR BufNextUnit
-  CLC
-  LDA chp : ADC #8 : STA chp
-  BCC dbr_l2
-  INC chp+1
-.dbr_l2
-  COPYCELL                      \ right half
-  JSR BufNextUnit
+  COPYCHAR                      \ both halves, one run
+
+  CLC                           \ on two units, to the next character
+  LDA bufp : ADC #CHAR_BYTES : STA bufp
+  BCC dbr_nc
+  INC bufp+1
+.dbr_nc
+  LDA bufp+1                    \ BUF_END is page aligned, and the wrap
+  CMP #HI(BUF_END)              \ lands on a character boundary, so bufp
+  BCS dbr_wrap                  \ arrives exactly ON it, never past
+.dbr_now
   JSR CellXInc
   DEC dbCount
   BNE dbr_char
@@ -244,6 +289,15 @@ ENDMACRO
   JSR CopyCell
 .dbr_done
   RTS
+
+\ Out of line, and not only to keep the loop's branch in range: it
+\ fires once a row against 39 misses, so the common path is now a
+\ not-taken BCS at 2 cycles rather than a taken BCC at 3.
+.dbr_wrap
+  SEC
+  LDA bufp   : SBC #LO(BUF_SIZE) : STA bufp
+  LDA bufp+1 : SBC #HI(BUF_SIZE) : STA bufp+1
+  JMP dbr_now
 
 \ ---- band inner helpers ------------------------------------
 \ The callable form, for the two edge halves only.

@@ -799,10 +799,30 @@ ENDIF
   JSR CentreOnDeck
   JSR SetPosFromMap             \ the pixel position is the authority from
                                 \ here on; CentreOnDeck works in characters
-  LDA #0                        \ start the strip at the buffer base,
-  STA scrollS                   \ on a character row boundary — RedrawAll
-  STA scrollS+1                 \ writes whole rows, so buffer row 0 must
-  STA line                      \ not be a split row
+\ Start the strip at the buffer base — vertically, at least. `line` is
+\ zeroed so buffer row 0 is not a split row, which RedrawAll needs
+\ because it writes whole rows.
+\
+\ HORIZONTALLY the strip starts one unit in when mapHX is odd, and
+\ that is load bearing: DrawBandRows copies a whole character as one
+\ 16-byte run and would write past the end of the buffer if the strip's
+\ wrap ever fell between a character's two halves. It cannot, provided
+\ scrollS/8 and mapHX agree in parity — see COPYCHAR in scroll.asm for
+\ why that is then preserved for the rest of the deck. This is where it
+\ becomes true.
+\
+\ CentreOnDeck happens to produce an even mapHX today (it is charX * 2),
+\ so this is a no-op as things stand. It is written out anyway because
+\ the consequence of it being false is a write into sideways RAM rather
+\ than a wrong pixel, and that should not rest on another routine's
+\ arithmetic staying as it is.
+  LDA mapHX
+  AND #1
+  ASL A : ASL A : ASL A         \ 0 or 8
+  STA scrollS
+  LDA #0
+  STA scrollS+1
+  STA line
   STA iline
   LDX #SPR_SLOTS-1              \ the saved backgrounds belong to the deck
   LDA #0                        \ we are leaving; RedrawAll replaces them
