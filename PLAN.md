@@ -1444,11 +1444,12 @@ restore, at 33-37 cycles each. Three changes, each verified byte-identical befor
 | inline the walk as the `SCANSTEP` macro | 5,773 | 2,939 | 8,712 |
 | stop the loops after the last drawing row | 5,587 | 2,879 | 8,466 |
 | eight row pointers, so the glyphs stop walking | 5,093 | 2,913 | 8,006 |
-| sequence dispatch + straight-line sprite shape | 4,566 | 2,454 | **7,020** |
+| sequence dispatch + straight-line sprite shape | 4,566 | 2,454 | 7,020 |
+| own bank; walk into the rows, rows into a program | 4,300 | 2,243 | **6,543** |
 
-**−2,596 cycles, 27.0%.** Seven sprites cost 49.1K of the 79,872-cycle pass, against 67.3K. The
+**−3,073 cycles, 32.0%.** Seven sprites cost 45.8K of the 79,872-cycle pass, against 67.3K. The
 walk is down from 2,433 to about 800, and from 25% of a sprite to under 10%; dispatch and the
-row loop, 2,000 between them, are down to a few hundred.
+row loop, 2,000 between them, are down to a couple of hundred.
 
 The restore's +34 on the last row is the ±50 code-layout noise floor, not a regression: nothing
 in the restore path changed, only its addresses.
@@ -1509,10 +1510,51 @@ Both become affordable only with a second bank paged in for the sprite phase.
 > is clear, and the move takes code headroom from 143 bytes to 1,005 — the constraint that would
 > have blocked the next layer regardless.
 
-**What is left.** Per sprite is now ~3,400 of real pixel movement and ~3,600 of everything else,
+#### Step 3c — a bank of its own, and the full unroll
+
+The blitter now has **SWRAM_SPR to itself**: artwork, compiled rows, glyphs and programs, with
+tiles, levels, palettes and the droid game data left in `SWRAM_DATA`. Only one bank is visible at
+a time, which works because the two halves are never wanted at once — `DoRedraws` reads tiles,
+the blitter reads none of that, and they run at different points in the pass. `SprRestoreAll` and
+`SprDrawAll` swap around themselves, so the data bank is the resting state and no caller has to
+know. Two swaps a pass, 8 cycles each. The IRQ was the thing that could have broken it and does
+not: `RuptVSync` and `RuptTimer` read nothing out of either bank.
+
+With the space, the two options costed and rejected at step 3b both land:
+
+- **C — every compiled rotor routine ends by walking a scanline.** The walk was the one thing
+  that had to happen between rows, so putting it inside each row leaves nothing between them.
+- **B — a straight-line program per (shift, phase).** Sixteen for the draw, sixteen for the
+  restore: ten `JSR`s with the digit block and the two blank rows in the middle. Entering one is a
+  table read, a poke and a `JMP` — the program ends in `RTS`, so the tail call returns straight to
+  `SprDrawSlot`'s caller. A rotor row costs a `JSR` and an `RTS`.
+
+**−477 cycles for 15 pages of bank.** Less than the −1,220/−1,360 those options were worth against
+the step-5 baseline, because step 3b's sequence dispatch had already taken most of it — worth
+knowing before costing an option twice.
+
+The fallback keeps the sequence lists and the per-row wrap test, since only that can decide which
+rows drop to the slow path. But the compiled rows it calls now walk on their own account, so it
+needs a tail that does not walk again: `sd_nextnw`/`sr_nextnw`, taken only from the self-modified
+call site.
+
+> **Two beebasm mechanics, both learned the hard way.** `CLEAR` is what lets `&8000-&BFFF` be
+> assembled twice — beebasm tracks written bytes and refuses to overwrite them. And **`SAVE`
+> writes whatever the image holds at the time it runs**, so each bank must be saved where it is
+> assembled; both `SAVE`s left at the bottom of the file silently wrote the sprite bank into
+> `PARADAT`, and the deck rendered as garbage with droid types of 164-169.
+
+> **The save areas differ between builds, in bytes nothing reads.** A slot's 256-byte page is only
+> partly covered — blank rows save nothing, a compiled row saves only the columns it draws — so
+> the rest keeps whatever the staging copy left at `&3000`, which changed when `PARASPR` arrived.
+> The play buffer being identical is the proof it does not matter: the save area exists only to be
+> read back into the buffer, so a differing byte that was ever read would show up there.
+
+**What is left.** Per sprite is now ~3,400 of real pixel movement and ~3,100 of everything else,
 of which the largest single items are the six inactive slots scanned every frame (~630) and the
-per-slot setup (~480). Nothing structural remains that does not need a bank. **The update rate is
-the whole remaining problem** — round-robin, then raster-ordered — and it is worth noting that
+per-slot setup (~480) — plus 42 cycles the programs waste walking after their last row, which
+wants a no-walk variant of the four end-kind routines to collect. Nothing structural remains.
+**The update rate is the whole remaining problem** — round-robin, then raster-ordered — and it is worth noting that
 round-robin halves all of the above for nothing, which is why it comes before any further
 compiling.
 
