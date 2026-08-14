@@ -459,8 +459,6 @@ ENDMACRO
   BNE sfr_sloop
   RTS
 
-.sfrCarry EQUB 0
-
 .sprMul7 EQUB 0,7,14,21,28,35,42,49
 
 \ ============================================================
@@ -1020,18 +1018,21 @@ SPR_SPIN = 0                    \ frames between phases; full energy = 0
 .sprSeqBaseS SKIP SPR_SLOTS     \ the draw's rotor-sequence base
 .sprShiftS  SKIP SPR_SLOTS      \ the draw's shift
 
+\ The per-slot arrays STAY HERE. Every one of them is reached as
+\ `LDA sprActive,X` and never any other way, and abs,X costs the same
+\ four cycles as zp,X — so moving 98 bytes of them into zero page
+\ would buy nothing but a byte per instruction. The working scalars
+\ they feed are the ones that moved; see the zero page block in
+\ main.asm.
+\
 \ ---- working, one sprite at a time --------------------------
-.sprNoWrap  EQUB 0
-.sprSlot    EQUB 0
-.sprIter    EQUB 0
-.sprY       EQUB 0
-.sprTmpPtr  EQUW 0
-.sprRowIdx  EQUB 0
-.sprSeqBase EQUB 0
-.sprSeqEnd  EQUB 0              \ SprRotor5's end index
-.sprSeqX    EQUB 0              \ the index across the digit block
-.sprShiftW  EQUB 0              \ the shift this draw or restore is using
-.sprGlyphBase EQUB 0            \ 0 or 10: which half of the glyph table
-.sprDig     SKIP 3              \ the droid's three digits, as glyph numbers
-.sprDigit   EQUW 0
+\ sprSlot, sprIter, sprNoWrap, sprY, sprRowIdx, sprSeqBase, sprShiftW,
+\ sprGlyphBase, sprDig, sprDigit, sprTmpPtr and sfrCarry are all in
+\ zero page now. sprSeqEnd and sprSeqX were declared and never read by
+\ anything — SprRotor5 stopped needing them when the sequence lists
+\ arrived — so they are gone rather than promoted.
+\
+\ sprRowBuf stays absolute: the fast path never touches it (a compiled
+\ row carries its own pixels as immediates) and the fallback reads it
+\ as sprRowBuf,X, which zero page would not make faster.
 .sprRowBuf  SKIP SPR_W * 2

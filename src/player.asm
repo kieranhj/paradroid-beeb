@@ -429,10 +429,11 @@ PLY_REFY = 63                   \ from the view's top edge, sprite top + 13
   LDA cwU+1 : SBC #HI(PLY_REFX) : STA plyX+1
   RTS
 
-.cwU       EQUW 0
-.plyCX     EQUW 0
-.plyCY     EQUW 0
-.pgCount   EQUB 0
+\ cwU, plyCX, plyCY and pgCount are in zero page — see the block in
+\ main.asm. The reference cell is derived with twelve shifts of
+\ plyCX/plyCY every pass, and LSR/ROR on zero page is 5 cycles against
+\ 6, so this is the one place in the file where read-modify-write
+\ rather than plain reads is what pays.
 
 \ ============================================================
 \ ApplyMove — integrate the speeds, work out what got exposed
@@ -771,23 +772,20 @@ PLY_REFY = 63                   \ from the view's top edge, sprite top + 13
   STA colCount
   RTS
 
-.plyX      EQUW 0               \ the player itself, map pixels — the
-.plyXf     EQUB 0               \ authority horizontally; posX follows
-.dzSx      EQUW 0
-.dzD       EQUW 0
-.posX      EQUW 0               \ view origin, map pixels
-.posY      EQUW 0
-.xSpd      EQUW 0               \ 8.8 signed, px per frame
-.ySpd      EQUW 0
+\ plyX, plyXf, dzSx, dzD, posX, posY, xSpd, ySpd, oldHX, mvSign, spd,
+\ axDir and amTmp are in zero page — see the block in main.asm.
+\
+\ What stayed, and why: these are the ones a pass touches two or three
+\ times rather than a dozen, and zero page ran out. joyXDir/joyYDir are
+\ three accesses each; oldMapYr is two; posXf, posYf, oldPosY and amDU
+\ are written and, as things stand, never read — amDU only exists
+\ because ApplyMove needs the flags SBC left behind, which STA does not
+\ disturb. Promote any of them when the next thing that needs them
+\ arrives, not before.
 .joyXDir   EQUB 0
 .joyYDir   EQUB 0
-.oldHX     EQUW 0
 .oldPosY   EQUW 0
 .oldMapYr  EQUB 0
-.mvSign    EQUB 0
 .posXf     EQUB 0               \ sub-pixel fraction of the position
 .posYf     EQUB 0
-.spd       EQUW 0               \ CalcAxis works on this pair
-.axDir     EQUB 0
-.amTmp     EQUW 0
 .amDU      EQUB 0

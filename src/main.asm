@@ -162,7 +162,7 @@ DEBUG_DRAW   = FALSE
 \ left; since the tile map was given a fixed home at &3800 the code has
 \ room to &3000, so it is off by default out of tidiness rather than
 \ necessity.
-DEBUG_VSYNC  = FALSE
+DEBUG_VSYNC  = TRUE
 
 \ DEBUG_TIME measures one routine in CYCLES, which DEBUG_DRAW cannot:
 \ its bands are only visible where the CRTC is displaying something,
@@ -207,7 +207,7 @@ DBG_T_OVERHEAD = 46
 \ TEST_DROIDS parks six static droids around the player at deck load,
 \ so the sprite pool can be looked at and measured before droid.asm
 \ exists. Scaffolding — see src/droidtest.asm.
-TEST_DROIDS  = FALSE
+TEST_DROIDS  = TRUE
 TD_DECK      = 1                \ CentreOnDeck lands the player somewhere
                                 \ walkable here; on some decks it does not,
                                 \ see BUGS.md
@@ -447,6 +447,80 @@ bandRc    = &0B                 \ and which display row it lands in
 colFirst  = &0C                 \ first column exposed by the move
 colCount  = &0D                 \ how many
 sDelta    = &0E                 \ scrollS delta for the move       (2)
+
+\ ---- what is worth moving here, and what is not --------------
+\ &10-&3F, &60-&63 and &65 were the last of the free space, and they
+\ went to the SCALARS the per-pass code reads and writes directly.
+\ The rule that decided every case:
+\
+\   LDA abs is 4 cycles and LDA zp is 3 — but LDA abs,X and LDA zp,X
+\   are BOTH 4.
+\
+\ So an indexed table gains nothing at all, and none of the per-slot
+\ sprite arrays (sprActive, sprUnit, sprFrame and the eleven others,
+\ 98 bytes between them) moved. They are only ever reached through X.
+\ The same goes for the offset tables in scroll.asm, tdpLo/tdpHi,
+\ nearXoffset and the droid-test position arrays.
+\
+\ Read-modify-write is where it pays most: INC/LSR/ROR on zero page is
+\ 5 cycles against 6, and CheckWalls alone does twelve shifts on
+\ plyCX/plyCY every pass.
+\
+\ NOT moved, on measurement rather than taste: everything in level.asm
+\ (bcSrc..palTmp and the rest) runs at deck load and nothing else, so
+\ 40-odd bytes of zero page would buy a few hundred cycles once every
+\ few minutes. Same for BuildCharPtrs and FillPanel.
+
+\ ---- sprite blitter, one sprite at a time --------------------
+\ Every one of these is touched per SLOT, so the cost is 14x a pass
+\ once the pool is full — seven draws and seven restores.
+sprSlot   = &10                 \ the slot being drawn or restored
+sprIter   = &11                 \ SprDrawAll/SprRestoreAll's own index
+sprNoWrap = &12                 \ the whole sprite clears the strip end
+sprY      = &13                 \ scanlines below the top of the view
+sprRowIdx = &14                 \ fallback: phase*21 + row
+sprSeqBase = &15                \ where this (shift, phase) sequence starts
+sprShiftW = &16                 \ the shift this draw or restore is using
+sprGlyphBase = &17              \ 0 or 10: which half of the glyph table
+sprDigit  = &18                 \ this type's number block          (2)
+sprDig    = &1A                 \ its three glyph numbers           (3)
+sprTmpPtr = &1D                 \ bufp saved across a walked row    (2)
+sfrCarry  = &1F                 \ SprFetchRow's 2 px shift carry
+
+\ ---- rupture / CRTC state -----------------------------------
+\ Read and written inside the interrupt handler, three fires a frame,
+\ so this is latency as well as throughput — and the note in PLAN.md
+\ about a missed deadline hanging the ruptState machine is reason
+\ enough to make the handler shorter wherever it is free.
+ruptState = &20                 \ which rupture stage the next T1 fire is
+drawFlag  = &21                 \ set when the play area is off-display
+crtcHi    = &22                 \ play-area start for the play cycle,
+crtcLo    = &23                 \ latched by the IRQ
+line      = &24                 \ sub-row scroll offset, 0-7 — the live value
+pline     = &25                 \ parked with crtcHi/Lo by SetCRTCStart
+iline     = &26                 \ latched from pline at fire 1, used all frame
+
+\ ---- player: position, speed, the wall probes ----------------
+\ One pass through these per game loop, but it is a long pass: the
+\ position and speed pairs are read by CalcSpeed, CheckWalls,
+\ ApplyMove, DeadZone and both clamps.
+posX      = &27                 \ view origin, map pixels           (2)
+posY      = &29                 \                                   (2)
+plyX      = &2B                 \ the player itself — the authority
+xSpd      = &2D                 \ 8.8 signed, px per pass           (2)
+ySpd      = &2F                 \                                   (2)
+spd       = &31                 \ CalcAxis works on this pair       (2)
+cwU       = &33                 \ CheckWalls' reference quantity    (2)
+plyCX     = &35                 \ and the reference cell            (2)
+plyCY     = &37                 \                                   (2)
+dzSx      = &39                 \ DeadZone: where the sprite sits   (2)
+dzD       = &3B                 \ and how far the view must follow  (2)
+oldHX     = &3D                 \ what the pass is moving from      (2)
+plyXf     = &3F                 \ sub-pixel fraction of plyX
+amTmp     = &60                 \ ApplyMove's shift accumulator     (2)
+axDir     = &62                 \ CalcAxis: -1, 0 or +1
+mvSign    = &63                 \ &00 or &FF, sign-extending a speed
+pgCount   = &65                 \ ProbeGroup's countdown of three
 
 rowp     = &50                  \ &50-&5F: 8 pointers, one per block row
 rowq     = &40                  \ &40-&4F: the same eight rows in the SAVE

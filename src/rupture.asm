@@ -358,10 +358,7 @@ DBG_PX = 17
   EQUB %1111 * DBG_PX, %1001 * DBG_PX, %1111 * DBG_PX, %0001 * DBG_PX, %1111 * DBG_PX
 ENDIF
 
-.ruptState EQUB 0               \ which rupture stage the next T1 fire is
-.drawFlag  EQUB 0               \ set when the play area is off-display
-.crtcHi    EQUB 0               \ play-area start for the play cycle,
-.crtcLo    EQUB 0               \ latched by the IRQ
-.line      EQUB 0               \ sub-row scroll offset, 0-7 — the live value
-.pline     EQUB 0               \ parked with crtcHi/Lo by SetCRTCStart
-.iline     EQUB 0               \ latched from pline at fire 1, used all frame
+\ ruptState, drawFlag, crtcHi/crtcLo and line/pline/iline are all in
+\ zero page — see the block in main.asm. Everything here is read or
+\ written inside the interrupt handler, three fires a frame, so it is
+\ handler latency as much as throughput.

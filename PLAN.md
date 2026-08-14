@@ -189,13 +189,13 @@ palettes. Judge that from a conversion, not from the C64 screenshots.
 
 | Region | Size | Contents |
 |---|---|---|
-| ZP `&64–&6D`, `&70–&8F` | 42 B | all used — see the map in `main.asm` |
+| ZP `&00–&8F` | 144 B | **all of it used** — see the map in `main.asm`. `&90` up is the OS |
 | `&0100–&01FF` | 256 B | stack |
 | `&0400–&0C90` | 2192 B | MODE 1 charset, built at deck load — reclaimed OS workspace |
 | `&0C90–&10FF` | ~1.1 K free | rest of the reclaimed OS workspace |
-| `&1100–&2B0D` | 6.5 K | code + sprite data (`PARA`). DFS random-access buffer space, safe for `*LOAD` |
-| `&2B0D–&2BFF` | **243 B free** | |
-| `&2C00–&3000` | 1 K | tile map, built at deck load |
+| `&1100–&2A40` | 6.3 K | code (`PARA`). DFS random-access buffer space, safe for `*LOAD` |
+| `&2A40–&3000` | **1.4 K free** | grew 372 B when the working variables moved to zero page |
+| `&3800–&3C00` | 1 K | tile map, fixed home — see step 3b |
 | `&3000–&4707` | 5.8 K | `PARADAT`: C64 char data, colour schemes, tile defs, deck RLE |
 | `&4800–&547F` | 3.2 K | panel — 5 rows × 640, displayed by rupture cycle 1 |
 | `&5500–&56FF` | 512 B | `CHAR_PTR_LO`/`HI` — character code → charset address, built at startup |
@@ -1938,6 +1938,47 @@ them.
 **What is left.** Per sprite is now ~3,000 of real pixel movement and ~2,800 of everything else,
 of which the largest single items are the six inactive slots scanned every frame (~630) and the
 per-slot setup (~480). Nothing structural remains, and nothing needs to.
+
+#### Step 3e — the rest of zero page
+
+`&10-&3F`, `&60-&63` and `&65` were still free, 53 bytes, and every module was still keeping its
+working variables in absolute storage. They now hold the blitter's twelve working scalars
+(`sprSlot`, `sprIter`, `sprNoWrap`, `sprSeqBase`, `sprGlyphBase`, `sprDigit`…), the rupture/CRTC
+state (`ruptState`, `drawFlag`, `crtcHi/Lo`, `line/pline/iline`) and sixteen of player.asm's
+(`posX`, `posY`, `plyX`, `xSpd`, `ySpd`, `spd`, `cwU`, `plyCX/plyCY`, `dzSx`, `dzD`, `oldHX`…).
+
+**Measured, seven sprites, averaged over 128 passes** (User VIA T1, both builds at the same
+position, `TEST_DROIDS` deck 1, stationary):
+
+| | before | after | |
+|---|---:|---:|---|
+| `SprDrawAll` | 24,134 | 23,961 | −173 |
+| `SprRestoreAll` | 12,418 | 12,313 | −105 |
+| total | 36,552 | **36,274** | **−278, −0.76%** |
+
+**Under 1%, and that is the honest ceiling for this kind of change** — worth recording so it is not
+costed optimistically again. The reason is one line of the 6502 data sheet: **`LDA abs` is 4 cycles
+and `LDA zp` is 3, but `LDA abs,X` and `LDA zp,X` are both 4.** The blitter reaches almost
+everything through X — all fourteen per-slot arrays, 98 bytes of them — so none of it gains
+anything, and only the handful of scalars around the indexing were ever on the table. The same rules
+out `sprRowBuf`, the offset tables in scroll.asm, `tdpLo/tdpHi` and `nearXoffset`.
+
+Where it does pay is read-modify-write, at 5 cycles against 6: `CheckWalls` alone does twelve
+`LSR`/`ROR`s on `plyCX`/`plyCY` every pass.
+
+**The larger win was space: the code shrank 372 bytes**, `&1100-&2BB4` → `&1100-&2A40`, since a
+zero-page operand is a byte shorter. That is worth more than the cycles at this point.
+
+Deliberately not moved: everything in level.asm (`bcSrc`..`palTmp`), which runs at deck load and
+nowhere else, and `BuildCharPtrs`/`FillPanel`. Forty-odd bytes of zero page to save a few hundred
+cycles once every few minutes is the wrong trade while anything per-pass is still absolute.
+
+> **Verification, and a cheap technique worth reusing.** Both builds' listings were reduced to a
+> stream of (mnemonic, addressing class) with abs and zp collapsed together: **7,753 instructions,
+> identical in both.** That proves no instruction was added, removed or reordered and that every
+> difference is a width change — which is a stronger and far faster check than diffing the play
+> buffer, for any change that is meant to be purely mechanical. The emulator run afterwards was
+> then only confirming that the addresses chosen do not collide.
 
 #### Why not round-robin
 
