@@ -521,6 +521,61 @@ picture is bit-for-bit what it was while half the pool draws from bank 6:
   catches a glyph the exporter got wrong, which is how the truncated spill column was found.
 - The rewritten fallback shift against the compiled path, every row forced through it: 0 of 10240.
 
+## 1 px positioning — step D: the droid lands where it is
+
+Two lines, after three steps of groundwork. `player.asm` and `droidtest.asm` split the screen X at
+the bottom two bits: they are the shift, what is above them is the 4 px CRTC unit.
+
+```
+LDA dzSx : AND #3 : STA sprShift+PLY_SLOT      \ the pixel within the unit
+LDA dzSx+1 : LSR A : LDA dzSx : ROR A : LSR A  \ sx >> 2 = the unit
+```
+
+Cheaper than the 2 px version it replaces, which needed a shift and a mask to separate the same two
+fields. **The port now positions droids exactly where the C64 does** — see
+[`layer-4-player.md`](layer-4-player.md) for the evidence that the original is 1 px in both the
+sprite and the scroll, and for what 2 px was costing.
+
+### Verified
+
+| | |
+|---|---|
+| shift 3 (bank 6), restore vs `RedrawAll` | **0 of 10240** |
+| shift 3, digit block vs reconstruction | **0 mismatches**, 22 spill bytes for `001` |
+| shift 1 (bank 5), digit block vs reconstruction | **0 mismatches**, 0 spill — correct: 7 px shifted 1 still fits its cell |
+| shifts 0 and 2, same reconstruction | **0 mismatches** |
+| movement | `plyX` 100 → 101 → 103 → 104 gives (unit 37, shift 0), (37, 1), (37, 3), (38, 0) — one pixel at a time, carrying correctly across the 4 px boundary |
+
+### What it costs, measured
+
+`SprDrawAll`, seven sprites, 64 passes, User VIA T1 bracket, same position in both builds:
+
+| | cycles a pass |
+|---|---|
+| before the branch — 2 shifts, one sprite bank | 24,821 |
+| after step D — 4 shifts, two banks | **24,943** |
+| | **+122, or 0.49%** of `SprDrawAll`, against 79,872 in a pass |
+
+Predicted by construction: `PAGESPRBANK` is 18 cycles and runs once per drawn slot, 7 × 18 = 126.
+Measurement and arithmetic agree to four cycles.
+
+> **The first attempt at this measurement was wrong, and wrong in a way that looked like a serious
+> regression.** The patch that was supposed to move the T1 bracket off `DoRedraws` silently failed —
+> the pattern contained an em dash that did not match the file's encoding — so the build had **two**
+> brackets. `dbgAcc` then summed two routines and `dbgN` counted twice a pass, which made the game
+> look like it was running at one field a pass instead of two, i.e. double speed. It was not: the
+> release builds move `plyX` 612 → 901 in the same two seconds, before and after. This document
+> already said "one call site at a time"; what it did not say is *how* two fail — not a hang, but a
+> plausible-looking number and an inflated pass count. Assert your patches.
+
+### Not fixed here: the rotor debris
+
+Across these runs the restore-vs-`RedrawAll` check returned 0, 6, 24 and 39 differences at different
+player positions **in the same build**. Every one was in a rotor row; the digit block — the part this
+work changes — was byte-exact every time, and the shift-0 slots were affected as much as the shifted
+ones. That is `BUGS.md` #6, and these runs add one fact to it: it **survives freezing the rotor
+phase**, which refutes the leading hypothesis recorded there.
+
 ## What is in the bank, block by block
 
 Reference for the finished article. Addresses are from a `-dd` label dump of the current build;

@@ -698,26 +698,28 @@ PLY_REFY = 63                   \ from the view's top edge, sprite top + 13
 \ Where the sprite lands, now that the view has settled. sx reaches
 \ 296 at the right-hand edge of the map, so the halving is 16-bit;
 \ after it, everything fits in a byte.
-\ THE SHIFT IS A PIXEL COUNT NOW, 0-3, not a flag — four compiled
-\ shifts exist. This still picks only the even ones, so the sprite
-\ still lands every 2 px and nothing about the picture changes; the
-\ odd two are wired up but unused until the step that switches this
-\ to `AND #3`. Doing it that way keeps the bank split and the 1 px
-\ move separately testable.
+\ ONE PIXEL. sx splits at the bottom two bits: they are the shift, and
+\ what is above them is the 4 px CRTC unit. Four compiled shifts exist
+\ across two sprite banks, so the droid is drawn exactly where it is
+\ rather than at the even pixel below — which is what the C64 does,
+\ positioning a hires sprite per pixel through the VIC's own X register.
+\ See docs/layer-4-player.md for why 2 px was a fidelity loss and not
+\ the free saving it was once written up as.
+\
+\ Cheaper than the 2 px version it replaces, which needed a shift and a
+\ mask to separate the same two fields.
 .dz_screen
   SEC
   LDA plyX   : SBC posX   : STA dzSx
   LDA plyX+1 : SBC posX+1 : STA dzSx+1
-  LDA dzSx+1
-  LSR A
   LDA dzSx
-  ROR A                         \ sx >> 1, 0-148
-  STA amTmp
-  AND #1
-  ASL A                         \ 0 or 2 px, never 1 or 3 — yet
+  AND #3                        \ the pixel within the unit, 0-3
   STA sprShift+PLY_SLOT
-  LDA amTmp
-  LSR A
+  LDA dzSx+1                    \ sx reaches 296, so the halving is
+  LSR A                         \ 16-bit; after it, everything fits
+  LDA dzSx
+  ROR A
+  LSR A                         \ sx >> 2 = the 4 px unit
   STA sprUnit+PLY_SLOT
   RTS
 

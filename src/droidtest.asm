@@ -101,16 +101,16 @@ TD_COUNT = SPR_SLOTS - 1        \ slot 0 is the player; the rest are ours
   CMP #2
   BCS tdu_off                   \ 512 px right of it: nowhere near
 
-  LSR A                         \ (sx >> 1), 0-255 — the 2 px unit
+  LSR A                         \ (sx >> 1), 16-bit: sx reaches 296
   LDA tdSx
   ROR A
+  LSR A                         \ sx >> 2 = the 4 px unit
   STA tdTmp
-  AND #1
-  ASL A                         \ 0 or 2 px — the even shifts, as the
-  LDX tdIdx                     \ player uses, so half the pool draws
-  STA sprShift+1,X              \ from the second bank and half the first
+  LDA tdSx
+  AND #3                        \ and the pixel within it, 0-3, which
+  LDX tdIdx                     \ is the shift — all four in use, so the
+  STA sprShift+1,X              \ pool spans both sprite banks
   LDA tdTmp
-  LSR A
   STA sprUnit+1,X
   LDA tdSy
   STA sprScrY+1,X

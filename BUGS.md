@@ -250,7 +250,14 @@ that the restore did not put back.
 **Every one is a rotor row, and rows 0, 1, 18 and 19 dominate.** Not one is in the digit block
 (rows 6–13), and four of the five affected slots are at shift 0.
 
-**Leading hypothesis: the end rows are restored under the wrong phase.** Rows 0/1/18/19 come from
+> **The phase hypothesis below is REFUTED, 2026-08-14.** Freezing the rotor — `SprAnimateAll` poked
+> to `RTS`, so the draw and the restore see the same phase — still leaves 24 bytes. Whatever this is,
+> it is not the phase advancing between the two. The same runs also showed the count varying with
+> the player's position in one build (0, 6, 24 and 39 at four positions), so position, not phase, is
+> the thing to vary when reproducing it. Everything below is kept because the row mapping is still
+> good evidence.
+
+**Leading hypothesis (refuted — see above): the end rows are restored under the wrong phase.** Rows 0/1/18/19 come from
 two-entry tables indexed by `phase >> 2`, and the restore's column list is generated per
 `(shift, phase >> 2)` — `drRHalf<shift>_<arr>_<half>`. The restore runs a frame after the draw, by
 which time the phase has advanced; `sprTabBaseS` exists precisely to carry the draw's phase across,

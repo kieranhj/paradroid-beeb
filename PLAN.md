@@ -27,7 +27,7 @@ detail has stopped being needed to make the next decision, it belongs in `docs/`
 static panel above a 320 × 120 play area, the player droid near the centre with its rotor spinning,
 and the deck hardware-scrolling 8 ways underneath it — 4 px horizontally, 1 scanline vertically —
 driven by the C64's own acceleration model and stopped by walls. The camera has a dead zone, so at
-low speed the world holds still and the droid glides at 2 px instead of the world lurching at 4.
+low speed the world holds still and the droid glides at 1 px instead of the world lurching at 4.
 Frame-locked at 25 Hz (2 fields a pass) in every direction including full diagonal. 16 decks,
 per-deck palette and charset built at load time. Keys: Z/X left/right, K/M up/down (and, in a lift,
 choose the deck), L fire — which steps into and out of a lift — cursor up/down for a debug deck hop,
@@ -99,7 +99,7 @@ seconds where a buffer diff would have taken an emulator run.
 | | |
 |---|---|
 | ~~Main RAM below `&3000`~~ | **Relieved 2026-08-14.** It was 39 bytes; it is 2,496. The fix was moving *code* rather than data: `screen.asm`, `scroll.asm` and `level.asm` into bank 4, beside the tile and deck data they read, with `src/bufcore.asm` holding the 480 bytes that cannot be banked. The position bookmark at the end of `BUGS.md` is no longer blocked |
-| 1 px sprite positioning | **A fidelity loss, not polish, and it no longer costs 1820 bytes.** The original is 1 px — hires sprites positioned per pixel by `SetSpriteXY`, background scrolled per pixel by `$D016` — and since the blitter was compiled a shift is *code*, not artwork: ~4,632 bytes each, so two more shifts want ~9.3 K against the 1.8 K left in bank 5. Worst on `DSpeed_t` = 1 droids, drawn 0, 2, 0, 2. See the cost note under Layer 5 |
+| ~~1 px sprite positioning~~ | **Done 2026-08-14**, on branch `layer5-1px-shifts`. Four compiled shifts across two sprite banks; the droid is drawn exactly where it is, as the C64 draws it. Cost **+122 cycles a pass** on `SprDrawAll`, measured, and a third 16K bank. See [`docs/layer-5-blitter.md`](docs/layer-5-blitter.md) |
 | Raster-ordered sprite updating | Flicker, and probably `BUGS.md` #3 with it. The only sprite-pool work still open |
 | 2 px world scrolling | Parked, Master-only via shadow RAM. Costs +60–80% on all drawing because both buffers must stay current — see [`docs/master-extensions.md`](docs/master-extensions.md) |
 | Play area is 320 × 120, not 128 | Consequence of the single hardware wrap — see Layer 3d. Getting the row back needs the 20K wrap or per-cycle wrap bits. **KC's call** |
