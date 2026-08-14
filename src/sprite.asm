@@ -509,10 +509,12 @@ ENDMACRO
 \ eight rows go the interpreted way, as they always did.
 
 \ Y for column 0, 1 and 2 of each of the three digit positions. Column 2
-\ is only reachable by a shifted glyph's spill, and no glyph currently
-\ needs it — the exporter skips transparent bytes and every glyph's
-\ rightmost two pixels are blank — but the table costs three bytes and
-\ removes the question.
+\ is the shifted glyph's SPILL, and it is not optional: a digit is 7
+\ pixels wide in an 8 pixel cell, so shifted 2 px right its last pixel
+\ column lands in the next position's first byte. The exporter used to
+\ drop that column on the floor — the artwork was truncated to two bytes
+\ before it was shifted — which took a column out of the right edge of
+\ every glyph but 1, at odd 2 px positions only.
 .drYcol0 EQUB 0, 16, 32
 .drYcol1 EQUB 8, 24, 40
 .drYcol2 EQUB 16, 32, 48
@@ -549,6 +551,9 @@ ENDMACRO
   BNE brp_row
   RTS
 
+\ SEVEN columns, not six. Column 6 is only ever written by the last
+\ position's spill under a shift, but it is restored unconditionally
+\ because the save is unconditional too — see SprDigitBlock.
 .SprBlkRest
   LDX #8
 .sbr_row
@@ -558,6 +563,7 @@ ENDMACRO
   LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #5*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
+  LDY #6*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   SCANSTEP
   DEX
   BNE sbr_row
@@ -581,18 +587,34 @@ ENDMACRO
 .sbg_call
   JMP &FFFF                     \ tail call: the glyph ends in RTS
 
-\ SprDigitBlock — save the eight rows, then draw the three glyphs over
-\ them. The save pass is the only one that walks, so it is also what
-\ leaves bufp and svp on row 14 for the caller; the glyphs run off the
-\ row pointers and disturb neither.
+\ SprDigitBlock — save column 6, then draw the three glyphs, which save
+\ the six columns they own as they go. SprBuildRowPtrs is the only thing
+\ here that walks, so it is also what leaves bufp and svp on row 14 for
+\ the caller; the glyphs run off the row pointers and disturb neither.
+\
+\ THE POSITIONS ARE DRAWN 2, 1, 0 AND THE ORDER IS LOAD-BEARING. Shifted,
+\ each glyph spills its last pixel column into the next position's first
+\ byte — position p's column 2 and position p+1's column 0 are the same
+\ byte — and a glyph does not know its own position, so it cannot know
+\ whether it is the first to touch a shared column. Descending order
+\ settles it without asking: the owner of each shared column has already
+\ saved it clean by the time the spill arrives. The spill is then merged
+\ into what the owner drew, not stored over it.
+\
+\ Column 6 is the exception — the last position spills past every owner —
+\ so it is saved by drBlkSave6. Unconditionally, even at shift 0 where
+\ nothing writes it, because SprBlkRest restores it either way and a
+\ stale save byte would be drawn as background. That routine is generated
+\ into the sprite bank with the glyphs, not written here, because main
+\ RAM is the binding constraint and the bank is not.
 .SprDigitBlock
   JSR SprBuildRowPtrs           \ and leaves bufp/svp on row 14
-  LDX #0
+  JSR drBlkSave6
+  LDX #2
 .sdb_glyph
-  JSR SprBlkGlyph
-  INX
-  CPX #3
-  BNE sdb_glyph
+  JSR SprBlkGlyph               \ X survives: the glyph indexes drYcolN,X
+  DEX
+  BPL sdb_glyph
   RTS
 
 \ ============================================================

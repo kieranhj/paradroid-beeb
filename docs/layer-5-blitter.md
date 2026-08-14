@@ -299,6 +299,33 @@ them.
 > exporter asserts it: a glyph that ever emitted a lit pixel in column 2 would corrupt its
 > neighbour's saved background silently.
 
+### It did spill, and the assert could not fire — fixed 2026-08-14
+
+**"It never spills" was false, and so was the measurement behind it.** The exporter truncated a
+glyph row to two bytes *before* shifting it, and `shift_row` drops the carry out of the last byte
+it is given, so the spill was thrown away rather than absent. `drYcol2` was used zero times
+because the pixel that needed it had already been deleted. The assert that was supposed to guard
+the premise read `len(row) < 3 or row[2] == 0` against rows that the same truncation had just made
+two bytes long, so it was vacuously true and could never fail.
+
+The visible effect was a **column of pixels missing from the right edge of every glyph except 1,
+at odd 2 px positions only** — five of the eight rows for a `0`, which is the right-hand stroke
+minus its caps. Reported from play on the player's own `001`.
+
+The fix is the one this step ruled out, but arrived at from the other end. A glyph still saves
+only its own two columns; what changed is that **`SprDigitBlock` draws the positions 2, 1, 0**, so
+the owner of each shared column saves it clean before the spill arrives, and the spill is merged
+into what the owner drew rather than stored over it. Column 6 has no owner and is saved by
+`drBlkSave6` — generated into the sprite bank rather than written in `sprite.asm`, because main
+RAM is the binding constraint and the bank is not. `SprBlkRest` restores seven columns again.
+
+Cost ~200 cycles a sprite, ~1,400 for the pool against 36,274, and 7 bytes of main RAM.
+
+Verified in jsbeeb with slots at both shifts on screen: the play buffer diffed **0 of 10240**
+against a SPACE-forced `RedrawAll` with the draw disabled, and with the restore disabled the eight
+digit rows of every slot matched a byte-exact reconstruction from the glyph data — 10 spill bytes
+for the player's `001` at shift 1, the pixels that used to be missing.
+
 **What is left.** Per sprite is now ~3,000 of real pixel movement and ~2,800 of everything else,
 of which the largest single items are the six inactive slots scanned every frame (~630) and the
 per-slot setup (~480). Nothing structural remains, and nothing needs to.

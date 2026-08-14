@@ -507,42 +507,50 @@ def emit_glyph_code(f, mem):
     offsetting eight pointers per position, and it is what lets the three
     positions share one set of pointers.
 
-    DRAW ONLY, no saving. The 2 px shift spills each glyph into the next
-    one's first byte, so under a shift the three glyphs share columns 2 and 4
-    - and whichever glyph writes a shared column first would have to be the
-    one that saves it, which is not a property a glyph knows about itself.
-    Hoisting the save into one generic pass over all seven columns removes
-    the question. It is also FASTER on the restore side, because one pass
-    over the block walks the eight rows once where three glyph-shaped
-    restores would walk them three times.
+    THREE COLUMNS UNDER A SHIFT, TWO WITHOUT. The 2 px shift spills each
+    glyph into the next position's first byte, so the three glyphs share
+    columns 2 and 4 and the last one reaches column 6. A glyph saves only
+    its own two columns; SprDigitBlock draws the positions in descending
+    order so that the owner of each shared column saves it before the spill
+    arrives, and saves column 6 itself. See the note in the loop below.
     """
     def glyph_rows(d):
+        # THREE bytes, not two. A glyph is 8 pixels wide, so two bytes hold it
+        # unshifted and the third is always empty - but shift_row drops the
+        # carry out of the last byte it is given, so truncating BEFORE the
+        # shift threw the rightmost pixel column away. It did exactly that
+        # until 2026-08-14, and the assert below could not catch it because
+        # the truncation made its length test vacuous.
         base = mem[NUM_DATA_OFFSET + d]
-        return [convert_row([mem[NUM_DATA + base + 3 * r], 0, 0])[:2]
+        return [convert_row([mem[NUM_DATA + base + 3 * r], 0, 0])[:3]
                 for r in range(8)]
 
     size = 0
     for shift in (0, 1):
         for d in range(10):
             rows = glyph_rows(d)
+            assert all(row[2] == 0 for row in rows), (
+                'glyph %d is wider than 8 pixels unshifted' % d)
             if shift:
                 rows = [shift_row(r) for r in rows]
-            # A GLYPH SAVES WHAT IT COVERS. The block used to save all seven
-            # columns in a pass of its own, because under a shift a glyph
-            # was expected to spill into the next position's first byte -
-            # and then neither position could own the shared column. It
-            # never spills: every glyph's rightmost two pixels are blank,
-            # so the three positions are disjoint (columns 0-1, 2-3, 4-5)
-            # and column 6 is never written at all. The assert below is
-            # what keeps that true.
+            # A GLYPH SAVES ITS OWN TWO COLUMNS AND NOT ITS SPILL. The C64
+            # digits are 7 pixels wide in an 8 pixel cell, so unshifted the
+            # three positions are disjoint - columns 0-1, 2-3, 4-5. SHIFTED
+            # THEY ARE NOT: 2 px right puts the last pixel column into the
+            # next position's first byte, because position p column 2 and
+            # position p+1 column 0 are the same byte (Y = (p+1)*16).
             #
-            # So the save folds into the draw, where the byte is being
-            # loaded anyway. All SIXTEEN positions are saved, transparent
-            # ones included, so SprBlkRest can stay generic over six
-            # columns rather than having to know what was drawn.
-            assert all(len(row) < 3 or row[2] == 0 for row in rows), (
-                'glyph %d shift %d spills into column 2; the digit block '
-                'assumes the three positions are disjoint' % (d, shift))
+            # A shared column must be saved by whichever glyph touches it
+            # FIRST, and a glyph does not know its own position. So the
+            # rule is the other way round: nobody saves a spill, and
+            # SprDigitBlock draws the positions in DESCENDING order, which
+            # makes the neighbour that owns each shared column save it
+            # clean before the spill arrives. Column 6 has no owner and is
+            # saved by SprDigitBlock itself.
+            #
+            # The save of columns 0 and 1 folds into the draw, where the
+            # byte is being loaded anyway, and happens even for a
+            # transparent byte so SprBlkRest can stay generic.
             f.write('.drGlyph%d_%d\n' % (shift, d))
             for n, row in enumerate(rows):
                 # Row n of the block has its own pointer, so nothing walks.
@@ -551,8 +559,21 @@ def emit_glyph_code(f, mem):
                 # header in sprite.asm.
                 ptr = 'rowp+%d' % (2 * n)
                 sav = 'rowq+%d' % (2 * n)
-                for col in range(2):
+                for col in range(3):
                     b = row[col]
+                    if col == 2:
+                        # The spill. Not saved - see the note above - and
+                        # merged into whatever the neighbouring position
+                        # has already drawn there, so it is a read, mask
+                        # and write rather than a store.
+                        if not b:
+                            continue
+                        f.write('  LDY drYcol2,X\n')
+                        f.write('  LDA (%s),Y : AND #&%02X : ORA #&%02X'
+                                ' : STA (%s),Y\n'
+                                % (ptr, mode1_mask(b), b, ptr))
+                        size += 13
+                        continue
                     m = mode1_mask(b)
                     f.write('  LDY drYcol%d,X\n' % col)
                     f.write('  LDA (%s),Y : STA (%s),Y\n' % (ptr, sav))
@@ -568,6 +589,20 @@ def emit_glyph_code(f, mem):
                         size += 6
             f.write('  RTS\n')
             size += 1
+
+    # Column 6's save, generated here rather than written in sprite.asm
+    # only because main RAM is the binding constraint and this bank is not.
+    # It runs with the sprite bank paged in, like the glyphs it precedes.
+    f.write('\n\\ drBlkSave6 - the digit block\'s column 6, all eight rows.\n'
+            '\\ Nothing owns it: it is only ever written by the last\n'
+            '\\ position\'s spill under a shift. See SprDigitBlock.\n')
+    f.write('.drBlkSave6\n')
+    f.write('  LDY #6*UNIT_BYTES\n')
+    for n in range(8):
+        f.write('  LDA (rowp+%d),Y : STA (rowq+%d),Y\n' % (2 * n, 2 * n))
+        size += 4
+    f.write('  RTS\n')
+    size += 3
 
     f.write('\n\\ Glyph dispatch, at index shift*10 + digit.\n')
     f.write('.drGlyphLo\n')

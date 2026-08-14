@@ -226,6 +226,48 @@ parked once per pass before any drawing.
 
 ---
 
+## 6. The rotor restore leaves pixels behind, at both shifts
+
+Found 2026-08-14 while verifying the glyph-spill fix, which is **not** its cause — see below.
+
+**Severity:** visible as flicker/debris, transient. Probably the same thing as #3, and probably
+what the raster-ordered sprite updating item in `PLAN.md` is really about.
+
+**Symptom.** With `JSR SprDrawAll` poked to `RTS` so the pool only restores, the play buffer
+differed from a SPACE-forced `RedrawAll` in **24 bytes of 10240**, all of them extra lit pixels
+that the restore did not put back.
+
+**Where they were.** Mapping every differing byte onto the seven slots' 21 × 7 footprints:
+
+| slot | shift | sprite rows affected |
+|---|---|---|
+| 0 | 1 | 0, 1, 2, 4, 15, 17, 18, 19 |
+| 1 | 0 | 18, 19 |
+| 3 | 0 | 18, 19 |
+| 4 | 0 | 0, 1 |
+| 5 | 1 | 0, 1 |
+
+**Every one is a rotor row, and rows 0, 1, 18 and 19 dominate.** Not one is in the digit block
+(rows 6–13), and four of the five affected slots are at shift 0.
+
+**Leading hypothesis: the end rows are restored under the wrong phase.** Rows 0/1/18/19 come from
+two-entry tables indexed by `phase >> 2`, and the restore's column list is generated per
+`(shift, phase >> 2)` — `drRHalf<shift>_<arr>_<half>`. The restore runs a frame after the draw, by
+which time the phase has advanced; `sprTabBaseS` exists precisely to carry the draw's phase across,
+so the question is whether the *halves* dispatch honours it or re-reads the current phase. Rows 2,
+4, 15 and 17 on slot 0 are the same rows under the other half of the same table, which fits.
+
+**Ruled out as the cause: the 2026-08-14 glyph-spill fix.** That change touches the digit block
+only — the glyph code, `SprDigitBlock`'s draw order and `SprBlkRest`'s column count, all of which
+address rows 6–13. Those rows show zero differences here, and the defect appears on shift-0 slots
+where no spill exists at all.
+
+**Next step.** Read the restore dispatch for the end rows against `sprTabBaseS`, then reproduce
+headless with a single slot and a known phase — the pool of seven makes the diff noisy for no
+benefit.
+
+---
+
 ## Wanted: a way to hand game state back without a full repro
 
 Raised 2026-08-14, alongside defect 5.
