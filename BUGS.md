@@ -110,7 +110,20 @@ computed is the thing to find.
 
 ---
 
-## 4. The player can spawn inside a wall, and is then stuck
+## 4. The player can spawn inside a wall, and is then stuck — **FIXED 2026-08-15**
+
+**Fixed exactly as the entry below predicted**, in Layer 5's droid work: the player arrives on
+**waypoint 0** of the deck and `CentreOnDeck` is deleted. `SetPosFromWaypoint` (`player.asm`)
+works backwards from the reference cell, so the cell the wall probes test is the waypoint itself.
+
+Checked over the whole game rather than by sampling decks: `tools/rip_levels.py`'s RLE decoder
+reproduces the port's tile map byte-for-byte, so the same decode answers it for all sixteen at
+once — **0 of the 239 waypoints is in a wall, waypoint 0 included on every deck.** In the emulator,
+the two decks named below now walk freely from the spawn: deck 5 moves 233 px right, deck 14 moves
+364 px down. `TD_DECK` is gone with `droidtest.asm`.
+
+See [`docs/layer-5-droids.md`](docs/layer-5-droids.md). Everything below is the evidence as it was
+gathered.
 
 **Severity:** blocks play on the affected decks.
 
