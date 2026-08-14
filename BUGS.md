@@ -147,6 +147,11 @@ work rather than the blitter.
 and then stopping, the top line of the play window is briefly incorrect — for a single
 frame, then it corrects itself.
 
+> **Retest this against the 2026-08-14 wrap fix first.** Defects 5 and 6 were both the
+> interpreted row falling into the non-walking tail, and this entry has never been
+> instrumented. A one-frame wrong top line is not obviously the same thing, but it costs one
+> run to find out and the fix landed after this was last seen.
+
 **Why it is probably not #2.** Opposite direction, and self-correcting. A buffer-content
 error persists; this does not.
 
@@ -203,6 +208,80 @@ one-row streak; after it, at the identical position, it draws in full.
 **Defect 6 may be the same root cause** — its debris was in rotor rows, at positions that varied,
 and it survived a frozen rotor phase. It has not been re-tested since this fix. Do that before
 spending anything else on it.
+
+## 6. The rotor restore leaves pixels behind, at both shifts — **FIXED 2026-08-14, same cause as 5**
+
+Closed by the `sd_slow`/`sr_slow` tail fix. The debris was the same collapsed rows: a sprite whose
+row straddled the strip wrap drew its remaining rows on top of one another, and the leftovers that
+showed up in a restore-only buffer were those rows sitting where nothing expected them. Everything
+below is the evidence as it was gathered, kept because the ruled-out list cost more than the fix.
+
+The two facts that pointed away from the real cause, for the record:
+
+- **"It survives freezing the rotor phase."** True, and irrelevant — the fault is in the row walk,
+  not the artwork, so the phase never mattered.
+- **"A single sprite is clean, 0 of 10240."** True at the position tested, and misleading: that
+  position had no row crossing the wrap. Sprite *count* was never the variable; scroll offset was.
+
+The lesson worth keeping: both of those were sound measurements that supported a wrong conclusion,
+because the thing being varied was not the thing that mattered. `DEBUG_POS` now prints `scrollS`
+precisely so the variable that does matter is visible.
+
+Found 2026-08-14 while verifying the glyph-spill fix, which is **not** its cause — see below.
+
+**Severity:** visible as flicker/debris, transient. Probably the same thing as #3, and probably
+what the raster-ordered sprite updating item in `PLAN.md` is really about.
+
+**Symptom.** With `JSR SprDrawAll` poked to `RTS` so the pool only restores, the play buffer
+differed from a SPACE-forced `RedrawAll` in **24 bytes of 10240**, all of them extra lit pixels
+that the restore did not put back.
+
+**Where they were.** Mapping every differing byte onto the seven slots' 21 × 7 footprints:
+
+| slot | shift | sprite rows affected |
+|---|---|---|
+| 0 | 1 | 0, 1, 2, 4, 15, 17, 18, 19 |
+| 1 | 0 | 18, 19 |
+| 3 | 0 | 18, 19 |
+| 4 | 0 | 0, 1 |
+| 5 | 1 | 0, 1 |
+
+**Every one is a rotor row, and rows 0, 1, 18 and 19 dominate.** Not one is in the digit block
+(rows 6–13), and four of the five affected slots are at shift 0.
+
+> **The phase hypothesis below is REFUTED, 2026-08-14.** Freezing the rotor — `SprAnimateAll` poked
+> to `RTS`, so the draw and the restore see the same phase — still leaves 24 bytes. Whatever this is,
+> it is not the phase advancing between the two. The same runs also showed the count varying with
+> the player's position in one build (0, 6, 24 and 39 at four positions), so position, not phase, is
+> the thing to vary when reproducing it. Everything below is kept because the row mapping is still
+> good evidence.
+
+**Leading hypothesis (refuted — see above): the end rows are restored under the wrong phase.** Rows 0/1/18/19 come from
+two-entry tables indexed by `phase >> 2`, and the restore's column list is generated per
+`(shift, phase >> 2)` — `drRHalf<shift>_<arr>_<half>`. The restore runs a frame after the draw, by
+which time the phase has advanced; `sprTabBaseS` exists precisely to carry the draw's phase across,
+so the question is whether the *halves* dispatch honours it or re-reads the current phase. Rows 2,
+4, 15 and 17 on slot 0 are the same rows under the other half of the same table, which fits.
+
+**Ruled out as the cause: the 2026-08-14 glyph-spill fix.** That change touches the digit block
+only — the glyph code, `SprDigitBlock`'s draw order and `SprBlkRest`'s column count, all of which
+address rows 6–13. Those rows show zero differences here, and the defect appears on shift-0 slots
+where no spill exists at all.
+
+**A single sprite is clean — 2026-08-14.** With the test droids deactivated and `TestDroidsUpdate`
+NOPed, the player alone restores byte-exactly: **0 of 10240**. So this needs more than one sprite on
+screen, or a position only reachable with them there. The save areas are not the mechanism either:
+the worst case is 223 bytes of the 256-byte page (`scan0` = 7, three character-row crossings), and
+`SprCalcAddr`'s no-wrap test covers the furthest byte a sprite touches — `bufp + 1964` against a
+threshold of `bufp + 1968`, safe by four bytes and worth knowing.
+
+**And see the oracle warning on defect 5**, which applies here too: if this turns out to be
+door-shaped, the diff that found it is measuring the wrong thing.
+
+**Next step.** Read the restore dispatch for the end rows against `sprTabBaseS`, then reproduce
+with `DEBUG_POS` at a location KC has actually seen it, rather than hunting positions blind.
+
+---
 
 ## Delivered: DEBUG_POS, the position bookmark
 
