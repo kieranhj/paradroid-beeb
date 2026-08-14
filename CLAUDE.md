@@ -10,18 +10,25 @@ annotated; the port itself is at an early stage.
 
 **Source material:** `paradroid_ce.lst` is a disassembly of the **1985 Hewson original / 1986
 Competition Edition** lineage — verified by unpacking all four C64 releases and diffing them
-against the listing (see *Which Paradroid?* in `PLAN.md`). It is **not** Paradroid Redux and not
+against the listing (see `docs/decisions.md`). It is **not** Paradroid Redux and not
 Heavy Metal, both of which relocate everything and match the listing at ~1–3%. `ANNOTATION.md`,
-`GRAPHICS.md` and everything extracted by `tools/` are therefore original-lineage data, and may be
-described as "the original" without hedging.
+`docs/graphics.md` and everything extracted by `tools/` are therefore original-lineage data, and
+may be described as "the original" without hedging.
 
 The original and the Competition Edition share their game code, graphics, level data and — notably
 — their movement constants byte for byte. CE is faster because it runs more game-loop iterations
 per second, not because it moves droids further per iteration. On this port that dial is
 `PLY_ITER_FRAMES` in `src/player.asm`.
 
-**`PLAN.md` is the live planning document.** Read it before starting work — it records decisions
-taken, per-layer status, and hardware facts confirmed by measurement. Update it as layers land.
+**`PLAN.md` is the live planning document.** Read it before starting work — it records the state of
+the port, the memory map, decisions taken, and one paragraph per layer. Update it as layers land.
+
+**Completed layers keep their working notes in `docs/`**, one file per layer, plus `decisions.md`
+and `master-extensions.md`. `PLAN.md` links to all of them. That is where the measurements, the
+dead ends and the hardware facts bought the hard way live — read the relevant one before
+optimising or re-litigating anything in that layer, because several of them record options that
+were costed and deliberately *rejected*. When a layer's detail stops being needed to make the next
+decision, move it out of `PLAN.md` rather than letting it accumulate.
 
 ## Working approach
 
@@ -30,9 +37,10 @@ that was explicitly rejected. Build one layer at a time, get each working and vi
 emulator before starting the next, and revise `PLAN.md` as you go.
 
 **Do not write hardware code from recalled facts.** The jsbeeb MCP is connected — set the
-registers, look at the screen, read memory back, confirm, then build on it. The retired
+registers, look at the screen, read memory back, confirm, then build on it. The deleted
 `src/hal_video.asm` is what happens otherwise: unverified CRTC arithmetic with `TODO: verify in
-emulator` comments and a half-finished derivation in the middle of it.
+emulator` comments and a half-finished derivation in the middle of it. It survived in the tree for
+months looking like working code.
 
 ## Target
 
@@ -98,19 +106,25 @@ the exit code, not the presence of stderr output.
 
 Single-pass flat build, everything included from `main.asm`. No linker.
 
-Currently `main.asm` contains Layer 0 only (screen geometry test). `hardware.asm`,
-`zeropage.asm` and `macros.asm` are inherited scaffolding pending rework for the Model B budget.
-`hal_video.asm` and `hal_irq.asm` are **retired** — they target the Master 128 in MODE 2 with
-shadow-RAM double buffering. Do not build on them.
+`main.asm` holds the constants, the zero page map, the main loop and the IRQ dispatch, and includes
+`rupture.asm`, `screen.asm`, `scroll.asm`, `level.asm`, `player.asm`, `sprite.asm` and (under
+`TEST_DROIDS`) `droidtest.asm`. **Everything in `src/` is in the build** — the five inherited
+Master/HAL files that were not have been deleted, so nothing there is dead. Keep it that way.
+
+Geometry and hardware constants live in `main.asm` rather than beside the code that uses them,
+because beebasm resolves constant assignments in file order and the included files need them.
 
 ## Reference documents
 
-- `PLAN.md` — the live plan; decisions, layers, status
+- `PLAN.md` — the live plan; state of the port, memory map, layer summaries, open items
+- `docs/` — per-layer working notes for everything already done, linked from `PLAN.md`.
+  `decisions.md` also carries the evidence for which Paradroid the listing is
 - `BUGS.md` — open defects, with the evidence and what has been ruled out. It used to warn that the
   SPACE debug redraw was wrong on the split row when `line != 0`; the split row no longer exists,
   so `RedrawAll` is a valid oracle at any scroll position — but read the entry's own caveat
 - `ANNOTATION.md` — analysis of the C64 original: memory map, subroutines, hardware, data tables
-- `GRAPHICS.md` — graphics extraction reference for the MODE 1 conversion
+- `docs/graphics.md` — where the C64's graphics data lives, what format it is in, and which tool
+  reads it. Each section says what has actually been ported and what has not
 - `C:\Users\khcon\OneDrive\BEEB\Projects\llm-beeb-wiki` — BBC hardware knowledge base; consult for
   hardware queries rather than parsing a PDF of the Advanced User Guide
 - `paradroid_ce.lst` — raw C64 disassembly in the project root (gitignored; supply locally). The

@@ -1,0 +1,403 @@
+# Layer 5 — blitter optimisation
+
+*Part of the Paradroid BBC Micro port. Start at [`../PLAN.md`](../PLAN.md).*
+
+Done before the droids went in: seven slots at the Layer 4 cost did not fit in a frame.
+The droid movement half of Layer 5 is still open — see [`../PLAN.md`](../PLAN.md).
+
+Seven slots at the Layer 4 cost do not fit in a frame, so the blitter is being cut down first. Four
+steps, in dependency order:
+
+1. **Save area into screen geometry** — done (`3f69b4d`). `(svp),Y` with the same Y as `(bufp),Y`.
+   Cycle-neutral in itself; its point is that it makes compilation *possible*, since a compiled
+   blitter cannot poke a save address into each of its ~72 stores.
+2. **Compile the rotor** — done. Rows 0–4 and 15–19 are generated 6502 in the data bank, with the
+   pixels and masks baked in as immediates.
+3. **Compile the digits** — done, but it bought less than half what was projected. See below.
+4. **Frame lock to 25 Hz** — done. `FRAME_LOCK = 2` in `main.asm`; `WaitVSync` consumes two fields
+   an iteration instead of one, so one pass of the loop is one C64 GameLoop iteration.
+
+   | loop iterations per 100 fields | free-running | locked |
+   |---|---|---|
+   | player only | 101 (50 Hz) | 50 (25 Hz) |
+   | player + 6 droids | 80 (40 Hz) | 50 (25 Hz) |
+
+   Free-running was the worse option and it took the test droids to show why: the loop does not fit
+   in a field with a full pool, so it stretched to 1.25 fields and **the player moved 20% slower
+   with droids on screen than without**. Speed that depends on what is visible is a worse fault
+   than speed that is merely chunkier.
+
+   Real-time speed is unchanged — `PLY_ACCEL`/`PLY_DECEL`/`PLY_MAXSPD` now scale by
+   `FRAME_LOCK / PLY_ITER_FRAMES`, which cancels at 2 and 2, so the C64's own per-iteration
+   constants apply unmodified. Confirmed in the emulator: `xSpd` tops out at `&0700`, 7.0 px per
+   iteration, the same 175 px/s as 3.5 px/field at 50 Hz. What is given up is the extra smoothness
+   the 50 Hz sampling bought — that was always a bonus over the original, not a requirement.
+
+5. **Round-robin updating** — **dropped, on measurement.** It was the step that bought the pool
+   its headroom when seven sprites cost 68K of an 80K pass. They now cost 40.7K and the loop
+   spends **39,212 of its 79,872 cycles idle — 49% of the pass** (T1 around `WaitVSync`, seven
+   sprites live, averaged over 127 passes). There is nothing left to buy. See *Why not
+   round-robin* below before reviving it.
+6. **Raster-ordered updating** — flicker, and probably `BUGS.md` #3 with it. Still open, and now
+   the only sprite-pool work outstanding.
+
+**Measured, one sprite, one frame** (User VIA T1 around the two calls; both builds at the same
+position; ±0 across repeats — the emulator is deterministic):
+
+| | before | after | |
+|---|---|---|---|
+| `SprRestoreAll` | 3,490 | 3,506 | +0.5% |
+| `SprDrawAll` | 10,508 | 7,142 | **−32%** |
+| total | 13,998 | 10,648 | **−24%** |
+
+The draw is where compiling pays: the rotor averages **3.2 opaque bytes of 7**, and a compiled row
+costs nothing for the transparent ones, where the interpreted path pays 26 cycles to fetch and 27 to
+blit each of the seven regardless.
+
+**Restore came out flat, and that is not a disappointment — it is arithmetic.** Copying seven bytes
+back costs 91 cycles; the compiled form costs 13 per saved byte plus ~49 to dispatch, which at 3.2
+bytes is 91 again. It is kept because the alternative is worse: an interpreted restore would force
+the *draw* to save all seven columns, and that costs the draw more than the restore saves.
+
+Seven sprites at 10,648 is 74.5K against a frame of 80K, so this step alone does not buy the pool —
+step 3 has to. It does prove the addressing, which was the risk.
+
+**Cost in the bank:** 3,159 bytes of generated code and tables, so `SPR_SHIFT2` moved `&A800` →
+`&B000` and the bank now ends at `&B6CF` of `&C000`. The staging assert had to be relaxed with it:
+`PARADAT` is now 48 pages and overruns the panel, the mask table and the bottom of the play buffer,
+which is safe because `PageDataIn` is the first thing after the load and everything above it is
+rewritten before it is next read. Boot shows a moment of garbage in the play area.
+
+**Verification.**
+- The generator is checked against the interpreted path in Python: for all 8 phases × 21 rows × 2
+  shifts the compiled row is the row `drOfs` would have fetched (320 rows, 0 mismatches), and for
+  every distinct row over eight background patterns the compiled writes equal the interpreted
+  writes and the compiled restore undoes them exactly.
+- In the emulator, after full-speed diagonal scrolling, disabling the sprite and letting it restore
+  leaves the play buffer **byte-identical to a forced `RedrawAll` across all 10K** — 0 diffs.
+  (Run this at `line == 0`; at `line != 0` the oracle itself is wrong — `BUGS.md` #1.)
+
+## Step 3, the digits — and why it under-delivered
+
+**The digits are dense where the rotor is sparse: 42.7 opaque bytes of 56 against 3.2 of 7.** So
+almost nothing is saved by skipping transparent bytes; the whole win is deleting `SprFetchRow`.
+
+Per-TYPE compiled code is ~1,012 bytes and 24 types is 25K, which does not fit. But the number is
+three independent 8-pixel glyphs and there are only ten glyphs, so **ten routines cover all 24
+types** and the three positions are reached by offsetting `bufp` by 0/16/32 rather than by
+generating three copies. Nothing is generated at run time.
+
+The glyphs draw without saving. Under a 2 px shift each glyph spills into the next one's first
+byte, so the three share columns 2 and 4 — and whichever writes a shared column first would have to
+be the one that saves it, which is not something a glyph can know about itself. Hoisting the save
+into one generic pass over all seven columns removes the question entirely, and the same trick makes
+the *restore* a single pass, because putting the background back does not care what was drawn.
+
+| | before | after | |
+|---|---|---|---|
+| `SprRestoreAll` | 3,506 | 3,260 | −7% |
+| `SprDrawAll` | 7,142 | 6,400 | −10% |
+| total | 10,648 | **9,660** | −9.3% |
+
+**That is ~990 cycles, against the ~2,600 projected when the scheme was chosen, and the shortfall is
+structural rather than a bug.** Three glyph positions mean three walks of the eight rows, plus one
+for the save — four walks where the interpreted path made one. A walk step is `JSR SprNextScan`, ~37
+cycles including call and return, so the block spends ~1,180 cycles just advancing scanlines where
+the old code spent ~296. The projection did not count that.
+
+Getting to one walk needs per-row code covering all three glyphs at once, which is per-type — either
+25K shipped or a run-time generator plus a bank to put it in. That was the option deliberately not
+taken, and the 990 is what the cheaper choice is worth. It is not worth revisiting: the same effort
+spent on step 4 is worth far more.
+
+**Cumulative: 13,998 at the end of [Layer 4](layer-4-player.md) → 9,660, a 31% cut.** Seven sprites is still 67.6K
+against a 40,000-cycle frame, so compilation has now clearly run out of road and the update rate is
+the whole remaining problem.
+
+Verified byte-identical two ways: the compiled digits against the same build's interpreted path
+(force it by patching `sd_digit`/`sr_digit`'s `LDA sprNoWrap` to `LDA #0`) — 0 diffs over the whole
+10K; and the restore against a forced `RedrawAll` after full-speed diagonal scrolling — 0 diffs.
+
+> **Sample the buffer inside `WaitVSync`, not at an arbitrary cycle count.** A dump taken mid-
+> `SprDrawSlot` shows the sprite half-drawn and looks exactly like missing rows. That cost an hour
+> here: rows 16-19 appeared to be absent in two independent dumps, and the save area proved they had
+> been written all along. Poll the PC until it reaches the `WaitVSync` spin, then dump.
+
+**Bank after step 3:** `&8000-&BA84` of `&C000`, 1,404 bytes spare; `PARADAT` is 59 pages. The 2 px
+shifted copy of the artwork is gone — both shifts exist as compiled code, and the stored rows are
+read only by the wrap fallback, which shifts the few it needs on the fly in `SprFetchRow`. That
+reclaimed the 1,743 bytes the glyph code now occupies.
+
+**Noted while measuring, not chased:** adding ~44 cycles of instrumentation to the *draw* call site
+deadlocks the main loop in both builds, while the same stub on the *restore* call site is harmless.
+So the loop finishes very close to a raster deadline at that point, and a miss appears to hang the
+`ruptState` machine rather than merely costing a frame. Worth understanding before the budget gets
+spent.
+
+## Step 3a — the scanline walk
+
+A static cycle model built from the generated code (reconciling to within 3% of the measured
+totals) put **`SprNextScan` at 2,433 cycles, 25% of the per-sprite cost** — the single biggest
+line item, ahead of the play-buffer reads and writes at 17%. 42 calls in a draw and 21 in a
+restore, at 33-37 cycles each. Three changes, each verified byte-identical before the next:
+
+| | draw | restore | total |
+|---|---:|---:|---:|
+| after step 3 | 6,345 | 3,271 | 9,616 |
+| drop dead `svp` work in the glyph passes | 6,226 | 3,226 | 9,452 |
+| read the scanline from `bufp AND 7` | 6,038 | 3,177 | 9,215 |
+| inline the walk as the `SCANSTEP` macro | 5,773 | 2,939 | 8,712 |
+| stop the loops after the last drawing row | 5,587 | 2,879 | 8,466 |
+| eight row pointers, so the glyphs stop walking | 5,093 | 2,913 | 8,006 |
+| sequence dispatch + straight-line sprite shape | 4,566 | 2,454 | 7,020 |
+| own bank; walk into the rows, rows into a program | 4,300 | 2,243 | 6,543 |
+| merged restore halves, tail calls | 4,283 | 2,095 | 6,378 |
+| the glyphs save what they draw | 3,844 | 1,970 | **5,814** |
+
+**−3,802 cycles, 39.5%.** Seven sprites cost 40.7K of the 79,872-cycle pass — just over half of
+it — against 67.3K. The
+walk is down from 2,433 to about 800, and from 25% of a sprite to under 10%; dispatch and the
+row loop, 2,000 between them, are down to a couple of hundred.
+
+The restore's +34 on the last row is the ±50 code-layout noise floor, not a regression: nothing
+in the restore path changed, only its addresses.
+
+They are worth distinguishing. The first was *dead work*: glyphs address everything as
+`(bufp),Y` and never read `svp`, so 21 walks a frame were maintaining a value that
+`SprDigitBlock` then overwrote. The second was *redundant state*: every term of `bufp` is a
+multiple of 8 except the scanline, so `bufp AND 7` **is** the scanline and the counter beside it
+was never needed. The fourth was *work off the end*: row 20 is blank for every droid, so its
+whole iteration and the advance into it drew nothing anyone reads. Only the third was ordinary
+cycle-shaving — and it was the largest single win, which is worth remembering before assuming
+the clever ones pay best.
+
+**What is left.** Compiling bought the rotor and the digits; these five bought the walk, and the
+walk is now spent — what remains of it is `SprBlkSave`/`SprBlkRest`'s 16 steps and the 26 in the
+row loops, all of them advancing to a row that genuinely draws.
+
+The step-5 tax was worth naming: three glyph *positions* would have meant offsetting eight
+pointers each, which is most of the win. Moving the position out of the pointer and into Y
+(`LDY drYcol0,X`, position held in X across the glyph) costs two cycles a column instead of ~100
+a position, and it is what lets one set of pointers serve all three. The same trick is why the
+shifted glyphs' spill into a shared column still lands correctly: position *p* column 2 and
+position *p+1* column 0 are both Y = (*p*+1)·16.
+
+## Step 3b — dispatch and the row loop
+
+Dispatch (~1,000) and the 21-row interpreter loop (~1,150) looked structural — removable only by
+compiling a whole sprite per type × phase × alignment, the 25K option deliberately not taken.
+They were not, because of one observation: **the ten rotor rows a sprite draws are fixed once its
+shift and phase are known.** The sequence is a property of (shift, phase) — sixteen of them — not
+of the sprite, so it can be listed rather than derived per row.
+
+Two changes fall out of that:
+
+- **`drSeqLo/Hi`, ten addresses per (shift, phase) in drawing order.** Dispatch becomes an indexed
+  read and a poke: no row→slot lookup, no add, no row counter. The list is indexed by **X**, not
+  Y — the compiled rows use A and Y and would eat an index kept in Y.
+- **The fast path writes the shape out.** A sprite that cleared the wrap test has no row that
+  *can* wrap, so its shape is a constant: five rotor rows, a blank, the digit block, a blank,
+  five more. That removes the row counter, the blank-row lookup and the end test from every
+  iteration — everything the loop did to discover what it already knew.
+
+The interpreted loop stays for the one sprite in five that fails the wrap test, since only a
+per-row test can decide which rows fall back. But it now runs *only* with `sprNoWrap` clear, so it
+drops that test from every row and its digit-block arm goes entirely — the block never opens
+there.
+
+**−986 cycles for +192 bytes of bank** (640 of lists against 448 of dispatch tables deleted). The
+alternatives were costed and rejected: fully unrolled `JSR` programs per (shift, phase) buy ~1,220
+for ~2,150 bytes, and putting the walk inside every compiled routine buys ~1,360 for ~2,370 —
+neither fits, and neither survives the fact that the fallback path keeps the old tables alive.
+Both become affordable only with a second bank paged in for the sprite phase.
+
+> **The tile map now has a fixed home at `&3800`.** It used to sit at the next page boundary after
+> `code_end` — fine while the code was small, and silently over the sprite save areas at `&3000`
+> when it was not. This step is what made it not: the first build put it at `&2D00–&3100`, on top
+> of slot 0's saved background, with no assert to catch it. There are asserts now. `&3700–&47FF`
+> is clear, and the move takes code headroom from 143 bytes to 1,005 — the constraint that would
+> have blocked the next layer regardless.
+
+## Step 3c — a bank of its own, and the full unroll
+
+The blitter now has **SWRAM_SPR to itself**: artwork, compiled rows, glyphs and programs, with
+tiles, levels, palettes and the droid game data left in `SWRAM_DATA`. Only one bank is visible at
+a time, which works because the two halves are never wanted at once — `DoRedraws` reads tiles,
+the blitter reads none of that, and they run at different points in the pass. `SprRestoreAll` and
+`SprDrawAll` swap around themselves, so the data bank is the resting state and no caller has to
+know. Two swaps a pass, 8 cycles each. The IRQ was the thing that could have broken it and does
+not: `RuptVSync` and `RuptTimer` read nothing out of either bank.
+
+With the space, the two options costed and rejected at step 3b both land:
+
+- **C — every compiled rotor routine ends by walking a scanline.** The walk was the one thing
+  that had to happen between rows, so putting it inside each row leaves nothing between them.
+- **B — a straight-line program per (shift, phase).** Sixteen for the draw, sixteen for the
+  restore: ten `JSR`s with the digit block and the two blank rows in the middle. Entering one is a
+  table read, a poke and a `JMP` — the program ends in `RTS`, so the tail call returns straight to
+  `SprDrawSlot`'s caller. A rotor row costs a `JSR` and an `RTS`.
+
+Then two more, both from reading the generated programs rather than the model. **A `JSR`
+immediately before the program's closing `RTS` is a tail call written the long way** — `JMP`
+instead, 9 cycles and a byte cheaper, on both sides. And **the restore's ten calls are five
+identical pairs**: a restore routine is keyed on the column set, only four sets exist, and which
+one a row uses depends on nothing but shift and *phase>>2*. So the ten collapse to two calls into
+a routine per half with all five rows inlined — eight routines cover all sixteen sequences, 8 of
+the 10 `JSR`/`RTS` pairs gone, and the bottom half can simply omit its final walk because nothing
+reads the pointers after it. That last point collects the 42 cycles the unroll had been wasting.
+
+The draw gets only the tail call: its ten rows are ten *different* routines (00,02,04,05,06 |
+06,05,04,03,01), and merging them would need a copy per phase of the rows that are currently
+shared.
+
+**−477 cycles for the bank move and the unroll, then −165 more for the roll-up.** Less than the −1,220/−1,360 those options were worth against
+the step-5 baseline, because step 3b's sequence dispatch had already taken most of it — worth
+knowing before costing an option twice.
+
+The fallback keeps the sequence lists and the per-row wrap test, since only that can decide which
+rows drop to the slow path. But the compiled rows it calls now walk on their own account, so it
+needs a tail that does not walk again: `sd_nextnw`/`sr_nextnw`, taken only from the self-modified
+call site.
+
+> **Two beebasm mechanics, both learned the hard way.** `CLEAR` is what lets `&8000-&BFFF` be
+> assembled twice — beebasm tracks written bytes and refuses to overwrite them. And **`SAVE`
+> writes whatever the image holds at the time it runs**, so each bank must be saved where it is
+> assembled; both `SAVE`s left at the bottom of the file silently wrote the sprite bank into
+> `PARADAT`, and the deck rendered as garbage with droid types of 164-169.
+
+> **The save areas differ between builds, in bytes nothing reads.** A slot's 256-byte page is only
+> partly covered — blank rows save nothing, a compiled row saves only the columns it draws — so
+> the rest keeps whatever the staging copy left at `&3000`, which changed when `PARASPR` arrived.
+> The play buffer being identical is the proof it does not matter: the save area exists only to be
+> read back into the buffer, so a differing byte that was ever read would show up there.
+
+## Step 3d — the glyphs save what they draw
+
+The digit block still saved all seven columns of all eight rows in a pass of its own before the
+glyphs drew. That existed for a stated reason: under a 2 px shift a glyph was expected to spill
+into the next position's first byte, so two positions would share a column and neither could own
+saving it.
+
+**It never spills.** Every glyph's rightmost two pixels are blank, so the generated code uses
+relative columns 0 and 1 and never 2 — 120 and 143 uses of `drYcol0`/`drYcol1` against **zero** of
+`drYcol2`. The three positions are therefore disjoint (columns 0-1, 2-3, 4-5) and column 6 is
+never written at all. The premise the hoisted save was protecting against was vacuous for this
+artwork all along.
+
+So the save folds into the draw, where the byte is being loaded anyway: one extra `STA (rowq),Y`
+per position. All sixteen of a glyph's positions are saved, transparent ones included, so
+`SprBlkRest` stays generic — over six columns now, not seven. `SprBlkSave` is gone entirely, and
+with it a whole extra walk of the eight scanlines: `SprBuildRowPtrs` now fills both pointer sets
+in one pass and leaves `bufp`/`svp` on row 14, which is exactly where the save pass used to leave
+them.
+
+**−564 cycles**, better than the ~500 estimated, because deleting the save pass took its eight
+`SCANSTEP`s with it. Cost: 16 more bytes of zero page for `rowq`, and the glyph code grows from
+2.7K to 3.7K.
+
+> The blitter now depends on a property of the *artwork* rather than of the geometry, so the
+> exporter asserts it: a glyph that ever emitted a lit pixel in column 2 would corrupt its
+> neighbour's saved background silently.
+
+**What is left.** Per sprite is now ~3,000 of real pixel movement and ~2,800 of everything else,
+of which the largest single items are the six inactive slots scanned every frame (~630) and the
+per-slot setup (~480). Nothing structural remains, and nothing needs to.
+
+## Step 3e — the rest of zero page
+
+`&10-&3F`, `&60-&63` and `&65` were still free, 53 bytes, and every module was still keeping its
+working variables in absolute storage. They now hold the blitter's twelve working scalars
+(`sprSlot`, `sprIter`, `sprNoWrap`, `sprSeqBase`, `sprGlyphBase`, `sprDigit`…), the rupture/CRTC
+state (`ruptState`, `drawFlag`, `crtcHi/Lo`, `line/pline/iline`) and sixteen of player.asm's
+(`posX`, `posY`, `plyX`, `xSpd`, `ySpd`, `spd`, `cwU`, `plyCX/plyCY`, `dzSx`, `dzD`, `oldHX`…).
+
+**Measured, seven sprites, averaged over 128 passes** (User VIA T1, both builds at the same
+position, `TEST_DROIDS` deck 1, stationary):
+
+| | before | after | |
+|---|---:|---:|---|
+| `SprDrawAll` | 24,134 | 23,961 | −173 |
+| `SprRestoreAll` | 12,418 | 12,313 | −105 |
+| total | 36,552 | **36,274** | **−278, −0.76%** |
+
+**Under 1%, and that is the honest ceiling for this kind of change** — worth recording so it is not
+costed optimistically again. The reason is one line of the 6502 data sheet: **`LDA abs` is 4 cycles
+and `LDA zp` is 3, but `LDA abs,X` and `LDA zp,X` are both 4.** The blitter reaches almost
+everything through X — all fourteen per-slot arrays, 98 bytes of them — so none of it gains
+anything, and only the handful of scalars around the indexing were ever on the table. The same rules
+out `sprRowBuf`, the offset tables in scroll.asm, `tdpLo/tdpHi` and `nearXoffset`.
+
+Where it does pay is read-modify-write, at 5 cycles against 6: `CheckWalls` alone does twelve
+`LSR`/`ROR`s on `plyCX`/`plyCY` every pass.
+
+**The larger win was space: the code shrank 372 bytes**, `&1100-&2BB4` → `&1100-&2A40`, since a
+zero-page operand is a byte shorter. That is worth more than the cycles at this point.
+
+Deliberately not moved: everything in level.asm (`bcSrc`..`palTmp`), which runs at deck load and
+nowhere else, and `BuildCharPtrs`/`FillPanel`. Forty-odd bytes of zero page to save a few hundred
+cycles once every few minutes is the wrong trade while anything per-pass is still absolute.
+
+> **Verification, and a cheap technique worth reusing.** Both builds' listings were reduced to a
+> stream of (mnemonic, addressing class) with abs and zp collapsed together: **7,753 instructions,
+> identical in both.** That proves no instruction was added, removed or reordered and that every
+> difference is a width change — which is a stronger and far faster check than diffing the play
+> buffer, for any change that is meant to be purely mechanical. The emulator run afterwards was
+> then only confirming that the addresses chosen do not collide.
+
+## Why not round-robin
+
+Every earlier note here treated round-robin as the next step and the biggest remaining lever. It
+is neither, and the reason is the work above. **The loop spends 39,212 of its 79,872 cycles idle
+— 49% of the pass** with all seven sprites live. Round-robin would buy back ~20K of a budget that
+already has 39K spare.
+
+It is also not free, which the earlier notes never costed:
+
+- **Overlap.** The order — restore *all*, scroll, draw *all* — exists because drawing one sprite
+  while another is still on screen captures the second one's pixels into the first one's save
+  area, and restoring it later stamps them permanently into the buffer. Round-robin breaks that
+  invariant by construction, and the corruption is permanent rather than transient.
+- **Scroll bands.** A sprite left undrawn keeps its correct world position — the buffer is
+  circular and the world moves with it — but if `DoRedraws` repaints a band over it, its saved
+  background is stale and restoring it writes old pixels over new. That only shows while
+  scrolling, which is where the oracle is weakest.
+- **Visible cost.** At four slots of seven a pass, droids animate and move at ~14 Hz against the
+  player's 25.
+
+If a later layer does eat the headroom, measure first: `RunDroids`, pathfinding and slot
+allocation are budgeted at ~14,000 cycles on the C64, which would still leave ~25K spare. The
+cheap half-step, if it is ever needed, is not round-robin but **skipping a sprite that provably
+cannot have changed** — same screen position, same rotor phase, no scroll, no overlapping sprite
+redrawn. That is correct with no visual cost at all, though it only pays when droids are
+stationary or low-energy, since `SPR_SPIN = 0` advances a full-energy rotor every pass.
+
+> **Measuring across builds.** Average over ~128 passes, not 16: the rotor phase cycles every 8
+> and the per-phase spread is a few hundred cycles, so a short average is biased by which phases
+> it caught. There is also a ±50-cycle floor between builds from `abs,X` lookups landing on
+> different sides of a page boundary once the code shifts.
+
+> **Drive the scroll by patching `ReadKeys`, not by holding a key.** A keypress injected at a
+> fixed cycle count lands a pass earlier or later once the code speed changes, and the two runs
+> then diverge for reasons that have nothing to do with the change under test. Half an hour went
+> into a 38-byte difference that was entirely this.
+
+> **Check `code_end` against the stub address after every build.** The measurement and input
+> stubs live between `code_end` and the tile map at `&2C00`. Step 3a moved `code_end` from `&2B7B`
+> to `&2BA4`, and a stub left at `&2BA0` lands on `vsyncCount` and `oldIrq1V` — which reads
+> exactly like a sprite bug that only appears when scrolling.
+
+> **Anchor the rotor phase before the counted passes.** The oracle parks the game after N passes
+> by patching the `JMP` at the bottom of the main loop, but that patch is installed at a fixed
+> cycle count — and once the code speed changes, the two builds are not in the same pass when it
+> lands. Step 4's builds parked **three passes apart**. The signature is unmistakable once seen:
+> every rotor row of every sprite differs and the digit rows match exactly, because the rotor
+> depends on phase and the digits on type. Zero `sprFrame` and `sprDelay` before the counted
+> passes. Safe to do mid-run — the restore replays `sprTabBaseS`, which records the phase the
+> draw actually used.
+>
+> **And anchor it at a LOGICAL point, not a cycle count.** Zeroing `sprFrame` mid-pass lands
+> either side of `SprAnimateAll` depending on where that build happens to be, so the two runs
+> still come out one phase apart — the same signature, and step 5 hit it after step 4 had already
+> established the rule. Park first, zero while parked, then resume: write `JMP` *the park
+> routine's own resume path* over the self-park, run ~2000 cycles to let the CPU out, and put the
+> self-park back. Check afterwards that `sprFrame` is exactly `passes MOD 8`.

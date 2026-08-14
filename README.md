@@ -70,9 +70,9 @@ the executable on disc is `PARA`.
 src/            BBC Micro 6502 source (BeebASM)
 tools/          Python data-extraction tools (see below)
 annotate.py     Generates the annotated C64 disassembly
-PLAN.md         Layered build plan, decisions, and status
+docs/           Per-layer working notes, plus graphics.md — the C64 data reference
+PLAN.md         Layered build plan, memory map, and status
 ANNOTATION.md   Analysis of the C64 original: memory map, subroutines, hardware
-GRAPHICS.md     Graphics extraction reference for the BBC conversion
 ```
 
 ## Original game data
@@ -85,7 +85,7 @@ Andrew Braybrook and Hewson Consultants. To run the extraction tools you need to
 > Edition** lineage — verified by unpacking all four C64 releases with `tools/unpack_prg.ps1` and
 > diffing them against it. Everything ported so far — level data, tile definitions, sprites, game
 > logic — is original-lineage. It is *not* Paradroid Redux or Heavy Metal, both of which relocate
-> everything and match the listing at ~1–3 %. See *Source material: which Paradroid?* in `PLAN.md`.
+> everything and match the listing at ~1–3 %. See [`docs/decisions.md`](docs/decisions.md).
 
 With that in place:
 
