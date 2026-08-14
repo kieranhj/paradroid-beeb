@@ -406,6 +406,46 @@ cycles once every few minutes is the wrong trade while anything per-pass is stil
 > buffer, for any change that is meant to be purely mechanical. The emulator run afterwards was
 > then only confirming that the addresses chosen do not collide.
 
+## 1 px positioning — step A: making room
+
+*Branch `layer5-1px-shifts`. Four steps; this is the first, and it changes nothing visible.*
+
+Four shifts need ~24.6 K of compiled code against one 16 K bank, so the plan is two sprite banks
+split by shift — 0 and 1 in bank 5, 2 and 3 in bank 6 — with the shift-independent parts kept out of
+both. Step A moves the largest of those parts.
+
+**The artwork left the sprite bank.** `drSprData` (1,743 B) and `drOfsLo`/`Hi` (336 B) are read by
+exactly one routine, `SprFetchRow`, on the wrap fallback — about one row in fifty, plus all eight
+digit rows of a sprite that wraps. So they now live in `SWRAM_DATA` with the tiles, and
+`SprFetchRow` pages that bank in and the sprite bank back out around itself: ~24 cycles a call, and
+at most ~600 a pass in the worst case, against ~39,000 idle.
+
+`drMulRows` and `drDigitLo`/`Hi` (56 B) stayed. `drMulRows` is read at the top of the fallback loop
+and `drDigit*` in `SprSetSlot`, both inside the window, and 56 bytes is not worth a paging pair —
+they will simply be duplicated into bank 6, at the same address, when it exists.
+
+| | before | after |
+|---|---|---|
+| bank 5 | 14,518 used, 1,866 free | **12,439 used, 3,945 free** |
+| bank 4 | 9,489 used, 6,895 free | 11,568 used, 4,816 free |
+| main RAM code | `&1100–&263F` | `&1100–&2654` (+21 for the two `PAGEBANK`s) |
+
+**Verification.** The change is invisible in normal play — the fallback is where it lives — so the
+test forced every row through it, by poking `LDA sprNoWrap` to `LDA #0` in `SprDrawSlot`:
+
+- All seven sprites still drew correctly with every row interpreted.
+- With the rotor frozen (`SprAnimateAll` → `RTS`) and the restore disabled so the sprites persist,
+  the interpreted buffer was **byte-identical to the compiled one — 0 of 10240**, which is the real
+  claim: paging in the middle of the fetch does not disturb what gets drawn.
+- Back in normal operation, the usual oracle after scrolling: **0 of 10240** against a SPACE-forced
+  `RedrawAll` with the draw disabled.
+
+> **The first attempt at the middle test reported 146 differences, and they were an artefact.** The
+> interpreted path is ~2.5× slower, so a dump at an arbitrary cycle count lands *inside*
+> `SprDrawAll` with some slots drawn and others not yet. This document already warned about that
+> from the other direction; the fix is the same one — disable the restore so the sprites persist,
+> and the sample point stops mattering.
+
 ## What is in the bank, block by block
 
 Reference for the finished article. Addresses are from a `-dd` label dump of the current build;

@@ -400,7 +400,18 @@ ENDMACRO
 \ other row is rotor or blank and depends on the PHASE. One table
 \ indexed by both would be 24 types x 8 phases x 21 rows, so there
 \ are two, and this is where they meet.
+\
+\ THIS IS THE ONLY THING THAT READS THE STORED ARTWORK, so the artwork
+\ lives in SWRAM_DATA and this routine pages it in and the sprite bank
+\ back out around itself. It runs about one row in fifty — plus all
+\ eight digit rows of a sprite that wraps — so ~24 cycles a call is
+\ nothing, and it buys 2,079 bytes of the sprite bank, which is the
+\ scarce one. The two exits both page back: the caller is inside the
+\ blitter's window and expects the sprite bank in.
+\
+\ A clobbers over both PAGEBANKs; nothing here returns a value in it.
 .SprFetchRow
+  PAGEBANK SWRAM_DATA
   LDA sprRow
   CMP #DR_DIGIT0
   BCC sfr_phase
@@ -430,6 +441,7 @@ ENDMACRO
   STA sprRowBuf+SPR_W,Y
   DEY
   BPL sfr_loop
+  PAGEBANK SWRAM_SPR
   RTS
 
 \ The 2 px shift, done here instead of from a second copy of the
@@ -457,6 +469,7 @@ ENDMACRO
   INY
   CPY #SPR_W
   BNE sfr_sloop
+  PAGEBANK SWRAM_SPR
   RTS
 
 .sprMul7 EQUB 0,7,14,21,28,35,42,49

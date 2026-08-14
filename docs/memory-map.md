@@ -19,8 +19,8 @@ Regenerate it after any change that moves a region:
 | `&0200–&03FF` | 512 B | OS vectors and workspace. We own `IRQ1V` at `&0204` outright |
 | `&0400–&0C8F` | 2,192 B | MODE 1 charset, rebuilt at every deck load — reclaimed OS workspace |
 | `&0C90–&10FF` | **1,136 B free** | The rest of the reclaimed workspace |
-| `&1100–&263F` | 5,440 B | Code (`PARA`), starting below DFS's `PAGE` of `&1900`. The level draw is no longer here — see bank 4 |
-| `&2640–&2FFF` | **2,496 B free** | |
+| `&1100–&2654` | 5,461 B | Code (`PARA`), starting below DFS's `PAGE` of `&1900`. The level draw is no longer here — see bank 4 |
+| `&2655–&2FFF` | **2,475 B free** | |
 | `&3000–&36FF` | 1,792 B | Sprite background save areas, 7 slots × 256 |
 | `&3700–&37FF` | **256 B free** | |
 | `&3800–&3BFF` | 1,024 B | Tile map, 64 × 16, page-aligned, fixed home |
@@ -34,7 +34,7 @@ Regenerate it after any change that moves a region:
 | `&8000–&BFFF` | 16 K | Sideways bank window — one of the two banks below, never both |
 | `&C000–&FFFF` | 16 K | MOS |
 
-Free main RAM totals **7,088 bytes**, of which 2,496 are below `&3000` — the level draw moved
+Free main RAM totals **7,067 bytes**, of which 2,475 are below `&3000` — the level draw moved
 into bank 4 on 2026-08-14 and took 2,437 bytes of code with it.
 
 ### The boot-time staging overlay
@@ -44,7 +44,7 @@ has the DFS ROM paged in at `&8000` during a filing-system call. So:
 
 | File | Staged over |
 |---|---|
-| `PARADAT` | `&3000–&5510` |
+| `PARADAT` | `&3000–&5D2F` |
 | `PARASPR` | `&3000–&68B5` |
 
 Everything from `&3000` to `&68B5` is written through during boot — the save areas, the tile map,
@@ -73,7 +73,7 @@ already satisfy it.
 
 ## SWRAM bank 4 — `PARADAT`
 
-`&8000–&A511`, 9,489 bytes used, **6,895 free**. Tiles, decks, palettes, droid game data — and, since
+`&8000–&AD30`, 11,568 bytes used, **4,816 free**. Tiles, decks, palettes, droid game data — and, since
 2026-08-14, the level-draw code that reads them. This bank is the resting state of the latch, so a
 call into it from the main loop needs no paging at all.
 
@@ -90,13 +90,14 @@ call into it from the main loop needs no paging at all.
 | `&8A00` | 128 | Per-deck metadata: `deckOffsetLo`/`Hi`, `deckY`, `deckX`, `deckHeight`, `deckWidth`, `deckColour`, `deckDroids` |
 | `&8A80` | 128 | *free — alignment gap* |
 | `&8B00` | 3,207 | `leveldata` — RLE deck maps, all 16 |
-| `&9787` | 72 | `drSpeed`, `drSpeedF`, `drSpeedFHi` — 24 droid types each |
-| `&97CF` | 48 | `wpCount`, `wpOfsLo`, `wpOfsHi` |
-| `&97FF` | 717 | `wpData` — 239 waypoint records |
-| `&9ACC` | 16 | `deckDroidBase` |
-| `&9ADC` | 112 | `doorDef` — patched tile definitions for open doors |
-| `&9B4C` | 64 | `blankTileRow` |
-| `&9B8C` | 2,437 | **Code**: `screen.asm`, `scroll.asm`, `level.asm` — `DrawHalf`, `HalfPtr`, `BandSetRow`, `BandCharPtr`, `ColSetup`, `MapChar`, `RedrawAll`, `BuildCharPtrs`, `DrawColumn`, `DrawBandRows`, `DoRedraws`, `BuildLevel`, `BuildCharset`, `BuildLUTs`, `SetPalette`, `CentreOnDeck` |
+| `&9787` | 1,743 | `drSprData` — the droid artwork, 249 rows × 7 bytes. Moved here 2026-08-14: only `SprFetchRow` reads it, and the sprite bank is the scarce one |
+| `&9E56` | 336 | `drOfsLo`/`Hi` — offset into `drSprData` per (phase, row) |
+| `&9FA6` | 120 | `drSpeed`, `drSpeedF`, `drSpeedFHi`, `wpCount`, `wpOfsLo`/`Hi` |
+| `&A01E` | 717 | `wpData` — 239 waypoint records |
+| `&A2EB` | 16 | `deckDroidBase` |
+| `&A2FB` | 112 | `doorDef` — patched tile definitions for open doors |
+| `&A36B` | 64 | `blankTileRow` |
+| `&A3AB` | 2,437 | **Code**: `screen.asm`, `scroll.asm`, `level.asm` — `DrawHalf`, `HalfPtr`, `BandSetRow`, `BandCharPtr`, `ColSetup`, `MapChar`, `RedrawAll`, `BuildCharPtrs`, `DrawColumn`, `DrawBandRows`, `DoRedraws`, `BuildLevel`, `BuildCharset`, `BuildLUTs`, `SetPalette`, `CentreOnDeck` |
 
 What could **not** come with it is in `src/bufcore.asm`, 480 bytes in main RAM: `SetupScreen` and
 `SetCRTCStart` run before this bank is loaded, and `WrapBufFwd`, `SetCell` and the `rowMul`/`unitMul`
@@ -106,7 +107,7 @@ and nothing would diagnose it.
 
 ## SWRAM bank 5 — `PARASPR`
 
-`&8000–&B8B6`, 14,518 bytes used, **1,866 free**. The whole blitter: artwork, compiled rows,
+`&8000–&B097`, 12,439 bytes used, **3,945 free**. The whole blitter: artwork, compiled rows,
 compiled programs, glyphs. `SprRestoreAll` and `SprDrawAll` page this in and the data bank back out
 around themselves.
 
@@ -116,23 +117,26 @@ fast path reads none of the artwork, and the wrap fallback is the only thing tha
 
 | Address | Size | Contents |
 |---|---|---|
-| `&8000` | 1,743 | `drSprData` — 249 stored rows × 7 bytes. Read only by the wrap fallback |
-| `&86CF` | 344 | `drOfsLo`/`Hi`, `drMulRows`, `drDigitLo`/`Hi` — row and type lookups |
-| `&8857` | 1,810 | `drD0_*` — compiled rotor draw rows, shift 0 |
-| `&8F69` | 144 | `drR0_*` — compiled restore rows, shift 0 |
-| `&8FF9` | 1,690 | `drD1_*` — draw rows, shift 1 (2 px) |
-| `&9693` | 126 | `drR1_*` — restore rows, shift 1 |
-| `&9711` | 320 | `drSeqLo`/`drSeqHi` — draw sequence, 16 × 10 rows |
-| `&9851` | 320 | `drRSeqLo`/`drRSeqHi` — restore sequence |
-| `&9991` | 1,340 | `drRHalf<shift>_<arr>_<half>` — the eight restore halves |
-| `&9ECD` | 1,072 | `drPrg0_0…` — 16 straight-line draw programs, one per (shift, phase) |
-| `&A2FD` | 688 | `drRPrg0_0…` — 16 restore programs |
-| `&A5AD` | 640 | `drPrgLo`/`Hi`, `drRPrgLo`/`Hi` — program entry addresses, indexed by the same `sprSeqBase` the fallback uses |
-| `&A82D` | 29 | `drSeqIdx`, `drMul10` — sprite row → sequence position, and phase × 10. Fallback only |
-| `&A84A` | 1,926 | `drGlyph0_*` — ten unshifted digit glyphs |
-| `&AFD0` | 2,131 | `drGlyph1_*` — ten shifted glyphs. Larger because of the spill column |
-| `&B823` | 35 | `drBlkSave6` — the digit block's column 6 save, generated rather than written in `sprite.asm` |
-| `&B846` | 112 | `drGlyphLo`/`Hi`, `drDigit0`/`1`/`2` — dispatch and per-type digits |
+| `&8000` | 56 | `drMulRows`, `drDigitLo`/`Hi` — the small lookups that stayed |
+| `&8038` | 1,810 | `drD0_*` — compiled rotor draw rows, shift 0 |
+| `&874A` | 144 | `drR0_*` — compiled restore rows, shift 0 |
+| `&87DA` | 1,690 | `drD1_*` — draw rows, shift 1 (2 px) |
+| `&8E74` | 126 | `drR1_*` — restore rows, shift 1 |
+| `&8EF2` | 320 | `drSeqLo`/`drSeqHi` — draw sequence, 16 × 10 rows |
+| `&9032` | 320 | `drRSeqLo`/`drRSeqHi` — restore sequence |
+| `&9172` | 1,340 | `drRHalf<shift>_<arr>_<half>` — the eight restore halves |
+| `&96AE` | 1,072 | `drPrg0_0…` — 16 straight-line draw programs, one per (shift, phase) |
+| `&9ADE` | 688 | `drRPrg0_0…` — 16 restore programs |
+| `&9D8E` | 640 | `drPrgLo`/`Hi`, `drRPrgLo`/`Hi` — program entry addresses |
+| `&A00E` | 29 | `drSeqIdx`, `drMul10` — sprite row → sequence position, and phase × 10 |
+| `&A02B` | 1,926 | `drGlyph0_*` — ten unshifted digit glyphs |
+| `&A7B1` | 2,131 | `drGlyph1_*` — ten shifted glyphs. Larger because of the spill column |
+| `&B004` | 35 | `drBlkSave6` — the digit block's column 6 save |
+| `&B027` | 112 | `drGlyphLo`/`Hi`, `drDigit0`/`1`/`2` — dispatch and per-type digits |
+
+The 3,945 bytes free here are the room the second compiled shift needs. `drSprData` and `drOfs` left
+for bank 4 to make it, which is step A of the 1 px work — see
+[`layer-5-blitter.md`](layer-5-blitter.md).
 
 ## Two things this map says that the summaries do not
 
