@@ -51,7 +51,7 @@ pool could be measured. Delete it and `TEST_DROIDS` together once droids move.
 iteration and an iteration is 2–3 frames, not 1. Every droid speed in `PlayerSpeed_t` needs the same
 conversion, so this comes up immediately in the droid work.
 
-### Four things anything drawing into the play buffer has to know
+### Five things anything drawing into the play buffer has to know
 
 1. **Display row *r* holds map row `mapYr + r`, all eight scanlines.** That is the strip's invariant
    and it is unconditional — there is no split row. It used to be one, and everything writing a whole
@@ -64,6 +64,11 @@ conversion, so this comes up immediately in the droid work.
 4. **`LDA abs` is 4 cycles and `LDA zp` is 3 — but `LDA abs,X` and `LDA zp,X` are both 4.** Zero page
    is fully allocated now (`&00–&8F`, map in `main.asm`); it went to scalars, and indexed tables
    gained nothing by moving. Worth knowing before costing a zero-page change.
+5. **`mapYr` and `cellY` are SIGNED, and the row being drawn may be off the map.** The view scrolls
+   up to `PLY_VOID` (64 px) beyond each vertical edge so the player can reach rows 0 and 63 — see
+   the clamp note in `player.asm`. Map rows are 0–63, so one `AND #&C0` catches both ends, and every
+   path that turns a row into characters already does it: `BandSetRow`, `DrawColumn` and `MapChar`.
+   Anything new that reads a map row must too, or it indexes off `mapRowLo`.
 
 ### Verification that actually works here
 

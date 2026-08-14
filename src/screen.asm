@@ -266,6 +266,13 @@
   FOR t, 0, 31
     EQUB HI(tiledefs + t * 16)
   NEXT
+\ Sixty-four zero bytes, so a row off the map can be drawn by pointing
+\ maprow here: every tile on it comes out as tile 0.
+.blankTileRow
+  FOR r, 0, MAP_COLS-1
+    EQUB 0
+  NEXT
+
 .mapRowLo
   FOR r, 0, MAP_ROWS-1
     EQUB LO(tilemap + r * MAP_COLS)
@@ -291,7 +298,17 @@
 \ character rows, so the play area pays for two full passes of 40
 \ lookups to draw 7 scanlines — and that, not the copying, was
 \ pushing the redraw into the visible picture.
+\ OFF THE MAP IS A ROW OF TILE 0. Map rows are 0-63, so `AND &C0`
+\ catches both a negative row (the view scrolled above the top) and one
+\ past 63 (below the bottom) in a single test. Pointing maprow at 64
+\ zero bytes makes every tile on the row tile 0, whose definition is 16
+\ zero bytes — so the whole of the rest of the draw runs unchanged and
+\ produces blank. Nothing downstream needs to know.
 .BandSetRow
+  LDA cellY
+  AND #&C0
+  BNE bsr_blank
+
   LDA cellY                     \ row base: tilemap + (cellY>>2)*64
   LSR A : LSR A
   TAX
@@ -306,6 +323,16 @@
   STA subRowOfs
 
   LDA #&FF                      \ no tile column can match: force a miss
+  STA tileCol
+  RTS
+
+.bsr_blank
+  LDA #LO(blankTileRow) : STA maprow
+  LDA #HI(blankTileRow) : STA maprow+1
+  LDA #0
+  STA subRowOfs
+  LDA #&FF                      \ and no door can be on a row off the map
+  STA doorTileRow
   STA tileCol
   RTS
 
@@ -386,7 +413,19 @@
 \   tile      = tilemap[(cellY>>2)*64 + (cellX>>2)]
 \   character = tiledefs[tile*16 + (cellY AND 3)*4 + (cellX AND 3)]
 \ ============================================================
+\ Off the map vertically is character 0: blank, and bit 7 clear, so the
+\ wall probes read it as walkable and only the deck's own edge wall
+\ stops the player — which is exactly what the original does, since its
+\ plyMapPos simply runs off the top of the character map.
+\ X is preserved on this path as on the other, because ProbeGroup keeps
+\ the probe index there across the call.
 .MapChar
+  LDA cellY
+  AND #&C0
+  BEQ mc_onmap
+  LDA #0
+  RTS
+.mc_onmap
   LDA cellY                     \ row base: tilemap + (cellY>>2)*64
   LSR A : LSR A
   STA mcTmp

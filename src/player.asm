@@ -95,9 +95,27 @@ PLY_MAXNEG = 65536 - PLY_MAXSPD
 ASSERT PLY_MAXSPD <= 8 * 256
 
 MAX_PX_X = (MAP_CHAR_W * 8) - 320       \ 1728, view origin
-MAX_PX_Y = MAX_Y * 8                    \ 384; mapYr must not pass MAX_Y,
-                                        \ or the split row reads map row 64
 MAX_PLY_X = (MAP_CHAR_W * 8) - 24       \ 2024, sprite left edge
+
+\ ---- the view may scroll OFF the map vertically -------------
+\ The player's reference cell is fixed at PLY_REFY below the view
+\ origin, so clamping the view at the map edge stops the player
+\ PLY_REFY/8 rows short of it — eight character rows of a deck, top and
+\ bottom, that could be seen but never entered. Deck 1's top wall is
+\ rows 0-3 and its first corridor is 4-7, so the player was pinned to
+\ the bottom scanline of the top corridor and could not reach the doors
+\ on it.
+\ DoMove ($3849) has NO clamp at all — it adds the speed to ScreenPosY
+\ with plain 16-bit arithmetic and lets the view run off the map, which
+\ is why the original shows blank space above the top wall. Only the
+\ wall probes stop the player. We do the same, but bounded: PLY_VOID
+\ pixels of blank either side is enough for the reference cell to reach
+\ rows 0 and 63, and bounding it keeps mapYr inside a signed byte.
+\ Everything that draws a map row now tests `cellY AND &C0` — map rows
+\ are 0-63, so one AND catches both ends at once.
+PLY_VOID = 64                           \ pixels of blank beyond each edge
+MIN_PX_Y = 65536 - PLY_VOID             \ -64, as an unsigned 16-bit value
+MAX_PX_Y = MAX_Y * 8 + PLY_VOID         \ 448
 
 \ The camera window. The sprite's home is the C64's, 148 px from the
 \ left of the view: PlayerSprite_dat puts sprite 7 at VIC x 172,
@@ -505,9 +523,18 @@ PLY_REFY = 63                   \ from the view's top edge, sprite top + 13
   STA amTmp+1
   LDA posY
   STA amTmp
-  LSR amTmp+1 : ROR amTmp
-  LSR amTmp+1 : ROR amTmp
-  LSR amTmp+1 : ROR amTmp
+
+\ ARITHMETIC shift, not logical: posY is signed now, and >> with the
+\ sign carried is floor division — which is what makes `posY AND 7`
+\ the correct sub-row offset on the negative side too.
+  LDX #3
+.am_shr
+  LDA amTmp+1
+  ASL A                         \ sign bit into carry
+  ROR amTmp+1
+  ROR amTmp
+  DEX
+  BNE am_shr
   LDA amTmp
   STA mapYr
   LDA posY
@@ -734,6 +761,10 @@ PLY_REFY = 63                   \ from the view's top edge, sprite top + 13
 .cx_x
   RTS
 
+\ Both limits are now signed, so the low end is a compare against
+\ MIN_PX_Y rather than against zero. posY+1 and HI(MIN_PX_Y) are both
+\ above &80 on that path, so an unsigned compare orders them the same
+\ way a signed one would — the same trick ca_clampneg uses.
 .ClampY
   LDA posY+1
   BMI cy_low
@@ -749,9 +780,15 @@ PLY_REFY = 63                   \ from the view's top edge, sprite top + 13
   LDA #HI(MAX_PX_Y) : STA posY+1
   JMP cy_stop
 .cy_low
-  LDA #0
-  STA posY
-  STA posY+1
+  CMP #HI(MIN_PX_Y)
+  BCC cy_setmin
+  BNE cy_x
+  LDA posY
+  CMP #LO(MIN_PX_Y)
+  BCS cy_x
+.cy_setmin
+  LDA #LO(MIN_PX_Y) : STA posY
+  LDA #HI(MIN_PX_Y) : STA posY+1
 .cy_stop
   LDA #0
   STA posYf

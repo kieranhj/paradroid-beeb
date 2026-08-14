@@ -199,6 +199,9 @@ ENDMACRO
   LDA mapYr : STA cellY
 
 .dc_loop
+  LDA cellY                     \ off the map? blank, both ends at once
+  AND #&C0
+  BNE dc_blank
   LDA cellY                     \ tile row; changes once every 4
   LSR A : LSR A
   CMP colTileRow
@@ -234,6 +237,16 @@ ENDMACRO
   CMP #PLAY_ROWS
   BNE dc_loop
   RTS
+
+\ Above the top of the map or below the bottom: tile 0, which is 16
+\ zero bytes at the start of tiledefs. colTileRow is forced to a miss so
+\ the cache rebuilds properly on the row that comes back on the map.
+.dc_blank
+  LDA #LO(tiledefs) : STA tdp
+  LDA #HI(tiledefs) : STA tdp+1
+  LDA #&FF
+  STA colTileRow
+  JMP dc_tile
 
 \ Once every four rows, and out of line so the common path is a
 \ not-taken BNE. A holds the new tile row on entry.

@@ -184,6 +184,40 @@ directions match.
 Opposite keys cancel, which falls out of a `DEC`/`INC` pair rather than needing a test — and that
 retires the hand-written up/down exclusion Layer 3d needed.
 
+## The view scrolls off the map vertically, and has to
+
+The player's reference cell is fixed at `PLY_REFY` (63 px) below the view origin, so clamping the
+view at the map edge stopped the player `PLY_REFY/8` rows short of it — **eight character rows at
+each end of a deck that could be seen but never entered.** On deck 1 the top wall is character rows
+0–3 and the first corridor is 4–7, so the player was pinned to the bottom scanline of that corridor
+and could not reach the two doors on it. Symmetrical at the bottom for the decks that are a full 16
+tiles tall.
+
+`DoMove` (`$3849`) has **no clamp at all** — it adds the speed to `ScreenPosY` with plain 16-bit
+arithmetic and lets the view run off the map, which is why the original shows blank space above the
+top wall. Only the wall probes stop the player. The port now does the same, bounded to `PLY_VOID` =
+64 px either side, which is enough for the reference cell to reach rows 0 and 63 and keeps `mapYr`
+inside a signed byte.
+
+Three consequences, and the third is what made it cheap:
+
+- **`mapYr` is signed**, so `ApplyMove` needs an *arithmetic* shift for `posY >> 3`. That is not
+  pedantry: floor division is what makes `posY AND 7` the correct sub-row offset on the negative
+  side as well.
+- **`ClampY`'s low end is a compare against `MIN_PX_Y`**, not against zero. Both values are above
+  `&80` on that path, so an unsigned compare orders them correctly — the same trick `ca_clampneg`
+  already used.
+- **Off the map is a row of tile 0.** Map rows are 0–63, so a single `AND #&C0` catches a negative
+  row and one past 63 at once. `BandSetRow` points `maprow` at 64 zero bytes, `DrawColumn` points
+  `tdp` at `tiledefs` (tile 0 is 16 zero bytes), and `MapChar` returns character 0 — blank, and bit 7
+  clear, so the probes read it as walkable and only the deck's own edge wall stops the player. The
+  rest of the draw runs completely unchanged.
+
+**Verified:** play buffer diffed byte-for-byte against `RedrawAll` at `mapYr` = −3, after a diagonal
+scroll along the top edge, with `JSR SprDrawAll` poked to NOPs — **0 differences in 10240**. That is
+the check that matters, because the incremental path reaches the blank rows through `BandSetRow` and
+`DrawColumn` while `RedrawAll` reaches them through `MapChar`.
+
 ## Wall collision, and a one-pixel jitter worth understanding
 
 `CheckPlyAdvance` (`$29C1`) probes 12 cells in a diamond around the player; the listing draws it at
