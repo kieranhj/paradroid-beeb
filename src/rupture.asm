@@ -299,7 +299,7 @@ IF DEBUG_RASTER OR DEBUG_DRAW
   JMP DbgSetBg
 ENDIF
 
-IF DEBUG_VSYNC
+IF DEBUG_VSYNC OR DEBUG_POS
 \ ============================================================
 \ DbgFrameCount — fields per main-loop iteration, top-left of the panel
 \ ============================================================
@@ -338,7 +338,7 @@ IF DEBUG_VSYNC
   RTS
 
 .dbgLastVs EQUB 0
-.dbgMul5   EQUB 0,5,10,15,20,25,30,35,40,45
+.dbgMul5   EQUB 0,5,10,15,20,25,30,35,40,45,50,55,60,65,70,75
 
 \ 4x5 digits, one row per byte. A row is four pixels: bit 3 is the
 \ leftmost. Logical colour 3 wants both of a pixel's bits set, and
@@ -356,9 +356,111 @@ DBG_PX = 17
   EQUB %1111 * DBG_PX, %0001 * DBG_PX, %0010 * DBG_PX, %0100 * DBG_PX, %0100 * DBG_PX
   EQUB %1111 * DBG_PX, %1001 * DBG_PX, %1111 * DBG_PX, %1001 * DBG_PX, %1111 * DBG_PX
   EQUB %1111 * DBG_PX, %1001 * DBG_PX, %1111 * DBG_PX, %0001 * DBG_PX, %1111 * DBG_PX
+\ A-F, so a byte can be read straight off the screen as hex.
+  EQUB %0110 * DBG_PX, %1001 * DBG_PX, %1111 * DBG_PX, %1001 * DBG_PX, %1001 * DBG_PX
+  EQUB %1110 * DBG_PX, %1001 * DBG_PX, %1110 * DBG_PX, %1001 * DBG_PX, %1110 * DBG_PX
+  EQUB %0111 * DBG_PX, %1000 * DBG_PX, %1000 * DBG_PX, %1000 * DBG_PX, %0111 * DBG_PX
+  EQUB %1110 * DBG_PX, %1001 * DBG_PX, %1001 * DBG_PX, %1001 * DBG_PX, %1110 * DBG_PX
+  EQUB %1111 * DBG_PX, %1000 * DBG_PX, %1110 * DBG_PX, %1000 * DBG_PX, %1111 * DBG_PX
+  EQUB %1111 * DBG_PX, %1000 * DBG_PX, %1110 * DBG_PX, %1000 * DBG_PX, %1000 * DBG_PX
 ENDIF
 
 \ ruptState, drawFlag, crtcHi/crtcLo and line/pline/iline are all in
 \ zero page — see the block in main.asm. Everything here is read or
 \ written inside the interrupt handler, three fires a frame, so it is
 \ handler latency as much as throughput.
+
+IF DEBUG_POS
+\ ============================================================
+\ DbgPosOut — the state needed to get back to a spot, in the panel
+\ ============================================================
+\ Reproducing a reported bug used to mean re-walking the route: about a
+\ dozen emulator round trips for BUGS.md #5, far more than reading the
+\ state would have cost. This is the position bookmark that entry asked
+\ for, finally affordable — it waited on main RAM, and the level draw
+\ moving into bank 4 freed 2.4K.
+\
+\ Eighteen bytes as thirty-six HEX digits along the top of the panel,
+\ rewritten every pass. Read them straight off the screen or a
+\ screenshot; no tooling either end, which is the point.
+\
+\   deck  plyX  posX  posY  mapHX  mapYr line  nDoor
+\   then door 0 and door 1 as col,row,state
+\
+\ The panel does not scroll and nothing else draws there, so there is
+\ nothing to save or restore. A digit is five bytes at five consecutive
+\ addresses — one byte per scanline — and successive digits are eight
+\ bytes apart, which is the next 4-pixel column.
+\
+\ swSrc/swDst are borrowed: they belong to the startup bank copy and
+\ are dead from LoadDeck onwards. Nothing else in a pass touches them.
+\
+\ NOT COMPATIBLE WITH DEBUG_VSYNC — both write the top-left digit.
+.DbgPosOut
+  LDA #LO(PANEL_ADDR) : STA swDst
+  LDA #HI(PANEL_ADDR) : STA swDst+1
+  LDY #0
+.dpo_next
+  STY dbgIdx
+  LDA dbgSrcLo,Y : STA swSrc
+  LDA dbgSrcHi,Y : STA swSrc+1
+  LDY #0
+  LDA (swSrc),Y
+  PHA
+  LSR A : LSR A : LSR A : LSR A
+  JSR DbgHexDigit
+  PLA
+  AND #&0F
+  JSR DbgHexDigit
+  LDY dbgIdx
+  INY
+  CPY #DBG_POS_N
+  BNE dpo_next
+  RTS
+
+\ A = 0-15. Prints it at swDst and moves swDst on one 4-pixel column.
+.DbgHexDigit
+  TAX
+  LDA dbgMul5,X
+  TAX
+  LDY #0
+.dhd_row
+  LDA dbgFont,X
+  STA (swDst),Y
+  INX
+  INY
+  CPY #5
+  BNE dhd_row
+  CLC
+  LDA swDst : ADC #UNIT_BYTES : STA swDst
+  BCC dhd_x
+  INC swDst+1
+.dhd_x
+  RTS
+
+.dbgIdx EQUB 0
+
+\ What to print, in order. Low byte first would read backwards on
+\ screen, so the 16-bit ones are listed high byte first.
+.dbgSrcLo
+  EQUB LO(deck)
+  EQUB LO(plyX+1),  LO(plyX)
+  EQUB LO(posX+1),  LO(posX)
+  EQUB LO(posY+1),  LO(posY)
+  EQUB LO(mapHX+1), LO(mapHX)
+  EQUB LO(mapYr),   LO(line)
+  EQUB LO(numDoors)
+  EQUB LO(doorCol),   LO(doorRow),   LO(doorState)
+  EQUB LO(doorCol+1), LO(doorRow+1), LO(doorState+1)
+.dbgSrcHi
+  EQUB HI(deck)
+  EQUB HI(plyX+1),  HI(plyX)
+  EQUB HI(posX+1),  HI(posX)
+  EQUB HI(posY+1),  HI(posY)
+  EQUB HI(mapHX+1), HI(mapHX)
+  EQUB HI(mapYr),   HI(line)
+  EQUB HI(numDoors)
+  EQUB HI(doorCol),   HI(doorRow),   HI(doorState)
+  EQUB HI(doorCol+1), HI(doorRow+1), HI(doorState+1)
+DBG_POS_N = 17
+ENDIF

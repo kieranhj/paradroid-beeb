@@ -144,6 +144,16 @@ DEBUG_RASTER = FALSE
 \            runs every pass regardless.
 DEBUG_DRAW   = FALSE
 
+\ DEBUG_POS prints the state needed to RETURN TO A SPOT along the top of
+\ the panel, as hex, every pass: deck, plyX, posX, posY, mapHX, mapYr,
+\ line, numDoors, then doors 0 and 1 as col/row/state.
+\ It exists because reproducing a reported bug meant re-walking the
+\ route - a dozen emulator round trips for BUGS.md #5. Read the digits
+\ off the screen or a screenshot, poke them back, and the spot is
+\ reachable in one step. See DbgPosOut in rupture.asm.
+\ Not compatible with DEBUG_VSYNC: both write the top-left digit.
+DEBUG_POS    = FALSE
+
 \ DEBUG_VSYNC writes the number of FIELDS the last main-loop iteration
 \ consumed as a single digit in the top-left corner of the panel — the
 \ static half of the screen, so it does not scroll away and does not
@@ -645,6 +655,9 @@ ENDIF
 IF DEBUG_VSYNC
   JSR DbgFrameCount             \ the boundary has just happened, so this
 ENDIF                           \ counts the iteration that has finished
+IF DEBUG_POS
+  JSR DbgPosOut                 \ where we are, for getting back here
+ENDIF
 IF DEBUG_DRAW
   LDA #DBG_SPR : JSR DbgSetBg   \ the restore is sprite time too, and it is
 ENDIF                           \ a third of it — it gets the sprite colour

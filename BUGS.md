@@ -172,6 +172,21 @@ and not a content bug, which settles it immediately.
 
 ## 5. Player sprite's lower part missing at a doorway, with leftover pixels beside it
 
+> **THE ORACLE CANNOT SEE THIS CLASS OF FAULT — 2026-08-14.** Every "the play buffer is correct"
+> claim below rests on diffing against a SPACE-forced `RedrawAll`. But `RedrawAll` reads the same
+> tile map and the same **patched door definitions** as the incremental draw, so if a door table,
+> a `doorDef` copy or a tile definition is wrong, the two agree and the diff is zero. The buffer
+> was not proved correct; it was proved *self-consistent*. Anything door-shaped is invisible to it.
+>
+> What that leaves: the smear is probably IN the buffer, and the way to see it is to render the
+> tile map and the unpatched `tiledefs` independently and compare, or to check each registered
+> door's patched definition against the tile it claims to be. `DEBUG_POS` now hands back the
+> position and the door table to make that a one-step reproduction.
+>
+> KC reports the smear sits at fixed map locations near *some* vertical doors — once on the tile to
+> the right, once a tile but one to the left, once one left and one up — which is a much better fit
+> for a wrong tile definition or a wrong door registration than for the blitter.
+
 Reported from play 2026-08-14, on the Layer 8b build. Screenshot: `ref/player-render-bug1.png`.
 
 **Severity:** visible, persistent while it lasts.
@@ -269,36 +284,42 @@ only — the glyph code, `SprDigitBlock`'s draw order and `SprBlkRest`'s column 
 address rows 6–13. Those rows show zero differences here, and the defect appears on shift-0 slots
 where no spill exists at all.
 
+**A single sprite is clean — 2026-08-14.** With the test droids deactivated and `TestDroidsUpdate`
+NOPed, the player alone restores byte-exactly: **0 of 10240**. So this needs more than one sprite on
+screen, or a position only reachable with them there. The save areas are not the mechanism either:
+the worst case is 223 bytes of the 256-byte page (`scan0` = 7, three character-row crossings), and
+`SprCalcAddr`'s no-wrap test covers the furthest byte a sprite touches — `bufp + 1964` against a
+threshold of `bufp + 1968`, safe by four bytes and worth knowing.
+
+**And see the oracle warning on defect 5**, which applies here too: if this turns out to be
+door-shaped, the diff that found it is measuring the wrong thing.
+
 **Next step.** Read the restore dispatch for the end rows against `sprTabBaseS`, then reproduce
-headless with a single slot and a known phase — the pool of seven makes the diff noisy for no
-benefit.
+with `DEBUG_POS` at a location KC has actually seen it, rather than hunting positions blind.
 
 ---
 
-## Wanted: a way to hand game state back without a full repro
+## Delivered: DEBUG_POS, the position bookmark
 
-Raised 2026-08-14, alongside defect 5.
+Asked for 2026-08-14 alongside defect 5, built the same day once the level draw moved into bank 4
+and freed the main RAM it was waiting on.
 
-Reproducing a reported bug currently means re-walking the route in the emulator, which took about a
-dozen round trips for defect 5 — far more than reading the state would have. A dump would have made
-it minutes.
+`DEBUG_POS` in `main.asm` prints, as hex along the top of the panel and rewritten every pass:
 
-**What is actually needed is smaller than a state dump: a position bookmark.** Deck, `plyX`, `posY`
-is enough to poke the player straight back to the spot; the rest can be read from memory once there.
-Everything else — the play buffer, the save areas, the door and lift tables — is already reachable
-from the emulator once the position is right.
+```
+deck  plyX  posX  posY  mapHX  mapYr  line  numDoors  d0 col/row/state  d1 col/row/state
+ 01   0264  01D0  0050   0074   0A     00      00        00 00 00          00 00 00
+```
 
-**The blocker is main RAM.** Layer 8b left **46 bytes** free below `&3000`, and an on-screen readout
-needs more than that, even reusing `DEBUG_VSYNC`'s 4x5 digit font. So this waits on `PARADAT` moving
-to sideways RAM, which is the binding constraint for the next layer anyway.
+Read it off the screen or a screenshot and poke the values back to return to a spot in one step.
+Verified against RAM: the panel and zero page agree.
 
-Two options when the space exists:
+**Not compatible with `DEBUG_VSYNC`** — both write the top-left digit. `DbgPosOut` is in
+`rupture.asm`; it borrows `swSrc`/`swDst`, which belong to the startup bank copy and are dead from
+`LoadDeck` onwards.
 
-- **Digits in the panel.** Reuse `dbgFont` to print deck / `plyX` / `posY` on a key. Readable
-  straight off a screenshot, no tooling either end.
-- **Raw state bytes written into panel screen memory.** Perhaps 15 bytes of code — copy N bytes of
-  state to `PANEL_ADDR` and let the pixel pattern carry them. Unreadable by eye, but trivially
-  decoded from a screenshot in Python, and it scales to as much state as wanted.
-
-Neither is needed if the repro is short. **Repro steps plus a screenshot were enough for defect 5**;
-it was the walking that was slow, not the diagnosis.
+If you would rather read RAM directly: `deck` &8B, `plyX` &2B, `posX` &27, `posY` &29, `mapHX` &80,
+`mapYr` &86, `line` &24, `scrollS` &7E, `plyCX` &35, `plyCY` &37 (all zero page, 16-bit except
+`deck`, `mapYr` and `line`); `numDoors` &1E7D, `doorCol` &1E61, `doorRow` &1E68, `doorState` &1E6F,
+`doorDirty` &1E76, `tilemap` &3800; and in bank 4, which is the resting state, `doorDef` &A2FB and
+`tiledefs` &8800. Take them from a fresh label dump after any build — they move.
