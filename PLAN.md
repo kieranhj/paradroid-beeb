@@ -17,6 +17,7 @@ detail has stopped being needed to make the next decision, it belongs in `docs/`
 | [`docs/layer-3-scroll.md`](docs/layer-3-scroll.md) | The circular strip, the three-cycle rupture, CRTC register timing |
 | [`docs/layer-4-player.md`](docs/layer-4-player.md) | The player sprite, the speed model, the level draw rewrite |
 | [`docs/layer-5-blitter.md`](docs/layer-5-blitter.md) | Compiling the sprite blitter — 14,000 cycles to 5,800 |
+| [`docs/layer-8-doors-lifts.md`](docs/layer-8-doors-lifts.md) | **Plan, not yet built.** Doors, lifts, and the character-map problem they raise |
 | [`docs/master-extensions.md`](docs/master-extensions.md) | Things only a Master 128 could host. Not on the critical path |
 
 ## Where we are — read this first
@@ -35,11 +36,15 @@ it. That is after the blitter was compiled and cut from 14,000 cycles a sprite t
 [`docs/layer-5-blitter.md`](docs/layer-5-blitter.md), which also records what was costed and
 *rejected*, round-robin updating chief among them.
 
-**Next up: the rest of Layer 5, droid movement** — `GetNewDir`, `AdvanceMapPos`,
-`CheckDroidAdvance` and the waypoint logic, the same speed model applied to non-player droids, plus
-sprite slot allocation and pathfinding. `src/droidtest.asm` is the scaffolding standing in for it:
-six static droids so the pool could be measured. Delete it and `TEST_DROIDS` together once droids
-move.
+**Next up: Layer 8, doors and lifts** — moved ahead of the droid layers because the player is
+currently sealed into whichever room `CentreOnDeck` drops them in, and droid waypoints and
+pathfinding are deck-scale behaviours that route *through doors*. There is no way to evaluate them
+until the ship is traversable. See [`docs/layer-8-doors-lifts.md`](docs/layer-8-doors-lifts.md).
+
+**Then the rest of Layer 5, droid movement** — `GetNewDir`, `AdvanceMapPos`, `CheckDroidAdvance` and
+the waypoint logic, the same speed model applied to non-player droids, plus sprite slot allocation
+and pathfinding. `src/droidtest.asm` is the scaffolding standing in for it: six static droids so the
+pool could be measured. Delete it and `TEST_DROIDS` together once droids move.
 
 **Before trusting any speed number, read the speed model section of
 [`docs/layer-4-player.md`](docs/layer-4-player.md).** The C64's constants are per `GameLoop`
@@ -200,8 +205,20 @@ should not be revived without reading why it was dropped.
 `dMd1_bullet`, `dMd2_explosion`, `DoCollision`/`DoCollision2`, `DoScore`, `KillDroid`,
 `DoAlertAndAging`. The core game is playable at this point.
 
-### Layer 8 — Doors, lifts, decks
+### Layer 8 — Doors, lifts, decks 📋 PLANNED — **runs next, ahead of 6 and 7**
 `OpenDoor`, `CloseDoors`, `DoLift`, `FindLift`, `ChangeDeck`. The whole ship becomes traversable.
+
+**Moved ahead of the droid layers deliberately.** The player is currently sealed into one room, and
+droid AI, waypoints and pathfinding are all deck-scale behaviours that route *through doors* — there
+is no way to evaluate them until doors open. Building droids first means building them against a
+world they cannot move around in.
+
+A door is **bit 7 of the character code**, which the port's `CheckWalls` already tests: clearing it
+makes the cell passable and selects the open graphic in one bit. The one real design problem is that
+the C64 mutates its 16 K expanded character map and we deliberately do not have one — the plan's
+answer is a patched private copy of the door's 16-byte tile definition, which costs nothing per
+character because the draw already selects a tile definition per tile.
+→ [`docs/layer-8-doors-lifts.md`](docs/layer-8-doors-lifts.md)
 
 ### Layer 9 — HUD and console
 The mid-frame split already exists (Layer 3c/3d) and the panel is a placeholder bordered box at
