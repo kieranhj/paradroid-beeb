@@ -157,6 +157,30 @@ SPR_MAX_Y    = PLAY_VIS_ROWS * 8 - SPR_H \ 120 - 21 = 99
 \ the opaque pixels are cleared ready for the sprite to be ORed in.
 ASSERT SPR_MASKTAB + 256 <= BUF_BASE
 
+\ ============================================================
+\ PAGESPRBANK — page in the bank that owns shift A, and remember it
+\ ============================================================
+\ A COMPILED SHIFT IS CODE, so the four shifts do not fit in one 16K
+\ bank: shifts 0 and 1 are in SWRAM_SPR, 2 and 3 in SWRAM_SPR+1, and
+\ which one a sprite needs is a property of the sprite. So the pool
+\ pages per SLOT rather than once around the loop — ~16 cycles a slot
+\ against a pass with ~39,000 spare.
+\
+\ Entered with the shift in A, which is where both callers already have
+\ it: SprSetSlot has just read sprShift for the draw, and SprRestoreSlot
+\ sprShiftS for the restore. LSR sets carry from bit 0, hence the CLC.
+\
+\ sprBank is kept because SprFetchRow pages SWRAM_DATA in over the top
+\ and has to put THIS slot's bank back, not a fixed one.
+MACRO PAGESPRBANK
+  LSR A                         \ shift >> 1 picks the bank
+  CLC                           \ LSR left carry = the shift's bit 0
+  ADC #SWRAM_SPR
+  STA sprBank
+  STA ROMSHAD
+  STA ROMSEL
+ENDMACRO
+
 .SprBuildMask
   LDX #0
 .sbm_loop
@@ -218,6 +242,8 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
   LDA sprShift,X
   STA sprShiftW
   STA sprShiftS,X               \ the restore needs the DRAW's shift
+  PAGESPRBANK                   \ and the bank the DRAW used — before the
+                                \ drDigit read below, which is in it
   LDY sprType,X                 \ where this type's number block lives
   CLC
   LDA drDigitLo,Y : ADC #LO(drSprData) : STA sprDigit
@@ -441,7 +467,7 @@ ENDMACRO
   STA sprRowBuf+SPR_W,Y
   DEY
   BPL sfr_loop
-  PAGEBANK SWRAM_SPR
+  LDA sprBank : STA ROMSHAD : STA ROMSEL
   RTS
 
 \ The 2 px shift, done here instead of from a second copy of the
@@ -469,7 +495,7 @@ ENDMACRO
   INY
   CPY #SPR_W
   BNE sfr_sloop
-  PAGEBANK SWRAM_SPR
+  LDA sprBank : STA ROMSHAD : STA ROMSEL
   RTS
 
 .sprMul7 EQUB 0,7,14,21,28,35,42,49
@@ -677,8 +703,12 @@ ENDMACRO
 \ the game reads SWRAM_DATA, so the swap belongs at the two doors into
 \ the blitter rather than scattered up the call chain. 8 cycles each
 \ way, twice a pass.
+\ NEITHER LOOP PAGES ON THE WAY IN. Each slot pages its own bank, from
+\ its own shift — see PAGESPRBANK — because with four compiled shifts
+\ across two banks the right one is a property of the sprite and not of
+\ the pool. Both still leave SWRAM_DATA in on the way out: that is the
+\ resting state everything outside the blitter assumes.
 .SprRestoreAll
-  PAGEBANK SWRAM_SPR
   LDX #SPR_SLOTS-1
 .sra_loop
   STX sprIter
@@ -690,7 +720,6 @@ ENDMACRO
   RTS
 
 .SprDrawAll
-  PAGEBANK SWRAM_SPR
   LDX #0
 .sda_loop
   STX sprIter
@@ -887,6 +916,8 @@ ENDMACRO
   LDA sprNoWrapS,X  : STA sprNoWrap   \ the draw's answers, not this frame's:
   LDA sprSeqBaseS,X : STA sprSeqBase  \ the sprite may since have moved, and
   LDA sprShiftS,X   : STA sprShiftW   \ the rotor has certainly turned
+  PAGESPRBANK                   \ the DRAW's shift, so the DRAW's bank: the
+                                \ compiled restore for this sprite is there
   JSR SprSetSave                \ replays the same walk the draw took
 
 \ The same shape as the draw took, replayed — see SprDrawSlot.
@@ -1052,6 +1083,9 @@ SPR_SPIN = 0                    \ frames between phases; full energy = 0
 .sprNoWrapS SKIP SPR_SLOTS      \ the draw's wrap answer, for the restore
 .sprSeqBaseS SKIP SPR_SLOTS     \ the draw's rotor-sequence base
 .sprShiftS  SKIP SPR_SLOTS      \ the draw's shift
+.sprBank    EQUB SWRAM_SPR      \ the bank the slot in hand lives in, so
+                                \ SprFetchRow can put it back after paging
+                                \ SWRAM_DATA in over the top
 
 \ The per-slot arrays STAY HERE. Every one of them is reached as
 \ `LDA sprActive,X` and never any other way, and abs,X costs the same

@@ -446,6 +446,34 @@ test forced every row through it, by poking `LDA sprNoWrap` to `LDA #0` in `SprD
 > from the other direction; the fix is the same one — disable the restore so the sprites persist,
 > and the sample point stops mattering.
 
+## 1 px positioning — step B: the pool pages per slot
+
+*Still nothing visible, and still one sprite bank — the point is that the value being paged is now
+derived rather than fixed.*
+
+`SprDrawAll` and `SprRestoreAll` used to page `SWRAM_SPR` in once around the whole loop. **Which
+bank a sprite needs is a property of the sprite**, not of the pool, so the paging moved inside:
+
+- `PAGESPRBANK` takes the shift in A and pages `SWRAM_SPR + (shift >> 1)`. `LSR` leaves carry set
+  from bit 0 of the shift, so the `CLC` before the `ADC` is load-bearing.
+- The draw pages in `SprSetSlot`, immediately after it reads `sprShift` — and **before** the
+  `drDigitLo` read a few instructions later, which is in the bank.
+- The restore pages in `SprRestoreSlot`, after it reads `sprShiftS`: the *draw's* shift, because
+  that is where the compiled restore for that sprite lives. `sprShiftS` already existed for exactly
+  this class of reason.
+- Both loops still leave `SWRAM_DATA` in on the way out, which is what everything outside the
+  blitter assumes.
+- `sprBank` (one byte, main RAM) remembers the current slot's bank, because `SprFetchRow` pages
+  `SWRAM_DATA` in over the top and has to put *that slot's* bank back rather than a fixed one.
+
+Cost: 6 instructions, ~16 cycles, twice a slot — **~224 cycles a pass** of the ~39,000 spare. Code
+grew 13 bytes. **Not yet measured on the T1 harness**: a before/after is only meaningful once both
+banks exist, so it is deferred to step D rather than claimed here.
+
+*Verified:* 0 of 10240 against a SPACE-forced `RedrawAll` after a diagonal scroll, and — since
+`SprFetchRow`'s return-page changed from a constant to `sprBank` — the forced-fallback comparison
+again, 0 of 10240 against the compiled path with the rotor frozen and the sprites persisted.
+
 ## What is in the bank, block by block
 
 Reference for the finished article. Addresses are from a `-dd` label dump of the current build;
