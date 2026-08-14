@@ -841,33 +841,82 @@ PLY_REFY = 63                   \ from the view's top edge, sprite top + 13
   RTS
 
 \ ============================================================
-\ SetPosFromMap — posX/posY from mapHX/mapYr after CentreOnDeck
+\ SetPosFromWaypoint — stand the player on cellX / cellY
 \ ============================================================
-\ CentreOnDeck frames a deck in character units; the pixel position
-\ is the authority from then on, so it has to be seeded from it.
-.SetPosFromMap
-  LDA mapHX   : STA posX        \ posX = mapHX * 4
-  LDA mapHX+1 : STA posX+1
-  ASL posX : ROL posX+1
-  ASL posX : ROL posX+1
-  LDA mapYr                     \ posY = mapYr * 8
+\ The deck-entry spawn, from waypoint 0 (see DrSpawnPoint). Works
+\ backwards from the REFERENCE CELL, which is the only cell whose
+\ walkability is known:
+\
+\   plyX = cellX * 8 - PLY_REFX     -> (plyX + 11) >> 3 == cellX
+\   posY = cellY * 8 - 56           -> (posY + 63) >> 3 == cellY
+\
+\ 56 rather than 63 because LoadDeck forces `line` to 0 and RedrawAll
+\ draws whole character rows, so posY has to be a multiple of 8 at
+\ deck load. 63 - 56 = 7 keeps the reference row on cellY, since
+\ cellY*8 + 7 is still inside cellY's own eight scanlines.
+\
+\ posY may come out NEGATIVE, and that is allowed — the view runs
+\ PLY_VOID pixels off each edge so the player can reach rows 0 and 63.
+\ posX is clamped and snapped to the 4-pixel CRTC grid, and plyX is
+\ deliberately not adjusted to match: the dead zone carries the
+\ difference, and the player's world position is the thing that has to
+\ stay on the waypoint.
+.SetPosFromWaypoint
+  LDA cellX                     \ plyX = cellX * 8 - PLY_REFX
+  STA plyX
+  LDA #0
+  STA plyX+1
+  ASL plyX : ROL plyX+1
+  ASL plyX : ROL plyX+1
+  ASL plyX : ROL plyX+1
+  SEC
+  LDA plyX   : SBC #PLY_REFX : STA plyX
+  LDA plyX+1 : SBC #0        : STA plyX+1
+
+  LDA cellY                     \ posY = cellY * 8 - 56
   STA posY
   LDA #0
   STA posY+1
   ASL posY : ROL posY+1
   ASL posY : ROL posY+1
   ASL posY : ROL posY+1
-  CLC                           \ the player starts at the home position
-  LDA posX   : ADC #LO(PLY_HOME_X) : STA plyX
-  LDA posX+1 : ADC #HI(PLY_HOME_X) : STA plyX+1
+  SEC
+  LDA posY   : SBC #PLY_REFY - 7 : STA posY
+  LDA posY+1 : SBC #0            : STA posY+1
+
+  SEC                           \ posX puts the player at its home column
+  LDA plyX   : SBC #LO(PLY_HOME_X) : STA posX
+  LDA plyX+1 : SBC #HI(PLY_HOME_X) : STA posX+1
+  LDA posX+1
+  BPL sfw_hi
+  LDA #0                        \ a waypoint near the left edge
+  STA posX
+  STA posX+1
+  JMP sfw_grid
+.sfw_hi
+  CMP #HI(MAX_PX_X)
+  BCC sfw_grid
+  BNE sfw_sethi
+  LDA posX
+  CMP #LO(MAX_PX_X)
+  BCC sfw_grid
+  BEQ sfw_grid
+.sfw_sethi
+  LDA #LO(MAX_PX_X) : STA posX
+  LDA #HI(MAX_PX_X) : STA posX+1
+.sfw_grid
+  LDA posX                      \ posX must stay on the 4-pixel grid, or
+  AND #&FC                      \ mapHX = posX >> 2 loses the remainder
+  STA posX
+
   LDA #0
   STA xSpd : STA xSpd+1
   STA ySpd : STA ySpd+1
   STA posXf : STA posYf : STA plyXf
-  STA line
   STA bandDo
   STA colCount
-  RTS
+
+  JMP SetMapFromPos             \ mapHX / mapYr / line, and its RTS
 
 \ plyX, plyXf, dzSx, dzD, posX, posY, xSpd, ySpd, oldHX, mvSign, spd,
 \ axDir and amTmp are in zero page — see the block in main.asm.
