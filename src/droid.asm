@@ -61,6 +61,16 @@ DR_NEAR_X = SPR_MAX_UNIT * 4 + 3    \ furthest left edge that still draws
 DR_ENERGY = &40                 \ a droid's full energy, from $16AA
 DR_999    = 23                  \ the influence device
 
+\ The collision box, in screen pixels. Smaller than the 24 x 21 sprite
+\ on purpose — see DrCollide. Tune by eye.
+DR_COL_W  = 18
+DR_COL_H  = 14
+
+\ Steps the sight line will walk before giving up and calling it clear.
+\ The window is 40 characters across and 15 down, and the scaled step
+\ covers at least half a character, so 96 is well past the diagonal.
+DR_LOS_MAX = 96
+
 \ The C64 places droids from waypoint 1 upward, one record per table
 \ index whether or not that index holds a droid, so droid 13 gets
 \ waypoint 1 and droid 1 gets waypoint 13. At most twelve are ever
@@ -257,8 +267,10 @@ DR_999    = 23                  \ the influence device
   LDX #SPR_SLOTS-1              \ nothing holds a sprite slot yet
 .di_free
   STA sprActive,X
+  STA drSlotOwner,X
   DEX
   BNE di_free                   \ slot 0 is the player's; leave it
+  STA drSlotOwner               \ but nothing owns it in the droid sense
   RTS
 
 \ ============================================================
@@ -360,6 +372,14 @@ DR_999    = 23                  \ the influence device
   LDA drPosYhi,X    : STA drPosYhi,Y
   LDA drState,X     : STA drState,Y
   LDA drShipIdx,X   : STA drShipIdx,Y
+
+  LDA drSprNum,X                \ the slot points back at the droid, so a
+  BEQ dru_kept                  \ droid that moves down the table has to
+  STX drTmp                     \ tell its slot where it went
+  TAX
+  TYA
+  STA drSlotOwner,X
+  LDX drTmp
 .dru_kept
   INY
 .dru_skip
@@ -368,6 +388,206 @@ DR_999    = 23                  \ the influence device
   CPX drCount
   BCC dru_loop
   STY drCount
+  JMP DrCollide
+
+\ ============================================================
+\ DrCollide — port of DoCollision ($19EA) and DoCollision2, movement half
+\ ============================================================
+\ THE C64 READS A REGISTER FOR THIS. `SprSprCollision` ($D01E) is the
+\ VIC's sprite-to-sprite collision latch: hardware, pixel-exact, and
+\ free. We have neither the hardware nor the pixels — a software
+\ blitter knows what it wrote, not what it overlapped — so this is the
+\ one place in the droid work with no faithful port available, and a
+\ box test is what replaces it.
+\
+\ The box is DELIBERATELY SMALLER THAN THE SPRITE. A droid is 24 x 21,
+\ but most of the corners are the rotor's transparent gaps, so a full
+\ 24 x 21 box collides where the VIC would not — droids bouncing off
+\ each other with clear space between them. DR_COL_W/H are a judgement
+\ about where two droids look like they have touched, and they are
+\ meant to be tuned by eye.
+\
+\ ONE PAIR A PASS, which is not a shortcut: DoCollision picks the two
+\ lowest set bits out of the register and handles that pair alone.
+\
+\ WHAT HAPPENS, from DoCollision2's table ($6D6D, entry 08 = "reverse
+\ dir") and the _ply_droid arm of DoCollision:
+\
+\   droid v droid    the first reverses, the second pauses 16 iterations
+\   player v droid   the droid pauses 16 AND reverses; the player's own
+\                    speed is negated and doubled — the bounce
+\
+\ Damage, scoring, Alert and the transfer game all hang off the same
+\ two arms in the original and are Layer 7's; this is the movement half
+\ on its own.
+\
+\ Only DRAWN slots take part, which falls out of the C64 using a
+\ display register: a droid hidden behind a wall has no sprite lit and
+\ cannot collide with anything.
+.DrCollide
+  LDA drCollHit                 \ the debounce, from byte_0_6C: one reverse
+  STA drCollWas                 \ per episode, not one per pass
+  LDA #0
+  STA drCollHit
+
+  LDA #0
+  STA dcOuter
+.dc_outer
+  LDX dcOuter
+  LDA sprActive,X
+  BEQ dc_onext
+  JSR DrSlotXY
+  LDA dcX : STA dcX2
+  LDA dcY : STA dcY2
+
+  LDY #SPR_SLOTS-1
+.dc_inner
+  CPY dcOuter
+  BEQ dc_inext
+  BCC dc_inext                  \ each pair once: only Y above X
+  LDA sprActive,Y
+  BEQ dc_inext
+  STY dcInner
+  TYA : TAX
+  JSR DrSlotXY
+
+  LDA dcX                       \ |dx| < DR_COL_W ?
+  SEC
+  SBC dcX2
+  JSR DrAbsA
+  CMP #DR_COL_W
+  BCS dc_inext2
+  LDA dcY
+  SEC
+  SBC dcY2
+  JSR DrAbsA
+  CMP #DR_COL_H
+  BCS dc_inext2
+
+  JMP DrCollided                \ one pair a pass, as the original does
+
+.dc_inext2
+  LDY dcInner
+.dc_inext
+  DEY
+  BNE dc_inner
+.dc_onext
+  LDX dcOuter
+  INX
+  STX dcOuter
+  CPX #SPR_SLOTS-1
+  BCC dc_outer
+  RTS
+
+\ dcOuter and dcInner are the two slots; act on the droids behind them.
+.DrCollided
+  LDA #&FF
+  STA drCollHit                 \ something touched: hold the debounce
+
+  LDA dcOuter                   \ slot 0 is the player, and the pairs are
+  BEQ dc_player                 \ ordered so he can only be the outer one
+
+  LDY dcOuter                   \ droid v droid: the first reverses...
+  LDA drSlotOwner,Y
+  BEQ dc_x
+  TAX
+  JSR DrReverse
+  LDY dcInner                   \ ...and the second stands still
+  LDA drSlotOwner,Y
+  BEQ dc_x
+  TAX
+  JMP DrPause16
+
+\ ---- the player has walked into a droid ---------------------
+.dc_player
+  LDY dcInner
+  LDA drSlotOwner,Y
+  BEQ dc_x
+  TAX
+  JSR DrPause16
+  JSR DrReverse
+
+  LDA drCollWas                 \ the bounce is once per episode too, or
+  BNE dc_x                      \ the player sticks to the droid shaking
+
+  LDX #0                        \ the C64 negates the whole-pixel part of
+  JSR DrBounce                  \ each speed, forces it to at least 1, and
+  LDX #2                        \ doubles it
+  JSR DrBounce
+.dc_x
+  RTS
+
+\ X = 0 for xSpd, 2 for ySpd.
+\
+\ THE DOUBLING IS CLAMPED HERE AND IS NOT ON THE C64. Ours brings in
+\ one character row per pass and no more — the ASSERT on PLY_MAXSPD in
+\ player.asm — so a bounce that doubled 8 px/pass into 16 would skip a
+\ row, leave a stale one in the strip, and show it later as a band of
+\ the wrong deck. The C64 scrolls a pixel at a time and has no such
+\ ceiling.
+.DrBounce
+  LDA xSpd+1,X
+  EOR #&FF
+  CLC
+  ADC #1                        \ negated
+  BNE db_nz
+  LDA #1                        \ standing still: bounce anyway, as $1A8E
+.db_nz
+  BMI db_neg
+
+  ASL A                         \ positive: double, then clamp
+  BCS db_posmax
+  CMP #CAM_TOPSPD+1
+  BCC db_store
+.db_posmax
+  LDA #CAM_TOPSPD
+  BNE db_store                  \ always
+
+.db_neg
+  EOR #&FF                      \ negative: double the magnitude instead,
+  CLC                           \ so the clamp has something to compare
+  ADC #1
+  ASL A
+  BCS db_negmax
+  CMP #CAM_TOPSPD+1
+  BCC db_negok
+.db_negmax
+  LDA #CAM_TOPSPD
+.db_negok
+  EOR #&FF
+  CLC
+  ADC #1
+.db_store
+  STA xSpd+1,X
+  RTS
+
+\ X = the droid index.
+.DrPause16
+  LDA #16                       \ PauseDroidFor16 ($1C39)
+  STA drState,X
+  RTS
+
+\ ReverseDroidDir ($1C5F), without its own debounce — DrCollide holds
+\ that for both arms.
+.DrReverse
+  SEC
+  LDA #0 : SBC drSpdX,X : STA drSpdX,X
+  SEC
+  LDA #0 : SBC drSpdY,X : STA drSpdY,X
+  RTS
+
+\ Screen position of slot X, in pixels: the unit is 4 px and the shift
+\ is the pixel within it, which is exactly how the blitter took them
+\ apart.
+.DrSlotXY
+  LDA sprUnit,X
+  ASL A
+  ASL A
+  CLC
+  ADC sprShift,X
+  STA dcX
+  LDA sprScrY,X
+  STA dcY
   RTS
 
 \ ============================================================
@@ -380,13 +600,22 @@ DR_999    = 23                  \ the influence device
 \ sit between the sprite update and the waypoint search; Layer 7 puts
 \ them back at that point.
 .DroidRun
+  LDA drType,X                  \ mode from the top bits of the type, as the
+  LSR A : LSR A : LSR A : LSR A \ C64's DroidModeJump does: 0 droid, 1 bullet,
+  AND #6                        \ 2 explosion. Bullets and explosions arrive
+  BEQ dr_mode0                  \ with Layer 7; until then a type that claims
+  RTS                           \ to be one is simply not run
+
+.dr_mode0
 IF DR_MOVES
   JSR DrMove
 ENDIF
+  LDX drIdx
+  JSR DrCharPos                 \ the cell the droid is standing on — before
+                                \ DrScreen, which needs it for the sight line
   JSR DrScreen                  \ near test, sprite slot, screen position
 
   LDX drIdx
-  JSR DrCharPos                 \ the cell the droid is standing on
 
 IF DR_MOVES
   LDA drState,X
@@ -724,23 +953,23 @@ ENDIF
   LDA drPosYlo,X : SBC drOrgY   \ rejects most of a deck
   STA drSy
   LDA drPosYhi,X : SBC drOrgY+1
-  BNE drs_off                   \ above the view, or more than 255 below
+  BNE drs_far                   \ above the view, or more than 255 below
   LDA drSy
   CMP #SPR_MAX_Y + 1
-  BCS drs_off                   \ below it, or too low to draw whole
+  BCS drs_far                   \ below it, or too low to draw whole
 
   SEC
   LDA drPosXlo,X : SBC drOrgX
   STA drSx
   LDA drPosXhi,X : SBC drOrgX+1
   STA drSx+1
-  BMI drs_off                   \ left of the view
+  BMI drs_far                   \ left of the view
   BEQ drs_near                  \ 0-255 across: inside the limit by
   CMP #1                        \ construction, since DR_NEAR_X is 295
-  BNE drs_off                   \ 512 or more to the right
+  BNE drs_far                   \ 512 or more to the right
   LDA drSx
   CMP #LO(DR_NEAR_X + 1)
-  BCS drs_off
+  BCS drs_far
 
 .drs_near
   LDA drSprNum,X                \ already holding a slot?
@@ -750,7 +979,9 @@ ENDIF
   LDX drIdx
   STA drSprNum,X
   TAY
-  LDA #1 : STA sprActive,Y
+  TXA
+  STA drSlotOwner,Y             \ the slot is OWNED from here until the droid
+                                \ leaves the window, whether or not it is drawn
   LDA #0 : STA sprDelay,Y
   TXA                           \ stagger the rotors, or a room full of
   AND #7                        \ droids spins in lockstep and reads as one
@@ -770,7 +1001,25 @@ ENDIF
   STA sprUnit,Y
   LDA drSy
   STA sprScrY,Y
+
+\ ---- and is it actually in sight? ---------------------------
+\ The C64 keeps the sprite allocated and clears SpriteEna, so a droid
+\ behind a wall holds its hardware sprite while being invisible. Ours
+\ does the same with the two halves separated: drSlotOwner keeps the
+\ slot, sprActive says whether the blitter draws it.
+  JSR DrLineOfSight
+  LDX drIdx                     \ DrLineOfSight uses X as a scratch register
+  LDY drSprNum,X                \ in the scaling loop — it does NOT come back
+  LDA #0
+  BCS drs_hidden                \ carry set: a wall is in the way
+  LDA #1
+.drs_hidden
+  STA sprActive,Y
   RTS
+
+\ Out of range, and out of branch range of the tests above.
+.drs_far
+  JMP drs_off
 
 \ Nothing free. The C64 takes the droid off the ship entirely.
 .drs_nofree
@@ -787,6 +1036,7 @@ ENDIF
   TAY
   LDA #0
   STA sprActive,Y
+  STA drSlotOwner,Y
   STA drSprNum,X
 .drs_x
   RTS
@@ -795,15 +1045,173 @@ ENDIF
 \ DrFindSlot — port of FindFreeSprite ($32A8). A = 0 if none free
 \ ============================================================
 \ Slots 6 down to 1; slot 0 is the player's and is never in the pool.
+\ OWNERSHIP, not sprActive: a droid hidden behind a wall is not drawn
+\ but still holds its slot, exactly as the C64 keeps a hardware sprite
+\ allocated with SpriteEna clear.
 .DrFindSlot
   LDY #SPR_SLOTS-1
 .dfs_loop
-  LDA sprActive,Y
+  LDA drSlotOwner,Y
   BEQ dfs_got
   DEY
   BNE dfs_loop
 .dfs_got
   TYA
+  RTS
+
+\ ============================================================
+\ DrLineOfSight — port of LineOfVisibility ($24AE)
+\ ============================================================
+\ Walk the character grid from the PLAYER's cell towards the droid's
+\ and answer whether anything solid is in the way. Carry set = blocked.
+\
+\ The walk is a DDA with an 8.8 step: `CalcDeltaAdd` ($25AF) scales the
+\ delta pair up — doubling while both fit in a byte, then adding the
+\ original until one would overflow — so the longer axis advances
+\ between half a character and a whole one per step and the shorter
+\ one keeps its proportion. No division, which is the point of it.
+\
+\ The original tracks its position as a POINTER into the 16K character
+\ map, so the two axes are the two bytes of one address and it can test
+\ "have we passed the target" by comparing the pointer. We have no such
+\ map — MapChar computes a character from the tile map — so the two
+\ coordinates are held apart and the walk stops when the DOMINANT axis
+\ reaches its target. The dominant axis is monotonic by construction,
+\ so that is the same test written differently.
+\
+\ Reads plyCX/plyCY, which CheckWalls computed from the player's
+\ position BEFORE this pass's move. One pass stale; the C64's
+\ plyMapPos is the same.
+\
+\ **X IS NOT PRESERVED** — the scaling loop uses it to hold a tentative
+\ value, the way CalcDeltaAdd does. The caller reloads drIdx. Losing
+\ this cost an hour: the droid index became whatever the scale loop
+\ left behind, `sprActive,Y` was then written through a Y read from the
+\ wrong array, and slots nobody owned were switched on with no position
+\ ever written into them. The player vanished because the pool was
+\ drawing three slots of rubbish.
+.DrLineOfSight
+  LDA drCX
+  CMP plyCX
+  BNE dls_go
+  LDA drCY
+  CMP plyCY
+  BNE dls_go
+  CLC                           \ standing on the player: visible
+  RTS
+
+.dls_go
+  SEC                           \ the deltas, and their absolute values
+  LDA drCX : SBC plyCX : STA lsDx
+  JSR DrAbsA
+  STA lsAx
+  SEC
+  LDA drCY : SBC plyCY : STA lsDy
+  JSR DrAbsA
+  STA lsAy
+
+  LDA lsAx                      \ which axis is the long one — it is the
+  CMP lsAy                      \ one the walk is finished by
+  BCS dls_xdom
+  LDA #1
+  BNE dls_setdom                \ always
+.dls_xdom
+  LDA #0
+.dls_setdom
+  STA lsDom
+
+\ ---- scale the pair so the long axis steps ~1 character ----
+\ Straight from CalcDeltaAdd: double while BOTH still fit in a byte,
+\ then add the originals while both still fit. Neither half is ever
+\ committed until the other has been tried, which is what keeps the
+\ two in proportion.
+  LDA lsAx : STA lsSx
+  LDA lsAy : STA lsSy
+.dls_dbl
+  LDA lsSx
+  ASL A
+  BCS dls_add
+  TAX
+  LDA lsSy
+  ASL A
+  BCS dls_add
+  STA lsSy
+  STX lsSx
+  JMP dls_dbl
+.dls_add
+  LDA lsSx
+  CLC
+  ADC lsAx
+  BCS dls_scaled
+  TAX
+  LDA lsSy
+  ADC lsAy                      \ carry is clear: the BCS above did not take
+  BCS dls_scaled
+  STA lsSy
+  STX lsSx
+  JMP dls_add
+.dls_scaled
+
+\ ---- signs: the integer part of a negative step is $FF ------
+  LDA #0 : STA lsIx : STA lsIy
+  LDA lsDx
+  BPL dls_xpos
+  LDA #0 : SEC : SBC lsSx : STA lsSx    \ -frac, with $FF carried in
+  LDA #&FF : STA lsIx
+.dls_xpos
+  LDA lsDy
+  BPL dls_ypos
+  LDA #0 : SEC : SBC lsSy : STA lsSy
+  LDA #&FF : STA lsIy
+.dls_ypos
+
+  LDA #0 : STA lsFx : STA lsFy
+  LDA plyCX : STA lsCX
+  LDA plyCY : STA lsCY
+  LDA #DR_LOS_MAX
+  STA lsCount
+
+.dls_loop
+  CLC
+  LDA lsFx : ADC lsSx : STA lsFx
+  LDA lsCX : ADC lsIx : STA lsCX
+  CLC
+  LDA lsFy : ADC lsSy : STA lsFy
+  LDA lsCY : ADC lsIy : STA lsCY
+
+  LDA lsCX : STA cellX
+  LDA #0   : STA cellX+1
+  LDA lsCY : STA cellY
+  JSR MapChar
+  BMI dls_blocked
+
+  LDA lsDom                     \ has the long axis arrived?
+  BNE dls_testy
+  LDA lsCX
+  CMP drCX
+  BEQ dls_clear
+  BNE dls_next                  \ always
+.dls_testy
+  LDA lsCY
+  CMP drCY
+  BEQ dls_clear
+.dls_next
+  DEC lsCount
+  BNE dls_loop
+.dls_clear
+  CLC
+  RTS
+.dls_blocked
+  SEC
+  RTS
+
+\ |A|, flags set from the result.
+.DrAbsA
+  BPL dab_x
+  EOR #&FF
+  CLC
+  ADC #1
+.dab_x
   RTS
 
 \ ============================================================
@@ -842,6 +1250,8 @@ ENDIF
 .drPosYlo    SKIP DR_SLOTS
 .drPosYhi    SKIP DR_SLOTS
 
+.drSlotOwner SKIP SPR_SLOTS     \ droid index holding each sprite slot, 0 free
+
 .drCount     EQUB 0             \ high-water mark; 1 means the deck is clear
 .drIdx       EQUB 0
 .drDst       EQUB 0
@@ -860,8 +1270,33 @@ ENDIF
 .dcpLo       EQUB 0
 .dcpHi       EQUB 0
 .diIdx       EQUB 0
+.drTmp       EQUB 0
 .drDeckBase  EQUB 0             \ deck * 16, the roster row
 .drSeed      EQUB &A5
+
+.lsDx        EQUB 0             \ DrLineOfSight: the delta, and its size
+.lsDy        EQUB 0
+.lsAx        EQUB 0
+.lsAy        EQUB 0
+.lsSx        EQUB 0             \ the scaled step: fraction of a character
+.lsSy        EQUB 0
+.lsIx        EQUB 0             \ and its integer part, 0 or &FF
+.lsIy        EQUB 0
+.lsFx        EQUB 0             \ the fraction accumulators
+.lsFy        EQUB 0
+.lsCX        EQUB 0             \ where the walk has got to
+.lsCY        EQUB 0
+.lsDom       EQUB 0             \ 0 = X is the long axis, 1 = Y
+.lsCount     EQUB 0
+
+.dcOuter     EQUB 0             \ DrCollide: the pair of slots in hand
+.dcInner     EQUB 0
+.dcX         EQUB 0
+.dcY         EQUB 0
+.dcX2        EQUB 0
+.dcY2        EQUB 0
+.drCollHit   EQUB 0             \ something touched this pass
+.drCollWas   EQUB 0             \ and had last pass — the debounce
 .nsdDeck     EQUB 0
 .nsdBase     EQUB 0
 .nsdLeft     EQUB 0
