@@ -36,10 +36,13 @@ it. That is after the blitter was compiled and cut from 14,000 cycles a sprite t
 [`docs/layer-5-blitter.md`](docs/layer-5-blitter.md), which also records what was costed and
 *rejected*, round-robin updating chief among them.
 
-**Doors work.** Walking into one opens it a step at a time, the player passes through, and it
-closes behind — the mechanism is bit 7 of the character code, exactly as the C64 does it. Lifts
-(8b) are next, and after them the ship is traversable. See
+**The ship is traversable.** Doors open when you walk into them and close behind you; lift platforms
+take RETURN and then UP/DOWN to move through the decks their shaft serves. Both are the C64's own
+mechanisms — bit 7 of the character code for a door, a table walk for a lift. See
 [`docs/layer-8-doors-lifts.md`](docs/layer-8-doors-lifts.md).
+
+**Next: the droid layers**, 5 (movement) then 6 and 7 — now that there is a ship to move around
+in.
 
 **Then the rest of Layer 5, droid movement** — `GetNewDir`, `AdvanceMapPos`, `CheckDroidAdvance` and
 the waypoint logic, the same speed model applied to non-player droids, plus sprite slot allocation
@@ -92,7 +95,7 @@ seconds where a buffer diff would have taken an emulator run.
 
 | | |
 |---|---|
-| `PARADAT` into sideways RAM | Frees `&3000–&4707`. Was the next structural move; less urgent now the code has 1.4 K of headroom, but it is still what 1 px sprite positioning waits on |
+| `PARADAT` into sideways RAM | **Now the binding constraint.** Layer 8 left 54 bytes below `&3000`, and moving `doorDef` and `blankTileRow` into the bank is what bought even that. Also what 1 px sprite positioning waits on |
 | 1 px sprite positioning | Needs four shifted copies, 1820 bytes. 2 px matches the C64 artwork's own pixel size, so this is polish |
 | Raster-ordered sprite updating | Flicker, and probably `BUGS.md` #3 with it. The only sprite-pool work still open |
 | 2 px world scrolling | Parked, Master-only via shadow RAM. Costs +60–80% on all drawing because both buffers must stay current — see [`docs/master-extensions.md`](docs/master-extensions.md) |
@@ -131,8 +134,8 @@ Full reasoning, and the measurement that settled which Paradroid the listing is,
 | `&0100–&01FF` | 256 B | stack |
 | `&0400–&0C90` | 2192 B | MODE 1 charset, built at deck load — reclaimed OS workspace |
 | `&0C90–&10FF` | ~1.1 K free | rest of the reclaimed OS workspace |
-| `&1100–&2A40` | 6.3 K | code (`PARA`). DFS random-access buffer space, safe for `*LOAD` |
-| `&2A40–&3000` | **1.4 K free** | grew 372 B when the working variables moved to zero page |
+| `&1100–&2FCA` | 7.7 K | code (`PARA`). DFS random-access buffer space, safe for `*LOAD` |
+| `&2FCA–&3000` | **54 B free** | Layer 8 spent it. `doorDef` and `blankTileRow` are in the bank |
 | `&3000–&36FF` | 1.75 K | sprite background save areas, one page per slot |
 | `&3800–&3C00` | 1 K | tile map, fixed home — floating it after `code_end` once put it over the save areas |
 | `&4800–&547F` | 3.2 K | panel — 5 rows × 640, displayed by rupture cycle 1 |
@@ -210,7 +213,7 @@ should not be revived without reading why it was dropped.
 `dMd1_bullet`, `dMd2_explosion`, `DoCollision`/`DoCollision2`, `DoScore`, `KillDroid`,
 `DoAlertAndAging`. The core game is playable at this point.
 
-### Layer 8 — Doors, lifts, decks 🔨 8a DONE, 8b next — **ahead of 6 and 7**
+### Layer 8 — Doors, lifts, decks ✅ DONE — **taken ahead of 6 and 7**
 `OpenDoor`, `CloseDoors`, `DoLift`, `FindLift`, `ChangeDeck`. The whole ship becomes traversable.
 
 **Moved ahead of the droid layers deliberately.** The player is currently sealed into one room, and
@@ -229,8 +232,15 @@ Doors also needed their own probe sweep. `ProbeGroup` runs only when there is sp
 abandons a group at the first wall, and both defeat a door — read that note before touching the
 probes.
 
-**8b, lifts, is next**: six unexported tables, `FindLift`, and a minimal lift UI with the side view
-deferred to Layer 9.
+**8b, lifts, has landed too** (`src/lift.asm`). Stand on a lift platform, press RETURN, and UP/DOWN
+move through the decks that shaft serves — which are *not* adjacent, so stepping walks a table. The
+platform turned out to be tile 3 at the C64 view origin + (5, 2), found by searching for the offset
+that gives a consistent tile across all 30 stops (30/30 against a next-best of 21/30) — it is not
+written down anywhere in the listing. The side view is still Layer 9's; until then a lift has no
+display of its own.
+
+**Arrival now comes from the lift table, retiring `CentreOnDeck` as the spawn path** and with it the
+"lands inside a wall on some decks" defect.
 → [`docs/layer-8-doors-lifts.md`](docs/layer-8-doors-lifts.md)
 
 ### Layer 9 — HUD and console
@@ -264,6 +274,7 @@ Single-pass flat build, everything included from `main.asm`. No linker.
 | `player.asm` | **Live.** `ReadKeys`, `CalcSpeed`, `CheckWalls`, `ApplyMove`, `DeadZone`, the clamps |
 | `sprite.asm` | **Live.** The blitter: slot state, `SprDrawAll`/`SprRestoreAll`, the compiled-row dispatch and the wrap fallback |
 | `door.asm` | **Live.** Door state, `DoorScan`, the patched tile definitions, `DoorsUpdate`, `DrawDoorTile` |
+| `lift.asm` | **Live.** `LiftFind`, lift mode, stepping a shaft, `LiftPlace` |
 | `droidtest.asm` | **Live, scaffolding.** Six static droids so the pool could be measured. Delete with `TEST_DROIDS` once droids move |
 
 **Everything in `src/` is in the build.** Five inherited files that were not — `zeropage.asm`,

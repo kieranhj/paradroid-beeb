@@ -422,6 +422,7 @@ KEY_M      = &9A                \ -102
 KEY_UP     = &C6                \ -58
 KEY_DOWN   = &D6                \ -42
 KEY_SPACE  = &9D                \ -99
+KEY_RETURN = &B6                \ -74
 
 \ ---- zero page ---------------------------------------------
 \ &70-&8F was the original allocation and is full. With BASIC not
@@ -651,10 +652,13 @@ IF DEBUG_TIME
   JSR DbgSpeedOverride          \ a poked speed takes the controls over
   BNE ml_poked                  \ and skips the walls; zero gives them back
 ENDIF
+  LDA liftMode                  \ the lift has the controls: no movement,
+  BNE ml_nomove                 \ and UP/DOWN mean something else below
   JSR ReadKeys
   JSR CalcSpeed
   JSR CheckWalls                \ before the move, as the C64 does: it
 .ml_poked                       \ zeroes the speed the move would apply
+.ml_nomove
   JSR ApplyMove
 
   \ Park the CRTC address ONCE, with every axis accounted for, and
@@ -676,6 +680,34 @@ ENDIF
   \ Deck keys are edge triggered: one press steps one deck however
   \ long it is held. A blocking wait-for-release deadlocks if the
   \ other deck key goes down before the first is released.
+\ RETURN steps into a lift and back out of it. Edge triggered, like the
+\ deck keys, or holding it would toggle every pass.
+  LDX #KEY_RETURN
+  JSR keydown
+  BNE ml_retOff
+  LDA prevRet
+  BNE ml_notRet
+  LDA #1 : STA prevRet
+  LDA liftMode
+  BNE ml_getout
+  JSR LiftEnter
+  JMP ml_notRet
+.ml_getout
+  JSR LiftExit
+  JMP ml_notRet
+.ml_retOff
+  LDA #0 : STA prevRet
+.ml_notRet
+
+\ UP and DOWN belong to the lift while it has the controls. Outside one
+\ they stay the debug free hop, which is worth keeping until every deck
+\ is reachable by lift and can be tested that way instead.
+  LDA liftMode
+  BEQ ml_debugdeck
+  JSR LiftControl
+  JMP ml_notDn
+
+.ml_debugdeck
   LDX #KEY_UP
   JSR keydown
   BNE ml_upOff
@@ -898,9 +930,21 @@ ENDIF
   JSR SetPalette
   LDA deck
   JSR BuildLevel
+
+\ Where we arrive. A lift knows exactly where it puts you; CentreOnDeck
+\ only frames the deck and has been known to land the player inside a
+\ wall, so it is now the fallback rather than the rule.
+  LDA liftPlace
+  BEQ ld_centre
+  LDA #0
+  STA liftPlace
+  JSR LiftPlace
+  JMP ld_placed
+.ld_centre
   JSR CentreOnDeck
   JSR SetPosFromMap             \ the pixel position is the authority from
                                 \ here on; CentreOnDeck works in characters
+.ld_placed
 \ Start the strip at the buffer base — vertically, at least. `line` is
 \ zeroed so buffer row 0 is not a split row, which RedrawAll needs
 \ because it writes whole rows.
@@ -948,6 +992,7 @@ INCLUDE "src/scroll.asm"
 INCLUDE "src/level.asm"
 INCLUDE "src/player.asm"
 INCLUDE "src/door.asm"
+INCLUDE "src/lift.asm"
 INCLUDE "src/sprite.asm"
 IF TEST_DROIDS
 INCLUDE "src/droidtest.asm"
@@ -1102,6 +1147,22 @@ INCLUDE "src/data/colours.asm"
 INCLUDE "src/data/tiledefs.asm"
 INCLUDE "src/data/levels.asm"
 INCLUDE "src/data/droidgame.asm"
+
+\ ---- bank-resident working storage --------------------------
+\ Main RAM below &3000 ran out during Layer 8b. These two are the
+\ obvious things to move: neither is read in a hot loop, and both are
+\ only ever touched with SWRAM_DATA paged in — which is the resting
+\ state, swapped out only around the blitter, which touches neither.
+\ Sideways RAM is RAM. doorDef is written at run time and its shipped
+\ contents are irrelevant; blankTileRow must genuinely be zero, so it is
+\ emitted rather than SKIPped.
+.doorDef
+  SKIP DOOR_SLOTS * 16
+
+.blankTileRow
+  FOR r, 0, MAP_COLS-1
+    EQUB 0
+  NEXT
 .data_end
 
 \ SAVED HERE, NOT AT THE BOTTOM. SAVE writes out whatever the assembled

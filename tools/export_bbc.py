@@ -137,6 +137,30 @@ TILEDEF_SIZE = 16
 LVPTR_LO = 0xF100
 LVPTR_HI = 0xF110
 DECK_META = 0xF120          # 6 tables x 16 bytes: Y, X, height, width, colour, droids
+
+# ---- lifts ----------------------------------------------------------------
+# liftPosX/Y are the VIEW ORIGIN in characters for each stop, not the player's
+# position: DoLift ($267A) writes ScreenPosX/Y = liftPos * 8, and FindLift
+# compares them against the tile-aligned origin. Both are multiples of 4, so
+# every stop names a tile.
+#
+# The lift PLATFORM is tile 3, at origin tile + (5, 2). That was found by
+# scanning every offset and asking which gives a consistent tile across all 30
+# stops: (5,2) gives tile 3 on 30/30, and the next best is 21/30. Tile 3's
+# sixteen characters are all bit-7-clear - a 32x32 patch with no wall in it,
+# which is what a platform you stand on should look like.
+#
+# The offset is applied HERE so it never appears at run time, and the C64's
+# indexing is kept including the sentinels at index 0 and 31: those carry
+# shaft 8, which matches no real shaft (0-7), and that is what stops a lift at
+# the end of its run.
+LIFT_POS_DECK = 0x6CC8      # 32 - which deck each stop is on
+LIFT_IDX2SH   = 0x6CE7      # 32 - which shaft each stop belongs to
+LIFT_POS_X    = 0x6D07      # 32 - view origin, characters
+LIFT_POS_Y    = 0x6D26      # 32
+LIFT_STOPS    = 32
+LIFT_TILE_DX  = 5
+LIFT_TILE_DY  = 2
 DECK_META_LEN = 6 * 16
 RLE_START = 0xF249
 RLE_END = 0xFED0            # inclusive-exclusive; covers deck 15 plus terminator
@@ -362,6 +386,30 @@ def main():
                                    'deckWidth', 'deckColour', 'deckDroids']):
             f.write('.%s\n' % label)
             emit_bytes(f, meta[n * 16:(n + 1) * 16])
+        # ---- lift stops ----
+        sh  = mem[LIFT_IDX2SH:LIFT_IDX2SH + LIFT_STOPS]
+        lkd = mem[LIFT_POS_DECK:LIFT_POS_DECK + LIFT_STOPS]
+        lpx = mem[LIFT_POS_X:LIFT_POS_X + LIFT_STOPS]
+        lpy = mem[LIFT_POS_Y:LIFT_POS_Y + LIFT_STOPS]
+        col = [((lpx[i] >> 2) + LIFT_TILE_DX) & 0xFF for i in range(LIFT_STOPS)]
+        row = [((lpy[i] >> 2) + LIFT_TILE_DY) & 0xFF for i in range(LIFT_STOPS)]
+        for i in range(1, LIFT_STOPS - 1):
+            if not (0 <= col[i] < 64 and 0 <= row[i] < 16):
+                sys.exit('ERROR: lift stop %d is outside the map: %d,%d'
+                         % (i, col[i], row[i]))
+        f.write('\n\\ Lift stops, as the TILE the platform occupies - the\n'
+                '\\ +5/+2 from the C64 view origin is applied by the exporter.\n'
+                '\\ Index 0 and 31 are its sentinels: shaft 8 matches no real\n'
+                '\\ shaft, which is what stops a lift at the end of its run.\n')
+        f.write('.liftTileCol\n')
+        emit_bytes(f, col)
+        f.write('.liftTileRow\n')
+        emit_bytes(f, row)
+        f.write('.liftDeck\n')
+        emit_bytes(f, lkd)
+        f.write('.liftShaft\n')
+        emit_bytes(f, sh)
+
         f.write('\n.leveldata\n')
         emit_bytes(f, rle)
         f.write('.leveldata_end\n')

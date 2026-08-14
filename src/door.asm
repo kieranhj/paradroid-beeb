@@ -547,5 +547,10 @@ DOOR_SLOTS = 7                  \ the C64's cap, and it compacts on close
 \ slot -> byte offset of its private definition
 .doorMul16  EQUB 0, 16, 32, 48, 64, 80, 96
 
-\ Seven 16-byte tile definitions, one per open door.
-.doorDef    SKIP DOOR_SLOTS * 16
+\ doorDef — the seven patched tile definitions — lives in the DATA BANK.
+\ Sideways RAM is RAM, and every routine that reads or writes it runs
+\ with SWRAM_DATA paged in: DoorProbe from CheckWalls, DoorTdp from the
+\ draw, DoorsUpdate and DrawDoorTile from DoRedraws. The blitter is the
+\ only thing that pages it out and it touches none of this. 112 bytes
+\ of main RAM back, which is what let Layer 8b fit below &3000 at all.
+\ See the bank section in main.asm.

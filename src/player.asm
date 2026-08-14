@@ -510,36 +510,7 @@ PLY_REFY = 63                   \ from the view's top edge, sprite top + 13
   LDA posY+1 : ADC mvSign : STA posY+1
   JSR ClampY
 
-  LDA posX+1                    \ mapHX = posX >> 2; posX is always a
-  LSR A                         \ multiple of 4, so nothing is lost
-  STA mapHX+1
-  LDA posX
-  ROR A
-  LSR mapHX+1
-  ROR A
-  STA mapHX
-
-  LDA posY+1                    \ mapYr = posY >> 3, line = posY AND 7
-  STA amTmp+1
-  LDA posY
-  STA amTmp
-
-\ ARITHMETIC shift, not logical: posY is signed now, and >> with the
-\ sign carried is floor division — which is what makes `posY AND 7`
-\ the correct sub-row offset on the negative side too.
-  LDX #3
-.am_shr
-  LDA amTmp+1
-  ASL A                         \ sign bit into carry
-  ROR amTmp+1
-  ROR amTmp
-  DEX
-  BNE am_shr
-  LDA amTmp
-  STA mapYr
-  LDA posY
-  AND #7
-  STA line
+  JSR SetMapFromPos
 
 \ scrollS moves by whole units horizontally and whole rows
 \ vertically; the sub-row remainder is `line`, which the CRTC
@@ -611,6 +582,44 @@ PLY_REFY = 63                   \ from the view's top edge, sprite top + 13
   LDA #0
   STA colFirst                  \ the leftmost |dUnits| columns
 .am_nocols
+  RTS
+
+\ ============================================================
+\ SetMapFromPos — mapHX, mapYr and line, from posX and posY
+\ ============================================================
+\ Split out of ApplyMove because LiftPlace has to do the same thing
+\ after dropping the player somewhere the move never took them.
+.SetMapFromPos
+  LDA posX+1                    \ mapHX = posX >> 2; posX is always a
+  LSR A                         \ multiple of 4, so nothing is lost
+  STA mapHX+1
+  LDA posX
+  ROR A
+  LSR mapHX+1
+  ROR A
+  STA mapHX
+
+  LDA posY+1                    \ mapYr = posY >> 3, line = posY AND 7
+  STA amTmp+1
+  LDA posY
+  STA amTmp
+
+\ ARITHMETIC shift, not logical: posY is signed, and >> with the sign
+\ carried is floor division — which is what makes `posY AND 7` the
+\ correct sub-row offset on the negative side too.
+  LDX #3
+.smp_shr
+  LDA amTmp+1
+  ASL A                         \ sign bit into carry
+  ROR amTmp+1
+  ROR amTmp
+  DEX
+  BNE smp_shr
+  LDA amTmp
+  STA mapYr
+  LDA posY
+  AND #7
+  STA line
   RTS
 
 \ ============================================================

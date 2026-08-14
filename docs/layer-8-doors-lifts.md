@@ -2,8 +2,8 @@
 
 *Part of the Paradroid BBC Micro port. Start at [`../PLAN.md`](../PLAN.md).*
 
-**8a (doors) is built and verified. 8b (lifts) is still a plan.** Everything about the C64 original
-below was read out of `paradroid_ce_annotated.asm` and checked against `src/data/tiledefs.asm`.
+**Both halves are built and verified.** Everything about the C64 original below was read out of
+`paradroid_ce_annotated.asm` and checked against `src/data/tiledefs.asm`.
 
 ## Why this comes next, ahead of the droid logic
 
@@ -243,22 +243,104 @@ open, and `DoorScan` is unconditional, but neither has been put under the T1 bra
 odd and even `mapHX` and non-zero `line`. A door mid-animation is a new class of buffer state and is
 exactly where a patched-tile bug would show. Also scroll a door off screen and back while open.
 
-### 8b — lifts
+### 8b — lifts ✅ DONE
 
-1. **Export the six lift tables** into `levels.asm`. `export_bbc.py` already ships the `$F120`
-   deck metadata; this is the same shape of change.
-2. **`FindLift`** — tile-align the player position, scan 32 stops, match on deck.
-3. **Lift mode.** The C64's is modal and draws the ship side view, which is Layer 9's artwork.
-   Propose a **minimal lift for now**: entering it takes over the cursor keys, up/down step through
-   the stops *in the same shaft*, fire commits. The existing debug deck-change keys are exactly this
-   minus the constraint, so this mostly means routing them through `liftPosDeck` instead of
-   `deck ± 1`. The side view drops in later without changing the mechanic.
-4. **Arrival.** Set `posX`/`posY`/`plyX` from `liftPosX/Y × 8`, preserving the low 5 bits as the
-   original does, then `LoadDeck`. This also **retires `CentreOnDeck` as the arrival path** and with
-   it the "player spawns in a wall on some decks" defect in `BUGS.md`.
+#### What the tables actually mean — solved by search, not by reading
 
-**Verify:** ride every shaft end to end and confirm the player arrives on a walkable cell on all 16
-decks. That is a check worth scripting through the jsbeeb MCP rather than doing by hand.
+`liftPosX/Y` are the **view origin** in characters, not the player's position: `DoLift` writes
+`ScreenPosX/Y = liftPosX/Y × 8` (keeping the old low 5 bits, so you arrive at the same offset within
+the tile), and `FindLift` compares them against the tile-aligned origin. Both are multiples of 4, so
+every stop names a tile.
+
+Where the *lift itself* is took a search. Scanning every offset from the stop's origin tile and
+asking which one gives a consistent tile number across all 30 stops:
+
+```
+  dx= 5 dy= 2  ->  tile 3 on 30/30
+  dx= 8 dy= 2  ->  tile 21 on 21/30    (next best, and not consistent)
+```
+
+**The lift platform is tile 3, at origin tile + (5, 2).** Tile 3's sixteen characters are all
+bit-7-clear — a 32×32 patch with no wall in it, which is exactly what a platform you stand on should
+look like. All 30 derived tiles land inside the 64×16 map.
+
+> That is the **third** contradiction of the tile catalogue in [`graphics.md`](graphics.md), which
+> calls tile 3 part of the "core wall set". The catalogue was written by eye and should be treated
+> as unreliable throughout — settle any tile question from the character data.
+
+Eight shafts, each a contiguous run of indices, with a sentinel shaft 8 at index 0 and 31 that
+`ChangeDeck`'s "the new index must be in the same shaft" test turns into the end stops:
+
+| shaft | indices | decks |
+|---|---|---|
+| 0 | 1–5 | 0, 2, 3, 14, 15 |
+| 1 | 6–8 | 10, 11, 12 |
+| 2 | 9–13 | 0, 1, 4, 5, 6 |
+| 3 | 14–15 | 1, 4 |
+| 4 | 16–21 | 4, 5, 6, 7, 8, 9 |
+| 5 | 22–24 | 9, 14, 15 |
+| 6 | 25–26 | 1, 3 |
+| 7 | 27–30 | 6, 10, 11, 13 |
+
+Shafts connect decks that are **not adjacent** — shaft 0 runs 0, 2, 3, 14, 15 — so "up/down a deck"
+is meaningless and stepping has to go through the table.
+
+#### The work
+
+1. **Export four tables of 32**, keeping the C64's indexing including the sentinels: `liftTileCol`,
+   `liftTileRow`, `liftDeck`, `liftShaft`. 128 bytes, derived offline so the +5/+2 never appears at
+   run time.
+2. **`LiftFind`** — the player's reference-cell **tile** against the table, plus a deck match.
+   Deliberately *not* the C64's view-origin test: our viewport is 15 rows to its 17 and our player
+   has a horizontal dead zone, so the origin is not a fixed offset from the player any more. The
+   tile the player is standing on is the same question asked in a way that survives both.
+3. **Lift mode as a flag, not a modal loop.** The C64's `DoLift` spins its own loop, which works
+   there because it saves and restores the VIC state around it. Ours would have to keep the rupture,
+   the sprite pool and the redraws running inside it — so `liftMode` instead suppresses movement in
+   the main loop and re-points UP/DOWN at the lift. Everything else keeps running untouched.
+4. **Arrival** places the player in the middle of the destination platform tile, which retires
+   `CentreOnDeck` as the arrival path and with it the "spawns in a wall on some decks" defect.
+
+#### What landed
+
+`src/lift.asm`, plus four 32-byte tables in `levels.asm` and a `liftPlace` arm in `LoadDeck`. The
+controls are RETURN to step in and out, UP/DOWN to move; outside a lift, UP/DOWN stay the debug free
+hop, which is worth keeping until every deck can be reached by lift and tested that way.
+
+**Verified in the emulator.** Riding shaft 2 from deck 1: `liftPos` 10 → 11, `deck` 1 → 4, and the
+player arrives at `plyX` = 512 and `posY` = 176 — exactly `tileCol*32` and `tileRow*32-48` for the
+recorded stop (16, 7), with the reference cell on that tile and the platform visibly under the
+sprite. Stepping down from index 13 leaves it at 13, so the **sentinel is doing its job**; exiting
+restores movement.
+
+`LiftFind` was checked at the platform's centre *and* at its first character, and correctly refuses
+one tile off — the trigger window is the whole 32-pixel tile.
+
+> The refusal was found the interesting way. A test that poked `plyX` onto the platform and waited
+> failed to trigger, and the reason was not the lift: the player still had residual leftward speed
+> from the previous key and had **drifted 28 px** by the time RETURN was read. `LiftFind` was right
+> and the test was wrong. Zero the speed when teleporting the player for a test, or the position you
+> poked is not the position that gets read.
+
+**Not tested:** the other seven shafts, and arrival on all 16 decks. The offline check is stronger
+than it sounds though — every one of the 30 stops was confirmed to be tile 3, and tile 3's sixteen
+characters are all bit-7-clear, so **arrival on walkable ground is true by construction** rather than
+by inspection.
+
+#### It cost the last of main RAM
+
+Layer 8b pushed `code_end` to `&307A`, 122 bytes past the sprite save areas at `&3000`. Two blocks
+moved into the data bank to make room:
+
+| | |
+|---|---|
+| `doorDef` | 112 B — the seven patched tile definitions |
+| `blankTileRow` | 64 B — the zero row an off-map draw reads |
+
+**Sideways RAM is RAM**, and both are only ever touched with `SWRAM_DATA` paged in, which is the
+resting state — the blitter is the only thing that swaps it out and it touches neither. That leaves
+`&1100–&2FCA` and **54 bytes free**, which is not enough for another layer. `PARADAT` moving out of
+main RAM is now genuinely the next structural move, not a someday one.
 
 ---
 

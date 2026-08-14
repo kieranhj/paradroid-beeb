@@ -266,13 +266,11 @@
   FOR t, 0, 31
     EQUB HI(tiledefs + t * 16)
   NEXT
-\ Sixty-four zero bytes, so a row off the map can be drawn by pointing
-\ maprow here: every tile on it comes out as tile 0.
-.blankTileRow
-  FOR r, 0, MAP_COLS-1
-    EQUB 0
-  NEXT
-
+\ blankTileRow — the 64 zero bytes an off-map row is drawn from — lives
+\ in the DATA BANK, not here. Every path that reads it (BandSetRow, and
+\ the draw that follows) runs with SWRAM_DATA paged in, which is the
+\ resting state; only the blitter ever swaps it out, and the blitter
+\ never draws a map row. See the bank section in main.asm.
 .mapRowLo
   FOR r, 0, MAP_ROWS-1
     EQUB LO(tilemap + r * MAP_COLS)
