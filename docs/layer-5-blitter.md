@@ -326,6 +326,39 @@ against a SPACE-forced `RedrawAll` with the draw disabled, and with the restore 
 digit rows of every slot matched a byte-exact reconstruction from the glyph data — 10 spill bytes
 for the player's `001` at shift 1, the pixels that used to be missing.
 
+## What compiling did to the price of 1 px positioning
+
+Worth stating plainly, because the figure quoted elsewhere for years came from the interpreted
+blitter and is now wrong by a factor of five.
+
+When rows were *data*, a shift was a second copy of the artwork — 1,820 bytes, and four shifts
+were a main-RAM problem. **A shift is now code.** From this build:
+
+| | 2 shifts | per shift |
+|---|---|---|
+| rotor draw | 3,500 | 1,750 |
+| rotor restore | 1,610 | 805 |
+| glyphs | 4,154 | 2,077 |
+| | | **~4,632 B** |
+
+Bank 5 ends at `&B8B6`, leaving 1,866 bytes. Two more shifts want ~9,264. It does not fit, and
+main RAM has 39 bytes.
+
+Three ways out, cheapest first:
+
+- **One restore program for every shift.** The restore is only a column list, and every shift
+  touches the same seven columns; making it unconditionally seven costs a few cycles a row and
+  saves 805 bytes per shift. Necessary, not sufficient.
+- **Player at 1 px, droids at 2.** Odd offsets take the interpreted path — which exists already for
+  the wrap fallback — with a 1 px shift added to `SprFetchRow`; the compiled path keeps the even
+  ones. About one sprite's worth of slow path, ~8,000 cycles, when the player is on an odd pixel,
+  against the ~44,000 the pass is idle. Inconsistent between player and droids, but the player is
+  what the eye tracks.
+- **A third sideways bank.** Cheapest in cycles, and it breaks the 2 × 16K target.
+
+Why it matters at all is in [`layer-4-player.md`](layer-4-player.md): the original is 1 px in both
+the sprite and the scroll, and ours is 2 px in the sprite and 4 px in the world.
+
 **What is left.** Per sprite is now ~3,000 of real pixel movement and ~2,800 of everything else,
 of which the largest single items are the six inactive slots scanned every frame (~630) and the
 per-slot setup (~480). Nothing structural remains, and nothing needs to.

@@ -9,6 +9,7 @@ detail has stopped being needed to make the next decision, it belongs in `docs/`
 
 | | |
 |---|---|
+| [`docs/memory-map.md`](docs/memory-map.md) | **The detailed map** — every region of main RAM and both banks, from the label dump, with the boot staging overlay and what is actually free |
 | [`docs/decisions.md`](docs/decisions.md) | Decisions taken, why MODE 1, and which Paradroid the listing actually is |
 | [`docs/graphics.md`](docs/graphics.md) | Where the C64's graphics data lives and which tool reads it — plus, per section, what has been ported and what has not |
 | [`docs/layer-0-toolchain.md`](docs/layer-0-toolchain.md) | Toolchain, and the first confirmed CRTC facts |
@@ -98,7 +99,7 @@ seconds where a buffer diff would have taken an emulator run.
 | | |
 |---|---|
 | `PARADAT` into sideways RAM | **Now the binding constraint.** Layer 8 left 46 bytes below `&3000`, and moving `doorDef` and `blankTileRow` into the bank is what bought even that. Also what 1 px sprite positioning waits on, and what the position bookmark at the end of `BUGS.md` waits on |
-| 1 px sprite positioning | Needs four shifted copies, 1820 bytes. 2 px matches the C64 artwork's own pixel size, so this is polish |
+| 1 px sprite positioning | **A fidelity loss, not polish, and it no longer costs 1820 bytes.** The original is 1 px — hires sprites positioned per pixel by `SetSpriteXY`, background scrolled per pixel by `$D016` — and since the blitter was compiled a shift is *code*, not artwork: ~4,632 bytes each, so two more shifts want ~9.3 K against the 1.8 K left in bank 5. Worst on `DSpeed_t` = 1 droids, drawn 0, 2, 0, 2. See the cost note under Layer 5 |
 | Raster-ordered sprite updating | Flicker, and probably `BUGS.md` #3 with it. The only sprite-pool work still open |
 | 2 px world scrolling | Parked, Master-only via shadow RAM. Costs +60–80% on all drawing because both buffers must stay current — see [`docs/master-extensions.md`](docs/master-extensions.md) |
 | Play area is 320 × 120, not 128 | Consequence of the single hardware wrap — see Layer 3d. Getting the row back needs the 20K wrap or per-cycle wrap bits. **KC's call** |
@@ -128,25 +129,32 @@ Full reasoning, and the measurement that settled which Paradroid the listing is,
 
 ## Memory budget
 
-**As actually built** (addresses from the `beebasm` output, not planned).
+**[`docs/memory-map.md`](docs/memory-map.md) is the map** — every region of main RAM and both banks,
+region by region, taken from a `-dd` label dump of the build rather than from a plan, along with the
+boot staging overlay and what is genuinely free. Read it there and regenerate it when a region
+moves. The outline:
 
 | Region | Size | Contents |
 |---|---|---|
-| ZP `&00–&8F` | 144 B | **all of it used** — see the map in `main.asm`. `&90` up is the OS |
-| `&0100–&01FF` | 256 B | stack |
-| `&0400–&0C90` | 2192 B | MODE 1 charset, built at deck load — reclaimed OS workspace |
-| `&0C90–&10FF` | ~1.1 K free | rest of the reclaimed OS workspace |
-| `&1100–&2FD2` | 7.7 K | code (`PARA`). DFS random-access buffer space, safe for `*LOAD` |
-| `&2FD2–&3000` | **46 B free** | Layer 8 spent it. `doorDef` and `blankTileRow` are in the bank |
-| `&3000–&36FF` | 1.75 K | sprite background save areas, one page per slot |
-| `&3800–&3C00` | 1 K | tile map, fixed home — floating it after `code_end` once put it over the save areas |
-| `&4800–&547F` | 3.2 K | panel — 5 rows × 640, displayed by rupture cycle 1 |
+| ZP `&00–&8F` | 144 B | **all of it used** — the map is in `main.asm`. `&90` up is the OS |
+| `&0400–&0C8F` | 2,192 B | MODE 1 charset, built at deck load — reclaimed OS workspace |
+| `&0C90–&10FF` | **1,136 B free** | rest of the reclaimed OS workspace |
+| `&1100–&2FD8` | 7,897 B | code (`PARA`). DFS random-access buffer space, safe for `*LOAD` |
+| `&2FD9–&2FFF` | **39 B free** | Layer 8 spent it; the glyph fix took 7 more |
+| `&3000–&36FF` | 1,792 B | sprite background save areas, one page per slot |
+| `&3800–&3BFF` | 1,024 B | tile map, fixed home — floating it after `code_end` once put it over the save areas |
+| `&3700`, `&3C00–&47FF` | **3,328 B free** | runtime-built data only: boot stages `PARASPR` through `&68B5` |
+| `&4800–&547F` | 3,200 B | panel — 5 rows × 640, displayed by rupture cycle 1 |
 | `&5480–&54FF` | **128 B free** | |
 | `&5500–&56FF` | 512 B | `CHAR_PTR_LO`/`HI` — character code → charset address, built at startup |
 | `&5700–&57FF` | 256 B | data byte → transparency mask table, built at startup |
-| `&5800–&7FFF` | 10 K | play buffer: circular strip, 16 rows × 640 |
-| SWRAM bank 4 | 16 K | `PARADAT` — C64 char data, colour schemes, tile defs, deck RLE. Ends `&9B8C` |
-| SWRAM bank 5 | 16 K | `PARASPR` — the whole blitter: artwork, compiled rows, glyphs, programs. Ends `&B73E` |
+| `&5800–&7FFF` | 10,240 B | play buffer: circular strip, 16 rows × 640 |
+| SWRAM bank 4 | 16 K | `PARADAT` — char data, colour schemes, tile defs, deck RLE, waypoints. Ends `&9B8C`, **9,332 B free** |
+| SWRAM bank 5 | 16 K | `PARASPR` — the whole blitter: artwork, compiled rows, glyphs, programs. Ends `&B8B6`, **1,866 B free** |
+
+**"Main RAM is full" means the `PARA` image cannot grow past `&3000`**, not that there is no RAM: 4.6 K
+is free in total, but only 39 bytes of it are below the sprite save areas, and the rest can hold only
+what is built at runtime.
 
 Only one bank is visible at a time. That works because the two halves are never wanted at once —
 `DoRedraws` reads tiles, the blitter reads none of them — so `SprRestoreAll` and `SprDrawAll` page

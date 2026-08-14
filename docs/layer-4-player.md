@@ -71,9 +71,23 @@ Vertically nothing changed: the scroll is already 1 scanline, so the player stay
 
 **The sprite is positioned every 2 px.** A 2 px shift spills 24 px into seven bytes, so rows are
 stored seven wide and there are two copies — unshifted on disc, shifted built at startup by
-`PlyBuildTables` into `&5480`. 2 px rather than 1 is not only thrift: a C64 multicolour pixel is
-exactly two MODE 1 pixels, so the artwork holds no finer detail. 1 px needs four copies, 1820
-bytes, which does not fit below `&3000` until `PARADAT` moves to sideways RAM.
+`PlyBuildTables` into `&5480`. 1 px needs four copies, 1820 bytes, which does not fit below
+`&3000` until `PARADAT` moves to sideways RAM.
+
+> **This is thrift and nothing else — corrected 2026-08-14.** The paragraph above used to add that
+> "a C64 multicolour pixel is exactly two MODE 1 pixels, so the artwork holds no finer detail".
+> That is true of the deck, which mixes hires and multicolour cells, and false of the thing it was
+> written beside. **Droid sprites are hires**: `dMd0_droid` clears `SpriteMC` at `$190C` and
+> `SpriteXExp` at `$190E`, so a droid is 24 unexpanded pixels at the C64's full 320 across — one
+> C64 pixel to one MODE 1 pixel. The original also *positions* them per pixel: `DroidNear`
+> (`$321E`) computes `dPosX - ScreenPosX` in 16-bit pixels and `SetSpriteXY` (`$327E`) writes it
+> straight to the VIC's sprite X, whose units are single hires pixels. Its background scroll is 1 px
+> too, via `hScroll` into `$D016` in `Irq_91`.
+>
+> So 2 px is a real fidelity loss, not a free one: the drawn position is `floor(x/2)*2`, up to 1 px
+> behind the truth, and a droid at `DSpeed_t` = 1 — one pixel an iteration — is drawn moving 0, 2,
+> 0, 2. Right average speed, wrong texture, and it is the slow droids of Layer 6 that will show it.
+> The port's own model is already 1 px; only the blit is not. See the cost note under Layer 5.
 
 **Masks are no longer stored.** Every opaque pixel maps to logical 1, 2 or 3 and never 0 — the
 exporter asserts it — so a pixel is transparent exactly when both its bits are clear, and a
