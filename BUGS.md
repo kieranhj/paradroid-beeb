@@ -170,134 +170,39 @@ and not a content bug, which settles it immediately.
 
 ---
 
-## 5. Player sprite's lower part missing at a doorway, with leftover pixels beside it
+## 5. Player sprite's lower part missing at a doorway — **FIXED 2026-08-14**
 
-> **THE ORACLE CANNOT SEE THIS CLASS OF FAULT — 2026-08-14.** Every "the play buffer is correct"
-> claim below rests on diffing against a SPACE-forced `RedrawAll`. But `RedrawAll` reads the same
-> tile map and the same **patched door definitions** as the incremental draw, so if a door table,
-> a `doorDef` copy or a tile definition is wrong, the two agree and the diff is zero. The buffer
-> was not proved correct; it was proved *self-consistent*. Anything door-shaped is invisible to it.
->
-> What that leaves: the smear is probably IN the buffer, and the way to see it is to render the
-> tile map and the unpatched `tiledefs` independently and compare, or to check each registered
-> door's patched definition against the tile it claims to be. `DEBUG_POS` now hands back the
-> position and the door table to make that a one-step reproduction.
->
-> KC reports the smear sits at fixed map locations near *some* vertical doors — once on the tile to
-> the right, once a tile but one to the left, once one left and one up — which is a much better fit
-> for a wrong tile definition or a wrong door registration than for the blitter.
+**The interpreted row fell into the wrong tail.** `sd_slow` ends by putting `bufp` back to the
+row's first column — so it has *not* advanced a scanline — and then ran straight into `sd_nextnw`,
+the tail for rows that walked themselves. Every row after the first wrapping one was therefore
+drawn on top of it. `sr_slow` had the same fall-through. One `JMP sd_next` and one `JMP sr_next`.
 
-Reported from play 2026-08-14, on the Layer 8b build. Screenshot: `ref/player-render-bug1.png`.
+The two tails arrived when the compiled rows took over their own walking; the comment above them
+even says "blank rows and the interpreted paths do not" advance, which is exactly the case that was
+then left falling into the wrong one.
 
-**Severity:** visible, persistent while it lasts.
+**Why it looked like a doorway bug.** A row only takes the interpreted path when its seven columns
+straddle the end of the circular strip, which depends on `scrollS` — so it fires at particular
+scroll offsets, which for a given route are the same map positions every time. Doors were a red
+herring: KC's sightings were near doors because that is where you stop and look.
 
-**Symptom.** The player sprite is drawn only down to somewhere inside a character row — the bottom
-of it is absent — and a few stray pixels sit beside it that nothing clears.
+**Why the oracle never saw it.** The restore mirrored the fault exactly: it collapsed the same rows
+onto the same scanlines it had drawn them at, so the background came back correctly. Diffing the
+buffer against `RedrawAll` with the draw disabled therefore reported 0 differences for weeks. The
+symptom was only ever in the *drawn* sprite, and every check we had disabled the draw.
 
-**Repro.** From the start of deck 1, take the lift down one stop (deck 4), then go down and left
-into the empty room. It appears on approach to the door at the bottom left of that room.
+**Reproduced and verified deterministically.** With the player at unit 37, `line` 0 and
+`scrollS` = &17B0, seven of the sprite's 21 rows straddle the wrap. Before the fix the droid is a
+one-row streak; after it, at the identical position, it draws in full.
 
-Reproduced headless at **deck 4, player reference cell (56, 31) = tile (14, 7)**, wedged between a
-vertical door at tile (13, 7) and a horizontal one at (14, 8) — both fully open, `numDoors` = 2,
-states `&04` and `&84`. `plyX` = 444, `posY` = 185, `posX` = 300.
+> KC found it: "it's definitely at the wrap around point — if I poke zeros into RAM at &5800 and
+> just below &8000 I can erase the smeared pixels." Pixels at *both* ends of the strip is the
+> signature of a sprite whose rows are landing across the wrap, and that pointed straight at the
+> interpreted path.
 
-**The play buffer is correct. Whatever is wrong happens after it.**
-
-That is the useful half of this entry, because it removes the blitter, the save/restore pair and the
-door redraw from suspicion in one go:
-
-| Test | Result |
-|---|---|
-| Sprite draw NOPed, buffer vs SPACE `RedrawAll` | **0 differences in 10240** — the restore leaves nothing behind |
-| Sprite *restore* NOPed, buffer vs the no-sprite buffer | **79 bytes**, across strip rows 7, 8 and 9 — top rotor, digit block and bottom rotor all present |
-| Missing scanlines within that footprint | Only sprite rows 5, 14 and 20 — the three that are blank for every droid by design |
-| `DEBUG_VSYNC` field counter | **2** — the pass is not overrunning its frame |
-| Slot 0 state | `sprActive` 1, `sprUnit` 36, `sprScrY` 50 — nowhere near the cull limits (73 / 99) |
-| The draw's own answers | `sprNoWrapS` = 1, so it took the compiled fast path; start `&6A2B`, `sprScan0` = 3 |
-
-So the blitter drew a complete sprite, into the right place, and the restore put the background back
-exactly. The buffer holds what it should and the screen does not show it.
-
-> **Sample with the restore disabled, not with the draw disabled.** A dump taken at an arbitrary
-> cycle count can land between `SprRestoreAll` and `SprDrawAll`, where the buffer legitimately has no
-> sprite in it — which reads exactly like "the blitter drew nothing". NOPing the *restore* makes the
-> sprite persist and the sample point stop mattering. This cost a wrong conclusion before it was
-> spotted.
-
-**Ruled out.** The blitter's row walk, the compiled fast path, the sprite culling, the save/restore
-pair, the door redraw (`DrawDoorTile` never runs here — both doors are at step 4 and not dirty), and
-stale buffer content of any kind.
-
-**Not raster timing — KC's call.** The obvious reading of "buffer right, display wrong" is that the
-main loop is still writing while the beam reads: the body is ~39,100 cycles against a window of
-~24,600 from `drawFlag` at P+184 to the play area redisplaying at P+376, so it has overrun by ~113
-scanlines for a long time, and Layer 8 added ~1,500 more. That hypothesis has been **rejected**;
-the mechanism is something else and is still open. Do not spend the afternoon re-deriving it.
-
-**Next step.** `DEBUG_DRAW` will show where each piece of work lands relative to the play area, which
-is the one thing not yet instrumented. Beyond that the open question is narrow: what can make a
-correct 10 K buffer display incorrectly, given the field counter is 2 and the CRTC start address is
-parked once per pass before any drawing.
-
----
-
-## 6. The rotor restore leaves pixels behind, at both shifts
-
-Found 2026-08-14 while verifying the glyph-spill fix, which is **not** its cause — see below.
-
-**Severity:** visible as flicker/debris, transient. Probably the same thing as #3, and probably
-what the raster-ordered sprite updating item in `PLAN.md` is really about.
-
-**Symptom.** With `JSR SprDrawAll` poked to `RTS` so the pool only restores, the play buffer
-differed from a SPACE-forced `RedrawAll` in **24 bytes of 10240**, all of them extra lit pixels
-that the restore did not put back.
-
-**Where they were.** Mapping every differing byte onto the seven slots' 21 × 7 footprints:
-
-| slot | shift | sprite rows affected |
-|---|---|---|
-| 0 | 1 | 0, 1, 2, 4, 15, 17, 18, 19 |
-| 1 | 0 | 18, 19 |
-| 3 | 0 | 18, 19 |
-| 4 | 0 | 0, 1 |
-| 5 | 1 | 0, 1 |
-
-**Every one is a rotor row, and rows 0, 1, 18 and 19 dominate.** Not one is in the digit block
-(rows 6–13), and four of the five affected slots are at shift 0.
-
-> **The phase hypothesis below is REFUTED, 2026-08-14.** Freezing the rotor — `SprAnimateAll` poked
-> to `RTS`, so the draw and the restore see the same phase — still leaves 24 bytes. Whatever this is,
-> it is not the phase advancing between the two. The same runs also showed the count varying with
-> the player's position in one build (0, 6, 24 and 39 at four positions), so position, not phase, is
-> the thing to vary when reproducing it. Everything below is kept because the row mapping is still
-> good evidence.
-
-**Leading hypothesis (refuted — see above): the end rows are restored under the wrong phase.** Rows 0/1/18/19 come from
-two-entry tables indexed by `phase >> 2`, and the restore's column list is generated per
-`(shift, phase >> 2)` — `drRHalf<shift>_<arr>_<half>`. The restore runs a frame after the draw, by
-which time the phase has advanced; `sprTabBaseS` exists precisely to carry the draw's phase across,
-so the question is whether the *halves* dispatch honours it or re-reads the current phase. Rows 2,
-4, 15 and 17 on slot 0 are the same rows under the other half of the same table, which fits.
-
-**Ruled out as the cause: the 2026-08-14 glyph-spill fix.** That change touches the digit block
-only — the glyph code, `SprDigitBlock`'s draw order and `SprBlkRest`'s column count, all of which
-address rows 6–13. Those rows show zero differences here, and the defect appears on shift-0 slots
-where no spill exists at all.
-
-**A single sprite is clean — 2026-08-14.** With the test droids deactivated and `TestDroidsUpdate`
-NOPed, the player alone restores byte-exactly: **0 of 10240**. So this needs more than one sprite on
-screen, or a position only reachable with them there. The save areas are not the mechanism either:
-the worst case is 223 bytes of the 256-byte page (`scan0` = 7, three character-row crossings), and
-`SprCalcAddr`'s no-wrap test covers the furthest byte a sprite touches — `bufp + 1964` against a
-threshold of `bufp + 1968`, safe by four bytes and worth knowing.
-
-**And see the oracle warning on defect 5**, which applies here too: if this turns out to be
-door-shaped, the diff that found it is measuring the wrong thing.
-
-**Next step.** Read the restore dispatch for the end rows against `sprTabBaseS`, then reproduce
-with `DEBUG_POS` at a location KC has actually seen it, rather than hunting positions blind.
-
----
+**Defect 6 may be the same root cause** — its debris was in rotor rows, at positions that varied,
+and it survived a frozen rotor phase. It has not been re-tested since this fix. Do that before
+spending anything else on it.
 
 ## Delivered: DEBUG_POS, the position bookmark
 

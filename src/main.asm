@@ -174,7 +174,7 @@ DEBUG_POS    = FALSE
 \ left; since the tile map was given a fixed home at &3800 the code has
 \ room to &3000, so it is off by default out of tidiness rather than
 \ necessity.
-DEBUG_VSYNC  = TRUE
+DEBUG_VSYNC  = FALSE
 
 \ DEBUG_TIME measures one routine in CYCLES, which DEBUG_DRAW cannot:
 \ its bands are only visible where the CRTC is displaying something,
@@ -219,7 +219,7 @@ DBG_T_OVERHEAD = 46
 \ TEST_DROIDS parks six static droids around the player at deck load,
 \ so the sprite pool can be looked at and measured before droid.asm
 \ exists. Scaffolding — see src/droidtest.asm.
-TEST_DROIDS  = TRUE
+TEST_DROIDS  = FALSE
 TD_DECK      = 1                \ CentreOnDeck lands the player somewhere
                                 \ walkable here; on some decks it does not,
                                 \ see BUGS.md

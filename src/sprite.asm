@@ -890,8 +890,9 @@ ENDMACRO
   INX
   CPX #SPR_W
   BNE sds_loop
-  LDA sprTmpPtr   : STA bufp
-  LDA sprTmpPtr+1 : STA bufp+1
+  LDA sprTmpPtr   : STA bufp    \ back to the row's first column, NOT
+  LDA sprTmpPtr+1 : STA bufp+1  \ advanced — so this needs the walking tail
+  JMP sd_next
 
 \ TWO TAILS, because a compiled row now walks on its own account — the
 \ walk was moved inside the generated routines so the straight-line
@@ -899,6 +900,16 @@ ENDMACRO
 \ come here already advanced; blank rows and the interpreted paths do
 \ not. The walk still sits after the end test either way, so the last
 \ row does not step off the end.
+\
+\ THE INTERPRETED ROW USED TO FALL STRAIGHT INTO THE WRONG ONE. It puts
+\ bufp back to where the row started, so it has not advanced, and it
+\ landed in the tail for rows that have — every row after the first
+\ wrapping one was then drawn on top of it. That is BUGS.md #5: the
+\ sprite's lower half missing with stray pixels beside it, at fixed
+\ positions, because a row only wraps at particular scroll offsets.
+\ The restore mirrored the fault exactly, which is why diffing the
+\ buffer against RedrawAll with the draw disabled reported no
+\ difference for weeks.
 .sd_nextnw                      \ the row walked itself
   INC sprRowIdx
   INC sprRow
@@ -1016,8 +1027,9 @@ ENDMACRO
   INX
   CPX #SPR_W
   BNE srs_loop
-  LDA sprTmpPtr   : STA bufp
-  LDA sprTmpPtr+1 : STA bufp+1
+  LDA sprTmpPtr   : STA bufp    \ not advanced — the walking tail, as on
+  LDA sprTmpPtr+1 : STA bufp+1  \ the draw side
+  JMP sr_next
 
 .sr_nextnw                      \ the row walked itself — see sd_nextnw
   INC sprRow

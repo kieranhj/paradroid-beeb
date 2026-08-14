@@ -413,6 +413,14 @@ IF DEBUG_POS
   AND #&0F
   JSR DbgHexDigit
   LDY dbgIdx
+  LDA dbgSrcGap,Y               \ a blank column between fields
+  BEQ dpo_nogap
+  CLC
+  LDA swDst : ADC #UNIT_BYTES : STA swDst
+  BCC dpo_nogap
+  INC swDst+1
+.dpo_nogap
+  LDY dbgIdx
   INY
   CPY #DBG_POS_N
   BNE dpo_next
@@ -447,20 +455,37 @@ IF DEBUG_POS
   EQUB LO(plyX+1),  LO(plyX)
   EQUB LO(posX+1),  LO(posX)
   EQUB LO(posY+1),  LO(posY)
+  EQUB LO(scrollS+1), LO(scrollS)
   EQUB LO(mapHX+1), LO(mapHX)
   EQUB LO(mapYr),   LO(line)
+  EQUB LO(sprPtr0Hi), LO(sprPtr0Lo), LO(sprScan0), LO(sprNoWrapS)
   EQUB LO(numDoors)
   EQUB LO(doorCol),   LO(doorRow),   LO(doorState)
-  EQUB LO(doorCol+1), LO(doorRow+1), LO(doorState+1)
 .dbgSrcHi
   EQUB HI(deck)
   EQUB HI(plyX+1),  HI(plyX)
   EQUB HI(posX+1),  HI(posX)
   EQUB HI(posY+1),  HI(posY)
+  EQUB HI(scrollS+1), HI(scrollS)
   EQUB HI(mapHX+1), HI(mapHX)
   EQUB HI(mapYr),   HI(line)
+  EQUB HI(sprPtr0Hi), HI(sprPtr0Lo), HI(sprScan0), HI(sprNoWrapS)
   EQUB HI(numDoors)
   EQUB HI(doorCol),   HI(doorRow),   HI(doorState)
-  EQUB HI(doorCol+1), HI(doorRow+1), HI(doorState+1)
-DBG_POS_N = 17
+
+\ 1 = leave a blank column after this byte, so the fields are readable
+\ rather than one 42-digit run. Costs four pixels each and the strip
+\ still fits: 42 digits and 11 gaps is 212 of the 320 across.
+.dbgSrcGap
+  EQUB 1
+  EQUB 0, 1
+  EQUB 0, 1
+  EQUB 0, 1
+  EQUB 0, 1
+  EQUB 0, 1
+  EQUB 1, 1
+  EQUB 0, 0, 1, 1
+  EQUB 1
+  EQUB 0, 0, 1
+DBG_POS_N = 21
 ENDIF
