@@ -404,6 +404,102 @@ cycles once every few minutes is the wrong trade while anything per-pass is stil
 > buffer, for any change that is meant to be purely mechanical. The emulator run afterwards was
 > then only confirming that the addresses chosen do not collide.
 
+## What is in the bank, block by block
+
+Reference for the finished article. Addresses are from a `-dd` label dump of the current build;
+[`memory-map.md`](memory-map.md) carries the same table in its outline form, and it is the one to
+regenerate when something moves.
+
+**The bank has two consumers with almost no overlap.** The compiled fast path is *code*, and reads
+none of the artwork. The wrap fallback — a sprite straddling the end of the circular strip, about
+one row in fifty — is the only thing that reads the stored rows, and it needs an entirely
+different set of tables to find them. Knowing which half a block belongs to is most of
+understanding why it exists.
+
+### Stored artwork and its indexes — the fallback's half
+
+| | | |
+|---|---|---|
+| `&8000` | 1,743 | **`drSprData`** — the artwork as data: 249 rows × 7 bytes, unshifted. 40 rotor rows (5 per phase × 8), 16 alternating end rows, 192 digit rows (8 × 24 types), 1 blank. Seven bytes because 24 px is 6 on a 4 px boundary and the shift spills into a seventh |
+| `&86CF` | 168 + 168 | **`drOfsLo`/`Hi`** — offset into `drSprData` for every (phase, row): 8 × 21, split so a pointer is two indexed loads |
+| `&881F` | 8 | **`drMulRows`** — phase × 21, so the index above is a table read and not a multiply |
+| `&8827` | 24 + 24 | **`drDigitLo`/`Hi`** — where each droid type's eight digit rows start. Read once per sprite into `sprDigit` |
+
+`SprFetchRow` shifts a stored row on the fly, which is what let the pre-shifted second copy be
+deleted — and those 1,743 bytes are where the compiled glyphs now live.
+
+### Compiled rotor rows — one routine per distinct picture
+
+| | | |
+|---|---|---|
+| `&8857` | 1,810 | **`drD0_*`** — 28 draw routines, shift 0 |
+| `&8F69` | 144 | **`drR0_*`** — 4 restore routines, shift 0 |
+| `&8FF9` | 1,690 | **`drD1_*`** — 28 draw routines, shift 1 |
+| `&9693` | 126 | **`drR1_*`** — 4 restore routines, shift 1 |
+
+**28, not 168.** The bottom half of a droid is the top half in reverse row order, and rows
+0/1/18/19 come from two-entry tables indexed by `phase >> 2` — seven distinct rows a phase plus
+four end rows. A routine is the row with its transparency baked in, a transparent column emitting
+nothing at all, and it ends with its own `SCANSTEP` and `RTS`.
+
+Shift 1 is 120 bytes *smaller* than shift 0: shifting right turns some part-opaque bytes fully
+opaque, and a fully opaque byte drops its `AND`/`ORA` for a plain `LDA #`/`STA`.
+
+**Four restores against 28 draws** because a restore is keyed on the *set of columns touched*, not
+on the artwork — putting the background back does not care what was drawn over it.
+
+### Dispatch — finding a row one at a time
+
+| | | |
+|---|---|---|
+| `&9711` | 160 + 160 | **`drSeqLo`/`Hi`** — the ten drawn rotor rows in drawing order, indexed `shift*80 + phase*10 + n` |
+| `&9851` | 160 + 160 | **`drRSeqLo`/`Hi`** — the same for restores |
+
+The ten rows are a property of `(shift, phase)` — sixteen sequences — and not of the sprite, so the
+fallback walks the list with one index and needs no row→slot lookup or add. Ten and not seven
+because the bottom half visits the shared rows in reverse with the two end rows swapped.
+
+### The fast path proper
+
+| | | |
+|---|---|---|
+| `&9991` | 1,340 | **`drRHalf<shift>_<arr>_<half>`** — 8 routines, five rows of restore inlined each |
+| `&9ECD` | 1,072 | **`drPrg<shift>_<phase>`** — 16 straight-line draw programs |
+| `&A2FD` | 688 | **`drRPrg<shift>_<phase>`** — 16 restore programs |
+| `&A5AD` | 640 | **`drPrgLo`/`Hi`, `drRPrgLo`/`Hi`** — program entry addresses |
+| `&A82D` | 21 + 8 | **`drSeqIdx`, `drMul10`** — sprite row → sequence position (`&FF` = not a rotor row), and phase × 10. Fallback only |
+
+A draw program is the whole sprite as straight-line code: ten row calls in order, `SCANSTEP` for
+blank row 5, `JSR SprDigitBlock` for rows 6–13, `SCANSTEP` for blank row 14. No index, no counter,
+no end test, and the last call is a `JMP` — a tail call written the long way, 9 cycles instead of 18.
+
+A restore program is five instructions, because the halves absorbed the rest: a restore depends
+only on the column set and the column set only on `(shift, phase >> 2)`, so eight routines cover
+all sixteen sequences and 8 of the 10 `JSR`/`RTS` pairs disappear. The draw cannot have this —
+its ten rows are ten *different* routines, and merging them would need a per-phase copy of the rows
+that are currently shared.
+
+The entry tables are indexed by the same `sprSeqBase` the fallback uses, so entering a program is
+one table read and a poke with no arithmetic. Only every tenth entry is reachable; the rest is
+padding to keep the stride identical to the row tables.
+
+### The digit block
+
+| | | |
+|---|---|---|
+| `&A84A` | 1,926 | **`drGlyph0_*`** — ten compiled glyphs, unshifted |
+| `&AFD0` | 2,131 | **`drGlyph1_*`** — ten compiled glyphs, shifted |
+| `&B823` | 35 | **`drBlkSave6`** — column 6's save, eight rows |
+| `&B846` | 20 + 20 | **`drGlyphLo`/`Hi`** — dispatch, `shift*10 + digit` |
+| `&B86E` | 24 × 3 | **`drDigit0`/`1`/`2`** — each type's hundreds, tens and units as glyph numbers |
+
+Ten glyphs cover all 24 types because a droid number is three independent 8-pixel glyphs and the
+*position* rides in X (`LDY drYcol0,X`) rather than being generated three times over.
+
+The 205-byte difference between the two shifts is the third column — the spill — which the
+exporter used to truncate away. `drBlkSave6` is the other half of that fix, and it is in the bank
+rather than in `sprite.asm` only because main RAM had 46 bytes free and the bank had 1.9 K.
+
 ## Why not round-robin
 
 Every earlier note here treated round-robin as the next step and the biggest remaining lever. It

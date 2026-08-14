@@ -101,6 +101,10 @@ the resting state of the bank latch.
 compiled programs, glyphs. `SprRestoreAll` and `SprDrawAll` page this in and the data bank back out
 around themselves.
 
+**What each block is for is in [`layer-5-blitter.md`](layer-5-blitter.md)**, under "What is in the
+bank, block by block" — including the division that explains the shape of this table: the compiled
+fast path reads none of the artwork, and the wrap fallback is the only thing that does.
+
 | Address | Size | Contents |
 |---|---|---|
 | `&8000` | 1,743 | `drSprData` — 249 stored rows × 7 bytes. Read only by the wrap fallback |
@@ -113,7 +117,9 @@ around themselves.
 | `&9851` | 320 | `drRSeqLo`/`drRSeqHi` — restore sequence |
 | `&9991` | 1,340 | `drRHalf<shift>_<arr>_<half>` — the eight restore halves |
 | `&9ECD` | 1,072 | `drPrg0_0…` — 16 straight-line draw programs, one per (shift, phase) |
-| `&A2FD` | 1,357 | `drRPrg0_0…` — 16 restore programs |
+| `&A2FD` | 688 | `drRPrg0_0…` — 16 restore programs |
+| `&A5AD` | 640 | `drPrgLo`/`Hi`, `drRPrgLo`/`Hi` — program entry addresses, indexed by the same `sprSeqBase` the fallback uses |
+| `&A82D` | 29 | `drSeqIdx`, `drMul10` — sprite row → sequence position, and phase × 10. Fallback only |
 | `&A84A` | 1,926 | `drGlyph0_*` — ten unshifted digit glyphs |
 | `&AFD0` | 2,131 | `drGlyph1_*` — ten shifted glyphs. Larger because of the spill column |
 | `&B823` | 35 | `drBlkSave6` — the digit block's column 6 save, generated rather than written in `sprite.asm` |
