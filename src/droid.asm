@@ -466,21 +466,31 @@ ENDIF
 \ The droid's own cell, and the reason the position is kept as the
 \ reference cell rather than the sprite corner: this is three shifts
 \ and nothing else. X = the droid's index.
+\
+\ THE HIGH BYTE HAS TO BE SHIFTED THREE TIMES, not once. Holding it in
+\ A across all three `LSR A : ROR dcpLo` pairs is what carries bits 8,
+\ 9 and 10 down into the result; shifting it once and rotating the low
+\ byte the rest of the way gives the cell modulo 512, which is right
+\ for the first quarter of a 2,048-pixel deck and wrong everywhere
+\ else. Every droid past x=512 then looked up the wrong map cell, so
+\ FindWaypoint missed and CheckDroidAdvance found walls that were not
+\ there — the whole deck froze except the one droid near the origin.
+\ This is the C64's own idiom at GetDroidCharPos ($299A), and it is
+\ written that way for exactly this reason.
 .DrCharPos
+  LDA drPosXlo,X : STA dcpLo
   LDA drPosXhi,X
-  LSR A
-  LDA drPosXlo,X
-  ROR A
-  LSR A
-  LSR A
-  STA drCX
+  LSR A : ROR dcpLo
+  LSR A : ROR dcpLo
+  LSR A : ROR dcpLo
+  LDA dcpLo : STA drCX
+
+  LDA drPosYlo,X : STA dcpLo
   LDA drPosYhi,X
-  LSR A
-  LDA drPosYlo,X
-  ROR A
-  LSR A
-  LSR A
-  STA drCY
+  LSR A : ROR dcpLo
+  LSR A : ROR dcpLo
+  LSR A : ROR dcpLo
+  LDA dcpLo : STA drCY
   RTS
 
 \ ============================================================
