@@ -123,13 +123,13 @@ output rather than from any document.** In outline:
 |---|---|
 | ZP `&00–&8F` | All used. The map is in `main.asm`. `&90` up belongs to the OS |
 | `&0400–&0C90` | MODE 1 charset, built at deck load — reclaimed OS workspace |
-| `&1100–…` | Code (`PARA`), starting below DFS's `PAGE` |
+| `&1100–…` | Code (`PARA`), starting below DFS's `PAGE`. Ends `&2640`; `&2640–&3000` is free |
 | `&3000–&36FF` | Sprite background save areas, one page per slot |
 | `&3800–&3C00` | Tile map |
 | `&4800–&547F` | Panel — 5 rows × 640, displayed by rupture cycle 1 |
 | `&5500–&57FF` | Character-address and sprite-mask tables, built at startup |
 | `&5800–&7FFF` | Play buffer: circular strip, 16 rows × 640 |
-| SWRAM bank 4 | `PARADAT` — tiles, levels, palettes, droid game data |
+| SWRAM bank 4 | `PARADAT` — tiles, levels, palettes, droid game data, **and the level-draw code** |
 | SWRAM bank 5 | `PARASPR` — the whole blitter: artwork, compiled rows, glyphs, programs |
 
 **Only one bank is visible at a time.** `SprRestoreAll` and `SprDrawAll` page their own bank in and
@@ -146,9 +146,17 @@ taking over IRQ1V stops the MOS servicing the filing system.
 Single-pass flat build, everything included from `main.asm`. No linker.
 
 `main.asm` holds the constants, the zero page map, the main loop and the IRQ dispatch, and includes
-`rupture.asm`, `screen.asm`, `scroll.asm`, `level.asm`, `player.asm`, `sprite.asm` and (under
-`TEST_DROIDS`) `droidtest.asm`. **Everything in `src/` is in the build** — the five inherited
-Master/HAL files that were not have been deleted, so nothing there is dead. Keep it that way.
+everything else. **Everything in `src/` is in the build** — the five inherited Master/HAL files that
+were not have been deleted, so nothing there is dead. Keep it that way.
+
+**Three files assemble into SWRAM bank 4, not main RAM**: `screen.asm`, `scroll.asm` and `level.asm`
+are included from inside the `PARADAT` block, next to the tile and deck data they read. That costs no
+paging, because the data bank is the resting state. The rule it depends on is one-way and undiagnosed
+if broken — bank code may call main RAM freely, but main RAM may call *in* only with `SWRAM_DATA`
+paged, which is false at startup before the bank is loaded and inside `SprDrawAll`/`SprRestoreAll`.
+`bufcore.asm` holds exactly what those two cases need — `SetupScreen`, `SetCRTCStart`, `WrapBufFwd`,
+`SetCell` and the `rowMul`/`unitMul` tables — and its header states the rule. **Read it before moving
+anything else across.**
 
 Geometry and hardware constants live in `main.asm` rather than beside the code that uses them,
 because beebasm resolves constant assignments in file order and the included files need them.

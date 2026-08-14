@@ -988,9 +988,7 @@ ENDIF
   RTS
 
 INCLUDE "src/rupture.asm"
-INCLUDE "src/screen.asm"
-INCLUDE "src/scroll.asm"
-INCLUDE "src/level.asm"
+INCLUDE "src/bufcore.asm"       \ what screen/scroll could not leave behind
 INCLUDE "src/player.asm"
 INCLUDE "src/door.asm"
 INCLUDE "src/lift.asm"
@@ -1164,6 +1162,28 @@ INCLUDE "src/data/droidgame.asm"
   FOR r, 0, MAP_COLS-1
     EQUB 0
   NEXT
+
+\ ---- the level draw, next to the data it reads ---------------
+\ CODE IN A BANK, not just data. These three files read nothing but
+\ what is above them — tile definitions, deck RLE, the charset source,
+\ the colour schemes — so putting them here costs no paging at all:
+\ SWRAM_DATA is the resting state, so the main loop, LoadDeck, door.asm
+\ and lift.asm call in with a plain JSR.
+\
+\ THE RULE IS ONE-WAY. Bank code may call main RAM freely; main RAM may
+\ call in ONLY with SWRAM_DATA paged. The two places where that is false
+\ are startup, before the bank is loaded, and the window inside
+\ SprDrawAll/SprRestoreAll — which is exactly what bufcore.asm holds
+\ back, and why its header states the rule at length. A stray call in
+\ here with the sprite bank in would land in compiled sprite rows and
+\ there is no diagnostic for that.
+\
+\ The IRQ is safe by inspection: it touches rupture.asm and the CRTC
+\ registers, and nothing here. That was already the condition for
+\ having two banks at all.
+INCLUDE "src/screen.asm"
+INCLUDE "src/scroll.asm"
+INCLUDE "src/level.asm"
 .data_end
 
 \ SAVED HERE, NOT AT THE BOTTOM. SAVE writes out whatever the assembled

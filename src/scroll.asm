@@ -27,23 +27,10 @@
 \ split row.
 \ ============================================================
 
-\ ---- offset tables -----------------------------------------
-.rowMulLo
-  FOR n, 0, PLAY_ROWS-1
-    EQUB LO(n * ROW_BYTES)
-  NEXT
-.rowMulHi
-  FOR n, 0, PLAY_ROWS-1
-    EQUB HI(n * ROW_BYTES)
-  NEXT
-.unitMulLo
-  FOR n, 0, PLAY_UNITS-1
-    EQUB LO(n * UNIT_BYTES)
-  NEXT
-.unitMulHi
-  FOR n, 0, PLAY_UNITS-1
-    EQUB HI(n * UNIT_BYTES)
-  NEXT
+\ The rowMul/unitMul offset tables and SetCell are in bufcore.asm,
+\ in main RAM: SprCalcAddr calls SetCell with the sprite bank paged
+\ in, so neither the routine nor the tables it reads can live in
+\ this one.
 
 \ ============================================================
 \ COPYCELL — one 4-pixel column cell: 8 bytes, chp -> bufp
@@ -142,38 +129,6 @@ ENDMACRO
   LDA scrollS   : ADC #LO(BUF_SIZE) : STA scrollS
   LDA scrollS+1 : ADC #HI(BUF_SIZE) : STA scrollS+1
 .sas_x
-  RTS
-
-\ ============================================================
-\ SetCell — point bufp at display cell (rCount, uCount)
-\   bufp = BUF_BASE + ((scrollS + rCount*640 + uCount*8) MOD SIZE)
-\ ============================================================
-.SetCell
-  LDX rCount
-  CLC
-  LDA scrollS   : ADC rowMulLo,X : STA bufp
-  LDA scrollS+1 : ADC rowMulHi,X : STA bufp+1
-
-  LDX uCount
-  CLC
-  LDA bufp   : ADC unitMulLo,X : STA bufp
-  LDA bufp+1 : ADC unitMulHi,X : STA bufp+1
-
-  LDA bufp+1                    \ wrap into [0, SIZE)
-  CMP #HI(BUF_SIZE)
-  BCC sc_nowrap
-  BNE sc_wrap
-  LDA bufp
-  CMP #LO(BUF_SIZE)
-  BCC sc_nowrap
-.sc_wrap
-  SEC
-  LDA bufp   : SBC #LO(BUF_SIZE) : STA bufp
-  LDA bufp+1 : SBC #HI(BUF_SIZE) : STA bufp+1
-.sc_nowrap
-  CLC
-  LDA bufp   : ADC #LO(BUF_BASE) : STA bufp
-  LDA bufp+1 : ADC #HI(BUF_BASE) : STA bufp+1
   RTS
 
 \ ============================================================

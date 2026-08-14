@@ -98,7 +98,7 @@ seconds where a buffer diff would have taken an emulator run.
 
 | | |
 |---|---|
-| `PARADAT` into sideways RAM | **Now the binding constraint.** Layer 8 left 46 bytes below `&3000`, and moving `doorDef` and `blankTileRow` into the bank is what bought even that. Also what 1 px sprite positioning waits on, and what the position bookmark at the end of `BUGS.md` waits on |
+| ~~Main RAM below `&3000`~~ | **Relieved 2026-08-14.** It was 39 bytes; it is 2,496. The fix was moving *code* rather than data: `screen.asm`, `scroll.asm` and `level.asm` into bank 4, beside the tile and deck data they read, with `src/bufcore.asm` holding the 480 bytes that cannot be banked. The position bookmark at the end of `BUGS.md` is no longer blocked |
 | 1 px sprite positioning | **A fidelity loss, not polish, and it no longer costs 1820 bytes.** The original is 1 px — hires sprites positioned per pixel by `SetSpriteXY`, background scrolled per pixel by `$D016` — and since the blitter was compiled a shift is *code*, not artwork: ~4,632 bytes each, so two more shifts want ~9.3 K against the 1.8 K left in bank 5. Worst on `DSpeed_t` = 1 droids, drawn 0, 2, 0, 2. See the cost note under Layer 5 |
 | Raster-ordered sprite updating | Flicker, and probably `BUGS.md` #3 with it. The only sprite-pool work still open |
 | 2 px world scrolling | Parked, Master-only via shadow RAM. Costs +60–80% on all drawing because both buffers must stay current — see [`docs/master-extensions.md`](docs/master-extensions.md) |
@@ -139,8 +139,8 @@ moves. The outline:
 | ZP `&00–&8F` | 144 B | **all of it used** — the map is in `main.asm`. `&90` up is the OS |
 | `&0400–&0C8F` | 2,192 B | MODE 1 charset, built at deck load — reclaimed OS workspace |
 | `&0C90–&10FF` | **1,136 B free** | rest of the reclaimed OS workspace |
-| `&1100–&2FD8` | 7,897 B | code (`PARA`). DFS random-access buffer space, safe for `*LOAD` |
-| `&2FD9–&2FFF` | **39 B free** | Layer 8 spent it; the glyph fix took 7 more |
+| `&1100–&263F` | 5,440 B | code (`PARA`). DFS random-access buffer space, safe for `*LOAD` |
+| `&2640–&2FFF` | **2,496 B free** | the level draw moved into bank 4 and took 2,437 bytes with it |
 | `&3000–&36FF` | 1,792 B | sprite background save areas, one page per slot |
 | `&3800–&3BFF` | 1,024 B | tile map, fixed home — floating it after `code_end` once put it over the save areas |
 | `&3700`, `&3C00–&47FF` | **3,328 B free** | runtime-built data only: boot stages `PARASPR` through `&68B5` |
@@ -149,12 +149,14 @@ moves. The outline:
 | `&5500–&56FF` | 512 B | `CHAR_PTR_LO`/`HI` — character code → charset address, built at startup |
 | `&5700–&57FF` | 256 B | data byte → transparency mask table, built at startup |
 | `&5800–&7FFF` | 10,240 B | play buffer: circular strip, 16 rows × 640 |
-| SWRAM bank 4 | 16 K | `PARADAT` — char data, colour schemes, tile defs, deck RLE, waypoints. Ends `&9B8C`, **9,332 B free** |
+| SWRAM bank 4 | 16 K | `PARADAT` — char data, colour schemes, tile defs, deck RLE, waypoints, **and the level-draw code**. Ends `&A511`, **6,895 B free** |
 | SWRAM bank 5 | 16 K | `PARASPR` — the whole blitter: artwork, compiled rows, glyphs, programs. Ends `&B8B6`, **1,866 B free** |
 
-**"Main RAM is full" means the `PARA` image cannot grow past `&3000`**, not that there is no RAM: 4.6 K
-is free in total, but only 39 bytes of it are below the sprite save areas, and the rest can hold only
-what is built at runtime.
+**"Main RAM is full" meant the `PARA` image could not grow past `&3000`** — never that there was no
+RAM. Moving code rather than data is what fixed it: `screen.asm`, `scroll.asm` and `level.asm` now
+live in bank 4 next to the tile and deck data they read, which costs no paging because that bank is
+the resting state. `src/bufcore.asm` holds the 480 bytes that could not go — the routines that run
+before the bank is loaded, or with the *sprite* bank paged in.
 
 Only one bank is visible at a time. That works because the two halves are never wanted at once —
 `DoRedraws` reads tiles, the blitter reads none of them — so `SprRestoreAll` and `SprDrawAll` page
@@ -273,20 +275,23 @@ about recalled facts.
 
 ## `src/` as it stands
 
-Single-pass flat build, everything included from `main.asm`. No linker.
+Single-pass flat build, everything included from `main.asm`. No linker. **Three files assemble into
+SWRAM bank 4 rather than main RAM** — they are included from inside the `PARADAT` block, and the rule
+that makes that safe is in `bufcore.asm`'s header.
 
-| File | State |
-|---|---|
-| `main.asm` | **Live.** Constants, the zero page map, memory map, main loop, IRQ dispatch. Geometry constants live here because beebasm resolves them in file order and the other files need them |
-| `rupture.asm` | **Live.** Three-cycle vertical rupture, the T1 state machine, `FillPanel`, `DbgSetBg` |
-| `screen.asm` | **Live.** `SetupScreen`, `SetCRTCStart`, `DrawHalf`, `HalfPtr`, `BandSetRow`/`BandCharPtr`, `ColSetup`, `MapChar`, `RedrawAll`, buffer wrapping |
-| `scroll.asm` | **Live.** Offset tables, `SetCell`, `DrawColumn`, `DrawBandRows`, `DoRedraws` |
-| `level.asm` | **Live.** Deck decode, `BuildCharset`, `BuildLUTs`, `SetPalette`, `CentreOnDeck` |
-| `player.asm` | **Live.** `ReadKeys`, `CalcSpeed`, `CheckWalls`, `ApplyMove`, `DeadZone`, the clamps |
-| `sprite.asm` | **Live.** The blitter: slot state, `SprDrawAll`/`SprRestoreAll`, the compiled-row dispatch and the wrap fallback |
-| `door.asm` | **Live.** Door state, `DoorScan`, the patched tile definitions, `DoorsUpdate`, `DrawDoorTile` |
-| `lift.asm` | **Live.** `LiftFind`, lift mode, stepping a shaft, `LiftPlace` |
-| `droidtest.asm` | **Live, scaffolding.** Six static droids so the pool could be measured. Delete with `TEST_DROIDS` once droids move |
+| File | Where | State |
+|---|---|---|
+| `main.asm` | main RAM | **Live.** Constants, the zero page map, memory map, main loop, IRQ dispatch. Geometry constants live here because beebasm resolves them in file order and the other files need them |
+| `rupture.asm` | main RAM | **Live.** Three-cycle vertical rupture, the T1 state machine, `FillPanel`, `DbgSetBg` |
+| `bufcore.asm` | main RAM | **Live.** The four things the level draw could not take into the bank: `SetupScreen` and `SetCRTCStart`, which run before the bank is loaded, and `WrapBufFwd`, `SetCell` and the `rowMul`/`unitMul` tables, which run with the *sprite* bank paged in |
+| `screen.asm` | **bank 4** | **Live.** `DrawHalf`, `HalfPtr`, `BuildCharPtrs`, `BandSetRow`/`BandCharPtr`, `ColSetup`, `MapChar`, `RedrawAll` |
+| `scroll.asm` | **bank 4** | **Live.** `DrawColumn`, `DrawBandRows`, `CopyCell`, `ScrollAddS`, `DoRedraws` |
+| `level.asm` | **bank 4** | **Live.** Deck decode, `BuildCharset`, `BuildLUTs`, `SetPalette`, `CentreOnDeck` |
+| `player.asm` | main RAM | **Live.** `ReadKeys`, `CalcSpeed`, `CheckWalls`, `ApplyMove`, `DeadZone`, the clamps |
+| `sprite.asm` | main RAM | **Live.** The blitter: slot state, `SprDrawAll`/`SprRestoreAll`, the compiled-row dispatch and the wrap fallback |
+| `door.asm` | main RAM | **Live.** Door state, `DoorScan`, the patched tile definitions, `DoorsUpdate`, `DrawDoorTile` |
+| `lift.asm` | main RAM | **Live.** `LiftFind`, lift mode, stepping a shaft, `LiftPlace` |
+| `droidtest.asm` | main RAM | **Live, scaffolding.** Six static droids so the pool could be measured. Delete with `TEST_DROIDS` once droids move |
 
 **Everything in `src/` is in the build.** Five inherited files that were not — `zeropage.asm`,
 `hardware.asm`, `macros.asm` and the retired `hal_video.asm` / `hal_irq.asm` — were deleted rather

@@ -19,8 +19,8 @@ Regenerate it after any change that moves a region:
 | `&0200–&03FF` | 512 B | OS vectors and workspace. We own `IRQ1V` at `&0204` outright |
 | `&0400–&0C8F` | 2,192 B | MODE 1 charset, rebuilt at every deck load — reclaimed OS workspace |
 | `&0C90–&10FF` | **1,136 B free** | The rest of the reclaimed workspace |
-| `&1100–&2FD8` | 7,897 B | Code (`PARA`), starting below DFS's `PAGE` of `&1900` |
-| `&2FD9–&2FFF` | **39 B free** | |
+| `&1100–&263F` | 5,440 B | Code (`PARA`), starting below DFS's `PAGE` of `&1900`. The level draw is no longer here — see bank 4 |
+| `&2640–&2FFF` | **2,496 B free** | |
 | `&3000–&36FF` | 1,792 B | Sprite background save areas, 7 slots × 256 |
 | `&3700–&37FF` | **256 B free** | |
 | `&3800–&3BFF` | 1,024 B | Tile map, 64 × 16, page-aligned, fixed home |
@@ -34,7 +34,8 @@ Regenerate it after any change that moves a region:
 | `&8000–&BFFF` | 16 K | Sideways bank window — one of the two banks below, never both |
 | `&C000–&FFFF` | 16 K | MOS |
 
-Free main RAM totals **4,631 bytes**, of which only 39 are below `&3000`.
+Free main RAM totals **7,088 bytes**, of which 2,496 are below `&3000` — the level draw moved
+into bank 4 on 2026-08-14 and took 2,437 bytes of code with it.
 
 ### The boot-time staging overlay
 
@@ -43,7 +44,7 @@ has the DFS ROM paged in at `&8000` during a filing-system call. So:
 
 | File | Staged over |
 |---|---|
-| `PARADAT` | `&3000–&4B8B` |
+| `PARADAT` | `&3000–&5510` |
 | `PARASPR` | `&3000–&68B5` |
 
 Everything from `&3000` to `&68B5` is written through during boot — the save areas, the tile map,
@@ -72,8 +73,9 @@ already satisfy it.
 
 ## SWRAM bank 4 — `PARADAT`
 
-`&8000–&9B8C`, 7,052 bytes used, **9,332 free**. Tiles, decks, palettes and droid game data. This is
-the resting state of the bank latch.
+`&8000–&A511`, 9,489 bytes used, **6,895 free**. Tiles, decks, palettes, droid game data — and, since
+2026-08-14, the level-draw code that reads them. This bank is the resting state of the latch, so a
+call into it from the main loop needs no paging at all.
 
 | Address | Size | Contents |
 |---|---|---|
@@ -94,6 +96,13 @@ the resting state of the bank latch.
 | `&9ACC` | 16 | `deckDroidBase` |
 | `&9ADC` | 112 | `doorDef` — patched tile definitions for open doors |
 | `&9B4C` | 64 | `blankTileRow` |
+| `&9B8C` | 2,437 | **Code**: `screen.asm`, `scroll.asm`, `level.asm` — `DrawHalf`, `HalfPtr`, `BandSetRow`, `BandCharPtr`, `ColSetup`, `MapChar`, `RedrawAll`, `BuildCharPtrs`, `DrawColumn`, `DrawBandRows`, `DoRedraws`, `BuildLevel`, `BuildCharset`, `BuildLUTs`, `SetPalette`, `CentreOnDeck` |
+
+What could **not** come with it is in `src/bufcore.asm`, 480 bytes in main RAM: `SetupScreen` and
+`SetCRTCStart` run before this bank is loaded, and `WrapBufFwd`, `SetCell` and the `rowMul`/`unitMul`
+tables are reached while the *sprite* bank is paged in — `SprScanRow` tail-calls the first and
+`SprCalcAddr` calls the second. A JSR from there into this bank would land in compiled sprite rows,
+and nothing would diagnose it.
 
 ## SWRAM bank 5 — `PARASPR`
 
@@ -127,11 +136,14 @@ fast path reads none of the artwork, and the wrap fallback is the only thing tha
 
 ## Two things this map says that the summaries do not
 
-**The binding constraint is code space, not main RAM.** There are 39 bytes below `&3000`, but 3.3 K
-free above the tile map (`&3700–&37FF` and `&3C00–&47FF`) and 1.1 K at `&0C90`. None of it can hold
-anything *loaded*, because the staging overlay runs straight through the first two — but it can hold
-anything built at runtime, which is what `CHAR_PTR` and `SPR_MASKTAB` already are. Read "main RAM is
-full" as "the `PARA` image cannot grow past `&3000`".
+**The constraint was code space, and moving code fixed it.** "Main RAM is full" always meant "the
+`PARA` image cannot grow past `&3000`" — there was 4.6 K free, just none of it where code could go.
+Since a bank can hold code as easily as data, the level draw went to live beside the tile and deck
+data it reads, and `&3000` is now 2,496 bytes away rather than 39.
+
+The other free regions still cannot hold anything *loaded*: `&3700–&37FF` and `&3C00–&47FF` are
+under the staging overlay, so they take only what is built at runtime — which is what `CHAR_PTR` and
+`SPR_MASKTAB` already are.
 
 **1 px sprite positioning is bank-5-bound, not main-RAM-bound.** Since the blitter was compiled a
 shift is *code*, ~4,632 bytes of it, so two more shifts want ~9.3 K against the 1,866 free here. The

@@ -341,8 +341,10 @@ were a main-RAM problem. **A shift is now code.** From this build:
 | glyphs | 4,154 | 2,077 |
 | | | **~4,632 B** |
 
-Bank 5 ends at `&B8B6`, leaving 1,866 bytes. Two more shifts want ~9,264. It does not fit, and
-main RAM has 39 bytes.
+Bank 5 ends at `&B8B6`, leaving 1,866 bytes. Two more shifts want ~9,264. It does not fit. Main RAM
+had 39 bytes when this was written and has 2,496 since the level draw moved to bank 4, with another
+4.5 K free elsewhere — still well short of a shift, and the compiled code is the half that cannot be
+moved out of the sprite bank.
 
 Three ways out, cheapest first:
 
