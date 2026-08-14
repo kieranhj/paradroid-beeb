@@ -307,6 +307,23 @@ PLY_REFY = 63                   \ from the view's top edge, sprite top + 13
   LSR plyCY+1 : ROR plyCY
   LSR plyCY+1 : ROR plyCY
 
+\ Doors are looked for over the WHOLE diamond, every pass, before any
+\ of the blocking tests below — and that is not tidiness, it is the
+\ only arrangement that works.
+\ ProbeGroup cannot do it. It runs only when there is speed on that
+\ axis, and it abandons a group at the first solid cell, because one
+\ solid cell is all "am I blocked?" needs. A door defeats both: the
+\ approach pad is usually probed AFTER a solid cell of the same door
+\ tile, and the moment the door blocks the player the speed is zeroed,
+\ so the next pass probes nothing and the door closes again. The door
+\ opens one step and shuts one step forever, and the player never gets
+\ through — observed, before this was moved out.
+\ CheckPlyAdvance ($29C1) has the same shape for the same reason: it
+\ calls GetNearChar on all twelve cells unconditionally and only then
+\ asks whether the speed is into the wall. Twelve MapChars is about
+\ 1,100 cycles of the ~39,000 the pass has spare.
+  JSR DoorScan
+
   LDA xSpd+1
   BEQ cw_vert
   BMI cw_leftward

@@ -391,6 +391,11 @@ ASSERT CHAR_PTR_HI + 256 <= SPR_MASKTAB
 PLY_SLOT = 0
 PLY_Y    = 50                   \ scanlines below the top of the view
 
+\ The character that marks the walkable approach pad in front of a
+\ door. Walking onto one opens the door — GetNearChar's `CMP #$20` in
+\ the original, and the only trigger there is. See src/door.asm.
+DOOR_PAD = &20
+
 \ There is no longer a shifted copy of the artwork. It used to be
 \ built into spare bank RAM at startup and cost 1,743 bytes; both
 \ shifts now exist as compiled code, and the stored rows are read
@@ -921,6 +926,9 @@ ENDIF
   STA scrollS+1
   STA line
   STA iline
+  JSR DoorInit                  \ a door left open on the deck we are
+                                \ leaving would patch a tile position on
+                                \ the one we are entering
   LDX #SPR_SLOTS-1              \ the saved backgrounds belong to the deck
   LDA #0                        \ we are leaving; RedrawAll replaces them
 .ld_unsave
@@ -939,6 +947,7 @@ INCLUDE "src/screen.asm"
 INCLUDE "src/scroll.asm"
 INCLUDE "src/level.asm"
 INCLUDE "src/player.asm"
+INCLUDE "src/door.asm"
 INCLUDE "src/sprite.asm"
 IF TEST_DROIDS
 INCLUDE "src/droidtest.asm"

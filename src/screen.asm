@@ -295,6 +295,8 @@
   LDA cellY                     \ row base: tilemap + (cellY>>2)*64
   LSR A : LSR A
   TAX
+  STA doorTileRow               \ which tile row the band is drawing, for
+                                \ the door lookup in DrawBandRows
   LDA mapRowLo,X : STA maprow
   LDA mapRowHi,X : STA maprow+1
 
@@ -421,6 +423,20 @@
   AND #3
   CLC : ADC mcTmp
   TAY
+
+\ An open door replaces the tile definition, so the probes see the
+\ doorway as passable at exactly the moment the draw shows it open —
+\ same substitution, same source, so the two cannot disagree.
+\ DoorTdp preserves X, which ProbeGroup is relying on.
+  LDA numDoors
+  BEQ mc_nodoor
+  STY mcTmp                     \ the character index within the tile
+  LDA cellY : LSR A : LSR A : STA doorTileRow
+  LDA #0    : STA dtOfs
+  LDA cellX : LSR A : LSR A     \ tile column; cellX+1 is always 0 here
+  JSR DoorTdp
+  LDY mcTmp
+.mc_nodoor
   LDA (tdp),Y
   RTS
 

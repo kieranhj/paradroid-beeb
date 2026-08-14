@@ -247,6 +247,13 @@ ENDMACRO
   TAX
   LDA tdpLo,X : STA tdp
   LDA tdpHi,X : STA tdp+1
+  LDA numDoors
+  BEQ dc_nodoor
+  LDA colTileRow : STA doorTileRow
+  LDA #0         : STA dtOfs    \ the column path adds its own row offset
+  LDA colTileCol
+  JSR DoorTdp
+.dc_nodoor
   JMP dc_tile
 
 \ ============================================================
@@ -344,6 +351,12 @@ ENDMACRO
   LDA tdpLo,X : ADC subRowOfs   \ <= 240 + 12: cannot carry
   STA tdp
   LDA tdpHi,X : STA tdp+1
+  LDA numDoors                  \ four cycles a tile with nothing open,
+  BEQ dbr_nodoor                \ which is the usual case
+  LDA subRowOfs : STA dtOfs
+  LDA dbTile
+  JSR DoorTdp                   \ retargets tdp at the patched copy
+.dbr_nodoor
   INC dbTile
 
   SEC                           \ n = min(4 - sub, remaining)
@@ -495,7 +508,13 @@ ENDMACRO
   DEC colCount
   BNE dor_col
 .dor_nc
-  RTS
+
+\ Doors last, and inside this window on purpose. A door repaints cells
+\ that are already on screen, so it must land after the band and the
+\ columns it might sit inside — and it must happen between
+\ SprRestoreAll and SprDrawAll like everything else that writes to the
+\ buffer, or it stamps pixels into a sprite's saved background.
+  JMP DoorsUpdate
 
 \ bandDo/bandRow/bandRc, colFirst/colCount, dbOdd/dbTile/dbSub and
 \ sDelta are all in zero page now — see the level draw block in

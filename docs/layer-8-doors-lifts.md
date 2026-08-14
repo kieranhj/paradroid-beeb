@@ -2,9 +2,8 @@
 
 *Part of the Paradroid BBC Micro port. Start at [`../PLAN.md`](../PLAN.md).*
 
-**This is a plan, not a record.** Nothing here is built yet. Everything about the C64 original
-below was read out of `paradroid_ce_annotated.asm` and checked against `src/data/tiledefs.asm`;
-everything about the port is a proposal.
+**8a (doors) is built and verified. 8b (lifts) is still a plan.** Everything about the C64 original
+below was read out of `paradroid_ce_annotated.asm` and checked against `src/data/tiledefs.asm`.
 
 ## Why this comes next, ahead of the droid logic
 
@@ -170,7 +169,63 @@ background — the same hazard the *Why not round-robin* section of
 
 ## Work breakdown
 
-### 8a — doors
+### 8a — doors ✅ DONE
+
+Landed as `src/door.asm` with hooks in `player.asm`, `screen.asm` and `scroll.asm`. The
+private-copy scheme worked as designed and needed no revision — but two things about it were
+wrong in the first build, and one assumption about the port did not survive contact.
+
+#### Probing had to move out of ProbeGroup entirely
+
+The plan said "hook the probe" and that was too glib. `ProbeGroup` cannot host the door test, for
+two independent reasons that only show up together:
+
+- It runs **only when there is speed on that axis**, and the moment a closed door blocks the player
+  `CheckWalls` zeroes that speed. The next pass probes nothing at all.
+- It **abandons the group at the first solid cell**, because one solid cell is all "am I blocked?"
+  needs. The approach pad is usually probed *after* a solid cell of the same door tile.
+
+Together those make the door open one step, close one step, and never open — observed exactly that
+way. `CheckPlyAdvance` ($29C1) has neither property: it calls `GetNearChar` on all twelve cells
+unconditionally and only afterwards asks whether the speed is into the wall. So doors get their own
+`DoorScan` over the full diamond, called from `CheckWalls` before any blocking test. Twelve
+`MapChar`s is about 1,100 cycles of the ~39,000 spare.
+
+> Worth generalising: the blocking probe and the *sensing* probe want different sweeps, and merging
+> them looks like an obvious saving right up to the point where it silently does not work.
+
+#### Two bugs, one of which crashed the machine into BASIC
+
+**`DoorMoveDef` walked its 16-byte copy downwards from `slot*16`** instead of `slot*16 + 15`, so
+slot 0 immediately underflowed to index 255 and wrote sixteen bytes over whatever followed
+`doorDef` — which is code.
+
+**Both close arms use Y as an index into `doorDef`, destroying the compaction destination index.**
+That is the root cause and it made the first bug reachable: `du_keep` then compared X against a
+tile-definition offset, copied entries to a wild slot, and stored that offset as `numDoors`.
+`CloseDoors` saves Y across exactly these two arms, into `xfer_cpuSpriteX` — those otherwise
+baffling stores are the whole point, and skipping them cost an afternoon.
+
+> **Read the original's register saves as load-bearing until proven otherwise.** Both of these were
+> visible in the listing and both were dropped as noise while porting.
+
+#### Verified
+
+Play buffer diffed byte-for-byte against `RedrawAll`, with `JSR SprDrawAll` poked to NOPs:
+
+| | result |
+|---|---|
+| door fully open, stationary | **0 differences in 10240** |
+| door closed again, after a vertical scroll | **0 differences in 10240** |
+
+That is the check that matters: `RedrawAll` reaches the tile definitions through `MapChar` and the
+band and column paths reach them through `DoorTdp`, so agreeing byte-for-byte proves all three
+substitutions are consistent. Also confirmed by walking: the player opens a door, passes through,
+and the door closes behind — over two different doors on deck 1, with the list compacting between
+them.
+
+**Not yet measured:** the per-pass cost. `LDA numDoors : BEQ` is four cycles a tile with nothing
+open, and `DoorScan` is unconditional, but neither has been put under the T1 bracket.
 
 1. **Export the door data.** Nothing new is needed from the listing: doors are found by scanning the
    tile map for tiles containing `$20`. Build the per-deck door list and the tile bitmap in
