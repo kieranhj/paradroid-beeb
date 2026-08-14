@@ -28,8 +28,9 @@ and the deck hardware-scrolling 8 ways underneath it — 4 px horizontally, 1 sc
 driven by the C64's own acceleration model and stopped by walls. The camera has a dead zone, so at
 low speed the world holds still and the droid glides at 2 px instead of the world lurching at 4.
 Frame-locked at 25 Hz (2 fields a pass) in every direction including full diagonal. 16 decks,
-per-deck palette and charset built at load time. Keys: Z/X left/right, K/M up/down, cursor up/down
-change deck, SPACE forces a full redraw.
+per-deck palette and charset built at load time. Keys: Z/X left/right, K/M up/down (and, in a lift,
+choose the deck), L fire — which steps into and out of a lift — cursor up/down for a debug deck hop,
+SPACE forces a full redraw.
 
 Seven sprites cost **36,274 cycles of the 79,872 in a pass**, and the loop is idle for about half of
 it. That is after the blitter was compiled and cut from 14,000 cycles a sprite to 5,800 — see

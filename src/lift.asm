@@ -1,8 +1,9 @@
 \ ============================================================
 \ lift.asm — lifts, and the deck change that goes with them
 \ ============================================================
-\ Stand on a lift platform, press RETURN, and UP/DOWN move through the
-\ decks that lift's SHAFT serves. RETURN again steps out.
+\ Stand on a lift platform, press FIRE (L), and the up/down movement
+\ keys move through the decks that lift's SHAFT serves. FIRE again
+\ steps out.
 \
 \ ---- the tables ---------------------------------------------
 \ Thirty-one stops, indexed 1-30, exported by tools/export_bbc.py as the
@@ -31,9 +32,11 @@
 \ that suppresses movement and re-points UP/DOWN costs three tests in
 \ the main loop and leaves everything else untouched.
 \
-\ The side view belongs to Layer 9. Until then a lift has no display of
-\ its own: you press RETURN, the deck changes under you, and you press
-\ RETURN again. The mechanic is complete; only the picture is missing.
+\ THE SIDE VIEW BELONGS TO LAYER 9, and until it exists a lift has no
+\ display of its own — you press fire, the whole deck changes under you,
+\ and you press fire again. That is the only feedback there is, which is
+\ why binding up/down to the wrong keys read as the lift being frozen
+\ rather than as a missing key.
 \ ============================================================
 
 LIFT_FIRST = 1                  \ index 0 is a sentinel
@@ -86,7 +89,7 @@ LIFT_LAST  = 30                 \ and so is 31
   RTS
 
 \ ============================================================
-\ LiftEnter / LiftExit — RETURN, edge triggered
+\ LiftEnter / LiftExit — fire, edge triggered
 \ ============================================================
 .LiftEnter
   JSR LiftFind
@@ -205,37 +208,43 @@ LIFT_LAST  = 30                 \ and so is 31
 \ ============================================================
 \ LiftControl — the controls, while the lift has them
 \ ============================================================
-\ UP and DOWN are edge triggered on the same prevUp / prevDn pair the
-\ debug deck hop uses, so holding a key steps one deck and waits.
+\ THE MOVEMENT KEYS DRIVE THE LIFT, not the cursor keys. ChangeDeck
+\ ($2705) steps on `joyYDir`, which is the joystick — the same control
+\ that walks the droid — so in a lift, up and down are the up and down
+\ you already have your fingers on. Binding this to the cursor keys was
+\ simply wrong, and reads as the lift being broken.
+\ Edge triggered on a pair of its own rather than prevUp/prevDn: those
+\ belong to the debug cursor hop, and sharing them means a cursor key
+\ held on the way in swallows the first press in here.
 .LiftControl
-  LDX #KEY_UP
+  LDX #KEY_K
   JSR keydown
   BNE lc_upOff
-  LDA prevUp
+  LDA prevLU
   BNE lc_notUp
   LDA #1
-  STA prevUp
+  STA prevLU
   LDA #&FF                      \ up the shaft: one index back
   JSR LiftStep
   JMP lc_notUp
 .lc_upOff
   LDA #0
-  STA prevUp
+  STA prevLU
 .lc_notUp
 
-  LDX #KEY_DOWN
+  LDX #KEY_M
   JSR keydown
   BNE lc_dnOff
-  LDA prevDn
+  LDA prevLD
   BNE lc_notDn
   LDA #1
-  STA prevDn
+  STA prevLD
   LDA #1
   JSR LiftStep
   JMP lc_notDn
 .lc_dnOff
   LDA #0
-  STA prevDn
+  STA prevLD
 .lc_notDn
   RTS
 
@@ -244,7 +253,9 @@ LIFT_LAST  = 30                 \ and so is 31
 .liftPos    EQUB 0              \ index of the stop we are at, 1-30
 .liftNum    EQUB 0              \ its shaft, so stepping cannot leave it
 .liftPlace  EQUB 0              \ LoadDeck: place at liftPos, not centre
-.prevRet    EQUB 0              \ RETURN edge
+.prevRet    EQUB 0              \ fire edge
+.prevLU     EQUB 0              \ and the lift's own up/down edges, kept
+.prevLD     EQUB 0              \ apart from the debug hop's
 .lfCol      EQUB 0
 .lfRow      EQUB 0
 .lpTmp      EQUW 0

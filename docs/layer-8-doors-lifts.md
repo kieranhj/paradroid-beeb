@@ -303,9 +303,19 @@ is meaningless and stepping has to go through the table.
 
 #### What landed
 
-`src/lift.asm`, plus four 32-byte tables in `levels.asm` and a `liftPlace` arm in `LoadDeck`. The
-controls are RETURN to step in and out, UP/DOWN to move; outside a lift, UP/DOWN stay the debug free
-hop, which is worth keeping until every deck can be reached by lift and tested that way.
+`src/lift.asm`, plus four 32-byte tables in `levels.asm` and a `liftPlace` arm in `LoadDeck`.
+
+**Fire is L (INKEY −87, verified in the emulator rather than recalled), and the lift is driven by the
+up/down MOVEMENT keys.** The first cut bound deck selection to the cursor keys, which was simply
+wrong: `ChangeDeck` steps on `joyYDir` — the joystick, the same control that walks the droid. It also
+reads far worse than an ordinary bug, because a lift with nothing bound to its up/down looks
+*frozen*: the only feedback a lift has until Layer 9 draws the side view is the deck changing. The
+cursor keys stay the debug free hop outside a lift, which is worth keeping until every deck can be
+reached by lift and tested that way.
+
+> Two lessons, both cheap to have avoided. Take the control mapping from what the original *binds*,
+> not from what seems tidy — `joyYDir` was right there. And when a feature's only feedback is a side
+> effect, a mis-bound key is indistinguishable from a hang.
 
 **Verified in the emulator.** Riding shaft 2 from deck 1: `liftPos` 10 → 11, `deck` 1 → 4, and the
 player arrives at `plyX` = 512 and `posY` = 176 — exactly `tileCol*32` and `tileRow*32-48` for the

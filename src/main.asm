@@ -3,8 +3,9 @@
 \ LAYER 4: the player droid — sprite, controls, collision
 \ ============================================================
 \ Z / X       move left / right
-\ K / M       move up / down
-\ UP / DOWN   previous / next deck
+\ K / M       move up / down — and, in a lift, choose the deck
+\ L           fire. On a lift platform it steps in and out
+\ UP / DOWN   previous / next deck (debug free hop, outside a lift)
 \ SPACE       force a full redraw (debug oracle)
 \
 \ Movement is the C64's own model: keys feed a direction, the
@@ -422,7 +423,7 @@ KEY_M      = &9A                \ -102
 KEY_UP     = &C6                \ -58
 KEY_DOWN   = &D6                \ -42
 KEY_SPACE  = &9D                \ -99
-KEY_RETURN = &B6                \ -74
+KEY_L      = &A9                \ -87, the fire button
 
 \ ---- zero page ---------------------------------------------
 \ &70-&8F was the original allocation and is full. With BASIC not
@@ -680,9 +681,9 @@ ENDIF
   \ Deck keys are edge triggered: one press steps one deck however
   \ long it is held. A blocking wait-for-release deadlocks if the
   \ other deck key goes down before the first is released.
-\ RETURN steps into a lift and back out of it. Edge triggered, like the
-\ deck keys, or holding it would toggle every pass.
-  LDX #KEY_RETURN
+\ L is fire, and fire steps into a lift and back out of it. Edge
+\ triggered, or holding it would toggle every pass.
+  LDX #KEY_L
   JSR keydown
   BNE ml_retOff
   LDA prevRet
