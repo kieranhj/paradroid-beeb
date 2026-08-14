@@ -252,9 +252,14 @@ ENDMACRO
   LDA drDigit0,Y : STA sprDig+0 \ the three glyphs, once per sprite
   LDA drDigit1,Y : STA sprDig+1
   LDA drDigit2,Y : STA sprDig+2
+\ BIT 0 OF THE SHIFT, NOT THE SHIFT. Bit 1 chose the bank a moment ago;
+\ what is left picks which of that bank's two shifts, so both of these
+\ indices stay inside a byte where four shifts' worth would not:
+\ 4 * DR_SEQSHIFT is 320.
   LDA sprShiftW
+  AND #1
   BEQ sss_g0
-  LDA #10                       \ the shifted half of the glyph table
+  LDA #SPR_DIG_GLYPHS           \ the odd shift's half of the glyph table
 .sss_g0
   STA sprGlyphBase
 
@@ -264,6 +269,7 @@ ENDMACRO
 \ time the phase has advanced and the shift may have changed, and the
 \ background must be put back the way it was taken.
   LDA sprShift,X
+  AND #1
   BEQ sss_seq0
   LDA #SPR_SEQSHIFT
   BNE sss_seq                   \ always
@@ -455,46 +461,59 @@ ENDMACRO
   CLC
   LDA drOfsLo,X : ADC #LO(drSprData) : STA psrc
   LDA drOfsHi,X : ADC #HI(drSprData) : STA psrc+1
+\ Copy the row, then shift it one pixel at a time — sprShiftW passes of
+\ the same loop, 0 to 3. A per-shift routine would be faster and this is
+\ the wrong place to spend: it is one row in fifty, and correctness over
+\ four shifts matters more than the ~90 cycles a pass costs.
+\
+\ Forwards, not backwards: the pixel falling off the right of a byte is
+\ the next byte's leftmost, so the carry runs left to right and the
+\ seventh byte exists to catch the last of it. A MODE 1 pixel is bits
+\ 7-n and 3-n, so one pixel is `AND #&EE` shifted down one with `&11`
+\ carried up three — both nibbles moving together.
+\
+\ The masks are derived after the shifting rather than during it,
+\ because a partly-shifted byte's mask is meaningless.
 .sfr_copy
-  LDA sprShiftW
-  BNE sfr_shifted
   LDY #SPR_W-1
 .sfr_loop
   LDA (psrc),Y
   STA sprRowBuf,Y
-  TAX
-  LDA SPR_MASKTAB,X
-  STA sprRowBuf+SPR_W,Y
   DEY
   BPL sfr_loop
-  LDA sprBank : STA ROMSHAD : STA ROMSEL
-  RTS
 
-\ The 2 px shift, done here instead of from a second copy of the
-\ artwork. Forwards, not backwards: the pixels falling off the right
-\ of a byte are the next byte's low two, so the carry runs left to
-\ right and the seventh byte exists to catch the last of it.
-.sfr_shifted
+  LDX sprShiftW
+  BEQ sfr_mask
+.sfr_pass
   LDA #0
   STA sfrCarry
   LDY #0
 .sfr_sloop
-  LDA (psrc),Y
+  LDA sprRowBuf,Y
   PHA
-  AND #&CC
-  LSR A : LSR A
+  AND #&EE
+  LSR A
   ORA sfrCarry
   STA sprRowBuf,Y
-  TAX
-  LDA SPR_MASKTAB,X
-  STA sprRowBuf+SPR_W,Y
   PLA
-  AND #&33
-  ASL A : ASL A
+  AND #&11
+  ASL A : ASL A : ASL A
   STA sfrCarry
   INY
   CPY #SPR_W
   BNE sfr_sloop
+  DEX
+  BNE sfr_pass
+
+.sfr_mask
+  LDY #SPR_W-1
+.sfr_mloop
+  LDA sprRowBuf,Y
+  TAX
+  LDA SPR_MASKTAB,X
+  STA sprRowBuf+SPR_W,Y
+  DEY
+  BPL sfr_mloop
   LDA sprBank : STA ROMSHAD : STA ROMSEL
   RTS
 

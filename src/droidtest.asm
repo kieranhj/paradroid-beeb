@@ -106,8 +106,9 @@ TD_COUNT = SPR_SLOTS - 1        \ slot 0 is the player; the rest are ours
   ROR A
   STA tdTmp
   AND #1
-  LDX tdIdx
-  STA sprShift+1,X              \ odd 2 px step: the shifted code
+  ASL A                         \ 0 or 2 px — the even shifts, as the
+  LDX tdIdx                     \ player uses, so half the pool draws
+  STA sprShift+1,X              \ from the second bank and half the first
   LDA tdTmp
   LSR A
   STA sprUnit+1,X

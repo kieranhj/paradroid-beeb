@@ -54,7 +54,8 @@ IRQ1V         = &0204
 ROMSEL     = &FE30
 ROMSHAD    = &F4
 SWRAM_DATA = 4                  \ tiles, levels, palettes, droid game data
-SWRAM_SPR  = 5                  \ the whole sprite blitter: artwork and code
+SWRAM_SPR  = 5                  \ the blitter, shifts 0 and 1 px
+SWRAM_SPR2 = 6                  \ the same again for shifts 2 and 3 px
 SWRAM_BASE = &8000
 
 \ ---- two banks, swapped twice a pass ------------------------
@@ -601,6 +602,13 @@ ORG &1100
   LDX #SPR_PAGES                \ has kept honest, so the second load is no
   JSR PageBankIn                \ different from the first
 
+  LDX #LO(loadspr2)             \ and a third: shifts 2 and 3 px live in a
+  LDY #HI(loadspr2)             \ bank of their own, because four compiled
+  JSR OSCLI                     \ shifts do not fit in one
+  LDA #SWRAM_SPR2
+  LDX #SPR2_PAGES
+  JSR PageBankIn
+
   PAGEBANK SWRAM_DATA           \ the data bank is the resting state
 
   JSR FillPanel                 \ after the staging area is done with: it
@@ -771,6 +779,9 @@ ENDIF
   EQUB 13
 .loadspr
   EQUS "LOAD PARASPR"
+  EQUB 13
+.loadspr2
+  EQUS "LOAD PARSPR2"
   EQUB 13
 
 \ ============================================================
@@ -1211,15 +1222,54 @@ INCLUDE "src/data/droids.asm"
 .spr_end
 SAVE "PARASPR", spr_start, spr_end, DATA_LOAD, DATA_LOAD
 
+\ ---- the second sprite bank: shifts 2 and 3 px --------------
+\ A compiled shift is ~5.5K of code and there are four of them, so they
+\ do not fit in one bank. This one is laid out exactly like the last:
+\ the same fixed table section first, at the same addresses, then its
+\ own two shifts' code. PAGESPRBANK picks between them per sprite.
+CLEAR SWRAM_BASE, SWRAM_BASE + &4000
+ORG SWRAM_BASE
+.spr2_start
+INCLUDE "src/data/droids2.asm"
+.spr2_end
+SAVE "PARSPR2", spr2_start, spr2_end, DATA_LOAD, DATA_LOAD
+
 ASSERT DR_W == SPR_W            \ sprite.asm declares these ahead of the
 ASSERT DR_H == SPR_H            \ generated data; keep the two in step
 ASSERT DR_SEQSHIFT == SPR_SEQSHIFT
 ASSERT DR_GLYPHS == SPR_DIG_GLYPHS
 
+\ THE TWO SPRITE BANKS MUST AGREE ON WHERE THEIR TABLES ARE. The blitter
+\ names bank 5's labels and reads them with either bank paged, so a
+\ layout change in one file that is not matched in the other would send
+\ it into compiled sprite rows with no diagnostic at all. Every table the
+\ blitter reaches by name is checked here.
+ASSERT xdrMulRows == drMulRows
+ASSERT xdrDigitLo == drDigitLo
+ASSERT xdrDigitHi == drDigitHi
+ASSERT xdrSeqLo   == drSeqLo
+ASSERT xdrSeqHi   == drSeqHi
+ASSERT xdrRSeqLo  == drRSeqLo
+ASSERT xdrRSeqHi  == drRSeqHi
+ASSERT xdrPrgLo   == drPrgLo
+ASSERT xdrPrgHi   == drPrgHi
+ASSERT xdrRPrgLo  == drRPrgLo
+ASSERT xdrRPrgHi  == drRPrgHi
+ASSERT xdrSeqIdx  == drSeqIdx
+ASSERT xdrMul10   == drMul10
+ASSERT xdrGlyphLo == drGlyphLo
+ASSERT xdrGlyphHi == drGlyphHi
+ASSERT xdrDigit0  == drDigit0
+ASSERT xdrDigit1  == drDigit1
+ASSERT xdrDigit2  == drDigit2
+ASSERT xdrBlkSave6 == drBlkSave6
+
 DATA_PAGES = (data_end - data_start + 255) DIV 256
 SPR_PAGES  = (spr_end - spr_start + 255) DIV 256
+SPR2_PAGES = (spr2_end - spr2_start + 255) DIV 256
 ASSERT data_end <= SWRAM_BASE + &4000
 ASSERT spr_end  <= SWRAM_BASE + &4000
+ASSERT spr2_end <= SWRAM_BASE + &4000
 
 \ The staging copy overruns the panel, the mask table and the bottom
 \ of the play buffer, and that is fine: PageDataIn is the FIRST thing
@@ -1234,6 +1284,8 @@ ASSERT DATA_PAGES * 256 <= &4000
 ASSERT DATA_LOAD + DATA_PAGES * 256 <= &8000
 ASSERT SPR_PAGES * 256 <= &4000
 ASSERT DATA_LOAD + SPR_PAGES * 256 <= &8000
+ASSERT SPR2_PAGES * 256 <= &4000
+ASSERT DATA_LOAD + SPR2_PAGES * 256 <= &8000
 
 ASSERT charset_end - charset == NUM_CHARS * CHAR_BYTES
 
@@ -1242,6 +1294,7 @@ PRINT "tilemap ", ~tilemap, "-", ~tilemap_end
 PRINT "charset ", ~charset, "-", ~charset_end
 PRINT "data    ", ~data_start, "-", ~data_end, " (SWRAM bank", SWRAM_DATA, ",", DATA_PAGES, "pages )"
 PRINT "sprite  ", ~spr_start, "-", ~spr_end, " (SWRAM bank", SWRAM_SPR, ",", SPR_PAGES, "pages )"
+PRINT "sprite2 ", ~spr2_start, "-", ~spr2_end, " (SWRAM bank", SWRAM_SPR2, ",", SPR2_PAGES, "pages )"
 
 SAVE "PARA",    start,      code_end, start
 \ PARADAT and PARASPR are saved where they are assembled, above.

@@ -82,6 +82,7 @@ deck, which is why the exporter checks it exists for every deck.
 Requires: Python 3. No third-party dependencies.
 """
 
+import io
 import sys
 from pathlib import Path
 
@@ -164,17 +165,35 @@ def mode1_mask(b):
     return m | (m << 4)
 
 
-def shift_row(row):
-    """The 2 px right shift SprBuildShift performs, done here instead.
+def shift_row(row, px=2):
+    """Shift a MODE 1 row right by px pixels, 0-3.
 
-    Compiled code bakes its data in as immediates, so the shifted artwork
-    cannot be derived at run time from the compiled form - it needs its own
-    compiled copy, and that copy is generated from here.
+    Compiled code bakes its data in as immediates, so a shifted sprite cannot
+    be derived at run time from the compiled form - each shift needs its own
+    compiled copy, and all four are generated from here.
+
+    MODE 1 pixel n of a byte is bits 7-n and 3-n, so a pixel shift moves both
+    nibbles together and the pixels falling off the right become the next
+    byte's leftmost. The mask picks the bits that survive; the complement,
+    shifted up, is the carry into the next byte.
+
+        1 px   keep &EE >> 1    carry (&11) << 3
+        2 px   keep &CC >> 2    carry (&33) << 2
+        3 px   keep &88 >> 3    carry (&77) << 1
+
+    The carry out of the last byte is DROPPED, so the caller must pass a row
+    wide enough to hold the spill - seven bytes for 24 px at any of the four
+    shifts. Handing this a truncated row is what silently ate the right-hand
+    column of every digit glyph until 2026-08-14.
     """
+    if px == 0:
+        return list(row)
+    keep = {1: 0xEE, 2: 0xCC, 3: 0x88}[px]
+    spill = (~keep) & 0xFF
     out, carry = [], 0
     for b in row:
-        out.append(((b & 0xCC) >> 2) | carry)
-        carry = (b & 0x33) << 2
+        out.append(((b & keep) >> px) | carry)
+        carry = (b & spill) << (4 - px)
     return out
 
 
@@ -290,8 +309,21 @@ def build_rotor_code(mem, frames, bottoms):
     return rows, slots, row_slot
 
 
-def emit_rotor_code(f, rows, slots, row_slot):
+def emit_rotor_code(tab, f, rows, slots, row_slot, shifts, pfx):
     """Compiled draw and restore routines for every distinct rotor row.
+
+    TWO OUTPUTS, and which one a thing goes to is load-bearing. `tab` is the
+    bank's fixed section: every table the blitter reaches by name, laid out in
+    the same order and at the same size in BOTH sprite banks, so one set of
+    labels addresses whichever bank is paged. `f` is the code, whose size
+    differs between banks and which is therefore only ever entered through the
+    tables. `pfx` prefixes the table labels in the second bank's copy - the
+    blitter uses the first bank's names and main.asm asserts the addresses
+    match.
+
+    `shifts` is the two this bank holds. Table indices are the POSITION in
+    that pair, not the absolute shift, so they still fit in a byte: sprSeqBase
+    is (shift AND 1) * DR_SEQSHIFT + phase * 10.
 
     A compiled row costs 23 cycles per OPAQUE byte and nothing at all for the
     transparent ones; the interpreted path costs 26 to fetch and 27 to blit
@@ -312,11 +344,11 @@ def emit_rotor_code(f, rows, slots, row_slot):
     rest_labels = {}                # (shift, cols) -> restore label
     draw_bytes = rest_bytes = 0
 
-    for shift in (0, 1):
-        f.write('\\ ---- shift %d ----------------------------------------\n'
-                % (shift * 2))
+    for shift in shifts:
+        f.write('\\ ---- shift %d px -------------------------------------\n'
+                % shift)
         for n, (key, row) in enumerate(sorted(rows.items())):
-            data = shift_row(row) if shift else row
+            data = shift_row(row, shift)
             label = 'drD%d_%02d' % (shift, n)
             labels[(shift, key)] = label
             f.write('.%s\n' % label)
@@ -339,7 +371,7 @@ def emit_rotor_code(f, rows, slots, row_slot):
 
         sets = []
         for key, row in sorted(rows.items()):
-            data = shift_row(row) if shift else row
+            data = shift_row(row, shift)
             cols = tuple(i for i, b in enumerate(data) if b)
             if cols not in sets:
                 sets.append(cols)
@@ -356,7 +388,7 @@ def emit_rotor_code(f, rows, slots, row_slot):
             rest_bytes += 18
 
     def rest_for(shift, key):
-        data = shift_row(rows[key]) if shift else rows[key]
+        data = shift_row(rows[key], shift)
         cols = tuple(i for i, b in enumerate(data) if b)
         return rest_labels[(shift, cols)]
 
@@ -371,18 +403,21 @@ def emit_rotor_code(f, rows, slots, row_slot):
     # the top half's 2,3,4 reversed with the two end rows swapped, so it
     # cannot share entries with the top - hence ten, not seven.
     seq_rows = [0, 1, 2, 3, 4, 15, 16, 17, 18, 19]
-    f.write('\n')
-    f.write('\\ Rotor dispatch, at index shift*%d + phase*%d + n, where n\n'
-            % (FRAMES * len(seq_rows), len(seq_rows)))
-    f.write('\\ counts the ten drawn rotor rows in drawing order.\n')
+    tab.write('\n')
+    tab.write('\\ Rotor dispatch, at index (shift AND 1)*%d + phase*%d + n,\n'
+              % (FRAMES * len(seq_rows), len(seq_rows)))
+    tab.write('\\ where n counts the ten drawn rotor rows in drawing order.\n')
+    tab.write('\\ This bank holds shifts %d and %d px; the other holds the\n'
+              % tuple(shifts))
+    tab.write('\\ other two, at the same addresses with its own contents.\n')
     for name, pick in (('drSeqLo',  lambda s, k: 'LO(%s)' % labels[(s, k)]),
                        ('drSeqHi',  lambda s, k: 'HI(%s)' % labels[(s, k)]),
                        ('drRSeqLo', lambda s, k: 'LO(%s)' % rest_for(s, k)),
                        ('drRSeqHi', lambda s, k: 'HI(%s)' % rest_for(s, k))):
-        f.write('.%s\n' % name)
-        for shift in (0, 1):
+        tab.write('.%s%s\n' % (pfx, name))
+        for shift in shifts:
             for phase in range(FRAMES):
-                f.write('  EQUB ' + ','.join(
+                tab.write('  EQUB ' + ','.join(
                     pick(shift, slots[phase][row_slot[r]]) for r in seq_rows) + '\n')
     # ---- B: one straight-line program per (shift, phase) -------------
     # Every rotor routine ends by walking, so a program is just the calls in
@@ -406,7 +441,7 @@ def emit_rotor_code(f, rows, slots, row_slot):
     # (00,02,04,05,06 | 06,05,04,03,01), and merging them would mean a copy
     # per phase of the rows that are currently shared.
     def rest_cols(shift, key):
-        data = shift_row(rows[key]) if shift else rows[key]
+        data = shift_row(rows[key], shift)
         return tuple(i for i, b in enumerate(data) if b)
 
     f.write('\n')
@@ -414,7 +449,7 @@ def emit_rotor_code(f, rows, slots, row_slot):
     f.write('\\ that depends on shift and phase>>2 alone - so eight of these\n')
     f.write('\\ cover all sixteen sequences. The last row of the bottom half\n')
     f.write('\\ does not walk: nothing reads the pointers after it.\n')
-    for shift in (0, 1):
+    for shift in shifts:
         for arr in (0, 1):
             phase = arr * 4
             for half, half_rows in ((0, seq_rows[:5]), (1, seq_rows[5:])):
@@ -432,7 +467,7 @@ def emit_rotor_code(f, rows, slots, row_slot):
                 rest_bytes += 1
 
     f.write('\n')
-    for shift in (0, 1):
+    for shift in shifts:
         for phase in range(FRAMES):
             f.write('.drPrg%d_%d\n' % (shift, phase))
             for n, r in enumerate(seq_rows):
@@ -444,7 +479,7 @@ def emit_rotor_code(f, rows, slots, row_slot):
                 f.write('  %s %s\n' % (op, labels[(shift, slots[phase][row_slot[r]])]))
 
     f.write('\n')
-    for shift in (0, 1):
+    for shift in shifts:
         for phase in range(FRAMES):
             f.write('.drRPrg%d_%d\n' % (shift, phase))
             f.write('  JSR drRHalf%d_%d_0\n' % (shift, phase >> 2))
@@ -453,37 +488,36 @@ def emit_rotor_code(f, rows, slots, row_slot):
             f.write('  SCANSTEP\n')
             f.write('  JMP drRHalf%d_%d_1\n' % (shift, phase >> 2))
 
-    f.write('\n')
     # Indexed by the SAME sprSeqBase the fallback uses, so entering a program
     # costs a table read and a poke and no arithmetic at all. Only every tenth
     # entry can be reached; the rest are filled to keep the table square.
-    f.write('\n')
+    tab.write('\n')
     for name, kind, half in (('drPrgLo', 'drPrg', 'LO'), ('drPrgHi', 'drPrg', 'HI'),
                              ('drRPrgLo', 'drRPrg', 'LO'), ('drRPrgHi', 'drRPrg', 'HI')):
-        f.write('.%s\n' % name)
-        for shift in (0, 1):
+        tab.write('.%s%s\n' % (pfx, name))
+        for shift in shifts:
             for phase in range(FRAMES):
-                f.write('  EQUB ' + ','.join(
+                tab.write('  EQUB ' + ','.join(
                     ['%s(%s%d_%d)' % (half, kind, shift, phase)] * len(seq_rows)) + '\n')
 
-    f.write('\n')
-    f.write('\\ Sprite row -> position in that sequence; &FF means the row is\n'
-            '\\ not the rotor\'s (a digit row, or one of the three blank ones).\n'
-            '\\ Only the wrap fallback needs it - the fast path knows the\n'
-            '\\ shape and walks the list straight through.\n')
+    tab.write('\n')
+    tab.write('\\ Sprite row -> position in that sequence; &FF means the row is\n'
+              '\\ not the rotor\'s (a digit row, or one of the three blank ones).\n'
+              '\\ Only the wrap fallback needs it - the fast path knows the\n'
+              '\\ shape and walks the list straight through.\n')
     seq_idx = [0xFF] * SPRITE_ROWS
     for n, r in enumerate(seq_rows):
         seq_idx[r] = n
-    f.write('.drSeqIdx\n')
-    emit_bytes(f, seq_idx, per_line=SPRITE_ROWS)
-    f.write('.drMul10                        \\ phase * %d\n' % len(seq_rows))
-    emit_bytes(f, [len(seq_rows) * p for p in range(FRAMES)], per_line=FRAMES)
-    f.write('\n')
+    tab.write('.%sdrSeqIdx\n' % pfx)
+    emit_bytes(tab, seq_idx, per_line=SPRITE_ROWS)
+    tab.write('.%sdrMul10                     \\ phase * %d\n' % (pfx, len(seq_rows)))
+    emit_bytes(tab, [len(seq_rows) * p for p in range(FRAMES)], per_line=FRAMES)
+    tab.write('\n')
 
     return draw_bytes, rest_bytes
 
 
-def emit_glyph_code(f, mem):
+def emit_glyph_code(tab, f, mem, shifts, pfx):
     """Compiled draw code for the ten digit glyphs.
 
     THE DIGITS ARE DENSE WHERE THE ROTOR WAS SPARSE - 42.7 opaque bytes of 56
@@ -526,13 +560,14 @@ def emit_glyph_code(f, mem):
                 for r in range(8)]
 
     size = 0
-    for shift in (0, 1):
+    for shift in shifts:
         for d in range(10):
             rows = glyph_rows(d)
             assert all(row[2] == 0 for row in rows), (
                 'glyph %d is wider than 8 pixels unshifted' % d)
-            if shift:
-                rows = [shift_row(r) for r in rows]
+            rows = [shift_row(r, shift) for r in rows]
+            assert all(len(row) == 3 for row in rows), (
+                'a shifted glyph row lost its spill column')
             # A GLYPH SAVES ITS OWN TWO COLUMNS AND NOT ITS SPILL. The C64
             # digits are 7 pixels wide in an 8 pixel cell, so unshifted the
             # three positions are disjoint - columns 0-1, 2-3, 4-5. SHIFTED
@@ -593,30 +628,33 @@ def emit_glyph_code(f, mem):
     # Column 6's save, generated here rather than written in sprite.asm
     # only because main RAM is the binding constraint and this bank is not.
     # It runs with the sprite bank paged in, like the glyphs it precedes.
-    f.write('\n\\ drBlkSave6 - the digit block\'s column 6, all eight rows.\n'
-            '\\ Nothing owns it: it is only ever written by the last\n'
-            '\\ position\'s spill under a shift. See SprDigitBlock.\n')
-    f.write('.drBlkSave6\n')
-    f.write('  LDY #6*UNIT_BYTES\n')
+    # IN THE FIXED SECTION, not the code, even though it is code: the blitter
+    # calls it by name from main RAM, so it has to be at the same address in
+    # both sprite banks, and only the fixed section guarantees that.
+    tab.write('\n\\ drBlkSave6 - the digit block\'s column 6, all eight rows.\n'
+              '\\ Nothing owns it: it is only ever written by the last\n'
+              '\\ position\'s spill under a shift. See SprDigitBlock.\n')
+    tab.write('.%sdrBlkSave6\n' % pfx)
+    tab.write('  LDY #6*UNIT_BYTES\n')
     for n in range(8):
-        f.write('  LDA (rowp+%d),Y : STA (rowq+%d),Y\n' % (2 * n, 2 * n))
+        tab.write('  LDA (rowp+%d),Y : STA (rowq+%d),Y\n' % (2 * n, 2 * n))
         size += 4
-    f.write('  RTS\n')
+    tab.write('  RTS\n')
     size += 3
 
-    f.write('\n\\ Glyph dispatch, at index shift*10 + digit.\n')
-    f.write('.drGlyphLo\n')
-    for shift in (0, 1):
-        f.write('  EQUB ' + ','.join('LO(drGlyph%d_%d)' % (shift, d)
-                                     for d in range(10)) + '\n')
-    f.write('.drGlyphHi\n')
-    for shift in (0, 1):
-        f.write('  EQUB ' + ','.join('HI(drGlyph%d_%d)' % (shift, d)
-                                     for d in range(10)) + '\n')
+    tab.write('\n\\ Glyph dispatch, at index (shift AND 1)*10 + digit.\n')
+    tab.write('.%sdrGlyphLo\n' % pfx)
+    for shift in shifts:
+        tab.write('  EQUB ' + ','.join('LO(drGlyph%d_%d)' % (shift, d)
+                                       for d in range(10)) + '\n')
+    tab.write('.%sdrGlyphHi\n' % pfx)
+    for shift in shifts:
+        tab.write('  EQUB ' + ','.join('HI(drGlyph%d_%d)' % (shift, d)
+                                       for d in range(10)) + '\n')
 
-    f.write('\n\\ The three digits of each droid type, as glyph numbers.\n')
+    tab.write('\n\\ The three digits of each droid type, as glyph numbers.\n')
     for pos in range(3):
-        f.write('.drDigit%d\n' % pos)
+        tab.write('.%sdrDigit%d\n' % (pfx, pos))
         vals = []
         for t in range(NUM_TYPES):
             if pos == 0:
@@ -625,8 +663,8 @@ def emit_glyph_code(f, mem):
                 vals.append(mem[DNUM_T + t] >> 4)
             else:
                 vals.append(mem[DNUM_T + t] & 0x0F)
-        emit_bytes(f, vals)
-    f.write('\n')
+        emit_bytes(tab, vals)
+    tab.write('\n')
     return size
 
 
@@ -709,63 +747,72 @@ def main():
     speeds = [mem[DSPEED_T + t] for t in range(NUM_TYPES)]
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    path = OUT_DIR / 'droids.asm'        # sideways bank SWRAM_SPR
+    rotor_rows, rotor_slots, rotor_rowslot = build_rotor_code(mem, frames, bottoms)
+
+    # ---- the two sprite banks ------------------------------------------
+    # A compiled shift is ~5.5K of code, so the four do not fit in one 16K
+    # bank: shifts 0 and 1 px go in SWRAM_SPR, 2 and 3 px in SWRAM_SPR+1, and
+    # PAGESPRBANK pages whichever a sprite needs.
+    #
+    # EACH FILE IS TABLES THEN CODE, and the tables are the same size in both,
+    # so they land at the same addresses. That is what lets the blitter name
+    # one set: it addresses bank 5's labels and gets bank 6's tables when bank
+    # 6 is paged. The second file's table labels are prefixed to keep beebasm
+    # happy, and main.asm asserts the two agree.
+    sizes = {}
+    for bank, (shifts, pfx, name) in enumerate((((0, 1), '', 'droids.asm'),
+                                                ((2, 3), 'x', 'droids2.asm'))):
+        tab, code = io.StringIO(), io.StringIO()
+        code_d, code_r = emit_rotor_code(tab, code, rotor_rows, rotor_slots,
+                                         rotor_rowslot, shifts, pfx)
+        code_g = emit_glyph_code(tab, code, mem, shifts, pfx)
+        sizes[bank] = (code_d, code_r, code_g)
+        with open(OUT_DIR / name, 'w') as f:
+            f.write(BANNER)
+            f.write('\\ Shifts %d and %d px. The other two are in the other\n'
+                    '\\ sprite bank, at the same table addresses.\n' % shifts)
+            f.write('\n')
+            if not pfx:
+                f.write('DR_W        = 7                 '
+                        '\\ 24 px, plus one for the shift spill\n')
+                f.write('DR_H        = %d\n' % SPRITE_ROWS)
+                f.write('DR_FRAMES   = %d\n' % FRAMES)
+                f.write('DR_TYPES    = %d\n' % NUM_TYPES)
+                f.write('DR_ROWS     = %d              '
+                        '\\ distinct stored rows\n' % len(rows))
+                f.write('DR_DATASIZE = DR_ROWS * DR_W\n')
+                f.write('DR_DIGIT0   = 6                 \\ first digit row\n')
+                f.write('DR_DIGITN   = 8                 \\ how many digit rows\n')
+                f.write('DR_SEQSHIFT = %d                '
+                        '\\ sequence stride between this bank\'s two shifts\n'
+                        % (FRAMES * 10))
+                f.write('DR_GLYPHS   = 10                '
+                        '\\ digit glyphs, and the glyph-table stride\n')
+                f.write('\n')
+
+            f.write('\\ ==== fixed section: SAME SIZE AND ORDER IN BOTH BANKS ====\n')
+            f.write('\\ Everything the blitter reaches by name. Sizes here are\n')
+            f.write('\\ independent of which shifts the bank holds, so the\n')
+            f.write('\\ addresses match and one set of labels serves both.\n')
+            f.write('\\ The stored artwork is not among them: drSprData and\n')
+            f.write('\\ drOfs are in the DATA bank, read only by SprFetchRow.\n')
+            f.write('\n')
+            f.write('\\ p * %d, to index drOfs.\n' % SPRITE_ROWS)
+            f.write('.%sdrMulRows\n' % pfx)
+            emit_bytes(f, [SPRITE_ROWS * p for p in range(FRAMES)], per_line=FRAMES)
+            f.write('\n')
+            f.write('\\ Byte offset of each type\'s 8 digit rows into drSprData.\n')
+            f.write('.%sdrDigitLo\n' % pfx)
+            emit_bytes(f, [(digit_at[t] * 7) & 0xFF for t in range(NUM_TYPES)])
+            f.write('.%sdrDigitHi\n' % pfx)
+            emit_bytes(f, [(digit_at[t] * 7) >> 8 for t in range(NUM_TYPES)])
+            f.write(tab.getvalue())
+            f.write('\\ ==== code: sizes differ between the banks ================\n')
+            f.write(code.getvalue())
+
+    code_d, code_r, code_g = sizes[0]
     path2 = OUT_DIR / 'droidgame.asm'    # sideways bank SWRAM_DATA
-    with open(path, 'w') as f, open(path2, 'w') as g:
-        f.write(BANNER)
-        f.write('\n')
-        f.write('DR_W        = 7                 \\ 24 px, plus one for a 2 px shift\n')
-        f.write('DR_H        = %d\n' % SPRITE_ROWS)
-        f.write('DR_FRAMES   = %d\n' % FRAMES)
-        f.write('DR_TYPES    = %d\n' % NUM_TYPES)
-        f.write('DR_ROWS     = %d              \\ distinct stored rows\n' % len(rows))
-        f.write('DR_DATASIZE = DR_ROWS * DR_W\n')
-        f.write('DR_DIGIT0   = 6                 \\ first digit row\n')
-        f.write('DR_DIGITN   = 8                 \\ how many digit rows\n')
-        f.write('\n')
-
-        f.write('\\ The stored artwork is NOT in this file. drSprData and drOfs\n')
-        f.write('\\ are in the DATA bank, emitted into droidgame.asm: only\n')
-        f.write('\\ SprFetchRow reads them, on the wrap fallback, and it pages\n')
-        f.write('\\ that bank in around itself. Everything here is code and\n')
-        f.write('\\ tables that run with THIS bank paged in.\n')
-        f.write('\n')
-        f.write('\\ p * %d, to index the tables above.\n' % SPRITE_ROWS)
-        f.write('.drMulRows\n')
-        emit_bytes(f, [SPRITE_ROWS * p for p in range(FRAMES)], per_line=FRAMES)
-        f.write('\n')
-
-        f.write('\\ Byte offset of each type\'s 8 digit rows. Row 6+n is at\n')
-        f.write('\\ drDigit[type] + n*%d.\n' % 7)
-        f.write('.drDigitLo\n')
-        emit_bytes(f, [(digit_at[t] * 7) & 0xFF for t in range(NUM_TYPES)])
-        f.write('.drDigitHi\n')
-        emit_bytes(f, [(digit_at[t] * 7) >> 8 for t in range(NUM_TYPES)])
-        f.write('\n')
-
-        f.write('\\ ---- compiled rotor ---------------------------------------\n')
-        f.write('\\ Rows 0-4 and 15-19 are drawn by generated code rather than\n')
-        f.write('\\ fetched and blitted. See emit_rotor_code in the exporter for\n')
-        f.write('\\ why this is the row that pays, and why one variant suffices\n')
-        f.write('\\ where a compiled sprite usually needs eight.\n')
-        f.write('\\\n')
-        f.write('\\ The interpreted path is NOT retired: a row straddling the end\n')
-        f.write('\\ of the play strip has its columns out of address order and\n')
-        f.write('\\ falls back to it, so drOfs and the rotor rows in drSprData\n')
-        f.write('\\ are still live.\n')
-        f.write('DR_SEQSHIFT = %d                \\ sequence stride between the shifts\n'
-                % (FRAMES * 10))
-        f.write('DR_GLYPHS   = 10                '
-                '\\ digit glyphs, and the shift stride\n')
-        rotor_rows, rotor_slots, rotor_rowslot = build_rotor_code(mem, frames, bottoms)
-        code_d, code_r = emit_rotor_code(f, rotor_rows, rotor_slots, rotor_rowslot)
-
-        f.write('\\ ---- compiled digits --------------------------------------\n')
-        f.write('\\ Rows 6-13. Ten glyph routines cover all 24 droid types; see\n')
-        f.write('\\ emit_glyph_code in the exporter for why it is glyphs rather\n')
-        f.write('\\ than types, and why they draw without saving.\n')
-        code_g = emit_glyph_code(f, mem)
-
+    with open(path2, 'w') as g:
         g.write(BANNER)
         g.write('\n')
         g.write('\\ The half of the droid export that is GAME DATA, not sprite: speeds,\n')
@@ -847,13 +894,12 @@ def main():
                    per_line=NUM_DECKS)
         g.write('\n')
 
-    print('%s' % path)
     print('%s' % path2)
     print('  sprites   %d rows x 7 = %d bytes  (+ %d offsets, %d digit ptrs)'
           % (len(rows), len(rows) * 7, len(offsets) * 2, NUM_TYPES * 2))
-    print('  rotor     compiled: %d bytes draw + %d restore, 2 shifts'
-          % (code_d, code_r))
-    print('  digits    compiled: %d bytes, 10 glyphs x 2 shifts' % code_g)
+    for bank, (d, r, gl) in sizes.items():
+        print('  bank %d    shifts %d/%d px: rotor %d draw + %d restore,'
+              ' glyphs %d' % (5 + bank, bank * 2, bank * 2 + 1, d, r, gl))
     print('  waypoints %d records = %d bytes' % (len(wp_blob) // 3, len(wp_blob)))
     print('  per-deck waypoint counts: %s' % counts)
 

@@ -698,6 +698,12 @@ PLY_REFY = 63                   \ from the view's top edge, sprite top + 13
 \ Where the sprite lands, now that the view has settled. sx reaches
 \ 296 at the right-hand edge of the map, so the halving is 16-bit;
 \ after it, everything fits in a byte.
+\ THE SHIFT IS A PIXEL COUNT NOW, 0-3, not a flag — four compiled
+\ shifts exist. This still picks only the even ones, so the sprite
+\ still lands every 2 px and nothing about the picture changes; the
+\ odd two are wired up but unused until the step that switches this
+\ to `AND #3`. Doing it that way keeps the bank split and the 1 px
+\ move separately testable.
 .dz_screen
   SEC
   LDA plyX   : SBC posX   : STA dzSx
@@ -708,7 +714,8 @@ PLY_REFY = 63                   \ from the view's top edge, sprite top + 13
   ROR A                         \ sx >> 1, 0-148
   STA amTmp
   AND #1
-  STA sprShift+PLY_SLOT         \ odd half-pixel pair: use the shifted copy
+  ASL A                         \ 0 or 2 px, never 1 or 3 — yet
+  STA sprShift+PLY_SLOT
   LDA amTmp
   LSR A
   STA sprUnit+PLY_SLOT

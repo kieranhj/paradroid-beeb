@@ -117,6 +117,7 @@ Full reasoning, and the measurement that settled which Paradroid the listing is,
 | Decision | Choice | Date |
 |---|---|---|
 | Target machine | BBC Model B / B+ with **2 × 16K sideways RAM banks** | 2026-08-04 |
+| Target machine, revised | **3 × 16K sideways RAM banks** — a B+ 128 or a B with a 32/64K SWRAM board. A compiled shift is ~5.5 K of code and 1 px positioning needs four of them, which does not fit in two banks. See [`docs/layer-5-blitter.md`](docs/layer-5-blitter.md) | 2026-08-14 |
 | Screen mode | MODE 1, 4 colours, **10K wrap at `&5800–&7FFF`** | 2026-08-04 |
 | Screen layout | 3-cycle vertical rupture: 5-row panel at `&4800`, 3-row gap, scrolled play area | 2026-08-05 |
 | Play area | **320 × 120** — 10 tiles wide, 15 character rows. See Layer 3d for why not 128 | 2026-08-05 |
@@ -150,7 +151,8 @@ moves. The outline:
 | `&5700–&57FF` | 256 B | data byte → transparency mask table, built at startup |
 | `&5800–&7FFF` | 10,240 B | play buffer: circular strip, 16 rows × 640 |
 | SWRAM bank 4 | 16 K | `PARADAT` — char data, colour schemes, tile defs, deck RLE, waypoints, **and the level-draw code**. Ends `&A511`, **6,895 B free** |
-| SWRAM bank 5 | 16 K | `PARASPR` — the whole blitter: artwork, compiled rows, glyphs, programs. Ends `&B8B6`, **1,866 B free** |
+| SWRAM bank 5 | 16 K | `PARASPR` — the blitter at shifts 0 and 1 px. Ends `&B056`, **4,010 B free** |
+| SWRAM bank 6 | 16 K | `PARSPR2` — the same at 2 and 3 px, laid out identically. Ends `&B199`, **3,687 B free** |
 
 **"Main RAM is full" meant the `PARA` image could not grow past `&3000`** — never that there was no
 RAM. Moving code rather than data is what fixed it: `screen.asm`, `scroll.asm` and `level.asm` now

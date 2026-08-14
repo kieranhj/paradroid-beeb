@@ -57,7 +57,7 @@ proves no instruction was added, removed or reordered.
 
 | | |
 |---|---|
-| Machine | BBC Model B / B+ with 2 × 16K sideways RAM banks |
+| Machine | BBC Model B / B+ with **3 × 16K sideways RAM banks** (4 = data + level draw, 5 and 6 = the blitter's four compiled shifts) |
 | CPU | Plain 6502 — `CPU 0` in BeebASM, no 65C12 opcodes |
 | Display | MODE 1, 4 colours. **Not a plain frame:** a 5-row static panel at `&4800` above a 320 × 120 scrolled play area, driven by a three-cycle vertical rupture |
 | Play area | 10K circular strip at `&5800`, **10K hardware wrap**, scrolled by the CRTC — 4 px horizontally, 1 scanline vertically |
@@ -130,7 +130,8 @@ output rather than from any document.** In outline:
 | `&5500–&57FF` | Character-address and sprite-mask tables, built at startup |
 | `&5800–&7FFF` | Play buffer: circular strip, 16 rows × 640 |
 | SWRAM bank 4 | `PARADAT` — tiles, levels, palettes, droid game data, **and the level-draw code** |
-| SWRAM bank 5 | `PARASPR` — the whole blitter: artwork, compiled rows, glyphs, programs |
+| SWRAM bank 5 | `PARASPR` — the blitter, shifts 0 and 1 px |
+| SWRAM bank 6 | `PARSPR2` — shifts 2 and 3 px, same layout |
 
 **Only one bank is visible at a time.** `SprRestoreAll` and `SprDrawAll` page their own bank in and
 the data bank back out around themselves, so `SWRAM_DATA` is the resting state. This is safe only

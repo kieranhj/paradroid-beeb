@@ -31,7 +31,7 @@ Regenerate it after any change that moves a region:
 | `&5600–&56FF` | 256 B | `CHAR_PTR_HI` |
 | `&5700–&57FF` | 256 B | `SPR_MASKTAB` — data byte → transparency mask, built at startup |
 | `&5800–&7FFF` | 10,240 B | Play buffer: circular strip, 16 rows × 640, inside a 10K hardware wrap |
-| `&8000–&BFFF` | 16 K | Sideways bank window — one of the two banks below, never both |
+| `&8000–&BFFF` | 16 K | Sideways bank window — one of the THREE banks below, never more |
 | `&C000–&FFFF` | 16 K | MOS |
 
 Free main RAM totals **7,067 bytes**, of which 2,475 are below `&3000` — the level draw moved
@@ -105,38 +105,37 @@ tables are reached while the *sprite* bank is paged in — `SprScanRow` tail-cal
 `SprCalcAddr` calls the second. A JSR from there into this bank would land in compiled sprite rows,
 and nothing would diagnose it.
 
-## SWRAM bank 5 — `PARASPR`
+## SWRAM bank 5 — `PARASPR` (shifts 0 and 1 px)
 
-`&8000–&B097`, 12,439 bytes used, **3,945 free**. The whole blitter: artwork, compiled rows,
-compiled programs, glyphs. `SprRestoreAll` and `SprDrawAll` page this in and the data bank back out
-around themselves.
+`&8000–&B056`, 12,374 bytes used, **4,010 free**. Two of the four compiled shifts.
 
-**What each block is for is in [`layer-5-blitter.md`](layer-5-blitter.md)**, under "What is in the
-bank, block by block" — including the division that explains the shape of this table: the compiled
-fast path reads none of the artwork, and the wrap fallback is the only thing that does.
+## SWRAM bank 6 — `PARSPR2` (shifts 2 and 3 px)
+
+`&8000–&B199`, 12,697 bytes used, **3,687 free**. The other two, laid out identically.
+
+**Both sprite banks share one layout**: a fixed section of tables at the same addresses in each,
+then that bank's own code. That is what lets the blitter name one set of labels and read whichever
+bank is paged; `main.asm` asserts all nineteen addresses agree. The fixed section, common to both:
 
 | Address | Size | Contents |
 |---|---|---|
-| `&8000` | 56 | `drMulRows`, `drDigitLo`/`Hi` — the small lookups that stayed |
-| `&8038` | 1,810 | `drD0_*` — compiled rotor draw rows, shift 0 |
-| `&874A` | 144 | `drR0_*` — compiled restore rows, shift 0 |
-| `&87DA` | 1,690 | `drD1_*` — draw rows, shift 1 (2 px) |
-| `&8E74` | 126 | `drR1_*` — restore rows, shift 1 |
-| `&8EF2` | 320 | `drSeqLo`/`drSeqHi` — draw sequence, 16 × 10 rows |
-| `&9032` | 320 | `drRSeqLo`/`drRSeqHi` — restore sequence |
-| `&9172` | 1,340 | `drRHalf<shift>_<arr>_<half>` — the eight restore halves |
-| `&96AE` | 1,072 | `drPrg0_0…` — 16 straight-line draw programs, one per (shift, phase) |
-| `&9ADE` | 688 | `drRPrg0_0…` — 16 restore programs |
-| `&9D8E` | 640 | `drPrgLo`/`Hi`, `drRPrgLo`/`Hi` — program entry addresses |
-| `&A00E` | 29 | `drSeqIdx`, `drMul10` — sprite row → sequence position, and phase × 10 |
-| `&A02B` | 1,926 | `drGlyph0_*` — ten unshifted digit glyphs |
-| `&A7B1` | 2,131 | `drGlyph1_*` — ten shifted glyphs. Larger because of the spill column |
-| `&B004` | 35 | `drBlkSave6` — the digit block's column 6 save |
-| `&B027` | 112 | `drGlyphLo`/`Hi`, `drDigit0`/`1`/`2` — dispatch and per-type digits |
+| `&8000` | 8 | `drMulRows` — phase × 21 |
+| `&8008` | 48 | `drDigitLo`/`Hi` — each type's digit rows in `drSprData` |
+| `&8038` | 320 | `drSeqLo`/`Hi` — draw sequence, this bank's two shifts |
+| `&8178` | 320 | `drRSeqLo`/`Hi` — restore sequence |
+| `&82B8` | 640 | `drPrgLo`/`Hi`, `drRPrgLo`/`Hi` — program entry addresses |
+| `&8538` | 29 | `drSeqIdx`, `drMul10` — fallback row → sequence position, phase × 10 |
+| `&8555` | 35 | `drBlkSave6` — the digit block's column 6 save. Code, but in the fixed section because it is called by name |
+| `&8578` | 40 | `drGlyphLo`/`Hi` — glyph dispatch |
+| `&85A0` | 72 | `drDigit0`/`1`/`2` — per-type digits |
 
-The 3,945 bytes free here are the room the second compiled shift needs. `drSprData` and `drOfs` left
-for bank 4 to make it, which is step A of the 1 px work — see
-[`layer-5-blitter.md`](layer-5-blitter.md).
+Then the code, whose sizes differ between the banks — in bank 5, `drD0_*` at `&85E8` (1,954),
+`drD1_*` at `&8D8A`, the restore rows, halves and programs, then `drGlyph0_*` at `&A178` (1,926) and
+`drGlyph1_*` at `&A8FE` (1,880). Bank 6 has the same shape for 2 and 3 px.
+
+**What each block is for is in [`layer-5-blitter.md`](layer-5-blitter.md)**, under "What is in the
+bank, block by block" — including the division that explains the shape: the compiled fast path
+reads none of the artwork, and the wrap fallback is the only thing that does.
 
 ## Two things this map says that the summaries do not
 

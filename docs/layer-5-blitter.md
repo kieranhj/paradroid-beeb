@@ -474,6 +474,53 @@ banks exist, so it is deferred to step D rather than claimed here.
 `SprFetchRow`'s return-page changed from a constant to `sprBank` — the forced-fallback comparison
 again, 0 of 10240 against the compiled path with the rotor frozen and the sprites persisted.
 
+## 1 px positioning — step C: four shifts, two banks
+
+*The picture is still unchanged, but half the pool is now drawn out of a bank that did not exist
+before, and the odd shifts are compiled and loaded waiting for step D to select them.*
+
+**The exporter emits four shifts across two files.** `shift_row` generalised from a hard-coded 2 px
+to any of 0–3: a MODE 1 pixel is bits 7−n and 3−n, so the two nibbles move together — keep `&EE`
+shifted down 1 with `&11` carried up 3, or `&CC`/`&33` at 2, or `&88`/`&77` at 3. Shifts 0 and 1 px
+go to `droids.asm` in `SWRAM_SPR`; 2 and 3 px to `droids2.asm` in `SWRAM_SPR2` = bank 6.
+
+**How two banks can share one set of labels.** beebasm's labels are global, so the same table cannot
+be declared twice — and duplicating the *contents* is exactly what is wanted, since each bank needs
+its own dispatch. The resolution is layout, not naming:
+
+- Each file is **fixed section first, code after**. The fixed section holds every table the blitter
+  reaches by name, and its size does not depend on which shifts the bank holds — so it lands at the
+  same addresses in both. `drBlkSave6` lives there too, code though it is, for the same reason.
+- The second file's fixed-section labels are prefixed `x`. The blitter names bank 5's, and gets bank
+  6's tables when bank 6 is paged.
+- **`main.asm` asserts all nineteen agree.** This is a hidden coupling with no run-time diagnostic —
+  a mismatch would send the blitter into compiled sprite rows — so it is checked at build time.
+
+**Indices are bit 0 of the shift, not the shift.** Bit 1 chose the bank; what is left picks which of
+that bank's two. Four shifts' worth of sequence table would be 320 entries and `sprSeqBase` is a
+byte, so this is not only tidier, it is the only thing that fits.
+
+**The fallback shifts one pixel at a time**, `sprShiftW` passes of one loop, with the masks derived
+afterwards rather than during — a partly-shifted byte's mask means nothing. A per-shift routine
+would be faster and this is the wrong place to spend: one row in fifty, and correctness across four
+shifts matters more than ~90 cycles.
+
+| | |
+|---|---|
+| bank 5 (0, 1 px) | 12,374 used, **4,010 free** |
+| bank 6 (2, 3 px) | 12,697 used, **3,687 free** |
+| main RAM code | `&1100–&267E` |
+| disc | +12.4K for `PARSPR2`, a third `*LOAD` staged through `&3000` |
+
+**Verified.** The player and the test droids were switched from shift 1 to shift **2**, so the
+picture is bit-for-bit what it was while half the pool draws from bank 6:
+
+- 0 of 10240 against a SPACE-forced `RedrawAll` after scrolling.
+- The digit block reconstructed byte-exactly from the glyph data for five slots — three at shift 0
+  in bank 5, two at shift 2 in bank 6, the latter with 2 and 9 spill bytes. That is the check that
+  catches a glyph the exporter got wrong, which is how the truncated spill column was found.
+- The rewritten fallback shift against the compiled path, every row forced through it: 0 of 10240.
+
 ## What is in the bank, block by block
 
 Reference for the finished article. Addresses are from a `-dd` label dump of the current build;
