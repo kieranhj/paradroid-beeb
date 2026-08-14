@@ -37,10 +37,20 @@
 \ AnimateDroids or the sound driver have run. An iteration is 2 to 3
 \ frames, drifting towards 3 as a deck fills with droids.
 \
-\ The game loop is locked to FRAME_LOCK = 2 fields, so ONE pass of it
-\ is one C64 iteration and the original's constants apply unchanged:
-\ 7 px per iteration, 208/256 accel, 176/256 decel, 0.34 s from a
-\ standing start to top speed. Same motion, same cadence.
+\ The game loop is locked to FRAME_LOCK = 2 fields, so at
+\ PLY_ITER_FRAMES = 2 — the setting kept — one pass IS one C64
+\ iteration and the acceleration constants apply unchanged. That
+\ models the FAST end of the 2-to-3 range above, which is the
+\ Competition Edition's pace rather than the 1985 release's.
+\
+\ PLY_ITER_FRAMES = 3 models the loaded end and was built and played:
+\ 4.67 px and 92/256 accel a pass, 117 px/s, 0.52 s from a standing
+\ start — the 1985 release's own motion in real time, both speed and
+\ ramp. It was not kept. Its top speed does not divide the camera's
+\ 4 px step, so the scroll dithers 4,4,4,4,4,8 where 2 with
+\ CAM_TOPSPD = 8 is a uniform 8 — and the smoother scroll was judged
+\ worth more than the exact 1985 pace. That is a FEEL decision and it
+\ is reversible: set this to 3 and CAM_TOPSPD back to 7.
 \
 \ It did not start that way. The loop used to run every field with
 \ everything halved — 3.5 px per field, quarter acceleration — which
@@ -74,14 +84,27 @@ PLY_ITER_FRAMES = 2             \ TV frames per C64 GameLoop iteration
 
 C64_ACCEL  = 208                \ Acceleration_    $6955, per iteration
 C64_DECEL  = 176                \ DecelerationNeg_ $6954, per iteration
-C64_MAXSPD = 7                  \ PlayerSpeed_t[DSpeed_t[0]], px per iteration
+
+\ 7 is the original's, and the Competition Edition's: PlayerSpeed_t
+\ ($6D97) indexed by DSpeed_t[0] = 4, verified byte-identical across
+\ both releases in docs/decisions.md.
+\
+\ CAM_TOPSPD overrides it, and is currently 8, so that the camera's
+\ 4 px step divides the top speed exactly and the 8,8,8,4 dither goes
+\ away. This is THE ONE MOVEMENT NUMBER NOT TAKEN FROM THE C64 — a
+\ deliberate 14 % fidelity loss bought to stop the scroll stuttering.
+\ The reasoning is on the constant in main.asm; the value lives there
+\ because everything else in this block derives from it.
+C64_MAXSPD = CAM_TOPSPD
 
 \ The C64's numbers are per ITERATION; ours are applied once per
 \ game-loop pass, which is FRAME_LOCK fields long. So the scale factor
 \ is FRAME_LOCK / PLY_ITER_FRAMES — fields we get per pass over fields
 \ the C64 takes per iteration. Velocity scales by it once, acceleration
-\ twice. At FRAME_LOCK = 2 the two cancel and these are the C64's own
-\ values, unmodified.
+\ twice — which is what keeps the shape of the acceleration curve when
+\ the rate changes. The two cancel only when FRAME_LOCK and
+\ PLY_ITER_FRAMES are equal; at 2 and 3 the factor is 2/3, so velocity
+\ takes 2/3 and acceleration 4/9.
 PLY_ACCEL  = (C64_ACCEL * FRAME_LOCK * FRAME_LOCK) / (PLY_ITER_FRAMES * PLY_ITER_FRAMES)
 PLY_DECEL  = (C64_DECEL * FRAME_LOCK * FRAME_LOCK) / (PLY_ITER_FRAMES * PLY_ITER_FRAMES)
 PLY_MAXSPD = (C64_MAXSPD * 256 * FRAME_LOCK) / PLY_ITER_FRAMES  \ 8.8
@@ -486,10 +509,12 @@ PLY_REFY = 63                   \ from the view's top edge, sprite top + 13
 \ adds into it whole. The C64 only ever adds the whole-pixel part of
 \ the speed and drops the fraction each frame, which it can afford
 \ because its top speed is a whole number of pixels per iteration.
-\ Ours is 3.5 per frame: truncating would move 3 and throw the half
-\ away every single frame, 14% short. It also makes the first few
-\ frames of acceleration move nothing at all, which reads as a sticky
-\ start rather than a smooth one.
+\ Ours lands on a whole 7 at FRAME_LOCK = 2, but the speed is
+\ fractional all the way up the acceleration ramp: truncating would
+\ lose up to a pixel a pass, and would make the first few passes of
+\ acceleration move nothing at all, which reads as a sticky start
+\ rather than a smooth one. It also keeps this correct if
+\ FRAME_LOCK or PLY_ITER_FRAMES ever change.
 \
 \ A 24-bit add of a sign-extended 16-bit value, so it works
 \ unchanged for both directions.

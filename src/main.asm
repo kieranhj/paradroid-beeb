@@ -93,6 +93,38 @@ CHAR_BYTES = 16                 \ a character is 16 bytes: two 8-byte halves
 \ FRAME_LOCK / PLY_ITER_FRAMES, so the two cancel at 2 and 2.
 FRAME_LOCK = 2
 
+\ ---- top speed, and why it is a camera setting --------------
+\ The CRTC scrolls in 4 px units and the loop runs once per 2 fields,
+\ so the camera can only move 0, 4, 8 ... px a pass. At the C64's top
+\ speed of 7 the world must average 7, which no sequence of 4s and 8s
+\ hits exactly — it settles into 8, 8, 8, 4, and that periodic 4 px
+\ hiccup is the jerk. The average is forced by arithmetic, so no
+\ deadzone or camera policy can remove it; only a top speed that the
+\ 4 px step divides can.
+\
+\   7  the original's, and the Competition Edition's — see the table
+\      note in player.asm. Camera dithers 8, 8, 8, 4. Correct, jerky.
+\   8  uniform 8 px a pass, 200 px/s. The dither vanishes. 14 % fast
+\      against the original, and it lands exactly on the
+\      one-row-per-pass ceiling asserted in player.asm.
+\   4  uniform 4 px a pass, 100 px/s. Also dither-free, and half the
+\      step size, so the smoothest of the three — but 43 % slower
+\      than the original, which is a large fidelity cost.
+\
+\ Anything else is legal and will simply dither again: 6 gives 8, 4,
+\ 8, 4 and 5 gives 4, 4, 8, 4. Acceleration and deceleration are NOT
+\ scaled with it — they stay the C64's, so a lower top speed is also
+\ reached sooner. That is why 4 is not the free win it looks: it lands
+\ within 15 % of the 1985 release's 117 px/s, but reaches it in 0.20 s
+\ against the original's 0.52 s, so it plays snappier than it moves.
+\ Matching the original properly is PLY_ITER_FRAMES, not this — see
+\ the header in player.asm, which records what that setting was like.
+\
+\ 8 is what is kept. It is the one movement number in the port not
+\ taken from the C64, and it is here because a uniform scroll was
+\ judged worth 14 % of fidelity.
+CAM_TOPSPD = 8
+
 MAP_COLS   = 64                 \ tile map is 64 x 16 tiles
 MAP_ROWS   = 16
 MAP_CHAR_W = MAP_COLS * 4       \ 256 characters across

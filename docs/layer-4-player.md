@@ -166,30 +166,143 @@ and sprite DMA are taken out. `DrawScreen` alone very nearly fills a frame, befo
 `DoCollision`, `AnimateDroids` or the sound driver have run. An iteration is **2 to 3 frames**,
 drifting towards 3 as a deck fills with droids.
 
-So the conversion, with `PLY_ITER_FRAMES = 2` — velocity divides by the frame count once,
-acceleration twice:
+The conversion scales by *fields we get per pass ÷ fields the C64 spends per iteration*, i.e.
+`FRAME_LOCK / PLY_ITER_FRAMES` — velocity once, acceleration twice (`src/player.asm:85-88`).
+The loop is now locked to `FRAME_LOCK = 2`, so with `PLY_ITER_FRAMES = 2` the factor is 1 and
+**the constants are the C64's own numbers, unmodified**:
 
-| | C64, per iteration | here, per frame |
+| | C64, per iteration | here, per pass (2 fields, 25 Hz) |
 |---|---|---|
-| acceleration | 208/256 px/it² (`Acceleration_`, `$6955`) | 52/256 |
-| deceleration | 176/256 px/it² (`DecelerationNeg_`, `$6954`) | 44/256 |
-| top speed | 7 px/it (`PlayerSpeed_t[DSpeed_t[0]]`) | **3.5 px/frame** |
+| acceleration | 208/256 px/it² (`Acceleration_`, `$6955`) | 208/256 (`PLY_ACCEL`) |
+| deceleration | 176/256 px/it² (`DecelerationNeg_`, `$6954`) | 176/256 (`PLY_DECEL`) |
+| top speed | 7 px/it (`PlayerSpeed_t[DSpeed_t[0]]`) | **8 px** — `CAM_TOPSPD`, see below |
 
-Same motion in real time — 0.34 s from standing to top speed either way — but sampled at 50 Hz
-instead of 25, so it is smoother than the original rather than merely as fast. `PLY_ITER_FRAMES` is
-the one number to change if it still reads wrong; raising it slows everything together and keeps the
-acceleration curve's shape.
+Top speed's provenance on the C64: the player starts as droid 001, type 0 → `DSpeed_t[0] = 4` →
+`PlayerSpeed_t` (`$6D97` = `0,5,6,0,7,0,0,0,7`) index 4 = **7**, the fastest thing in the game.
+Each axis accelerates independently, so a diagonal reaches ~1.4× that — as it does on the C64.
+
+At 7 the port would sit at **175 px/s**, the C64's *empty-deck best case*; the original slows toward
+117 px/s as an iteration drifts to 3 frames on a busy deck, and we do not. (That drift is also why
+CE feels faster than the original — more iterations per second, not bigger steps.)
+
+## Top speed is 8, not 7, and that is a camera decision
+
+**The one movement number in the port not taken from the C64.** The CRTC scrolls in 4 px units and
+the loop runs once per 2 fields, so the camera can only move 0, 4, 8 … px a pass. At a top speed of
+7 the world must average 7, which no sequence of 4s and 8s hits — simulating the deadzone shows it
+settling into **8, 8, 8, 4**, the Bresenham dither of 7 onto a 4 px grid, and that periodic 4 px
+hiccup is what reads as jerk. The average is forced by arithmetic, so **no deadzone or camera policy
+can remove it**; only a top speed the 4 px step divides can.
+
+Four settings were built and played:
+
+| `CAM_TOPSPD` | `PLY_ITER_FRAMES` | px/pass | px/s | camera dither | ramp |
+|---|---|---|---|---|---|
+| 7 | 2 | 7 | 175 | 8, 8, 8, 4 | 0.34 s |
+| **8** | **2** | **8** | **200** | **none — uniform 8** | **0.39 s** |
+| 4 | 2 | 4 | 100 | none — uniform 4 | 0.20 s |
+| 7 | 3 | 4.67 | 117 | 4, 4, 4, 4, 4, 8 | 0.52 s |
+
+`CAM_TOPSPD = 8` was kept: a uniform scroll was judged worth 14 % of fidelity. Verified in jsbeeb —
+`xSpd` clamps at `&0800` exactly. It lands precisely on the one-row-per-pass ceiling that
+`ASSERT PLY_MAXSPD <= 8 * 256` guards.
+
+Two notes on the rejected rows, because neither is what it looks like:
+
+- **`CAM_TOPSPD = 4`** lands within 15 % of the 1985 release's 117 px/s and does feel close to it —
+  but `PLY_ACCEL` is *not* scaled by `CAM_TOPSPD`, so it reaches that speed in 0.20 s against the
+  original's 0.52 s. Right terminal velocity, wrong ramp; it plays snappier than it moves.
+- **`PLY_ITER_FRAMES = 3`** is the only setting that reproduces the 1985 release properly — 117 px/s
+  *and* a 0.52 s ramp, because that constant scales velocity by 2/3 and acceleration by 4/9
+  together. It is the fidelity choice, and it is one constant away (`CAM_TOPSPD` back to 7). It lost
+  on feel: 4.67 does not divide 4 either, so the scroll dithers again, just far more mildly.
+
+**An earlier build ran at `FRAME_LOCK = 1`** — 3.5 px per field, quarter acceleration, the same
+motion sampled at 50 Hz and genuinely smoother than the original. It was given up because with a
+full sprite pool the loop no longer fits in a field, so free-running stretched to ~1.25 fields an
+iteration and the player moved 20% slower with droids on screen than without. Speed that depends on
+what is visible is worse than speed that is merely chunkier. See `src/player.asm:45-54`.
 
 **The position needs a fraction byte.** The C64 adds only the whole-pixel part of the speed and
-drops the fraction every frame, which it can afford because its top speed is a whole number of
-pixels per iteration. Ours is 3.5: truncating moves 3 and throws the half away every frame — 14%
-short — and makes the first few frames of acceleration move nothing at all, which reads as a sticky
-start. `posXf`/`posYf` make the position 16.8 and the speed adds into it whole, as a 24-bit signed
-add. Clamping, stopping and wall-snapping all clear the fraction so the result lands on a whole
-pixel.
+drops the fraction every iteration. We keep it: the speed is fractional all the way up the
+acceleration ramp, and truncating each pass loses up to a pixel a pass and makes the first few
+passes move nothing at all — a sticky start rather than a smooth one. `posXf`/`posYf` make the
+position 16.8 and the speed adds into it whole, as a 24-bit signed add. Clamping, stopping and
+wall-snapping all clear the fraction so the result lands on a whole pixel.
 
-The clamp is 16-bit for the same reason: 3.5 has a fraction, so it is part of the limit rather than
-something to discard.
+The clamp is 16-bit for the same reason — the fraction is part of the limit rather than something
+to discard — even though at `FRAME_LOCK = 2` the limit itself happens to land on a whole 7.
+
+## Two camera schemes costed and rejected — read before re-opening this
+
+Both came out of trying to fix the 8, 8, 8, 4 jerk *without* changing the top speed. Neither works,
+and the reasons are worth keeping because both look obviously right on paper.
+
+### A lazy camera cannot keep up, and the decks are too long to hide it
+
+The proposal was: on reaching the deadzone edge, scroll a fixed 4 px a pass until the player is back
+at centre. At a top speed of 7 that is a **3 px/pass deficit = 75 px/s**, and the margin from the
+deadzone edge (screen x 156) to the sprite's right limit (296) is 140 px — so the camera falls off
+the back after 47 passes, **1.9 s, 327 world px** of continuous running.
+
+The decks do not co-operate. Decoding `levels.asm` + `tiledefs.asm` (RLE per `BuildLevel`, solid =
+character bit 7, deck padding excluded) gives the longest uninterrupted horizontal open runs:
+
+| deck | longest run | | deck | longest run |
+|---|---|---|---|---|
+| 3, 10, 11 | **136 ch = 1088 px** | | 2, 12 | 104 ch = 832 px |
+| 4 | 94 ch = 752 px | | 14 | 88 ch = 704 px |
+| 1 | 80 ch = 640 px | | 5 | 66 ch = 528 px |
+| 15 | 60 ch = 480 px | | 7 | 50 ch = 400 px |
+| 6 | 49 ch = 392 px | | 8 | 42 ch = 336 px |
+| 13 | 40 ch = 320 px | | 0, 9 | 34 / 32 ch = 272 / 256 px |
+
+Median run is 2 ch and p90 is 18 ch, but the **max is 1088 px** — over 3× the budget. Traversing it
+at top speed leaves the camera 465 px behind, i.e. the droid leaves the screen. Even deck 0's modest
+272 px run costs 117 px of drift, which eats essentially the whole right-hand margin on its own.
+
+More fundamentally: *any* camera policy must still average 7 px a pass at top speed, so it can only
+relocate the dither, not remove it. A recentring variant ("run at 8 until back at centre") was
+simulated and is worse — ~16 passes of smooth 8 px scrolling then a ~2-pass **dead stop**, repeating
+every 730 ms. Lower frequency, much higher amplitude.
+
+### Splitting the CRTC step across the two fields corrupts the picture
+
+The idea: park the half-way point of the move for the pass's FIRST field and the full move for the
+second, so an 8 px pass scrolls 4 + 4 at 50 Hz. One extra CRTC park, ~18 cycles at fire 1, no extra
+drawing at all, because the columns for the whole move are drawn before either field displays.
+
+It does not work, and the strip is why. **15 displayed rows of 80 units are 9600 contiguous bytes of
+a 10240-byte ring, so rows are adjacent.** Moving the displayed start back one unit therefore does
+not translate the picture — it **splices**, taking each row's leftmost column from the row above's
+rightmost. On a rightward move that column is the leading edge `DrawColumn` has just written, so the
+lagging field shows the new right-hand column down the left edge of rows 1–14.
+
+It was built and it ran, and *a still screenshot looked clean* — the artefact is 4 px wide. It was
+caught by exaggerating the lag to 20 units in jsbeeb: the view **re-framed rather than translating
+80 px**, which is the splice. Same wrap geometry as the sprite smear fixed in `39315d0`, and a good
+reminder of why the rule is to verify against the buffer rather than the picture.
+
+A correct version has to make the half-step **lead** rather than lag — draw the leading edge for the
+half position, display it, then draw the rest — which means splitting `DoRedraws` across the two
+fields, not merely re-parking the CRTC. That is a real restructure, complicated by the sprite pass
+(36,274 of the pass's cycles, and it runs once). Not attempted.
+
+## What the C64 updates at 50 Hz — and what it doesn't
+
+Worth recording, because it is the thing that justifies the 25 Hz lock. The C64's four-stage raster
+IRQ chain (`Irq_254`/`Irq_91`/`Irq_118`/`Irq_246`, `$6EC0–$6FE9`) runs every field, but **it never
+writes a sprite position**. Its writes are `$D011`/`$D016` (fine scroll), `$D018` (charset bank),
+`$D012`/`$D019`/`$D01A` (chain bookkeeping), the eight sprite pointers at `$4BF8–$4BFF`, and a read
+of `$D01E` for collisions — plus `Sound` at `$0500`, which really is a 50 Hz job.
+
+Sprite X/Y reach `$D000–$D00F` only through `WrSpriteState` (`$2643`), and every one of its call
+sites is game code (`$14A5` … `$3E90`, plus the `$E1xx` copies). The fine-scroll and sprite-pointer
+shadows the IRQ copies out are likewise only written by the game loop. So the hardware *latches*
+every visual value at 50 Hz, but the values only *change* once per `GameLoop` iteration: the player
+sprite sits still for 2–3 fields and then jumps 7 px. It does not flicker or tear while it waits —
+a VIC-II sprite is a hardware overlay — but the motion is sampled at ~16–25 Hz, not 50. Our 25 Hz
+lock is the top of that range, not a concession below it.
 
 *Deliberate divergence:* the C64's accelerate-negative path is one 256th weaker than its positive
 one, an artefact of the `SEC`/`ADC` idiom it uses to subtract. We subtract properly and both

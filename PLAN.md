@@ -127,6 +127,7 @@ Full reasoning, and the measurement that settled which Paradroid the listing is,
 | Source version | **1985 original / 1986 Competition Edition** lineage — which is what `paradroid_ce.lst` already is. Redux's bug list adopted as a spec, not as code. Heavy Metal parked as a possible later tile set | 2026-08-06 |
 | Game loop rate | **Locked to 2 fields a pass**, not free-running — a full sprite pool does not fit in a field, and free-running made the player 20 % slower whenever droids were visible | 2026-08-13 |
 | Sprite blitter | **Compiled**, not interpreted: generated 6502 per rotor row and per digit glyph, in a sideways bank of its own | 2026-08-13 |
+| Player top speed | **8 px a pass, not the C64's 7** (`CAM_TOPSPD`, `main.asm`) — the only movement number not taken from the original. 7 cannot divide the CRTC's 4 px step, so the camera dithers 8,8,8,4 and the scroll stutters; 8 is uniform. 14 % fast, bought deliberately. `PLY_ITER_FRAMES = 3` + `CAM_TOPSPD = 7` is the exact-1985 alternative and lost on feel | 2026-08-14 |
 
 ## Memory budget
 
