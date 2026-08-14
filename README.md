@@ -2,15 +2,20 @@
 
 A port of Andrew Braybrook's *Paradroid* (Commodore 64, 1985) to the BBC Micro Model B.
 
-This is a work in progress at an early stage. See [`PLAN.md`](PLAN.md) for the layered build plan,
-decisions taken so far, and current status.
+It plays. The deck hardware-scrolls eight ways under a droid you steer, a pool of seven sprites runs
+over it, doors open as you walk into them and lifts carry you between decks — so the whole ship is
+traversable. Droid AI, combat, the console and the transfer minigame are still to come. See
+[`PLAN.md`](PLAN.md) for the layered build plan, the memory map, decisions taken and current status.
 
 ## Target
 
 | | |
 |---|---|
 | Machine | BBC Model B / B+ with 2 × 16K sideways RAM banks |
-| Display | MODE 1, 320×200, 4 colours, 16K screen wrap based at `&4000` |
+| CPU | Plain 6502 (`CPU 0` — no 65C12 opcodes) |
+| Display | MODE 1, 4 colours. A 5-row static panel at `&4800` above a 320 × 120 play area, driven by a three-cycle vertical rupture |
+| Play area | 10K circular strip at `&5800` with a 10K hardware wrap, scrolled by the CRTC — 4 px horizontally, 1 scanline vertically |
+| Game loop | Locked to 2 fields a pass, 25 Hz |
 | Assembler | [BeebASM](https://github.com/stardot/beebasm) |
 
 MODE 1 was chosen because it maps the C64 original 1:1 at 320 pixels across with four colours. The
@@ -18,23 +23,37 @@ C64 mixes hires and multicolour cells on the same screen — multicolour is sele
 3 of the colour RAM nibble — and MODE 1 accommodates both, having no attribute constraints. Artwork
 converts mechanically from the ripped data with nothing redrawn.
 
+## Controls
+
+| | |
+|---|---|
+| Z / X | left / right |
+| K / M | up / down — and, in a lift, choose the deck |
+| L | fire; also steps into and out of a lift |
+| Cursor up/down | debug deck hop |
+| SPACE | force a full redraw (also the verification oracle) |
+
 ## Approach
 
 No hardware abstraction layer. The port is built one layer at a time, each verified running in an
 emulator before the next begins:
 
 0. **Toolchain and screen geometry** — ✅ done
-1. Graphics data pipeline
-2. Static deck render
-3. Scroll spike — *the key design decision*
-4. Sprite blitter
-5. Player movement
+1. **Graphics data pipeline** — ✅ done
+2. **Static deck render** — ✅ done
+3. **Scroll** — ✅ done; *the key design decision*
+4. **Player movement** — ✅ done
+5. **Droid movement** — 🔨 in progress; the compiled sprite blitter half has landed
 6. Droids
 7. Combat
-8. Doors, lifts, decks
+8. **Doors, lifts, decks** — ✅ done, taken ahead of 6 and 7 so droid AI has a ship to route through
 9. HUD and console
 10. Transfer minigame
 11. Sound, title, polish
+
+Each completed layer keeps its working notes in [`docs/`](docs/) — the measurements, the dead ends
+and the hardware facts bought the hard way, including several options that were costed and
+deliberately rejected.
 
 ## Building
 
@@ -61,17 +80,25 @@ Or directly:
 beebasm -i src/main.asm -do PARADROID.SSD -boot PARA -v
 ```
 
+The build needs `src/data/`, which is converted game artwork and so is not in the repository —
+generate it with `tools/export_bbc.py` and `tools/export_droids.py` (see below) before assembling.
+
 The result is a bootable DFS disc image. Note that DFS filenames are limited to 7 characters, so
 the executable on disc is `PARA`.
+
+> **jsbeeb will not boot an unpadded SSD.** It hangs in the DFS FDC poll loading `PARASPR`, because
+> beebasm's image ends mid-track and jsbeeb will not read the last partial one. Pad a copy to 200K
+> before handing it to an emulator.
 
 ## Repository layout
 
 ```
-src/            BBC Micro 6502 source (BeebASM)
-tools/          Python data-extraction tools (see below)
+src/            BBC Micro 6502 source (BeebASM); src/data/ is generated and gitignored
+tools/          Python data-extraction and conversion tools (see below)
 annotate.py     Generates the annotated C64 disassembly
 docs/           Per-layer working notes, plus graphics.md — the C64 data reference
 PLAN.md         Layered build plan, memory map, and status
+BUGS.md         Open defects, with the evidence and what has been ruled out
 ANNOTATION.md   Analysis of the C64 original: memory map, subroutines, hardware
 ```
 
@@ -86,6 +113,10 @@ Andrew Braybrook and Hewson Consultants. To run the extraction tools you need to
 > diffing them against it. Everything ported so far — level data, tile definitions, sprites, game
 > logic — is original-lineage. It is *not* Paradroid Redux or Heavy Metal, both of which relocate
 > everything and match the listing at ~1–3 %. See [`docs/decisions.md`](docs/decisions.md).
+>
+> The two lineages also share their movement constants byte for byte: the Competition Edition is
+> faster because it runs more game-loop iterations per second, not because droids move further per
+> iteration.
 
 With that in place:
 
@@ -97,7 +128,15 @@ python tools/rip_sideview.py    # ship cross-section
 python tools/rip_screens.py     # title screen and transfer minigame board
 ```
 
-All output lands in `tools/output/`. The tools require Python 3 and Pillow.
+Those write to `tools/output/` and are for inspection. The two that feed the build write BeebASM
+source into `src/data/`:
+
+```
+python tools/export_bbc.py      # tiles, decks, palettes -> src/data/
+python tools/export_droids.py   # droid sprites and game data -> src/data/
+```
+
+The tools require Python 3 and Pillow. Regenerate `src/data/` rather than editing it.
 
 ## Credits
 

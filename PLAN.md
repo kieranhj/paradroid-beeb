@@ -22,7 +22,7 @@ detail has stopped being needed to make the next decision, it belongs in `docs/`
 
 ## Where we are — read this first
 
-**Layers 0–4 are done, and Layer 5's blitter work with them.** The port boots to a playable deck: a
+**Layers 0–4 and 8 are done, and Layer 5's blitter work with them.** The port boots to a playable deck: a
 static panel above a 320 × 120 play area, the player droid near the centre with its rotor spinning,
 and the deck hardware-scrolling 8 ways underneath it — 4 px horizontally, 1 scanline vertically —
 driven by the C64's own acceleration model and stopped by walls. The camera has a dead zone, so at
@@ -42,13 +42,14 @@ take RETURN and then UP/DOWN to move through the decks their shaft serves. Both 
 mechanisms — bit 7 of the character code for a door, a table walk for a lift. See
 [`docs/layer-8-doors-lifts.md`](docs/layer-8-doors-lifts.md).
 
-**Next: the droid layers**, 5 (movement) then 6 and 7 — now that there is a ship to move around
-in.
+**Next: the droid layers**, 5 (movement) then 6 and 7 — now that there is a ship to move around in.
+That means `GetNewDir`, `AdvanceMapPos`, `CheckDroidAdvance` and the waypoint logic, the same speed
+model applied to non-player droids, plus sprite slot allocation and pathfinding. `src/droidtest.asm`
+is the scaffolding standing in for it: six static droids so the pool could be measured. Delete it
+and `TEST_DROIDS` together once droids move.
 
-**Then the rest of Layer 5, droid movement** — `GetNewDir`, `AdvanceMapPos`, `CheckDroidAdvance` and
-the waypoint logic, the same speed model applied to non-player droids, plus sprite slot allocation
-and pathfinding. `src/droidtest.asm` is the scaffolding standing in for it: six static droids so the
-pool could be measured. Delete it and `TEST_DROIDS` together once droids move.
+Waypoint 0 of each deck comes with that work, and retires `BUGS.md` #4 — the spawn-in-a-wall
+defect — with it.
 
 **Before trusting any speed number, read the speed model section of
 [`docs/layer-4-player.md`](docs/layer-4-player.md).** The C64's constants are per `GameLoop`
@@ -96,7 +97,7 @@ seconds where a buffer diff would have taken an emulator run.
 
 | | |
 |---|---|
-| `PARADAT` into sideways RAM | **Now the binding constraint.** Layer 8 left 54 bytes below `&3000`, and moving `doorDef` and `blankTileRow` into the bank is what bought even that. Also what 1 px sprite positioning waits on |
+| `PARADAT` into sideways RAM | **Now the binding constraint.** Layer 8 left 46 bytes below `&3000`, and moving `doorDef` and `blankTileRow` into the bank is what bought even that. Also what 1 px sprite positioning waits on, and what the position bookmark at the end of `BUGS.md` waits on |
 | 1 px sprite positioning | Needs four shifted copies, 1820 bytes. 2 px matches the C64 artwork's own pixel size, so this is polish |
 | Raster-ordered sprite updating | Flicker, and probably `BUGS.md` #3 with it. The only sprite-pool work still open |
 | 2 px world scrolling | Parked, Master-only via shadow RAM. Costs +60–80% on all drawing because both buffers must stay current — see [`docs/master-extensions.md`](docs/master-extensions.md) |
@@ -135,8 +136,8 @@ Full reasoning, and the measurement that settled which Paradroid the listing is,
 | `&0100–&01FF` | 256 B | stack |
 | `&0400–&0C90` | 2192 B | MODE 1 charset, built at deck load — reclaimed OS workspace |
 | `&0C90–&10FF` | ~1.1 K free | rest of the reclaimed OS workspace |
-| `&1100–&2FCA` | 7.7 K | code (`PARA`). DFS random-access buffer space, safe for `*LOAD` |
-| `&2FCA–&3000` | **54 B free** | Layer 8 spent it. `doorDef` and `blankTileRow` are in the bank |
+| `&1100–&2FD2` | 7.7 K | code (`PARA`). DFS random-access buffer space, safe for `*LOAD` |
+| `&2FD2–&3000` | **46 B free** | Layer 8 spent it. `doorDef` and `blankTileRow` are in the bank |
 | `&3000–&36FF` | 1.75 K | sprite background save areas, one page per slot |
 | `&3800–&3C00` | 1 K | tile map, fixed home — floating it after `code_end` once put it over the save areas |
 | `&4800–&547F` | 3.2 K | panel — 5 rows × 640, displayed by rupture cycle 1 |
@@ -144,7 +145,7 @@ Full reasoning, and the measurement that settled which Paradroid the listing is,
 | `&5500–&56FF` | 512 B | `CHAR_PTR_LO`/`HI` — character code → charset address, built at startup |
 | `&5700–&57FF` | 256 B | data byte → transparency mask table, built at startup |
 | `&5800–&7FFF` | 10 K | play buffer: circular strip, 16 rows × 640 |
-| SWRAM bank 4 | 16 K | `PARADAT` — C64 char data, colour schemes, tile defs, deck RLE. Ends `&9A5C` |
+| SWRAM bank 4 | 16 K | `PARADAT` — C64 char data, colour schemes, tile defs, deck RLE. Ends `&9B8C` |
 | SWRAM bank 5 | 16 K | `PARASPR` — the whole blitter: artwork, compiled rows, glyphs, programs. Ends `&B73E` |
 
 Only one bank is visible at a time. That works because the two halves are never wanted at once —
@@ -233,15 +234,16 @@ Doors also needed their own probe sweep. `ProbeGroup` runs only when there is sp
 abandons a group at the first wall, and both defeat a door — read that note before touching the
 probes.
 
-**8b, lifts, has landed too** (`src/lift.asm`). Stand on a lift platform, press RETURN, and UP/DOWN
-move through the decks that shaft serves — which are *not* adjacent, so stepping walks a table. The
+**8b, lifts, has landed too** (`src/lift.asm`). Stand on a lift platform, press L, and K/M move
+through the decks that shaft serves — which are *not* adjacent, so stepping walks a table. The
 platform turned out to be tile 3 at the C64 view origin + (5, 2), found by searching for the offset
 that gives a consistent tile across all 30 stops (30/30 against a next-best of 21/30) — it is not
 written down anywhere in the listing. The side view is still Layer 9's; until then a lift has no
 display of its own.
 
-**Arrival now comes from the lift table, retiring `CentreOnDeck` as the spawn path** and with it the
-"lands inside a wall on some decks" defect.
+**Arrival now comes from the lift table where there is one**, so `CentreOnDeck` is the fallback
+rather than the rule. It still runs for the first deck and the debug deck hop, so `BUGS.md` #4 —
+"lands inside a wall on some decks" — is not closed; waypoint 0 in the droid work is what closes it.
 → [`docs/layer-8-doors-lifts.md`](docs/layer-8-doors-lifts.md)
 
 ### Layer 9 — HUD and console
