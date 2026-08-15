@@ -21,7 +21,7 @@ detail has stopped being needed to make the next decision, it belongs in `docs/`
 | [`docs/raster-timing.md`](docs/raster-timing.md) | **Where the main loop sits against the beam** — the frame, what writes the buffer when, and the plan for flicker and edge tearing |
 | [`docs/layer-5-droids.md`](docs/layer-5-droids.md) | Droid movement: the roster, waypoints, and the waypoint-0 spawn |
 | [`docs/layer-6-droids-live.md`](docs/layer-6-droids-live.md) | Line of sight, collision, and the mode dispatch |
-| [`docs/layer-7-combat.md`](docs/layer-7-combat.md) | **Combat, planned** — bullets, explosions, damage, score, Alert, and the recharge pads |
+| [`docs/layer-7-combat.md`](docs/layer-7-combat.md) | **Combat, in progress** — bullets, explosions, damage, score, Alert, and the recharge pads. 7a–7e landed |
 | [`docs/layer-8-doors-lifts.md`](docs/layer-8-doors-lifts.md) | Doors (built) and lifts (planned), and the character-map problem they raise |
 | [`docs/master-extensions.md`](docs/master-extensions.md) | Things only a Master 128 could host. Not on the critical path |
 
@@ -68,11 +68,12 @@ timing, and [`docs/raster-timing.md`](docs/raster-timing.md) is the map: the fra
 writes the buffer when, and what is still open.
 
 **Layer 7 is under way** — combat: bullets, explosions, damage, score, the Alert level and the
-energy recharge pads. **7a–7d landed 2026-08-15**, on branch `layer7-combat`: the player has
+energy recharge pads. **7a–7e landed 2026-08-15**, on branch `layer7-combat`: the player has
 energy, the droid he is riding wears out on the C64's own schedule whether or not anything shoots at
 him, standing on a recharge pad puts energy back at 5 points of score each, the pool draws bullets
 and explosions as well as droids, and **L fires** — a bullet that flies at the original's own 12 px
-a pass and dies on walls. Next is 7e, damage and kills. Planned in
+a pass and dies on walls, and a droid it hits explodes and scores. Next is 7f, enemy fire and the
+damage the player takes. Planned in
 [`docs/layer-7-combat.md`](docs/layer-7-combat.md), in six stages, and
 four findings shape it: **droid-table entry 0 is the player, not a sentinel**; the C64 has an eighth
 sprite that we do not, for the player's own bullet; bullets and explosions come out of the existing
@@ -187,7 +188,7 @@ moves. The outline:
 | `&5500–&56FF` | 512 B | `CHAR_PTR_LO`/`HI` — character code → charset address, built at startup |
 | `&5700–&57FF` | 256 B | data byte → transparency mask table, built at startup |
 | `&5800–&7FFF` | 10,240 B | play buffer: circular strip, 16 rows × 640 |
-| SWRAM bank 4 | 16 K | `PARADAT` — char data, colour schemes, tile defs, deck RLE, waypoints, the combat stat tables, **the level-draw code and the droid AI**. Ends `&B5FB`, **2,565 B free** |
+| SWRAM bank 4 | 16 K | `PARADAT` — char data, colour schemes, tile defs, deck RLE, waypoints, the combat stat tables, **the level-draw code, the droid AI and Layer 7e's kill chain**. Ends `&B7C8`, **2,104 B free** |
 | SWRAM bank 5 | 16 K | `PARASPR` — the blitter at shifts 0 and 1 px, **plus Layer 7's effect artwork**: 31 bullet and explosion frames, 2,946 B, here rather than in bank 4 because the interpreted path reads them every row. Ends `&BBF7`, **1,033 B free** |
 | SWRAM bank 6 | 16 K | `PARSPR2` — the same at 2 and 3 px, laid out identically. Ends `&B199`, **3,687 B free** |
 
@@ -290,7 +291,7 @@ point. Six stages, each ending in something visible:
 | 7b ✅ | **DONE 2026-08-15.** `DoCharUnder`'s recharger arm — **the recharge pads**, character 20: +1 energy every 4th iteration and −5 score, plus `SubScore`. Rate, ceiling, BCD wrap, zero-saturate and a control all measured exact. The lift arm is not ported: **L does double duty as fire and lift trigger in the original too**, through `moveMode`, so `lift.asm` keeps its trigger |
 | 7c ✅ | **DONE 2026-08-15.** Effect sprites as a second class sharing all the slot machinery: 31 frames exported with bounding boxes into **bank 5** (0/31 round-trip mismatches, no frames cut), a generic interpreted draw/restore, and `SPR_SLOTS` 7 → 8 for the player's bullet at save page `&3700`. Draw verified pixel-exact at shift 3; restore and the scrolling oracle both **0 of 10240** |
 | 7d ✅ | **DONE 2026-08-15.** `DoMoveMode`'s Mobile/Weapon/Transfer machine, `DoFire`, `MovePlyFire` and the wall test. The bullet's position is **world, not screen**, so the C64's scroll compensation does not port. Flight measured at exactly +12 px a pass, the original's own value. **403 B of main RAM left** |
-| 7e | Damage, kills, explosions and BCD score — the `CollisionType` matrix and its six arms, plus the player's own death: explode, then back as 001 on waypoint 0 with no game over |
+| 7e ◐ | **Kill chain DONE 2026-08-15**, in bank 4 beside `DrCollided`: `DrBulletHit`, `DrPlyFireEnemy`, `DrKillDroid`, `DrExplodeSprite` and the mode-2 `DrExplode`. Shoot a droid and it explodes over 11 frames, one a pass, scoring by class and raising Alert by its type. **Deferred to 7f**: the arms that damage the *player* and the death that follows, with `CollisionType`, `BumpScore` and `EnemyFireEnemy` — nothing can hurt him until enemy fire exists and they are all one arm |
 | 7f | Enemy fire — `DoEnemyFire` into the spot `DroidRun` already reserves for it, plus friendly fire and the disruptor |
 
 **`droid.asm`'s header is wrong from here on** and says so where it claims entry 0 is a sentinel:

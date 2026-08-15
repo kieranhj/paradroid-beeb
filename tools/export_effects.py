@@ -218,11 +218,15 @@ def main():
                 % (len(frames) * SPRITE_ROWS * 7))
 
         g.write('EF_FRAMES     = %d\n' % len(frames))
-        g.write('EF_EXPLODE    = %d               \\ frames %d-%d, in order\n'
+        g.write('EF_SPRITE_ROWS = %d              \\ checked against SPR_H\n' % SPRITE_ROWS)
+        g.write('\n')
+        g.write('\\ EF_EXPLODE and EF_EXPLODE_N are declared in main.asm, not\n')
+        g.write('\\ here: droid.asm needs them and beebasm resolves constants in\n')
+        g.write('\\ FILE order, so anything this bank defines arrives too late.\n')
+        g.write('\\ These are the generated values, checked against them.\n')
+        g.write('ASSERT EF_EXPLODE   == %d        \\ frames %d-%d, in order\n'
                 % (frame_id[explode[0]], frame_id[explode[0]], frame_id[explode[-1]]))
-        g.write('EF_EXPLODE_N  = %d\n' % len(explode))
-        g.write('EF_SPRITE_ROWS = %d              \\ checked against SPR_H\n\n'
-                % SPRITE_ROWS)
+        g.write('ASSERT EF_EXPLODE_N == %d\n\n' % len(explode))
 
         g.write('\\ Frame geometry. efR0/efC0 are where the box sits inside the\n')
         g.write('\\ nominal 24 x 21 sprite; efH/efW are what is actually stored.\n')

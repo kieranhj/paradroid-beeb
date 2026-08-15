@@ -417,7 +417,13 @@ deck-hop keys, which do draw, stayed where they were.
 > and the weapon half is verified, but the branch where `LiftEnter` succeeds needs the player
 > standing on a platform, which this session never did. Check it before trusting it.
 
-### 7e — Damage, kills, explosions and score
+### 7e — Damage, kills, explosions and score — **the kill chain DONE 2026-08-15**
+
+> **Split from what was planned.** What landed is the half that needed the effect sprites:
+> **a player bullet kills a droid, which explodes and scores**. The arms that damage the *player* —
+> the bump, the enemy bullet, walking into an explosion — and the death that follows are deferred to
+> 7f, because nothing can hurt him until enemy fire exists and they are all the same `DoCollision`
+> arm. `CollisionType`, `BumpScore` and `EnemyFireEnemy` go with them.
 
 The `CollisionType` matrix at `$6D6D` is sixteen bytes and is the entire decision table —
 `$80` nop, `$40` explode, `$20` friendly-fire, `$10` free the sprite, `$08` reverse, `$04`
@@ -477,6 +483,53 @@ Layer 11 question, not this one.
 
 *Visible:* shoot a droid, watch it flash, explode and vanish; the score moves and Alert jumps. Walk
 into enough fire and the player explodes and comes back as 001 on the deck's first waypoint.
+
+#### What landed, and where
+
+All of it is in **`droid.asm`, bank 4**, not `combat.asm`: every byte it touches is a droid-table
+byte and `DrCollided` was already there. It calls out to main RAM for `AddScore` and `alertLvl`,
+which is the direction the bank rule allows. Main RAM did not move at all — still 403 B free — and
+bank 4 went to **2,104 B free**.
+
+- **`DrBulletHit`** — the bullet is tested **before** the pair loop, not inside it. `DrCollide` acts
+  on one pair a pass, which the original does too, and a bullet that lost the draw would pass
+  straight through a droid. One bullet against six droids is six box tests, so the question is
+  simply removed. `BUL_COL_W/H` are 12 × 10, smaller than a droid's box, because a bullet's opaque
+  pixels are a streak through a mostly empty 24 × 21.
+- **`DrPlyFireEnemy`** — the original's arithmetic including its carry, where the `ADC #8`
+  deliberately picks up the carry out of the second `ASL`. A droid too strong for the weapon takes
+  **nothing at all**, which is what makes an early weapon useless later and the whole reason to
+  transfer upward.
+- **`DrKillDroid`** → **`DrExplodeSprite`** — the droid does not die and get replaced; its own table
+  entry *becomes* the explosion, keeping the slot it already holds. Type `$40` is what the mode
+  dispatch reads from the next pass on.
+- **`DrExplode`** (mode 2) — eleven frames, one a pass, drifting on the dead droid's last speed with
+  that speed halved each pass, then the slot goes back to the pool.
+
+**No `CollisionType` matrix yet.** The C64 dispatches every pair through `$6D6D`, which earns its
+keep once bullets, explosions and enemy fire can all hit each other. With only
+player-fire-hits-droid implemented a direct test is smaller and says what it means.
+
+**Two slot-reuse guards came with it**, and both are the kind of thing that would have shown up as
+garbage much later. `sprType` means a *droid type* to a droid slot and a *frame* to an effect slot,
+so allocating a slot to a droid now clears `sprKind` — otherwise a slot that last held an explosion
+draws a droid type as artwork. And an explosion still owns a slot and still has a table entry, so it
+turns up in `DrCollide`'s pair loop and must not be shoved about like a droid.
+
+##### Measured
+
+Driven deterministically by placing a bullet exactly on a droid rather than trying to aim: droid 1,
+type 4, full energy `$40`.
+
+| | |
+|---|---|
+| Damage | `(0+2)·4+8 − 4 = 12`, `·4+16 = 64` — exactly its energy, so one shot |
+| Alert | `alertLvl` 0 → **4**, the droid's own type |
+| Score | `scoreAdd` 0 → **50** = `drShootScore[drCent[4]]`, banked below the BCD threshold |
+| Explosion | `drType` → `$40`, slot 6 → `sprKind` 1, frame 0 |
+| Frame rate | frame 1 → 6 over 5 passes: **exactly one a pass** |
+| End | slot freed after 11 frames, `sprActive[6]` → 0 |
+| Compaction | the entry vanished and the droid behind it moved down — `drType[1]` 4 → 2 |
 
 ### 7f — Enemy fire
 

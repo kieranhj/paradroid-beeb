@@ -128,6 +128,8 @@ AGING_MASK = 0x6DDE         # frameCount mask per class - how fast maxEnergy age
 AGING_MASK_N = 10           # DCent_t is 0-9
 ALERT_SCORE = 0x6DE8        # points per alert level, indexed by Alert >> 6
 ALERT_SCORE_N = 4
+SHOOT_SCORE = 0x6DEC        # points for a kill, also by class: 0-250
+SHOOT_SCORE_N = 10
 
 # --- C64 addresses: waypoints ----------------------------------------------
 NUM_WAYPOINTS = 0xC800      # 16 bytes, one per deck
@@ -892,6 +894,14 @@ def main():
         emit_bytes(g, [mem[AGING_MASK + i] for i in range(AGING_MASK_N)])
         g.write('.drAlertScore\n')
         emit_bytes(g, [mem[ALERT_SCORE + i] for i in range(ALERT_SCORE_N)])
+        g.write('\n')
+
+        g.write('\\ What a kill is worth, by class again: KillDroid ($1C53)\n')
+        g.write('\\ banks it in byte_0_79 and FreePlyBullet pays it out when the\n')
+        g.write('\\ bullet is freed. We free the bullet at the same moment, so\n')
+        g.write('\\ the port pays it straight away.\n')
+        g.write('.drShootScore\n')
+        emit_bytes(g, [mem[SHOOT_SCORE + i] for i in range(SHOOT_SCORE_N)])
         g.write('\n')
 
         g.write('\\ Droid numbers, for reference: ')

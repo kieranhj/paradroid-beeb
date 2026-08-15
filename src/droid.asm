@@ -445,6 +445,7 @@ DR_LOS_MAX = 96
   JMP dru_loop                  \ the copy-down block grew past a branch
 .dru_done
   STY drCount
+  JSR DrBulletHit               \ before the pair loop — see its header
   JMP DrCollide
 
 \ ============================================================
@@ -544,15 +545,25 @@ DR_LOS_MAX = 96
   LDA dcOuter                   \ slot 0 is the player, and the pairs are
   BEQ dc_player                 \ ordered so he can only be the outer one
 
+\ An explosion still owns its slot and still has a table entry, so it
+\ turns up in the pair loop — and must not be shoved about like a droid.
+\ The player's bullet is slot 7 and has no owner at all, so the BEQ
+\ already drops it.
   LDY dcOuter                   \ droid v droid: the first reverses...
   LDA drSlotOwner,Y
   BEQ dc_x
   TAX
+  LDA drType,X
+  CMP #DR_TYPE_BULLET
+  BCS dc_x
   JSR DrReverse
   LDY dcInner                   \ ...and the second stands still
   LDA drSlotOwner,Y
   BEQ dc_x
   TAX
+  LDA drType,X
+  CMP #DR_TYPE_BULLET
+  BCS dc_x
   JMP DrPause16
 
 \ ---- the player has walked into a droid ---------------------
@@ -561,6 +572,9 @@ DR_LOS_MAX = 96
   LDA drSlotOwner,Y
   BEQ dc_x
   TAX
+  LDA drType,X
+  CMP #DR_TYPE_BULLET
+  BCS dc_x                      \ walking through an explosion: Layer 7f
   JSR DrPause16
   JSR DrReverse
 
@@ -659,9 +673,13 @@ DR_LOS_MAX = 96
 .DroidRun
   LDA drType,X                  \ mode from the top bits of the type, as the
   LSR A : LSR A : LSR A : LSR A \ C64's DroidModeJump does: 0 droid, 1 bullet,
-  AND #6                        \ 2 explosion. Bullets and explosions arrive
-  BEQ dr_mode0                  \ with Layer 7; until then a type that claims
-  RTS                           \ to be one is simply not run
+  AND #6                        \ 2 explosion, 3 player fire
+  BEQ dr_mode0
+  CMP #4
+  BEQ dr_xplode                 \ mode 2, and out of branch range of it
+  RTS                           \ mode 1 is the enemy bullet — Layer 7f
+.dr_xplode
+  JMP DrExplode
 
 .dr_mode0
 IF DR_MOVES
@@ -1045,7 +1063,10 @@ ENDIF
   STA drSlotOwner,Y             \ the slot is OWNED from here until the droid
                                 \ leaves the window, whether or not it is drawn
   LDA #1 : STA drVisNew,X       \ test the sight line at once, not in turn
-  LDA #0 : STA sprDelay,Y
+  LDA #0
+  STA sprKind,Y                 \ the slot may last have held an explosion,
+                                \ and sprType means a FRAME to an effect slot
+  STA sprDelay,Y
   TXA                           \ stagger the rotors, or a room full of
   AND #7                        \ droids spins in lockstep and reads as one
   STA sprFrame,Y
@@ -1301,6 +1322,255 @@ ENDIF
   RTS
 
 \ ============================================================
+\ LAYER 7e — the player's bullet kills things
+\ ============================================================
+\ Here rather than in combat.asm because every byte it touches is a
+\ droid-table byte and DrCollided, which it sits beside, is already
+\ here. It calls out to main RAM for AddScore and alertLvl, which is the
+\ direction the bank rule allows.
+\
+\ NO CollisionType MATRIX YET. The C64 dispatches every pair through
+\ $6D6D, which earns its keep once bullets, explosions and enemy fire
+\ can all hit each other — Layer 7f. With only player-fire-hits-droid
+\ implemented, a direct test is smaller and says what it means.
+\
+\ THE BULLET IS TESTED BEFORE THE PAIR LOOP, not inside it. DrCollide
+\ acts on ONE pair a pass, which the original does too, and a bullet
+\ that loses the draw would pass straight through a droid. There is at
+\ most one bullet and six droids, so testing it first costs six box
+\ tests and removes the question.
+DR_TYPE_BULLET = &20            \ droid types below this are real droids;
+DR_TYPE_XPLODE = &40            \ these two are the mode markers
+
+\ A bullet's box, smaller than a droid's: its opaque pixels are a streak
+\ through the middle of a mostly empty 24 x 21. Tune by eye, as with
+\ DR_COL_W/H.
+BUL_COL_W = 12
+BUL_COL_H = 10
+
+.DrBulletHit
+  LDA sprActive+PLY_FIRE_SLOT
+  BEQ dbh_x
+  LDX #PLY_FIRE_SLOT
+  JSR DrSlotXY
+  LDA dcX : STA dcX2
+  LDA dcY : STA dcY2
+
+  LDY #SPR_POOL_LAST
+.dbh_loop
+  STY dcInner
+  LDA sprActive,Y
+  BEQ dbh_next
+  LDA drSlotOwner,Y
+  BEQ dbh_next
+  TAX
+  LDA drType,X                  \ an explosion is not a target
+  CMP #DR_TYPE_BULLET
+  BCS dbh_next
+
+  LDY dcInner
+  TYA : TAX
+  JSR DrSlotXY
+  LDA dcX
+  SEC : SBC dcX2
+  JSR DrAbsA
+  CMP #BUL_COL_W
+  BCS dbh_next
+  LDA dcY
+  SEC : SBC dcY2
+  JSR DrAbsA
+  CMP #BUL_COL_H
+  BCS dbh_next
+
+  LDY dcInner                   \ a hit: the bullet is spent either way
+  LDA drSlotOwner,Y
+  STA drIdx
+  LDA #0
+  STA sprActive+PLY_FIRE_SLOT
+  JMP DrPlyFireEnemy
+.dbh_next
+  LDY dcInner
+  DEY
+  BNE dbh_loop
+.dbh_x
+  RTS
+
+\ ---- DrPlyFireEnemy — port of PlyFireEnemy ($1C0F) ---------
+\ Damage is the weapon measured against the droid's TYPE, not its class:
+\ a droid too strong for the weapon takes nothing at all, which is what
+\ makes the early decks' weapons useless on the later ones and the whole
+\ reason to transfer upward. The arithmetic is the original's, carry
+\ included — the ADC #8 deliberately picks up the carry out of the
+\ second ASL.
+.DrPlyFireEnemy
+  LDX drIdx
+  LDA weaponType
+  CLC
+  ADC #2
+  ASL A : ASL A
+  ADC #8
+  SEC
+  SBC drType,X
+  BMI dpf_x                     \ out of this weapon's league
+  ASL A : ASL A
+  CLC
+  ADC #&10
+  STA drDmg
+  LDA drEnergy,X
+  SEC
+  SBC drDmg
+  BEQ DrKillDroid
+  BMI DrKillDroid
+  STA drEnergy,X
+.dpf_x
+  RTS
+
+\ ---- DrKillDroid — port of KillDroid ($1C41) ---------------
+\ Killing something makes the ship angrier by exactly the type killed,
+\ and the score is by CLASS, so a 999 is worth ten times a 001.
+.DrKillDroid
+  LDX drIdx
+  CLC
+  LDA alertLvl
+  ADC drType,X
+  BCC dkd_alert
+  LDA #&FF                      \ saturate rather than wrap
+.dkd_alert
+  STA alertLvl
+  LDY drType,X
+  LDX drCent,Y
+  LDA drShootScore,X
+  JSR AddScore
+\ falls through
+
+\ ---- DrExplodeSprite — port of ExplodeSprite ($1BCA) -------
+\ The droid does not die and get replaced; its own table entry BECOMES
+\ the explosion, keeping the sprite slot it already holds. Type $40 is
+\ what DroidRun's dispatch reads as mode 2 from the next pass on, and
+\ the drift it had is kept and decayed rather than zeroed.
+.DrExplodeSprite
+  LDX drIdx
+  LDA drType,X
+  CMP #DR_TYPE_BULLET
+  BCS des_mark
+  JSR DrRemoveShip              \ off the SHIP, not just this deck
+.des_mark
+  LDX drIdx
+  LDA #DR_TYPE_XPLODE
+  STA drType,X
+  STA drEnergy,X                \ non-zero, or the compaction drops it
+  LDY drSprNum,X
+  BEQ des_x
+  LDA #1          : STA sprKind,Y
+  LDA #EF_EXPLODE : STA sprType,Y
+  LDA #1          : STA sprActive,Y
+.des_x
+  RTS
+
+\ ============================================================
+\ DrExplode — mode 2, port of dMd2_explosion ($17F4)
+\ ============================================================
+\ Eleven frames, drifting on the dead droid's last speed with that speed
+\ halved each pass, then the slot goes back to the pool.
+.DrExplode
+  JSR DrMove
+  LDX drIdx
+  LDA drSprNum,X
+  BEQ dxp_dead
+  JSR DrExpScreen
+  BCS dxp_dead
+
+  LDX drIdx                     \ next frame, or done
+  LDY drSprNum,X
+  LDA sprType,Y
+  CLC
+  ADC #1
+  CMP #EF_EXPLODE + EF_EXPLODE_N
+  BCS dxp_dead
+  STA sprType,Y
+
+\ Halve each speed, keeping its sign, and let -1 fall to 0 rather than
+\ sticking there — $1826 does this with a ROL to recover the sign into
+\ carry and a ROR to bring it back down.
+  LDX drIdx
+  LDA drSpdX,X : ROL A
+  LDA drSpdX,X : ROR A
+  CMP #&FF
+  BNE dxp_sx
+  LDA #0
+.dxp_sx
+  STA drSpdX,X
+  LDA drSpdY,X : ROL A
+  LDA drSpdY,X : ROR A
+  CMP #&FF
+  BNE dxp_sy
+  LDA #0
+.dxp_sy
+  STA drSpdY,X
+  RTS
+
+.dxp_dead
+  LDX drIdx
+  LDA #0
+  STA drEnergy,X                \ the compaction squeezes the entry out
+  LDY drSprNum,X
+  STA drSprNum,X
+  BEQ dxp_x
+  STA sprActive,Y               \ A is still 0
+  STA sprKind,Y
+  STA drSlotOwner,Y
+.dxp_x
+  RTS
+
+\ ---- DrExpScreen — is the explosion still on screen? -------
+\ Carry set = no. The same test DrScreen opens with, duplicated rather
+\ than shared: DrScreen's copy runs into its slot allocation and its
+\ sight line, neither of which an explosion wants, and the branches in
+\ there are already at their limit.
+.DrExpScreen
+  LDX drIdx
+  SEC
+  LDA drPosYlo,X : SBC drOrgY
+  STA drSy
+  LDA drPosYhi,X : SBC drOrgY+1
+  BNE dxs_off
+  LDA drSy
+  CMP #SPR_MAX_Y + 1
+  BCS dxs_off
+
+  SEC
+  LDA drPosXlo,X : SBC drOrgX
+  STA drSx
+  LDA drPosXhi,X : SBC drOrgX+1
+  STA drSx+1
+  BMI dxs_off
+  BEQ dxs_on
+  CMP #1
+  BNE dxs_off
+  LDA drSx
+  CMP #LO(DR_NEAR_X + 1)
+  BCS dxs_off
+
+.dxs_on
+  LDY drSprNum,X
+  LDA drSx
+  AND #3
+  STA sprShift,Y
+  LDA drSx+1
+  LSR A
+  LDA drSx
+  ROR A
+  LSR A
+  STA sprUnit,Y
+  LDA drSy
+  STA sprScrY,Y
+  CLC
+  RTS
+.dxs_off
+  SEC
+  RTS
+
+\ ============================================================
 \ DrRemoveShip — port of RemoveShipDroid ($1C9D)
 \ ============================================================
 \ Take the droid out of the ship's roster, not just off this deck, so
@@ -1361,6 +1631,7 @@ ENDIF
 .dcpHi       EQUB 0
 .diIdx       EQUB 0
 .drTmp       EQUB 0
+.drDmg       EQUB 0             \ Layer 7e: damage worked out before it lands
 .drDeckBase  EQUB 0             \ deck * 16, the roster row
 .drSeed      EQUB &A5
 

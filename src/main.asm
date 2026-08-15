@@ -125,6 +125,15 @@ FRAME_LOCK = 2
 \ judged worth 14 % of fidelity.
 CAM_TOPSPD = 8
 
+\ ---- Layer 7 effect frames ---------------------------------
+\ The explosion's frames are 0 to EF_EXPLODE_N-1 of the effect set, in
+\ order, so stepping it is an INC. Declared HERE rather than in the
+\ generated effects.asm because droid.asm needs them and beebasm
+\ resolves constants in file order — effects.asm is in the sprite bank,
+\ which is assembled last. The exporter emits ASSERTs against these.
+EF_EXPLODE   = 0
+EF_EXPLODE_N = 11
+
 MAP_COLS   = 64                 \ tile map is 64 x 16 tiles
 MAP_ROWS   = 16
 MAP_CHAR_W = MAP_COLS * 4       \ 256 characters across
