@@ -27,7 +27,7 @@
 \ works there because nothing else has to keep running.
 \
 \ Here the rupture, the sprite pool and the edge redraws all have to
-\ keep going, so a modal loop would have to call WaitVSync, both sprite
+\ keep going, so a modal loop would have to call WaitField, both sprite
 \ passes and DoRedraws itself — i.e. reimplement the main loop. A flag
 \ that suppresses movement and re-points UP/DOWN costs three tests in
 \ the main loop and leaves everything else untouched.

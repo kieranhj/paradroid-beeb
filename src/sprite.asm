@@ -727,27 +727,324 @@ ENDMACRO
 \ across two banks the right one is a property of the sprite and not of
 \ the pool. Both still leave SWRAM_DATA in on the way out: that is the
 \ resting state everything outside the blitter assumes.
+\ ============================================================
+\ THE POOL SPLITS INTO TWO TRANCHES, one per off-display window
+\ ============================================================
+\ A pass is two fields and each field opens a 24,576-cycle window with
+\ the play area blanked. Restoring and drawing the whole pool costs
+\ 36,274, so it cannot fit in one — and a sprite erased in one window
+\ and redrawn in the next is displayed missing in between, which is
+\ the flicker. Per sprite the pair costs 5,814, so four fit a window
+\ and eight fit the two: the pool is split, and each tranche is
+\ restored AND drawn inside its own window. See docs/raster-timing.md.
+\ Slots 0 to SPR_SPLIT-1 go in the first window, the rest in the
+\ second. The player is slot 0 and so is always in the first, which is
+\ the one that never has to give way — see SprSplitOK for when the
+\ split is abandoned for the pass.
+
+\ A TRANCHE IS A SET, NOT A RANGE. Splitting by slot index put the
+\ player (slot 0) and a droid walking beside him (slot 6) in opposite
+\ tranches, so the commonest thing on screen refused the split and it
+\ almost never fired. sprTr holds the tranche per slot and SprAssignTr
+\ fills it in each pass; &FF means neither, which is where an inactive
+\ slot stays.
+\
+\ Restore still walks backwards and draw forwards, so within a tranche
+\ two overlapping sprites are put back in the reverse of the order they
+\ were drawn — the property the whole pool rests on.
 .SprRestoreAll
+  LDA #&FF                      \ every slot, whatever its tranche
+  BNE SprRestoreTr              \ always
+.SprRestoreTr
+  STA sprTrWant
   LDX #SPR_SLOTS-1
-.sra_loop
+.srt_loop
+  LDA sprTrWant
+  CMP #&FF
+  BEQ srt_do
+  CMP sprTr,X
+  BNE srt_skip
+.srt_do
   STX sprIter
   JSR SprRestoreSlot
   LDX sprIter
+.srt_skip
   DEX
-  BPL sra_loop
+  BPL srt_loop
   PAGEBANK SWRAM_DATA
   RTS
 
 .SprDrawAll
+  LDA #&FF
+  BNE SprDrawTr                 \ always
+.SprDrawTr
+  STA sprTrWant
   LDX #0
-.sda_loop
+.sdt_loop
+  LDA sprTrWant
+  CMP #&FF
+  BEQ sdt_do
+  CMP sprTr,X
+  BNE sdt_skip
+.sdt_do
   STX sprIter
   JSR SprDrawSlot
   LDX sprIter
+.sdt_skip
   INX
   CPX #SPR_SLOTS
-  BNE sda_loop
+  BNE sdt_loop
   PAGEBANK SWRAM_DATA
+  RTS
+
+\ ============================================================
+\ SprAssignTr — put the slots in two tranches. Z clear if it fits
+\ ============================================================
+\ Overlapping sprites HAVE to share a tranche, so the tranches are
+\ unions of connected components of the overlap graph. Seven slots
+\ makes the naive algorithm free: label every slot with its own index,
+\ merge labels across each overlapping pair, then hand whole components
+\ to whichever tranche is emptier.
+\
+\ Slot 0 is looked at first and a tie goes to A, so the player is
+\ always in the window drawn first — the one thing on screen the eye is
+\ actually tracking.
+\
+\ IT NEVER REFUSES ON BALANCE, and it used to. A window has room for
+\ four sprites restored and drawn, so an earlier version gave up when a
+\ tranche came out bigger than that and drew the pool whole — which is
+\ the wrong trade. An oversized tranche is doing exactly what the whole
+\ pool does today, and the OTHER tranche still gets a clean window, so
+\ an unbalanced split is strictly better than none. The degenerate case
+\ falls out of the same rule: if everything overlaps everything it is
+\ one component, it all goes to A, tranche B is empty and the pass
+\ behaves as it did before any of this.
+
+.SprAssignTr
+  LDX #SPR_SLOTS-1              \ label: own index, or &FF if inactive
+.sat_init
+  LDA #&FF
+  STA sprTr,X
+  LDY sprActive,X
+  BEQ sat_initset
+  TXA
+.sat_initset
+  STA sprComp,X
+  DEX
+  BPL sat_init
+
+  LDA #0                        \ merge across every overlapping pair
+  STA satI
+.sat_i
+  LDX satI
+  LDA sprActive,X
+  BEQ sat_inext
+  LDA satI
+  CLC
+  ADC #1
+  STA satJ
+.sat_j
+  LDA satJ
+  CMP #SPR_SLOTS
+  BCS sat_inext
+  TAY
+  LDA sprActive,Y
+  BEQ sat_jnext
+  LDX satI
+  JSR SprOverlapXY
+  BCC sat_jnext
+  LDX satJ                      \ relabel everything in J's component
+  LDA sprComp,X
+  STA satOld
+  LDX satI
+  LDA sprComp,X
+  STA satNew
+  LDX #SPR_SLOTS-1
+.sat_merge
+  LDA sprComp,X
+  CMP satOld
+  BNE sat_mnext
+  LDA satNew
+  STA sprComp,X
+.sat_mnext
+  DEX
+  BPL sat_merge
+.sat_jnext
+  INC satJ
+  JMP sat_j
+.sat_inext
+  INC satI
+  LDA satI
+  CMP #SPR_SLOTS
+  BNE sat_i
+
+  LDA #0                        \ hand out whole components
+  STA satNA
+  STA satNB
+  STA satI
+.sat_asg
+  LDX satI
+  LDA sprComp,X
+  CMP #&FF
+  BEQ sat_asgnext               \ inactive: in neither tranche
+  LDA sprTr,X
+  CMP #&FF
+  BNE sat_asgnext               \ its component is already placed
+  LDX satI
+  LDA sprComp,X
+  STA satNew
+  LDA #0
+  STA satCount
+  LDX #SPR_SLOTS-1
+.sat_cnt
+  LDA sprComp,X
+  CMP satNew
+  BNE sat_cntnext
+  INC satCount
+.sat_cntnext
+  DEX
+  BPL sat_cnt
+
+  LDA satNA                     \ the emptier tranche takes it, and a
+  CMP satNB                     \ tie goes to A, which is how slot 0
+  BCC sat_toA                   \ ends up there
+  BEQ sat_toA
+  CLC
+  LDA satNB
+  ADC satCount
+  STA satNB
+  LDA #1
+  BNE sat_mark                  \ always
+.sat_toA
+  CLC
+  LDA satNA
+  ADC satCount
+  STA satNA
+  LDA #0
+.sat_mark
+  STA satWhich
+  LDX #SPR_SLOTS-1
+.sat_mk
+  LDA sprComp,X
+  CMP satNew
+  BNE sat_mknext
+  LDA satWhich
+  STA sprTr,X
+.sat_mknext
+  DEX
+  BPL sat_mk
+.sat_asgnext
+  INC satI
+  LDA satI
+  CMP #SPR_SLOTS
+  BNE sat_asg
+
+  LDA #1                        \ always: see the note on balance above
+  RTS
+
+\ Slots X and Y: carry set if they are close enough to count as
+\ overlapping. Deliberately loose — see SprSplitOK.
+.SprOverlapXY
+  LDA sprUnit,X
+  SEC
+  SBC sprUnit,Y
+  JSR SprAbsA
+  CMP #SPR_OVL_U
+  BCS sov_no
+  LDA sprScrY,X
+  SEC
+  SBC sprScrY,Y
+  JSR SprAbsA
+  CMP #SPR_OVL_Y
+  BCS sov_no
+  SEC
+  RTS
+.sov_no
+  CLC
+  RTS
+
+\ ============================================================
+\ SprSplitOK — may the pool be split this pass? Z clear if yes
+\ ============================================================
+\ Two conditions, and the first is the one that matters.
+\ **NOTHING ELSE MAY WRITE THE BUFFER.** The invariant the whole file
+\ rests on is that every buffer write happens while all sprites are
+\ erased — DoRedraws' own comment says it: a door repaint "must happen
+\ between SprRestoreAll and SprDrawAll ... or it stamps pixels into a
+\ sprite's saved background". Split the pool and the second tranche is
+\ still ON SCREEN while the level draw runs, so any band, column or
+\ door tile that touches it corrupts its save permanently. So the
+\ split is only taken on a pass where the level draw has nothing to do
+\ at all: no band, no columns, no doors on the deck. That is most of
+\ the time the player is standing still, which is exactly when flicker
+\ is most visible; while scrolling the whole screen is moving and it
+\ is not.
+\ **NO SPRITE MAY STRADDLE THE TRANCHES.** Restore-all-then-draw-all
+\ exists because drawing one sprite while another is still on screen
+\ captures the second one's pixels into the first one's save area. That
+\ holds within a tranche; across the two it does not, so a pass where
+\ an A sprite overlaps a B sprite gives up and draws the pool whole.
+\ The test is in UNITS and deliberately loose — 7 wide plus 2 units of
+\ a pass's movement, and 21 scanlines plus 8 — because it has to cover
+\ where the other tranche was drawn LAST pass as well as where it will
+\ be drawn this one.
+SPR_OVL_U = SPR_W + 2
+SPR_OVL_Y = SPR_H + 8
+
+.SprSplitOK
+  LDA bandDo                    \ the level draw would run over tranche B
+  ORA colCount
+  BNE sso_no
+\ A door only writes the buffer on a pass where it MOVES. One that is
+\ being held open — bit 6, set by the probes in CheckWalls, which run
+\ before this — is not decremented and not marked dirty by
+\ DoorsUpdate, so it repaints nothing and does not stop the split.
+\ Standing at an open doorway is a common place to be, and testing
+\ numDoors instead cost the split almost everywhere on deck 1.
+  LDX numDoors
+  BEQ sso_nodoors
+.sso_door
+  DEX
+  LDA doorDirty,X               \ already opening, from this pass's probe
+  BNE sso_no
+  LDA doorState,X
+  AND #&40
+  BNE sso_dnext                 \ held open: static this pass
+  LDA doorState,X
+  AND #7
+  BNE sso_no                    \ part open and not held: it closes a step
+.sso_dnext
+  TXA
+  BNE sso_door
+.sso_nodoors
+
+\ A slot that is no longer drawable but still holds a saved background
+\ has to be restored at the position it was DRAWN at, and nothing here
+\ knows that position — so the overlap test cannot see it and the pass
+\ is drawn whole instead. It happens on the one pass a droid leaves the
+\ window.
+  LDX #SPR_SLOTS-1
+.sso_stale
+  LDA sprSaved,X
+  BEQ sso_snext
+  LDA sprActive,X
+  BEQ sso_no
+.sso_snext
+  DEX
+  BPL sso_stale
+
+  JMP SprAssignTr               \ and its answer is ours
+.sso_no
+  LDA #0
+  RTS
+
+\ |A|, which the overlap test wants both ways round.
+.SprAbsA
+  BPL sab_x
+  EOR #&FF
+  CLC
+  ADC #1
+.sab_x
   RTS
 
 \ ============================================================
@@ -1114,6 +1411,17 @@ SPR_SPIN = 0                    \ frames between phases; full energy = 0
 .sprNoWrapS SKIP SPR_SLOTS      \ the draw's wrap answer, for the restore
 .sprSeqBaseS SKIP SPR_SLOTS     \ the draw's rotor-sequence base
 .sprShiftS  SKIP SPR_SLOTS      \ the draw's shift
+.sprTr      SKIP SPR_SLOTS     \ tranche per slot, &FF = neither
+.sprComp    SKIP SPR_SLOTS     \ overlap-component label, while assigning
+.sprTrWant  EQUB 0
+.satI       EQUB 0
+.satJ       EQUB 0
+.satOld     EQUB 0
+.satNew     EQUB 0
+.satCount   EQUB 0
+.satWhich   EQUB 0
+.satNA      EQUB 0
+.satNB      EQUB 0
 .sprBank    EQUB SWRAM_SPR      \ the bank the slot in hand lives in, so
                                 \ SprFetchRow can put it back after paging
                                 \ SWRAM_DATA in over the top

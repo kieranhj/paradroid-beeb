@@ -85,7 +85,7 @@ CHAR_BYTES = 16                 \ a character is 16 bytes: two 8-byte halves
 \ ---- frame lock ---------------------------------------------
 \ TV fields per game-loop iteration. 2 gives a fixed 25 Hz, which is
 \ the rate the C64's GameLoop actually runs at and the rate every
-\ movement constant in player.asm is expressed in — see WaitVSync for
+\ movement constant in player.asm is expressed in — see WaitField for
 \ why this is locked rather than free-running.
 \
 \ Changing it changes how fast the game plays unless PLY_ITER_FRAMES
@@ -192,7 +192,7 @@ DEBUG_POS    = FALSE
 \ have to be restored under a sprite.
 \
 \ FRAME_LOCK is the nominal reading: a 2 means the iteration fitted its
-\ two fields. A 3 or more means it overran and WaitVSync found the flag
+\ two fields. A 3 or more means it overran and WaitField found the flag
 \ already set, so the rate degraded to 16.7 Hz, 12.5 Hz and so on. This
 \ is the cheap always-on companion to DEBUG_DRAW: that one shows WHICH
 \ work overruns, this one shows THAT it did, without a screenshot.
@@ -539,7 +539,7 @@ sfrCarry  = &1F                 \ SprFetchRow's 2 px shift carry
 \ about a missed deadline hanging the ruptState machine is reason
 \ enough to make the handler shorter wherever it is free.
 ruptState = &20                 \ which rupture stage the next T1 fire is
-drawFlag  = &21                 \ set when the play area is off-display
+fieldCount = &21                \ windows opened, bumped by the IRQ at fire 3
 crtcHi    = &22                 \ play-area start for the play cycle,
 crtcLo    = &23                 \ latched by the IRQ
 line      = &24                 \ sub-row scroll offset, 0-7 — the live value
@@ -677,22 +677,22 @@ ORG &1100
   \ Released once the play area is off-display, not at VSync. The
   \ edge redraw and the R12/R13 park both have to land before the
   \ play area is drawn again.
-  JSR WaitVSync
+    \ THE PASS IS DATED FROM THE WINDOW IT STARTS IN, and it takes its
+  \ fields one at a time: this is the first of the two windows, and the
+  \ second is taken further down after the drawing and the droid AI.
+    \ Nothing is consumed here — the loop arrives already inside window
+  \ A, because the wait at the bottom released it there. Stamping the
+  \ counter is all that is needed, and a pass that overran simply
+  \ starts from a later field with its full budget rather than being
+  \ rounded up to the next boundary. See docs/raster-timing.md.
+  LDA fieldCount
+  STA passF0
 IF DEBUG_VSYNC
   JSR DbgFrameCount             \ the boundary has just happened, so this
 ENDIF                           \ counts the iteration that has finished
 IF DEBUG_POS
   JSR DbgPosOut                 \ where we are, for getting back here
 ENDIF
-IF DEBUG_DRAW
-  LDA #DBG_SPR : JSR DbgSetBg   \ the restore is sprite time too, and it is
-ENDIF                           \ a third of it — it gets the sprite colour
-  JSR SprRestoreAll             \ before anything moves: the saved pixels
-                                \ belong at the address they were taken from
-IF DEBUG_DRAW
-  LDA #DBG_REDRAW : JSR DbgSetBg
-ENDIF
-
   \ Z / X left-right, K / M up-down. The keys feed a direction pair
   \ and the direction pair feeds an accelerating speed, so the view
   \ position moves by 0-7 pixels a frame rather than a fixed step.
@@ -709,6 +709,37 @@ ENDIF
 .ml_nomove
   JSR ApplyMove
 
+\ ============================================================
+\ Erase, and decide first whether the pool can be split
+\ ============================================================
+\ THE MOVEMENT RUNS BEFORE THE ERASE, which it did not used to. It is
+\ what decides how much work DoRedraws has, and that decides whether
+\ the pool may be split this pass — a question that has to be answered
+\ before anything is restored, because the two paths erase different
+\ sets of slots. Nothing is lost by the order: the restore replays the
+\ addresses the DRAW recorded, so it does not care where anything has
+\ moved to since.
+  JSR SprSplitOK
+  STA sprSplit
+  BEQ ml_whole
+
+IF DEBUG_DRAW
+  LDA #DBG_SPR : JSR DbgSetBg
+ENDIF
+  LDA #0
+  JSR SprRestoreTr              \ tranche A only; B stays on screen, which
+  JMP ml_erased                 \ is safe because nothing else writes the
+                                \ buffer on a split pass
+.ml_whole
+IF DEBUG_DRAW
+  LDA #DBG_SPR : JSR DbgSetBg
+ENDIF
+  JSR SprRestoreAll             \ the saved pixels belong at the address
+.ml_erased                      \ they were taken from
+IF DEBUG_DRAW
+  LDA #DBG_REDRAW : JSR DbgSetBg
+ENDIF
+
   \ Park the CRTC address ONCE, with every axis accounted for, and
   \ before any drawing — the IRQ latches it at frame row 3, only a
   \ few rows into this window.
@@ -716,11 +747,14 @@ ENDIF
 IF DEBUG_DRAW
   LDA #DBG_LEVEL : JSR DbgSetBg \ the level draw on its own: it is the
 ENDIF                           \ band that varies with the direction
+  LDA sprSplit                  \ a split pass has no band, no columns and
+  BNE ml_nodraw                 \ no doors — that is what made it splittable
 IF DEBUG_TIME
   JSR TimeCall                  \ TimeCall calls DoRedraws — see its header
 ELSE
   JSR DoRedraws
 ENDIF
+.ml_nodraw
 IF DEBUG_DRAW
   LDA #DBG_REDRAW : JSR DbgSetBg
 ENDIF
@@ -802,7 +836,14 @@ IF DEBUG_DRAW
 ENDIF
 
   JSR SprAnimateAll             \ last: the buffer is settled, so the save
-  JSR SprDrawAll                \ picks up the background the frame will show
+  LDA sprSplit                  \ picks up the background the frame will show
+  BEQ ml_drawall
+  LDA #0
+  JSR SprDrawTr
+  JMP ml_drawn
+.ml_drawall
+  JSR SprDrawAll
+.ml_drawn
 
 \ ============================================================
 \ The droids run HERE, after the drawing, and that is deliberate
@@ -836,10 +877,39 @@ ENDIF
 \     is still standing at it.
   JSR DroidsUpdate
 
+  \ The second window. Everything above ran in the first one and the
+  \ display that follows it.
+  JSR WaitWindowB
+
+  \ Tranche B, erased and redrawn inside this window so that no field
+  \ ever displays it missing. On a whole pass it was drawn up there
+  \ with the rest and there is nothing to do here.
+  LDA sprSplit
+  BEQ ml_nob
+IF DEBUG_DRAW
+  LDA #DBG_SPR : JSR DbgSetBg
+ENDIF
+  LDA #1
+  JSR SprRestoreTr
+  LDA #1
+  JSR SprDrawTr
+IF DEBUG_DRAW
+  JSR DbgDeckBg
+ENDIF
+.ml_nob
+
 IF DEBUG_DRAW
   JSR DbgDeckBg
 ENDIF
 
+  \ The pass is not allowed to be shorter than FRAME_LOCK fields. It IS
+  \ allowed to be longer: an overrun carries on from wherever it landed
+  \ instead of being rounded up to the next boundary, so a heavy pass
+  \ costs what it costs and the rate recovers on the next one. The
+  \ movement model wants a fixed pass, so this is a trade — a brief
+  \ overrun now shows as a brief speed-up rather than a step down to
+  \ 16.7 Hz for as long as the load lasts.
+  JSR WaitNextPass
   JMP mainloop
 
 .loadcmd
@@ -901,7 +971,7 @@ ENDIF
   RTS
 
 \ ============================================================
-\ WaitVSync — block until the next field starts
+\ WaitField / WaitRest — the pass's fields, taken one at a time
 \
 \ Polling the System VIA IFR directly races the MOS: its own IRQ
 \ handler services vsync and clears the flag, so the poll can miss
@@ -925,19 +995,47 @@ ENDIF
 \ Locking makes the cost of a droid show up as headroom spent rather
 \ than as movement slowing down.
 \
-\ If an iteration overruns its two fields the flag is already set on
+\ If an iteration overruns its fields the flag is already set on
 \ arrival, so it is consumed at once and the next boundary is one
 \ field later. The rate degrades but never exceeds 25 Hz.
-.WaitVSync
-  LDX #FRAME_LOCK
-.wv_field
-  LDA drawFlag
-  BEQ wv_field
-  LDA #0
-  STA drawFlag
-  DEX
-  BNE wv_field
+\ THE PASS TAKES ITS FIELDS ONE AT A TIME rather than consuming all of
+\ them up front, because each field opens an off-display window and
+\ every buffer write belongs inside one. The loop takes the first at
+\ the top and WaitRest takes the remainder after the drawing, so the
+\ second window is a point in the code the sprite pool can be split
+\ across. See docs/raster-timing.md.
+\ A = the window number to wait for. Returns at once if it has already
+\ been and gone, which is the whole point: a pass that overruns its
+\ window by a little should carry straight on into the next piece of
+\ work rather than sit out a field it has already spent.
+\ The subtract makes the comparison a SIGNED distance, so it is right
+\ across the counter's 8-bit wrap for anything within 127 fields of
+\ the target — which is 2.5 seconds, and nothing here waits that long.
+.WaitUntilField
+  STA wufTarget
+.wuf_spin
+  LDA fieldCount
+  SEC
+  SBC wufTarget
+  BMI wuf_spin
   RTS
+
+\ The pass's own two waits, in terms of the field it started on.
+\ FRAME_LOCK stays the single dial: the pass is not allowed to be
+\ shorter than that many fields, and is allowed to be longer.
+ASSERT FRAME_LOCK >= 2
+.WaitWindowB
+  CLC
+  LDA passF0
+  ADC #1
+  JMP WaitUntilField
+.WaitNextPass
+  CLC
+  LDA passF0
+  ADC #FRAME_LOCK
+  JMP WaitUntilField
+
+.wufTarget EQUB 0
 
 \ ============================================================
 \ IrqHandler — front of the IRQ1V chain
@@ -1154,6 +1252,8 @@ ENDIF
 \ ---- absolute working storage ------------------------------
 .rowOfs    EQUW 0               \ row*640 accumulator for RedrawAll
 .sTmp      EQUW 0
+.sprSplit  EQUB 0               \ this pass is drawing the pool in two
+.passF0    EQUB 0               \ the window this pass started in
 .vsyncCount EQUB 0              \ bumped by IrqHandler once per field
 .oldIrq1V  EQUW 0
 

@@ -154,40 +154,79 @@ written out at the call site in `main.asm`: the restore replays the *draw's* add
 `sprUnit`, a slot freed after the draw still has `sprSaved` set so its background is put back, and a
 door probed here is held open by the next pass's `DoorsUpdate`.
 
-### Step 2 — put each sprite's erase and redraw in the same window
+### Step 2 — put each sprite's erase and redraw in the same window — **BUILT 2026-08-15**
 
 Per sprite, restore + draw is **5,814 cycles**, so a 24,576-cycle window holds **4.2 sprites**, and
-two windows hold **8.4** — against a pool of 7. So split the pool into two tranches, each doing its
-own restore-then-draw inside one window:
+two windows hold **8.4** — against a pool of 7. So the pool splits into two tranches, each restored
+**and** drawn inside its own window:
 
 ```
-  window A   SprRestore(A) → DoRedraws → SprDraw(A)
-  display    keys, movement, droid AI, animate        (no buffer writes)
-  window B   SprRestore(B) → SprDraw(B)
-  display    spare
+  window A   SprRestoreA → DoRedraws → SprDrawA
+  display    keys, movement, droid AI, animate     (no buffer writes)
+  window B   SprRestoreB → SprDrawB
 ```
 
-`WaitVSync` becomes two one-field waits rather than one two-field wait; the 25 Hz rate is unchanged.
+The loop **counts windows rather than consuming a flag**. The IRQ bumps `fieldCount` at fire 3 and
+`WaitUntilField` spins until the counter reaches a target, returning at once if it is already past
+it. A boolean coalesces — work running past two fire-3s sets the same flag twice, the loop consumes
+one stale release and then blocks for the next, turning a small overrun into a whole extra field.
+A counter cannot lose one. It also makes the pass's contract explicit: **not shorter than
+FRAME_LOCK fields, and allowed to be longer**, so a heavy pass costs what it costs and the rate
+recovers on the next one instead of stepping down to 16.7 Hz for as long as the load lasts. `SPR_SPLIT` = 3: slots 0-2 in the first window,
+3-6 in the second, and the player is slot 0 so he is always in the first.
 
-**Two hazards, and the second decides whether this works at all.**
+**The split is abandoned for a pass when either guard fails**, and both are in `SprSplitOK`:
 
-1. **Overlapping sprites must share a tranche.** The whole pool restores before it draws because
-   drawing one sprite while another is still on screen captures the second one's pixels into the
-   first one's save area, and restoring it later stamps them in permanently — the same trap that
-   killed round-robin. Within a tranche the invariant holds; across tranches it only holds for
-   sprites that do not overlap. Layer 6's `DrCollide` already computes overlaps, though this needs
-   the true 7 × 21 footprint rather than the feel-based box. Overlaps are rare, so the simple rule
-   is to pull an overlapping pair into the earlier tranche and accept an occasional 5-sprite
-   tranche that overruns its window (that pass flickers exactly as today).
+1. **Anything else writing the buffer.** Split the pool and tranche B is still *on screen* while
+   the level draw runs, so any band, column or door tile touching it corrupts its save permanently —
+   `DoRedraws`' own comment says a door repaint "must happen between `SprRestoreAll` and
+   `SprDrawAll` … or it stamps pixels into a sprite's saved background". So the split needs a pass
+   with no band, no columns and no *moving* door. A door being **held open** is static: bit 6 is
+   set by the probes in `CheckWalls`, which now run before the decision, and `DoorsUpdate` neither
+   decrements it nor marks it dirty. Testing `numDoors` instead cost the split almost everywhere on
+   deck 1, where four doors are typically registered.
+2. **A sprite straddling the tranches.** Restore-all-then-draw-all holds within a tranche and not
+   across the two, so an A sprite overlapping a B sprite gives up and draws the pool whole. The test
+   is in units and deliberately loose — 7 wide plus 2 units of a pass's movement, 21 scanlines plus
+   8 — because it has to cover where the other tranche was drawn *last* pass as well as this one.
 
-2. **`DoRedraws` must not repaint over a sprite that is currently drawn**, or that sprite's saved
-   background is stale. With all restores in window A this is free; with tranche B still drawn
-   during window A it is not. **The thing to check first is whether it can happen at all**: sprites
-   are *culled, not clipped* (`SPR_MAX_UNIT` = 73 of 80, `SPR_MAX_Y` = 99 of 120), so no sprite ever
-   occupies the outermost units or the bottom rows — and the band `DoRedraws` paints is exactly the
-   newly exposed edge. If the two provably cannot intersect, step 2 is safe as written. **If they
-   can, the fallback is to run the two-tranche scheme only when the level draw is empty** — which is
-   most passes, and scrolling masks flicker anyway.
+The movement moved above the erase to make guard 1 answerable: it decides how much work `DoRedraws`
+has. Nothing is lost by it, because the restore replays the addresses the *draw* recorded and does
+not care where anything has moved to since.
+
+**Verified**: the split path renders correctly, `sprSplit` goes to 1 when both guards pass, and with
+all three draw sites disabled on a split pass the buffer is **0 of 10240** against a forced
+`RedrawAll` — so the two-window restore puts back exactly what the two-window draw took.
+
+> **The oracle needs all THREE draw call sites poked now**, not one: `SprDrawA`, `SprDrawAll` and
+> `SprDrawB`. Poking only the old one leaves the split path drawing and the diff is meaningless.
+
+#### Tranches are overlap components, not slot ranges — **2026-08-15**
+
+**Guard 2 fires more often than it should**, and it is the fixed slot range that causes it. A droid
+walking alongside the player is slot 6 against the player's slot 0 — opposite tranches — so the
+commonest situation on screen is exactly the one that refuses the split. Measured on deck 1 the
+split was refused continuously until the droid was taken out of the pool by hand.
+
+So the assignment stopped being a slot range. `SprAssignTr` labels each active slot with its own
+index, merges labels across every overlapping pair, and hands whole components to whichever tranche
+is emptier — slot 0 first and ties to A, so the player is always in the window drawn first. Seven
+slots makes the naive algorithm free. **It never refuses on balance**, and an earlier version did — giving up when a tranche came out
+bigger than the four a window holds. That was the wrong trade: an oversized tranche is doing
+exactly what the whole pool does today, and the *other* tranche still gets a clean window, so an
+unbalanced split is strictly better than none. The degenerate case falls out of the same rule — if
+everything overlaps everything it is one component, it all goes to A with the player, tranche B is
+empty, and the pass behaves as it did before any of this.
+
+One more guard came with it: a slot that is no longer drawable but still holds a saved background
+has to be restored at the position it was *drawn* at, and nothing in the assignment knows that
+position — so a pass with one of those is drawn whole. It happens on the one pass a droid leaves the
+window.
+
+**Measured on deck 1 where the fixed split was refused continuously**: `sprSplit` is now 1 at the
+spawn, and with a droid walking beside the player the two land in tranches A and B when they are
+apart and in the same tranche when they overlap. The oracle on a split pass, all three draw sites
+disabled: **0 of 10240**.
 
 ### Step 3 — only if the worst case still bites
 
