@@ -1045,7 +1045,6 @@ INCLUDE "src/player.asm"
 INCLUDE "src/door.asm"
 INCLUDE "src/lift.asm"
 INCLUDE "src/sprite.asm"
-INCLUDE "src/droid.asm"
 
 IF DEBUG_TIME
 \ ============================================================
@@ -1234,6 +1233,7 @@ INCLUDE "src/data/droidgame.asm"
 INCLUDE "src/screen.asm"
 INCLUDE "src/scroll.asm"
 INCLUDE "src/level.asm"
+INCLUDE "src/droid.asm"
 .data_end
 
 \ SAVED HERE, NOT AT THE BOTTOM. SAVE writes out whatever the assembled

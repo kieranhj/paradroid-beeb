@@ -108,7 +108,7 @@ seconds where a buffer diff would have taken an emulator run.
 |---|---|
 | ~~Main RAM below `&3000`~~ | **Relieved 2026-08-14.** It was 39 bytes; it is 2,496. The fix was moving *code* rather than data: `screen.asm`, `scroll.asm` and `level.asm` into bank 4, beside the tile and deck data they read, with `src/bufcore.asm` holding the 480 bytes that cannot be banked. The position bookmark at the end of `BUGS.md` is no longer blocked |
 | ~~1 px sprite positioning~~ | **Done 2026-08-14**, on branch `layer5-1px-shifts`. Four compiled shifts across two sprite banks; the droid is drawn exactly where it is, as the C64 draws it. Cost **+122 cycles a pass** on `SprDrawAll`, measured, and a third 16K bank. See [`docs/layer-5-blitter.md`](docs/layer-5-blitter.md) |
-| **Main RAM: 116 bytes left** | `&1100–&2F8C` against `&3000`, and Layer 7 needs bullets, explosions, damage and scoring. Move `droid.asm` into bank 4 beside the data it reads — it calls `MapChar` (already there) and `DoorProbe` (main RAM, which bank code may call freely) and runs where `SWRAM_DATA` is the resting state. **Read `bufcore.asm`'s header first.** A `DEBUG_TIME` build already overruns and needs `DEBUG_VSYNC` off to fit |
+| ~~Main RAM: 116 bytes left~~ | **Relieved 2026-08-15.** `droid.asm` moved into bank 4 beside the waypoints, speeds and deck data it reads, and next to `MapChar` which it calls. Main RAM is `&1100–&2600`, **2,560 bytes free**; bank 4 ends `&B5C3` with 2,621 free |
 | ~~Droids inside walls~~ | **Fixed 2026-08-15**, `BUGS.md` #8. `DroidsInit` skipped empty roster indices instead of emptying them, so every deck after the first inherited the previous deck's droids at the previous deck's coordinates. Invisible to every unattended test, all of which ran on deck 1 from a cold boot — **enter a second deck before believing a droid result** |
 | Droid collision feel | `BUGS.md` #7 — droids lock together, and the player bounce reads as heavy. Tuning, by eye, in one sitting: `DR_COL_W`/`DR_COL_H`, `DrPause16`'s 16, and the `ASL A` in `DrBounce` |
 | Droid worst case unmeasured | 7 sprites (36,274) + droids (17,000) + full-diagonal level draw (19,172) is 72,000 of 79,872 before the rest of the loop. It never arose by chance; it wants a rig on a deck with a long open corridor. See [`docs/layer-6-droids-live.md`](docs/layer-6-droids-live.md) |
@@ -163,7 +163,7 @@ moves. The outline:
 | `&5500–&56FF` | 512 B | `CHAR_PTR_LO`/`HI` — character code → charset address, built at startup |
 | `&5700–&57FF` | 256 B | data byte → transparency mask table, built at startup |
 | `&5800–&7FFF` | 10,240 B | play buffer: circular strip, 16 rows × 640 |
-| SWRAM bank 4 | 16 K | `PARADAT` — char data, colour schemes, tile defs, deck RLE, waypoints, **and the level-draw code**. Ends `&A511`, **6,895 B free** |
+| SWRAM bank 4 | 16 K | `PARADAT` — char data, colour schemes, tile defs, deck RLE, waypoints, **the level-draw code and the droid AI**. Ends `&B5C3`, **2,621 B free** |
 | SWRAM bank 5 | 16 K | `PARASPR` — the blitter at shifts 0 and 1 px. Ends `&B056`, **4,010 B free** |
 | SWRAM bank 6 | 16 K | `PARSPR2` — the same at 2 and 3 px, laid out identically. Ends `&B199`, **3,687 B free** |
 
@@ -309,7 +309,7 @@ about recalled facts.
 
 ## `src/` as it stands
 
-Single-pass flat build, everything included from `main.asm`. No linker. **Three files assemble into
+Single-pass flat build, everything included from `main.asm`. No linker. **Four files assemble into
 SWRAM bank 4 rather than main RAM** — they are included from inside the `PARADAT` block, and the rule
 that makes that safe is in `bufcore.asm`'s header.
 
@@ -325,7 +325,7 @@ that makes that safe is in `bufcore.asm`'s header.
 | `sprite.asm` | main RAM | **Live.** The blitter: slot state, `SprDrawAll`/`SprRestoreAll`, the compiled-row dispatch and the wrap fallback |
 | `door.asm` | main RAM | **Live.** Door state, `DoorScan`, the patched tile definitions, `DoorsUpdate`, `DrawDoorTile` |
 | `lift.asm` | main RAM | **Live.** `LiftFind`, lift mode, stepping a shaft, `LiftPlace` |
-| `droid.asm` | main RAM | **Live.** The ship roster, the deck's droid table, waypoints, `DroidsUpdate`, `DrNewDir`, `DrLineOfSight`, `DrCollide`, the sprite-slot allocation. **Wants moving into bank 4** — see the memory item above |
+| `droid.asm` | **bank 4** | **Live.** The ship roster, the deck's droid table, waypoints, `DroidsUpdate`, `DrNewDir`, `DrLineOfSight`, `DrCollide`, the sprite-slot allocation. **Wants moving into bank 4** — see the memory item above |
 
 **Everything in `src/` is in the build.** Five inherited files that were not — `zeropage.asm`,
 `hardware.asm`, `macros.asm` and the retired `hal_video.asm` / `hal_irq.asm` — were deleted rather

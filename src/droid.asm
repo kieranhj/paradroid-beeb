@@ -1,6 +1,17 @@
 \ ============================================================
 \ droid.asm — the deck's droids: roster, waypoints, movement
 \ ============================================================
+\ ASSEMBLES INTO SWRAM BANK 4, not main RAM — it is included from
+\ inside the PARADAT block, beside the waypoints, speeds and deck
+\ data it reads and next to MapChar, which it calls on every wall
+\ probe. The rule that makes that safe is in bufcore.asm's header:
+\ bank code may call main RAM freely (this file calls DoorProbe and
+\ writes sprite.asm's slot arrays), and main RAM may call in only
+\ while SWRAM_DATA is paged. All four entry points satisfy that —
+\ NewShipDroids and DroidsInit/DrSpawnPoint from startup and
+\ LoadDeck, DroidsUpdate from the main loop, all with the data bank
+\ as the resting state.
+\ ============================================================
 \ Layer 5 proper, replacing droidtest.asm. Ported from the C64:
 \
 \   NextLevel        $15E8  builds the SHIP's droid roster
