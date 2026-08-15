@@ -687,15 +687,6 @@ ENDIF                           \ counts the iteration that has finished
 IF DEBUG_POS
   JSR DbgPosOut                 \ where we are, for getting back here
 ENDIF
-IF DEBUG_DRAW
-  LDA #DBG_SPR : JSR DbgSetBg   \ the restore is sprite time too, and it is
-ENDIF                           \ a third of it — it gets the sprite colour
-  JSR SprRestoreAll             \ before anything moves: the saved pixels
-                                \ belong at the address they were taken from
-IF DEBUG_DRAW
-  LDA #DBG_REDRAW : JSR DbgSetBg
-ENDIF
-
   \ Z / X left-right, K / M up-down. The keys feed a direction pair
   \ and the direction pair feeds an accelerating speed, so the view
   \ position moves by 0-7 pixels a frame rather than a fixed step.
@@ -712,6 +703,36 @@ ENDIF
 .ml_nomove
   JSR ApplyMove
 
+\ ============================================================
+\ Erase, and decide first whether the pool can be split
+\ ============================================================
+\ THE MOVEMENT RUNS BEFORE THE ERASE, which it did not used to. It is
+\ what decides how much work DoRedraws has, and that decides whether
+\ the pool may be split this pass — a question that has to be answered
+\ before anything is restored, because the two paths erase different
+\ sets of slots. Nothing is lost by the order: the restore replays the
+\ addresses the DRAW recorded, so it does not care where anything has
+\ moved to since.
+  JSR SprSplitOK
+  STA sprSplit
+  BEQ ml_whole
+
+IF DEBUG_DRAW
+  LDA #DBG_SPR : JSR DbgSetBg
+ENDIF
+  JSR SprRestoreA               \ tranche A only; B stays on screen, which
+  JMP ml_erased                 \ is safe because nothing else writes the
+                                \ buffer on a split pass
+.ml_whole
+IF DEBUG_DRAW
+  LDA #DBG_SPR : JSR DbgSetBg
+ENDIF
+  JSR SprRestoreAll             \ the saved pixels belong at the address
+.ml_erased                      \ they were taken from
+IF DEBUG_DRAW
+  LDA #DBG_REDRAW : JSR DbgSetBg
+ENDIF
+
   \ Park the CRTC address ONCE, with every axis accounted for, and
   \ before any drawing — the IRQ latches it at frame row 3, only a
   \ few rows into this window.
@@ -719,11 +740,14 @@ ENDIF
 IF DEBUG_DRAW
   LDA #DBG_LEVEL : JSR DbgSetBg \ the level draw on its own: it is the
 ENDIF                           \ band that varies with the direction
+  LDA sprSplit                  \ a split pass has no band, no columns and
+  BNE ml_nodraw                 \ no doors — that is what made it splittable
 IF DEBUG_TIME
   JSR TimeCall                  \ TimeCall calls DoRedraws — see its header
 ELSE
   JSR DoRedraws
 ENDIF
+.ml_nodraw
 IF DEBUG_DRAW
   LDA #DBG_REDRAW : JSR DbgSetBg
 ENDIF
@@ -805,7 +829,13 @@ IF DEBUG_DRAW
 ENDIF
 
   JSR SprAnimateAll             \ last: the buffer is settled, so the save
-  JSR SprDrawAll                \ picks up the background the frame will show
+  LDA sprSplit                  \ picks up the background the frame will show
+  BEQ ml_drawall
+  JSR SprDrawA
+  JMP ml_drawn
+.ml_drawall
+  JSR SprDrawAll
+.ml_drawn
 
 \ ============================================================
 \ The droids run HERE, after the drawing, and that is deliberate
@@ -840,9 +870,23 @@ ENDIF
   JSR DroidsUpdate
 
   \ The pass's REMAINING fields. Everything above ran in the first
-  \ window and the display that follows it; this opens the second
-  \ window, which is idle for now and is where the split pool goes.
+  \ window and the display that follows it; this opens the second.
   JSR WaitRest
+
+  \ Tranche B, erased and redrawn inside this window so that no field
+  \ ever displays it missing. On a whole pass it was drawn up there
+  \ with the rest and there is nothing to do here.
+  LDA sprSplit
+  BEQ ml_nob
+IF DEBUG_DRAW
+  LDA #DBG_SPR : JSR DbgSetBg
+ENDIF
+  JSR SprRestoreB
+  JSR SprDrawB
+IF DEBUG_DRAW
+  JSR DbgDeckBg
+ENDIF
+.ml_nob
 
 IF DEBUG_DRAW
   JSR DbgDeckBg
@@ -1175,6 +1219,7 @@ ENDIF
 \ ---- absolute working storage ------------------------------
 .rowOfs    EQUW 0               \ row*640 accumulator for RedrawAll
 .sTmp      EQUW 0
+.sprSplit  EQUB 0               \ this pass is drawing the pool in two
 .vsyncCount EQUB 0              \ bumped by IrqHandler once per field
 .oldIrq1V  EQUW 0
 

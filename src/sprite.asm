@@ -727,27 +727,168 @@ ENDMACRO
 \ across two banks the right one is a property of the sprite and not of
 \ the pool. Both still leave SWRAM_DATA in on the way out: that is the
 \ resting state everything outside the blitter assumes.
+\ ============================================================
+\ THE POOL SPLITS INTO TWO TRANCHES, one per off-display window
+\ ============================================================
+\ A pass is two fields and each field opens a 24,576-cycle window with
+\ the play area blanked. Restoring and drawing the whole pool costs
+\ 36,274, so it cannot fit in one — and a sprite erased in one window
+\ and redrawn in the next is displayed missing in between, which is
+\ the flicker. Per sprite the pair costs 5,814, so four fit a window
+\ and eight fit the two: the pool is split, and each tranche is
+\ restored AND drawn inside its own window. See docs/raster-timing.md.
+\ Slots 0 to SPR_SPLIT-1 go in the first window, the rest in the
+\ second. The player is slot 0 and so is always in the first, which is
+\ the one that never has to give way — see SprSplitOK for when the
+\ split is abandoned for the pass.
+SPR_SPLIT = 3
+
 .SprRestoreAll
   LDX #SPR_SLOTS-1
+  LDA #0
+  BEQ sra_go                    \ always
+.SprRestoreA
+  LDX #SPR_SPLIT-1
+  LDA #0
+  BEQ sra_go                    \ always
+.SprRestoreB
+  LDX #SPR_SLOTS-1
+  LDA #SPR_SPLIT
+.sra_go
+  STA sprStop
 .sra_loop
   STX sprIter
   JSR SprRestoreSlot
   LDX sprIter
+  CPX sprStop
+  BEQ sra_done
   DEX
-  BPL sra_loop
+  JMP sra_loop
+.sra_done
   PAGEBANK SWRAM_DATA
   RTS
 
 .SprDrawAll
   LDX #0
+  LDA #SPR_SLOTS-1
+  BNE sda_go                    \ always
+.SprDrawA
+  LDX #0
+  LDA #SPR_SPLIT-1
+  BNE sda_go                    \ always
+.SprDrawB
+  LDX #SPR_SPLIT
+  LDA #SPR_SLOTS-1
+.sda_go
+  STA sprEnd
 .sda_loop
   STX sprIter
   JSR SprDrawSlot
   LDX sprIter
+  CPX sprEnd
+  BEQ sda_done
   INX
-  CPX #SPR_SLOTS
-  BNE sda_loop
+  JMP sda_loop
+.sda_done
   PAGEBANK SWRAM_DATA
+  RTS
+
+\ ============================================================
+\ SprSplitOK — may the pool be split this pass? Z clear if yes
+\ ============================================================
+\ Two conditions, and the first is the one that matters.
+\ **NOTHING ELSE MAY WRITE THE BUFFER.** The invariant the whole file
+\ rests on is that every buffer write happens while all sprites are
+\ erased — DoRedraws' own comment says it: a door repaint "must happen
+\ between SprRestoreAll and SprDrawAll ... or it stamps pixels into a
+\ sprite's saved background". Split the pool and the second tranche is
+\ still ON SCREEN while the level draw runs, so any band, column or
+\ door tile that touches it corrupts its save permanently. So the
+\ split is only taken on a pass where the level draw has nothing to do
+\ at all: no band, no columns, no doors on the deck. That is most of
+\ the time the player is standing still, which is exactly when flicker
+\ is most visible; while scrolling the whole screen is moving and it
+\ is not.
+\ **NO SPRITE MAY STRADDLE THE TRANCHES.** Restore-all-then-draw-all
+\ exists because drawing one sprite while another is still on screen
+\ captures the second one's pixels into the first one's save area. That
+\ holds within a tranche; across the two it does not, so a pass where
+\ an A sprite overlaps a B sprite gives up and draws the pool whole.
+\ The test is in UNITS and deliberately loose — 7 wide plus 2 units of
+\ a pass's movement, and 21 scanlines plus 8 — because it has to cover
+\ where the other tranche was drawn LAST pass as well as where it will
+\ be drawn this one.
+SPR_OVL_U = SPR_W + 2
+SPR_OVL_Y = SPR_H + 8
+
+.SprSplitOK
+  LDA bandDo                    \ the level draw would run over tranche B
+  ORA colCount
+  BNE sso_no
+\ A door only writes the buffer on a pass where it MOVES. One that is
+\ being held open — bit 6, set by the probes in CheckWalls, which run
+\ before this — is not decremented and not marked dirty by
+\ DoorsUpdate, so it repaints nothing and does not stop the split.
+\ Standing at an open doorway is a common place to be, and testing
+\ numDoors instead cost the split almost everywhere on deck 1.
+  LDX numDoors
+  BEQ sso_nodoors
+.sso_door
+  DEX
+  LDA doorDirty,X               \ already opening, from this pass's probe
+  BNE sso_no
+  LDA doorState,X
+  AND #&40
+  BNE sso_dnext                 \ held open: static this pass
+  LDA doorState,X
+  AND #7
+  BNE sso_no                    \ part open and not held: it closes a step
+.sso_dnext
+  TXA
+  BNE sso_door
+.sso_nodoors
+
+  LDX #0
+.sso_a
+  LDA sprActive,X
+  BEQ sso_anext
+  LDY #SPR_SPLIT
+.sso_b
+  LDA sprActive,Y
+  BEQ sso_bnext
+  LDA sprUnit,X
+  SEC
+  SBC sprUnit,Y
+  JSR SprAbsA
+  CMP #SPR_OVL_U
+  BCS sso_bnext                 \ far enough apart across
+  LDA sprScrY,X
+  SEC
+  SBC sprScrY,Y
+  JSR SprAbsA
+  CMP #SPR_OVL_Y
+  BCC sso_no                    \ and overlapping down as well
+.sso_bnext
+  INY
+  CPY #SPR_SLOTS
+  BNE sso_b
+.sso_anext
+  INX
+  CPX #SPR_SPLIT
+  BNE sso_a
+  LDA #1                        \ Z clear: split it
+  RTS
+.sso_no
+  LDA #0
+  RTS
+
+\ |A|, which the overlap test wants both ways round.
+.SprAbsA
+  BPL sab_x
+  EOR #&FF
+  CLC
+  ADC #1
+.sab_x
   RTS
 
 \ ============================================================
@@ -1114,6 +1255,8 @@ SPR_SPIN = 0                    \ frames between phases; full energy = 0
 .sprNoWrapS SKIP SPR_SLOTS      \ the draw's wrap answer, for the restore
 .sprSeqBaseS SKIP SPR_SLOTS     \ the draw's rotor-sequence base
 .sprShiftS  SKIP SPR_SLOTS      \ the draw's shift
+.sprStop    EQUB 0              \ the slot a restore walks down to
+.sprEnd     EQUB 0              \ and the one a draw walks up to
 .sprBank    EQUB SWRAM_SPR      \ the bank the slot in hand lives in, so
                                 \ SprFetchRow can put it back after paging
                                 \ SWRAM_DATA in over the top
