@@ -565,13 +565,26 @@ IF DEBUG_ENERGY
   EQUB LO(drType), LO(drEnergy), LO(maxEnergy)
   EQUB LO(weaponType), LO(alertLvl)
   EQUB LO(score+0), LO(score+1), LO(score+2), LO(score+3)
+IF DEBUG_MAPGUARD
+  EQUB LO(mgHit), LO(mgQtr), LO(mgOfs), LO(mgGot), LO(mgWant)
+ENDIF
 .dbgEnSrcHi
   EQUB HI(drType), HI(drEnergy), HI(maxEnergy)
   EQUB HI(weaponType), HI(alertLvl)
   EQUB HI(score+0), HI(score+1), HI(score+2), HI(score+3)
+IF DEBUG_MAPGUARD
+  EQUB HI(mgHit), HI(mgQtr), HI(mgOfs), HI(mgGot), HI(mgWant)
+ENDIF
 .dbgEnGap
   EQUB 1, 1, 1
   EQUB 1, 1
   EQUB 0, 0, 0, 1
+IF DEBUG_MAPGUARD
+  EQUB 1, 0, 1, 0, 1
+ENDIF
+IF DEBUG_MAPGUARD
+DBG_EN_N = 14
+ELSE
 DBG_EN_N = 9
+ENDIF
 ENDIF

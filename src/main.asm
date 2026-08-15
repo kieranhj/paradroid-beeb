@@ -273,6 +273,24 @@ DBG_T_OVERHEAD = 46
 \ is nothing to save or restore.
 DEBUG_ENERGY = TRUE
 
+\ DEBUG_MAPGUARD watches the TILE MAP for anything scribbling on it, and
+\ exists because KC saw the map itself go bad in play — collision data
+\ included — on deck 8 when a droid fired, surviving until the deck was
+\ reloaded. Two attempts to reproduce it left the map byte-identical, so
+\ this catches the event instead of hunting it by inspection.
+\
+\ A snapshot goes to &3C00 at deck load and a quarter of the map is
+\ compared each pass, ~4,000 cycles, so a corruption is caught within
+\ four passes. The FIRST hit is kept and checking then stops.
+\
+\ Read it off the DEBUG_ENERGY line, which grows five bytes on the end:
+\   hit  quarter  offset  got  want
+\ hit is 01 once it has fired; quarter and offset give the map byte as
+\ tilemap + quarter*256 + offset, which is map row (that/64), column
+\ (that MOD 64). got is what is there now and want what the deck load
+\ put there.
+DEBUG_MAPGUARD = TRUE
+
 \ TEST_DROIDS and src/droidtest.asm are gone: six static droids, put
 \ there so the sprite pool could be measured before there was anything
 \ to put in it. src/droid.asm is what they were standing in for.
@@ -945,6 +963,9 @@ ENDIF
 
   \ Alongside the AI and for the same reason: it writes no buffer. The
   \ droid the player is riding wears out here.
+IF DEBUG_MAPGUARD
+  JSR MapGuardCheck             \ has anything scribbled on the tile map?
+ENDIF
   JSR CbCheckDeath              \ after the collisions that could cause it
   JSR DoAging
   JSR DoCharUnder               \ and a recharge pad puts it back, at 5
@@ -1239,6 +1260,9 @@ ASSERT FRAME_LOCK >= 2
   JSR SetCRTCStart
   JSR RedrawAll
   JSR DroidsInit                \ the deck's droids, on its waypoints
+IF DEBUG_MAPGUARD
+  JSR MapGuardSnap              \ LAST: the map as the finished load left it
+ENDIF
   RTS
 
 INCLUDE "src/rupture.asm"
@@ -1364,9 +1388,16 @@ ORG code_end
 \ PLACED, NOT FLOATED. It used to sit at the next page boundary after
 \ code_end, which was fine while the code was small and silently walked
 \ into the sprite save areas at &3000 when it was not — a corruption
-\ with no assert to catch it. &3700-&47FF is clear: the save areas end
-\ at &36FF, SPR_MASKTAB is at &5700 and the panel starts at &4800. That
-\ gives the code the whole of &1100-&3000 instead of whatever was left.
+\ with no assert to catch it. SPR_MASKTAB is at &5700 and the panel
+\ starts at &4800, so &3800-&47FF is clear. That gives the code the whole
+\ of &1100-&3000 instead of whatever was left.
+\
+\ THERE IS NO LONGER ANY GAP BELOW IT. The save areas were seven pages,
+\ ending &36FF with &3700 spare; Layer 7c's eighth slot took that page,
+\ so they end at &37FF and this map begins at the very next byte. The
+\ ASSERT below is now exact rather than slack, and a save-area overrun
+\ that used to land in dead space would now land on the map — which is
+\ what DEBUG_MAPGUARD was written to catch.
 \
 \ It is above DATA_LOAD, so the PARADAT staging copy runs straight over
 \ it — harmless, because PageDataIn is done long before LoadDeck calls

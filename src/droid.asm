@@ -1923,6 +1923,96 @@ BUL_COL_H = 10
 .drm_x
   RTS
 
+IF DEBUG_MAPGUARD
+\ ============================================================
+\ MapGuard — catch whatever is scribbling on the tile map
+\ ============================================================
+\ KC reported the map itself going bad in play, collision data and all,
+\ on deck 8 when a droid fired — and it survives until the deck is
+\ reloaded. Two attempts to reproduce it (37 seconds of play on deck 8
+\ with droids firing) left the map byte-identical, so this exists to
+\ catch the event rather than to hunt it by inspection.
+\
+\ THE PRIME SUSPECT IS ADJACENCY. The sprite save areas were seven pages
+\ and ran &3000-&36FF, with &3700 free below the map at &3800. Layer 7c
+\ made them eight, so they now end at &37FF and the map is the very next
+\ byte — any save-area overrun that used to land in a free page now
+\ lands on the map. That is a hazard whether or not it is this bug.
+\
+\ A snapshot goes to &3C00 at deck load — 1K of the free block above the
+\ map — and a QUARTER of the map is compared each pass, so the cost is
+\ about 4,000 cycles rather than 16,000 and a corruption is caught
+\ within four passes. The FIRST hit is kept and checking stops, so the
+\ readout shows where it began rather than wherever it has spread to.
+MG_COPY = &3C00
+ASSERT MG_COPY >= &3C00                 \ the free block, per the memory map
+
+\ Zero page is full, so these borrow the startup bank-copy pointers —
+\ dead from LoadDeck onwards, and the only other borrowers are the debug
+\ readouts, which run at a different point in the pass.
+mgSrc = swSrc
+mgRef = swDst
+
+.MapGuardSnap
+  LDX #0
+.mgs_loop
+  LDA tilemap,X       : STA MG_COPY,X
+  LDA tilemap+256,X   : STA MG_COPY+256,X
+  LDA tilemap+512,X   : STA MG_COPY+512,X
+  LDA tilemap+768,X   : STA MG_COPY+768,X
+  INX
+  BNE mgs_loop
+  LDA #0
+  STA mgHit
+  STA mgPhase
+  RTS
+
+.MapGuardCheck
+  LDA mgHit
+  BNE mgc_x                     \ hold the first event
+  LDA mgPhase
+  AND #3
+  TAY
+  LDA mgQuarterLo,Y : STA mgSrc
+  LDA mgQuarterHi,Y : STA mgSrc+1
+  LDA mgCopyLo,Y    : STA mgRef
+  LDA mgCopyHi,Y    : STA mgRef+1
+  INC mgPhase
+  LDY #0
+.mgc_loop
+  LDA (mgSrc),Y
+  CMP (mgRef),Y
+  BNE mgc_found
+  INY
+  BNE mgc_loop
+.mgc_x
+  RTS
+.mgc_found
+  STY mgOfs
+  LDA mgPhase                   \ already incremented, so back one
+  SEC
+  SBC #1
+  AND #3
+  STA mgQtr
+  LDA (mgSrc),Y : STA mgGot
+  LDA (mgRef),Y : STA mgWant
+  LDA #1
+  STA mgHit
+  RTS
+
+.mgQuarterLo EQUB LO(tilemap), LO(tilemap+256), LO(tilemap+512), LO(tilemap+768)
+.mgQuarterHi EQUB HI(tilemap), HI(tilemap+256), HI(tilemap+512), HI(tilemap+768)
+.mgCopyLo    EQUB LO(MG_COPY), LO(MG_COPY+256), LO(MG_COPY+512), LO(MG_COPY+768)
+.mgCopyHi    EQUB HI(MG_COPY), HI(MG_COPY+256), HI(MG_COPY+512), HI(MG_COPY+768)
+
+.mgHit   EQUB 0                 \ 1 once the map has been seen to change
+.mgPhase EQUB 0
+.mgQtr   EQUB 0                 \ which 256-byte quarter it was in
+.mgOfs   EQUB 0                 \ and where within it
+.mgGot   EQUB 0                 \ what the map holds now...
+.mgWant  EQUB 0                 \ ...against what the deck load put there
+ENDIF
+
 \ ============================================================
 \ state
 \ ============================================================

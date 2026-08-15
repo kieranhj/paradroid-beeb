@@ -12,6 +12,68 @@ Numbering is historical, not an order — 3 sits after 4 because it was added la
 
 ---
 
+## 10. The TILE MAP itself gets scribbled on, in play — **OPEN, 2026-08-16**
+
+Reported by KC from play, on **deck 8**, on the first interaction with a droid that fires: the laser
+sprite is left on screen and the level goes wrong — **including its collision data**, so this is the
+map at `&3800-&3BFF` being written, not merely stray pixels in the play buffer. It survives until
+the deck is reloaded (the debug deck hop away and back clears it) and then returns on meeting the
+firing droid again.
+
+### Not reproduced on demand
+
+Two attempts, both on deck 8 with droids firing and the player taking damage:
+
+| | |
+|---|---|
+| ~12 s of play, then the buffer oracle | **0 of 10240** — the play buffer was clean too |
+| ~12 s more, tile map dumped before and after | **0 of 1024 bytes changed** |
+
+So it is intermittent, and inspection has not found it either. `DEBUG_MAPGUARD` exists to catch it
+rather than to keep guessing — see below.
+
+### The leading structural suspicion
+
+**The sprite save areas now end exactly where the map begins.** They were seven pages, `&3000-&36FF`,
+with `&3700` free below the map at `&3800`. Layer 7c's eighth slot — the player's bullet — took that
+page, so they run `&3000-&37FF` and the map is the very next byte. **Any save-area overrun that used
+to land in a free page now lands on the map**, which is precisely the reported symptom.
+
+`ASSERT tilemap >= SPR_SAVE + SPR_SLOTS * 256` still passes, but it is now exact rather than slack,
+and `main.asm`'s comment claiming "&3700-&47FF is clear" was stale and has been corrected.
+
+The bound that should make an overrun impossible is
+`3 * SPR_BLOCK + (SPR_W - 1) * UNIT_BYTES + 7 = 223 < 256`, and the effect path was checked against
+it by hand: `efRow0 + efHgt <= 21` for all 31 frames, so it walks no more scanlines than a droid,
+and its Y offsets reach the same 48. That is an argument, not a measurement.
+
+### Ruled out
+
+- **Not the tranche split.** `sprSplit` was 1 during the failed reproduction and the buffer still
+  came out clean.
+- **Not the level draw.** BUGS.md #9 is a separate, reproducible defect in the incremental column
+  draw, and it does not touch the map.
+
+### The instrument — `DEBUG_MAPGUARD`
+
+On by default while this is open. It snapshots the map into `&3C00` at the **end** of `LoadDeck` and
+compares a quarter of it each pass (~4,000 cycles), so a corruption is caught within four passes.
+The **first** hit is kept and checking then stops, so the readout shows where it began rather than
+where it spread to. Five bytes are appended to the `DEBUG_ENERGY` line:
+
+```
+  hit  quarter  offset  got  want
+```
+
+`hit` goes to `01` when it fires; the byte is `tilemap + quarter*256 + offset`, i.e. map row
+`that DIV 64`, column `that MOD 64`; `got` is what is there now and `want` what the deck load put
+there. **Verified by poking one map byte**: it reported quarter 1, offset 44, got `FF`, want `00` —
+exactly the byte poked — and does not false-positive over a clean boot.
+
+> The snapshot has to be the **last** thing `LoadDeck` does. Placed earlier it captured the previous
+> deck's map, or boot staging garbage, and reported a hit immediately. The first version of this
+> guard sat in unreachable code after a `JMP` and silently never ran.
+
 ## 9. One 4-pixel column is wrong down most of the strip after horizontal scrolling — **2026-08-15**
 
 Found while verifying Layer 7d, and it has **nothing to do with Layer 7**. Scroll horizontally for
