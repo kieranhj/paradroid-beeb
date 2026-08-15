@@ -709,11 +709,6 @@ ENDIF
 .ml_nomove
   JSR ApplyMove
 
-  \ The droids move once the view has settled and BEFORE DoRedraws: a
-  \ droid opening a door has to have probed it before DoorsUpdate
-  \ closes whatever nothing touched this pass.
-  JSR DroidsUpdate
-
   \ Park the CRTC address ONCE, with every axis accounted for, and
   \ before any drawing — the IRQ latches it at frame row 3, only a
   \ few rows into this window.
@@ -808,6 +803,38 @@ ENDIF
 
   JSR SprAnimateAll             \ last: the buffer is settled, so the save
   JSR SprDrawAll                \ picks up the background the frame will show
+
+\ ============================================================
+\ The droids run HERE, after the drawing, and that is deliberate
+\ ============================================================
+\ Everything above this line writes the play buffer and therefore has
+\ to happen while the play area is off display — 192 scanlines, 24,576
+\ cycles — and the level draw has only the 22,016 up to the CRTC latch
+\ at fire 1. DroidsUpdate writes NOTHING into the buffer, and at
+\ ~17,000 cycles it was the single largest thing standing between the
+\ window opening and the level draw: measured, the work ahead of
+\ DoRedraws came to 30,780 cycles against that 22,016 deadline, so the
+\ newly exposed column was being written while the beam displayed it.
+\n\ Moved down here it runs during the play area's own display, where a
+\ routine that touches no buffer costs nothing visible, and the level
+\ draw gets its window back. Measured over 128 passes scrolling on the
+\ diagonal, entering DoRedraws with the play area on screen: 116 of
+\ 128 before, 0 of 128 after. See docs/raster-timing.md.
+\n\ WHAT IT COSTS IS ONE PASS OF LATENCY. The slot positions this writes
+\ are the ones the NEXT pass draws, so a droid appears where it was
+\ 40 ms ago. At 25 Hz and 1-8 px a pass that is not visible, and the
+\ player is untouched — his movement stays above, because the scroll
+\ depends on it.
+\n\ Three things make it safe to run after the draw rather than before:
+\   - the restore replays the DRAW's own addresses (sprPtr0/sprScan0),
+\     not sprUnit, so moving a slot after it has been drawn is already
+\     something the blitter expects;
+\   - a slot freed here still has sprSaved set, so the next restore
+\     puts its background back before SprDrawAll clears the flag;
+\   - a door probed here is held open by the NEXT pass's DoorsUpdate,
+\     one pass later than before but never closing under a droid that
+\     is still standing at it.
+  JSR DroidsUpdate
 
 IF DEBUG_DRAW
   JSR DbgDeckBg

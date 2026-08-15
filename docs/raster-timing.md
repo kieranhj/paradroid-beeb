@@ -116,7 +116,7 @@ The shape of the fix follows from the table above: **the AI and the movement cod
 the play buffer, so they belong in the display period, and the three phases that do write belong in
 the two windows.**
 
-### Step 1 — get the level draw back inside a window
+### Step 1 — get the level draw back inside a window — **DONE 2026-08-15**
 
 Move `ReadKeys`/`CalcSpeed`/`CheckWalls`/`ApplyMove`/`DroidsUpdate` to *after* the sprite draw, so
 they run during the display and compute the state the **next** pass will use. That is a one-pass
@@ -128,7 +128,31 @@ Watch out: `ApplyMove` decides the scroll, and `SetCRTCStart`/`DoRedraws` depend
 ~1,500 cycles, so the cheap version is to pipeline the droid AI alone and leave the player where it
 is.
 
-This alone should fix the edge tearing, and it is the smallest change on this list.
+**Done**, and it was one moved `JSR`. `DroidsUpdate` now runs after `SprDrawAll`; the player's own
+movement stayed above the level draw because the scroll depends on it, and only the droid AI moved.
+`droid.asm` went into bank 4 first, which is what made the room.
+
+Measured the same way, 128 passes scrolling on the diagonal:
+
+| | before | after |
+|---|---:|---:|
+| entering `DoRedraws` with the play area **on screen** | 116 of 128 | **0 of 128** |
+| leaving `DoRedraws` on screen | 124 of 128 | **0 of 128** |
+| entering `SprDrawAll` on screen | 120 of 128 | **0 of 128** |
+| leaving `SprDrawAll` on screen | 75 of 128 | **35 of 128** |
+
+So the level draw is now wholly inside the window — the edge tearing should be gone — and the sprite
+draw both starts in the window and **finishes there on 93 passes of 128**. On those 93, the restore
+and the draw are in the same window, which is exactly the condition for a sprite never to be
+displayed erased: the flicker is gone on those passes and step 2 is about closing the other 35.
+
+The frame lock is untouched: the histograms sum to exactly 128 over 10,223,616 cycles.
+
+**What it costs is one pass of latency** on droid positions — the slots this writes are drawn by the
+next pass. At 25 Hz and 1-8 px a pass it is not visible. Three properties make it safe, and they are
+written out at the call site in `main.asm`: the restore replays the *draw's* addresses rather than
+`sprUnit`, a slot freed after the draw still has `sprSaved` set so its background is put back, and a
+door probed here is held open by the next pass's `DoorsUpdate`.
 
 ### Step 2 — put each sprite's erase and redraw in the same window
 
