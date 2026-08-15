@@ -18,17 +18,39 @@ Found while verifying Layer 7d, and it has **nothing to do with Layer 7**. Scrol
 a while, stop, let the view settle, and the play buffer no longer matches `RedrawAll`.
 
 **With every sprite disabled and the droids removed, so the level draw is the only thing writing
-the buffer: 62 of 10240 bytes differ.** The pattern is what makes it worth an entry:
+the buffer: 58–62 of 10240 bytes differ**, depending on where you stop.
+
+**It is all in CRTC unit 0 — the leftmost 4-pixel column of the view** — and it runs down almost
+every one of the 16 rows. Nothing else in the buffer is touched.
+
+### The column is displaced DOWN by one character row
+
+Rendering unit 0 against `RedrawAll`, scrolling left, `scrollS = $0218`, `line = 4`:
 
 ```
-  $5D23 $5D24    two consecutive bytes...
-  $5FA3 $5FA4    ...+640, the same two in the next strip row
-  $64A3 $64A4    ...and again
+          incremental   RedrawAll
+  row 1.3    ....         ####     <-- WRONG
+  row 2.3    ####         ....     <-- WRONG     the same #### one row lower
+
+  row 4.3    ....         ****     <-- WRONG
+  row 5.3    ****         ....     <-- WRONG     the same **** one row lower
+
+  row 9.3    ....         ####     <-- WRONG
+  row 10.3   ####         ....     <-- WRONG
 ```
 
-Two consecutive bytes is **two scanlines of one 4-pixel column**, and it repeats down **13 of the
-16 strip rows**. So a single column is being drawn wrongly, in the same two scanlines of each
-character row, over most of the strip — not scattered damage.
+and rows 5–8's vertical white line appears at rows 6–9. Every feature lands exactly one character
+row too low, so this is **an off-by-one in the row origin of the newly-exposed column**, not
+scattered damage and not a timing tear — a tear would leave the buffer correct and only look wrong
+for a frame, and this survives 1.6 M cycles of settling.
+
+**`line` was 4, i.e. non-zero.** CLAUDE.md's standing warning is that every scrolling bug so far
+has hidden in non-zero `line`, odd/even `mapHX`, or a diagonal, and this fits the first. `DrawColumn`'s
+starting map row is the place to look; the vertical scroll offset is the thing it is most likely
+not to be accounting for.
+
+It is a **4-pixel column at the very edge of the play area, so it is close to invisible on screen**
+— which is why it went unnoticed and why it needs the byte oracle rather than a screenshot.
 
 ### How it was found, and what is ruled out
 
@@ -53,9 +75,11 @@ ruled out**. It is in the incremental column draw.
 
 Whether this predates Layer 7 entirely. It is independent of everything Layer 7 added, but the
 build before Layer 7a has not been run against the same test — that is the first thing to do, and
-it is cheap. The suspects after that are `DrawColumn` and `ScrollAddS`, and the fact that the two
-bad scanlines sit at the same offset in every row points at the column walk rather than the tile
-lookup.
+it is cheap.
+
+Whether the same displacement appears on the RIGHT edge when scrolling the other way. Only a
+leftward scroll was rendered column by column; a rightward one also fails the oracle, but its
+column was not identified.
 
 ## 8. Droids from the LAST deck survive into the next one — **FIXED 2026-08-15**
 
