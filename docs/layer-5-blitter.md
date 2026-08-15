@@ -38,10 +38,12 @@ steps, in dependency order:
    spends **39,212 of its 79,872 cycles idle — 49% of the pass** (T1 around `WaitVSync`, seven
    sprites live, averaged over 127 passes). There is nothing left to buy. See *Why not
    round-robin* below before reviving it.
-6. **Raster-ordered updating** — flicker, and probably `BUGS.md` #3 with it. Still open, and now
-   the only sprite-pool work outstanding. **The mechanism is now measured rather than assumed** —
-   see *Where the sprite work actually lands* below, and [`raster-timing.md`](raster-timing.md) for
-   the whole-loop picture and a staged plan.
+6. **Raster-ordered updating** — flicker, and probably `BUGS.md` #3 with it. **Measured and then
+   largely built, 2026-08-15.** The mechanism is in *Where the sprite work actually lands* below;
+   the whole-loop picture, the two-window split that came out of it and what is still open are in
+   [`raster-timing.md`](raster-timing.md). The pool now restores and draws each tranche inside one
+   off-display window, so read that before touching `SprRestoreAll`/`SprDrawAll`: they are entry
+   points into a tranche walk now, not loops over every slot.
 
 **Measured, one sprite, one frame** (User VIA T1 around the two calls; both builds at the same
 position; ±0 across repeats — the emulator is deterministic):

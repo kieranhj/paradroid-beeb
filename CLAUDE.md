@@ -61,7 +61,7 @@ proves no instruction was added, removed or reordered.
 | CPU | Plain 6502 — `CPU 0` in BeebASM, no 65C12 opcodes |
 | Display | MODE 1, 4 colours. **Not a plain frame:** a 5-row static panel at `&4800` above a 320 × 120 scrolled play area, driven by a three-cycle vertical rupture |
 | Play area | 10K circular strip at `&5800`, **10K hardware wrap**, scrolled by the CRTC — 4 px horizontally, 1 scanline vertically |
-| Game loop | Locked to `FRAME_LOCK` = 2 fields a pass, 25 Hz |
+| Game loop | `FRAME_LOCK` = 2 fields a pass, 25 Hz — a floor, not a fixed length: a pass that overruns carries on rather than waiting out another field |
 
 ## Build
 
@@ -123,13 +123,13 @@ output rather than from any document.** In outline:
 |---|---|
 | ZP `&00–&8F` | All used. The map is in `main.asm`. `&90` up belongs to the OS |
 | `&0400–&0C90` | MODE 1 charset, built at deck load — reclaimed OS workspace |
-| `&1100–…` | Code (`PARA`), starting below DFS's `PAGE`. Ends `&2640`; `&2640–&3000` is free |
+| `&1100–…` | Code (`PARA`), starting below DFS's `PAGE`. Ends `&27DA`; `&27DA–&3000` is free |
 | `&3000–&36FF` | Sprite background save areas, one page per slot |
 | `&3800–&3C00` | Tile map |
 | `&4800–&547F` | Panel — 5 rows × 640, displayed by rupture cycle 1 |
 | `&5500–&57FF` | Character-address and sprite-mask tables, built at startup |
 | `&5800–&7FFF` | Play buffer: circular strip, 16 rows × 640 |
-| SWRAM bank 4 | `PARADAT` — tiles, levels, palettes, droid game data, **and the level-draw code** |
+| SWRAM bank 4 | `PARADAT` — tiles, levels, palettes, droid game data, **the level-draw code and the droid AI** |
 | SWRAM bank 5 | `PARASPR` — the blitter, shifts 0 and 1 px |
 | SWRAM bank 6 | `PARSPR2` — shifts 2 and 3 px, same layout |
 
@@ -150,8 +150,9 @@ Single-pass flat build, everything included from `main.asm`. No linker.
 everything else. **Everything in `src/` is in the build** — the five inherited Master/HAL files that
 were not have been deleted, so nothing there is dead. Keep it that way.
 
-**Three files assemble into SWRAM bank 4, not main RAM**: `screen.asm`, `scroll.asm` and `level.asm`
-are included from inside the `PARADAT` block, next to the tile and deck data they read. That costs no
+**Four files assemble into SWRAM bank 4, not main RAM**: `screen.asm`, `scroll.asm`, `level.asm` and
+`droid.asm` are included from inside the `PARADAT` block, next to the tile, deck and waypoint data
+they read. That costs no
 paging, because the data bank is the resting state. The rule it depends on is one-way and undiagnosed
 if broken — bank code may call main RAM freely, but main RAM may call *in* only with `SWRAM_DATA`
 paged, which is false at startup before the bank is loaded and inside `SprDrawAll`/`SprRestoreAll`.

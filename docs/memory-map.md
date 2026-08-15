@@ -9,6 +9,12 @@ Regenerate it after any change that moves a region:
 
 `PLAN.md` keeps the one-line summary; this file is the detail behind it.
 
+> **STALE IN PLACES, 2026-08-15.** The per-region addresses below predate `droid.asm` moving into
+> bank 4 and the raster work that followed, so main-RAM `code_end` and bank 4's contents have both
+> moved. The current figures are main RAM `&1100–&27D9` with 2,086 B free below `&3000`, and bank 4
+> ending `&B5C3` with 2,621 B free. Regenerate with the command above rather than trusting a row
+> here until this notice goes.
+
 ## Main RAM
 
 | Range | Size | Contents |
@@ -35,7 +41,8 @@ Regenerate it after any change that moves a region:
 | `&C000–&FFFF` | 16 K | MOS |
 
 Free main RAM totals **7,067 bytes**, of which 2,475 are below `&3000` — the level draw moved
-into bank 4 on 2026-08-14 and took 2,437 bytes of code with it.
+into bank 4 on 2026-08-14 and took 2,437 bytes of code with it. `droid.asm` followed on 2026-08-15,
+which is what made room for the raster work; see the notice at the top.
 
 ### The boot-time staging overlay
 
@@ -142,7 +149,9 @@ reads none of the artwork, and the wrap fallback is the only thing that does.
 **The constraint was code space, and moving code fixed it.** "Main RAM is full" always meant "the
 `PARA` image cannot grow past `&3000`" — there was 4.6 K free, just none of it where code could go.
 Since a bank can hold code as easily as data, the level draw went to live beside the tile and deck
-data it reads, and `&3000` is now 2,496 bytes away rather than 39.
+data it reads, and `droid.asm` after it — beside the waypoints and speeds *it* reads, and next to
+the `MapChar` it calls on every wall probe. `&3000` is now 2,086 bytes away rather than 39, having
+twice been the thing blocking the next layer.
 
 The other free regions still cannot hold anything *loaded*: `&3700–&37FF` and `&3C00–&47FF` are
 under the staging overlay, so they take only what is built at runtime — which is what `CHAR_PTR` and

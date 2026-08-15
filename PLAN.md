@@ -36,10 +36,12 @@ per-deck palette and charset built at load time. Keys: Z/X left/right, K/M up/do
 choose the deck), L fire — which steps into and out of a lift — cursor up/down for a debug deck hop,
 SPACE forces a full redraw.
 
-Seven sprites cost **36,274 cycles of the 79,872 in a pass**, and the loop is idle for about half of
-it. That is after the blitter was compiled and cut from 14,000 cycles a sprite to 5,800 — see
-[`docs/layer-5-blitter.md`](docs/layer-5-blitter.md), which also records what was costed and
-*rejected*, round-robin updating chief among them.
+Seven sprites cost **36,274 cycles of the 79,872 in a pass** and the droid AI another 17,000, so the
+loop still has roughly a third of the pass spare. That is after the blitter was compiled and cut from
+14,000 cycles a sprite to 5,800 — see [`docs/layer-5-blitter.md`](docs/layer-5-blitter.md), which
+also records what was costed and *rejected*, round-robin updating chief among them. **Where that
+work lands against the beam matters as much as what it costs**, and that is
+[`docs/raster-timing.md`](docs/raster-timing.md).
 
 **The ship is traversable.** Doors open when you walk into them and close behind you; lift platforms
 take RETURN and then UP/DOWN to move through the decks their shaft serves. Both are the C64's own
@@ -56,9 +58,16 @@ line of sight is not drawn, droids bump into each other and into the player, and
 dispatches on droid mode so Layer 7's bullets and explosions are a table entry rather than a
 rewrite. See [`docs/layer-6-droids-live.md`](docs/layer-6-droids-live.md).
 
+**The loop is now built around the raster.** A pass is two fields and each opens a 24,576-cycle
+window with the play area blanked; every buffer write belongs in one. The droid AI moved after the
+drawing (it writes nothing), the sprite pool splits into two tranches with each restored *and* drawn
+inside a single window, and the loop counts windows in the IRQ rather than consuming a flag. Both
+symptoms KC reported — edge tearing while scrolling and sprites blinking at 25 Hz — come out of that
+timing, and [`docs/raster-timing.md`](docs/raster-timing.md) is the map: the frame in cycles, what
+writes the buffer when, and what is still open.
+
 **Next: Layer 7**, combat — `dMd1_bullet`, `dMd2_explosion`, `DoCollision`'s damage arms, `DoScore`,
-`KillDroid` and `DoAlertAndAging`. **Move `droid.asm` into bank 4 first**: main RAM has 116 bytes
-left.
+`KillDroid` and `DoAlertAndAging`.
 
 **Before trusting any speed number, read the speed model section of
 [`docs/layer-4-player.md`](docs/layer-4-player.md).** The C64's constants are per `GameLoop`
@@ -106,7 +115,7 @@ seconds where a buffer diff would have taken an emulator run.
 
 | | |
 |---|---|
-| ~~Main RAM below `&3000`~~ | **Relieved 2026-08-14.** It was 39 bytes; it is 2,496. The fix was moving *code* rather than data: `screen.asm`, `scroll.asm` and `level.asm` into bank 4, beside the tile and deck data they read, with `src/bufcore.asm` holding the 480 bytes that cannot be banked. The position bookmark at the end of `BUGS.md` is no longer blocked |
+| ~~Main RAM below `&3000`~~ | **Relieved twice.** 2026-08-14: `screen.asm`, `scroll.asm` and `level.asm` into bank 4, beside the tile and deck data they read, with `src/bufcore.asm` holding the 480 bytes that cannot be banked. 2026-08-15: `droid.asm` followed them, which is what made room for the raster work. Main RAM is `&1100–&27D9` with **2,086 B free** |
 | ~~1 px sprite positioning~~ | **Done 2026-08-14**, on branch `layer5-1px-shifts`. Four compiled shifts across two sprite banks; the droid is drawn exactly where it is, as the C64 draws it. Cost **+122 cycles a pass** on `SprDrawAll`, measured, and a third 16K bank. See [`docs/layer-5-blitter.md`](docs/layer-5-blitter.md) |
 | ~~Main RAM: 116 bytes left~~ | **Relieved 2026-08-15.** `droid.asm` moved into bank 4 beside the waypoints, speeds and deck data it reads, and next to `MapChar` which it calls. Main RAM is `&1100–&2600`, **2,560 bytes free**; bank 4 ends `&B5C3` with 2,621 free |
 | ~~Droids inside walls~~ | **Fixed 2026-08-15**, `BUGS.md` #8. `DroidsInit` skipped empty roster indices instead of emptying them, so every deck after the first inherited the previous deck's droids at the previous deck's coordinates. Invisible to every unattended test, all of which ran on deck 1 from a cold boot — **enter a second deck before believing a droid result** |
@@ -153,8 +162,8 @@ moves. The outline:
 | ZP `&00–&8F` | 144 B | **all of it used** — the map is in `main.asm`. `&90` up is the OS |
 | `&0400–&0C8F` | 2,192 B | MODE 1 charset, built at deck load — reclaimed OS workspace |
 | `&0C90–&10FF` | **1,136 B free** | rest of the reclaimed OS workspace |
-| `&1100–&263F` | 5,440 B | code (`PARA`). DFS random-access buffer space, safe for `*LOAD` |
-| `&2640–&2FFF` | **2,496 B free** | the level draw moved into bank 4 and took 2,437 bytes with it |
+| `&1100–&27D9` | 6,362 B | code (`PARA`). DFS random-access buffer space, safe for `*LOAD` |
+| `&27DA–&2FFF` | **2,086 B free** | the level draw and the droid AI both live in bank 4 now |
 | `&3000–&36FF` | 1,792 B | sprite background save areas, one page per slot |
 | `&3800–&3BFF` | 1,024 B | tile map, fixed home — floating it after `code_end` once put it over the save areas |
 | `&3700`, `&3C00–&47FF` | **3,328 B free** | runtime-built data only: boot stages `PARASPR` through `&68B5` |
@@ -315,14 +324,14 @@ that makes that safe is in `bufcore.asm`'s header.
 
 | File | Where | State |
 |---|---|---|
-| `main.asm` | main RAM | **Live.** Constants, the zero page map, memory map, main loop, IRQ dispatch. Geometry constants live here because beebasm resolves them in file order and the other files need them |
+| `main.asm` | main RAM | **Live.** Constants, the zero page map, memory map, main loop and its two windows, IRQ dispatch. Geometry constants live here because beebasm resolves them in file order and the other files need them |
 | `rupture.asm` | main RAM | **Live.** Three-cycle vertical rupture, the T1 state machine, `FillPanel`, `DbgSetBg` |
 | `bufcore.asm` | main RAM | **Live.** The four things the level draw could not take into the bank: `SetupScreen` and `SetCRTCStart`, which run before the bank is loaded, and `WrapBufFwd`, `SetCell` and the `rowMul`/`unitMul` tables, which run with the *sprite* bank paged in |
 | `screen.asm` | **bank 4** | **Live.** `DrawHalf`, `HalfPtr`, `BuildCharPtrs`, `BandSetRow`/`BandCharPtr`, `ColSetup`, `MapChar`, `RedrawAll` |
 | `scroll.asm` | **bank 4** | **Live.** `DrawColumn`, `DrawBandRows`, `CopyCell`, `ScrollAddS`, `DoRedraws` |
 | `level.asm` | **bank 4** | **Live.** Deck decode, `BuildCharset`, `BuildLUTs`, `SetPalette` |
 | `player.asm` | main RAM | **Live.** `ReadKeys`, `CalcSpeed`, `CheckWalls`, `ApplyMove`, `DeadZone`, the clamps |
-| `sprite.asm` | main RAM | **Live.** The blitter: slot state, `SprDrawAll`/`SprRestoreAll`, the compiled-row dispatch and the wrap fallback |
+| `sprite.asm` | main RAM | **Live.** The blitter: slot state, the tranche walk behind `SprDrawAll`/`SprRestoreAll`, `SprSplitOK`/`SprAssignTr`, the compiled-row dispatch and the wrap fallback |
 | `door.asm` | main RAM | **Live.** Door state, `DoorScan`, the patched tile definitions, `DoorsUpdate`, `DrawDoorTile` |
 | `lift.asm` | main RAM | **Live.** `LiftFind`, lift mode, stepping a shaft, `LiftPlace` |
 | `droid.asm` | **bank 4** | **Live.** The ship roster, the deck's droid table, waypoints, `DroidsUpdate`, `DrNewDir`, `DrLineOfSight`, `DrCollide`, the sprite-slot allocation. **Wants moving into bank 4** — see the memory item above |
