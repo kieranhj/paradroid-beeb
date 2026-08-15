@@ -531,7 +531,7 @@ type 4, full energy `$40`.
 | End | slot freed after 11 frames, `sprActive[6]` → 0 |
 | Compaction | the entry vanished and the droid behind it moved down — `drType[1]` 4 → 2 |
 
-### 7f — Enemy fire
+### 7f — Enemy fire ✅ **DONE 2026-08-16**
 
 `DoEnemyFire` slots into `DroidRun` **between the sight-line test and the waypoint search** — the
 comment reserving that spot is already in `droid.asm`. Gated on `DWeapon_t[type]` being non-zero, on
@@ -546,6 +546,59 @@ becomes an explosion in place.
 Finally the disruptor arms for both sides.
 
 *Visible:* stand in a corridor and get shot at.
+
+#### What landed
+
+`DrEnemyFire`, `DrAddBullet`, the mode-1 `DrBullet` and `DrHurtPlayer`, all in bank 4; the death
+and respawn in `combat.asm`. An enemy bullet is a **droid-table entry in mode 1, type `$25`**,
+sharing the same pool of six sprites — so a deck full of bullets is a deck with fewer droids drawn,
+exactly as on the C64, and the per-pass sprite cost does not grow.
+
+- **Shooting is gated on the sprite being lit**, which is the C64's own gate: `DoEnemyFire` sits
+  inside `dMd0`'s `SpriteEna` arm, so a droid that cannot see the player does not shoot at him.
+- **The random draw is the difficulty curve.** `random AND $1F` against `shipLevel` means ship 1
+  fires on one draw in 32 and ship 8 on eight — the same droids get steadily deadlier.
+- **The bullet's speed is the distance to the player shifted down five**, so a shot from across the
+  deck travels faster than one from close by and the flight time comes out roughly constant. Odd as
+  it looks, that is the original's.
+- **The type counts `$25` down to `$20` and the bullet is invisible while it does** — four passes
+  inside the droid that fired it, so it is not born already overlapping. At `$20` it arms and stays
+  there until it meets a wall, and then becomes an explosion in place, which is why
+  `DrExplodeSprite` takes it with no special case.
+- **`DrHurtPlayer`** carries the three arms that cost him energy: a droid (the stronger hurts the
+  weaker, his damage halved and theirs doubled), an enemy bullet, and standing in an explosion. All
+  on the episode edge only — the C64 debounces damage with the same test it debounces the bounce
+  with, or standing against a droid would drain you in a second.
+
+> **A bank-4 routine cannot page itself out, and this is where that bit.** `DrAddBullet` needs
+> `efBullet`, which is in bank 5 with the artwork, and a `PAGEBANK SWRAM_SPR` there swaps bank 5 in
+> at `&8000` *while the 6502 is executing from `&8000`* — the next instruction fetch comes out of
+> the blitter. It crashed instantly, landing at `PC = &B3C9` with a ROM paged in. The fix is
+> `CbBulletFrame`, a four-line lookup in **main RAM**, which may page freely and which bank code may
+> call. The one-way rule in `bufcore.asm`'s header covers exactly this; it is just easy to walk into
+> when the thing you want is a single byte.
+
+##### Measured
+
+Deck 2, one droid armed by hand (type 14, weapon 1) and `shipLevel` raised so the fire gate passes
+often:
+
+| | |
+|---|---|
+| Fire | a new entry appears at type `$25`, energy `$25` |
+| Arming | seen at `$20` — counted down and visible |
+| Damage | player `$3F` → `$27`: **24 lost, exactly three hits of 8** |
+| Volume | three bullets in flight at once, two armed and one still in the muzzle |
+| Death | energy 0 → respawn: energy **7**, and `plyX` **1038 → 805**, the waypoint-0 position |
+
+##### Still deferred
+
+The **disruptor** (weapon 3, an area effect rather than a bullet — `Disruptor` at `$1B37`);
+**`EnemyFireEnemy`**, the friendly fire that lets droids kill each other; the enemy bullet's
+per-pass **colour flicker**, which needs `efAlt` from bank 5 and a second per-entry field; and the
+**player's own explosion** before he respawns — the droids' deaths animate properly, so the
+machinery exists and it is only the sequencing that does not. The `CollisionType` matrix is still
+not needed: with friendly fire absent, every pair that can meet is handled directly.
 
 ---
 

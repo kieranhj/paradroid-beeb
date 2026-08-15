@@ -427,6 +427,7 @@ DR_LOS_MAX = 96
   LDA drShipIdx,X   : STA drShipIdx,Y
   LDA drVis,X       : STA drVis,Y
   LDA drVisNew,X    : STA drVisNew,Y
+  LDA drBulFrm,X    : STA drBulFrm,Y
 
   LDA drSprNum,X                \ the slot points back at the droid, so a
   BEQ dru_kept                  \ droid that moves down the table has to
@@ -572,19 +573,28 @@ DR_LOS_MAX = 96
   LDA drSlotOwner,Y
   BEQ dc_x
   TAX
+  STX dcHit                     \ the thing he touched, for the damage arm
   LDA drType,X
   CMP #DR_TYPE_BULLET
-  BCS dc_x                      \ walking through an explosion: Layer 7f
+  BCS dc_noshove                \ a bullet or an explosion is not shoved
   JSR DrPause16
   JSR DrReverse
+.dc_noshove
 
-  LDA drCollWas                 \ the bounce is once per episode too, or
-  BNE dc_x                      \ the player sticks to the droid shaking
+  LDA drCollWas                 \ once per episode, or he sticks to the droid
+  BNE dc_x                      \ shaking — and would be drained in a second
 
+  LDX dcHit
+  LDA drType,X
+  CMP #DR_TYPE_BULLET
+  BCS dc_hurt                   \ no bounce off a bullet or an explosion
   LDX #0                        \ the C64 negates the whole-pixel part of
   JSR DrBounce                  \ each speed, forces it to at least 1, and
   LDX #2                        \ doubles it
   JSR DrBounce
+.dc_hurt
+  LDX dcHit
+  JMP DrHurtPlayer
 .dc_x
   RTS
 
@@ -677,9 +687,13 @@ DR_LOS_MAX = 96
   BEQ dr_mode0
   CMP #4
   BEQ dr_xplode                 \ mode 2, and out of branch range of it
-  RTS                           \ mode 1 is the enemy bullet — Layer 7f
+  CMP #2
+  BEQ dr_bullet                 \ mode 1, an enemy bullet
+  RTS                           \ mode 3 is the player's, and is not here
 .dr_xplode
   JMP DrExplode
+.dr_bullet
+  JMP DrBullet
 
 .dr_mode0
 IF DR_MOVES
@@ -689,6 +703,18 @@ ENDIF
   JSR DrCharPos                 \ the cell the droid is standing on — before
                                 \ DrScreen, which needs it for the sight line
   JSR DrScreen                  \ near test, sprite slot, screen position
+
+\ SHOOTING IS GATED ON THE SPRITE BEING LIT, which is the C64's own
+\ gate — DoEnemyFire sits inside dMd0's SpriteEna arm, so a droid that
+\ cannot see the player does not shoot at him. DrScreen has just
+\ settled that for this pass.
+  LDX drIdx
+  LDY drSprNum,X
+  BEQ dr_nofire
+  LDA sprActive,Y
+  BEQ dr_nofire
+  JSR DrEnemyFire
+.dr_nofire
 
   LDX drIdx
 
@@ -1571,6 +1597,317 @@ BUL_COL_H = 10
   RTS
 
 \ ============================================================
+\ LAYER 7f — the droids shoot back
+\ ============================================================
+\ An enemy bullet is a DROID-TABLE ENTRY in mode 1, type $25, sharing
+\ the same pool of six sprites as the droids — so a deck full of bullets
+\ is a deck with fewer droids drawn, exactly as on the C64, and the
+\ per-pass sprite cost does not grow.
+\
+\ NOT PORTED YET, and all of it deliberate: the disruptor (weapon 3, an
+\ area effect rather than a bullet), EnemyFireEnemy's friendly fire, and
+\ the bullet's per-pass colour flicker — that last one needs efAlt, which
+\ is in bank 5, and a second per-entry field to carry the paired frame.
+
+\ ---- DrEnemyFire — port of DoEnemyFire ($3450) -------------
+\ Called only for a droid whose sprite is actually lit, which is the
+\ C64's own gate: DoEnemyFire sits inside dMd0's `SpriteEna` arm, so a
+\ droid that cannot see the player does not shoot at it.
+.DrEnemyFire
+  LDX drIdx
+  LDY drType,X
+  LDA drWeapon,Y
+  BEQ def_x                     \ unarmed
+  CMP #3
+  BEQ def_x                     \ the disruptor is not a bullet
+  LDA drFireDelay,X
+  BNE def_x
+  LDA drCount
+  CMP #DR_SLOTS
+  BCS def_x                     \ no room in the table
+
+\ THE RANDOM DRAW IS THE DIFFICULTY CURVE. `random AND $1F` against
+\ shipLevel means ship 1 fires on 1 draw in 32 and ship 8 on 8 — the
+\ same droids get steadily deadlier as the game goes on.
+  JSR DrRandom
+  AND #&1F
+  CMP shipLevel
+  BCS def_x
+
+  JSR DrFindSlot
+  BEQ def_x                     \ every sprite is busy
+  STA drNewSlot
+  JMP DrAddBullet
+.def_x
+  RTS
+
+\ ---- DrAddBullet — port of AddBullet ($34B5) ---------------
+\ The bullet flies at where the player IS, not where he is heading, and
+\ its speed is the distance shifted down five — so a shot from across
+\ the deck travels faster than one from close by and the flight time
+\ comes out roughly constant. That is the original's, odd as it looks.
+.DrAddBullet
+  LDX drIdx
+  CLC                           \ the player's reference point...
+  LDA plyX   : ADC #PLY_REFX : STA dbdX
+  LDA plyX+1 : ADC #0        : STA dbdX+1
+  SEC                           \ ...less this droid's
+  LDA dbdX   : SBC drPosXlo,X : STA dbdX
+  LDA dbdX+1 : SBC drPosXhi,X : STA dbdX+1
+
+  CLC
+  LDA posY   : ADC #PLY_REFY : STA dbdY
+  LDA posY+1 : ADC #0        : STA dbdY+1
+  SEC
+  LDA dbdY   : SBC drPosYlo,X : STA dbdY
+  LDA dbdY+1 : SBC drPosYhi,X : STA dbdY+1
+
+  LDY #5                        \ >> 5, ARITHMETIC: CMP #$80 puts the sign
+.dab_shift                      \ back into carry for the ROR to pull down
+  LDA dbdX+1 : CMP #&80 : ROR dbdX+1 : ROR dbdX
+  LDA dbdY+1 : CMP #&80 : ROR dbdY+1 : ROR dbdY
+  DEY
+  BNE dab_shift
+  LDA dbdX : STA dbSpdX
+  LDA dbdY : STA dbSpdY
+
+\ Which of the four bullet sprites. The C64 works it out with a chain of
+\ subtracts ($353E) that amounts to: one axis wins if it is at least
+\ twice the other, otherwise it is a diagonal chosen by the signs.
+  LDA dbSpdX : JSR DrAbsA : STA dbAx
+  LDA dbSpdY : JSR DrAbsA : STA dbAy
+  LDA dbAx
+  LSR A
+  CMP dbAy
+  BCS dab_horiz                 \ |dx|/2 >= |dy|
+  LDA dbAy
+  LSR A
+  CMP dbAx
+  BCS dab_vert
+  LDA dbSpdX
+  EOR dbSpdY
+  BMI dab_diag2                 \ signs differ: the "/" diagonal
+  LDA #0 : BEQ dab_frame        \ always
+.dab_diag2
+  LDA #2 : BNE dab_frame        \ always
+.dab_vert
+  LDA #1 : BNE dab_frame        \ always
+.dab_horiz
+  LDA #3
+.dab_frame
+  STA drTmp
+  LDX drIdx
+  LDY drType,X
+  LDA drWeapon,Y                \ weapon * 4 + direction, as DoFire indexes it
+  ASL A : ASL A
+  CLC
+  ADC drTmp
+  JSR CbBulletFrame             \ NOT inline: efBullet is in bank 5 and this
+  STA drTmp                     \ code is in bank 4 — see that routine
+
+\ The new entry goes in at drCount, which DroidsUpdate's loop has not
+\ reached yet, so it runs this same pass — RunDroids does the same.
+  LDX drCount
+  LDA #DR_TYPE_BULLET + 5       \ $25: counts down to $20, invisible on the way
+  STA drType,X
+  STA drEnergy,X
+  LDA drTmp   : STA drBulFrm,X
+  LDA dbSpdX  : STA drSpdX,X
+  LDA dbSpdY  : STA drSpdY,X
+  LDA #0
+  STA drState,X
+  STA drVis,X
+  STA drVisNew,X
+  STA drFireDelay,X
+  STA drShipIdx,X               \ a bullet is not on the ship's roster
+  LDA drNewSlot : STA drSprNum,X
+  TAY
+  TXA
+  STA drSlotOwner,Y             \ the slot answers to the bullet now
+  LDA #0
+  STA sprActive,Y               \ not drawn until it arms
+
+  LDY drIdx                     \ copy the firing droid's position
+  LDA drPosXlo,Y : STA drPosXlo,X
+  LDA drPosXhi,Y : STA drPosXhi,X
+  LDA drPosYlo,Y : STA drPosYlo,X
+  LDA drPosYhi,Y : STA drPosYhi,X
+  INC drCount
+
+  LDX drIdx                     \ and the shooter's own cooldown
+  LDA #26
+  SEC
+  SBC drType,X
+  STA drFireDelay,X
+  JSR DrRandom                  \ it also pauses briefly, 1-4 iterations
+  AND #3
+  CLC
+  ADC #1
+  LDX drIdx
+  STA drState,X
+  RTS
+
+\ ============================================================
+\ DrBullet — mode 1, port of dMd1_bullet ($1849)
+\ ============================================================
+\ The type counts $25 down to $20 and the bullet is INVISIBLE while it
+\ does, which is the muzzle delay: four passes inside the droid that
+\ fired it, so it does not appear to be born already overlapping. At $20
+\ it arms, becomes visible and stays $20 until it meets a wall — and
+\ then it becomes an explosion in place, which is why DrExplodeSprite
+\ takes it without a special case.
+.DrBullet
+  JSR DrMove
+  LDX drIdx
+  LDA drSprNum,X
+  BEQ dbl_dead
+  JSR DrExpScreen               \ same placement and off-view test
+  BCS dbl_dead
+
+  LDX drIdx
+  LDY drSprNum,X
+  LDA drType,X
+  CMP #DR_TYPE_BULLET
+  BEQ dbl_live                  \ already armed
+  DEC drType,X
+  CMP #DR_TYPE_BULLET + 1       \ the value BEFORE the DEC
+  BEQ dbl_arm
+  LDA #0                        \ still in the muzzle: not drawn
+  STA sprActive,Y
+  BEQ dbl_wall                  \ always
+.dbl_arm
+  LDA #1 : STA sprKind,Y
+  LDA drBulFrm,X : STA sprType,Y
+.dbl_live
+  LDA #1 : STA sprActive,Y
+
+.dbl_wall
+  LDX drIdx
+  JSR DrCharPos
+  LDA drCX : STA cellX
+  LDA #0   : STA cellX+1
+  LDA drCY : STA cellY
+  JSR MapChar
+  BMI dbl_hitwall
+  RTS
+.dbl_hitwall
+  JMP DrExplodeSprite           \ it dies as an explosion, as $18B7 does
+
+.dbl_dead
+  LDX drIdx
+  LDA #0
+  STA drEnergy,X
+  LDY drSprNum,X
+  STA drSprNum,X
+  BEQ dbl_x
+  STA sprActive,Y
+  STA sprKind,Y
+  STA drSlotOwner,Y
+.dbl_x
+  RTS
+
+\ ============================================================
+\ DrHurtPlayer — the arms of DoCollision that cost the player energy
+\ ============================================================
+\ X is the droid, bullet or explosion he has touched. Called from
+\ DrCollided's player arm, on the episode edge only — the C64 debounces
+\ the damage with the same test it debounces the bounce with ($1A77),
+\ or standing against a droid would drain you in half a second.
+.DrHurtPlayer
+  LDA drType,X
+  CMP #DR_TYPE_BULLET
+  BCC dhp_droid                 \ a real droid: the arm below
+  CMP #DR_TYPE_XPLODE
+  BCC dhp_bullet
+  JMP dhp_xplode
+.dhp_droid
+
+\ ---- a droid: the stronger one hurts the weaker -------------
+\ droidType(player) + 2 - droidType(other), and the sign says who came
+\ off worse. The player's is halved and the droid's doubled, so ramming
+\ something below you is much better business than being rammed.
+  LDA drType
+  CLC
+  ADC #2
+  SEC
+  SBC drType,X
+  BPL dhp_hurtdroid
+
+  EOR #&FF                      \ the player lost: magnitude / 2
+  LSR A
+  STA drDmg
+  LDA drEnergy
+  SEC
+  SBC drDmg
+  BPL dhp_setply
+  LDA #0
+.dhp_setply
+  STA drEnergy
+  RTS
+
+.dhp_hurtdroid
+  ASL A
+  STA drDmg
+  LDA drEnergy,X
+  SEC
+  SBC drDmg
+  BEQ dhp_kill
+  BMI dhp_kill
+  STA drEnergy,X
+  RTS
+.dhp_kill
+  STX drIdx
+  LDX drIdx
+  CLC
+  LDA alertLvl
+  ADC drType,X
+  BCC dhp_al
+  LDA #&FF
+.dhp_al
+  STA alertLvl
+  LDY drType,X
+  LDX drCent,Y
+  LDA drBumpScore,X
+  JSR AddScore
+  JMP DrExplodeSprite
+
+\ ---- an enemy bullet ---------------------------------------
+\ The C64 takes 8 or 16 depending on the bullet's sprite image ($1AF8),
+\ which the disassembly flags as a type1/type2 bug. We take the lower of
+\ the two and leave the quirk alone.
+.dhp_bullet
+  LDA drEnergy
+  SEC
+  SBC #8
+  BCS dhp_bset
+  LDA #0
+.dhp_bset
+  STA drEnergy
+  STX drIdx                     \ the bullet is spent
+  LDX drIdx
+  LDA #0
+  STA drEnergy,X
+  LDY drSprNum,X
+  STA drSprNum,X
+  BEQ dhp_bx
+  STA sprActive,Y
+  STA sprKind,Y
+  STA drSlotOwner,Y
+.dhp_bx
+  RTS
+
+\ ---- standing in an explosion ------------------------------
+.dhp_xplode
+  LDA drEnergy
+  SEC
+  SBC shipLevel
+  BCS dhp_xset
+  LDA #0
+.dhp_xset
+  STA drEnergy
+  RTS
+
+\ ============================================================
 \ DrRemoveShip — port of RemoveShipDroid ($1C9D)
 \ ============================================================
 \ Take the droid out of the ship's roster, not just off this deck, so
@@ -1632,6 +1969,14 @@ BUL_COL_H = 10
 .diIdx       EQUB 0
 .drTmp       EQUB 0
 .drDmg       EQUB 0             \ Layer 7e: damage worked out before it lands
+.drBulFrm    SKIP DR_SLOTS      \ 7f: an enemy bullet's effect frame
+.drNewSlot   EQUB 0
+.dbdX        EQUW 0             \ the vector from the firing droid to the
+.dbdY        EQUW 0             \ player, and the speed it becomes
+.dbSpdX      EQUB 0
+.dbSpdY      EQUB 0
+.dbAx        EQUB 0
+.dbAy        EQUB 0
 .drDeckBase  EQUB 0             \ deck * 16, the roster row
 .drSeed      EQUB &A5
 
@@ -1650,6 +1995,7 @@ BUL_COL_H = 10
 .lsDom       EQUB 0             \ 0 = X is the long axis, 1 = Y
 .lsCount     EQUB 0
 
+.dcHit       EQUB 0             \ what the player ran into, for the damage arm
 .dcOuter     EQUB 0             \ DrCollide: the pair of slots in hand
 .dcInner     EQUB 0
 .dcX         EQUB 0

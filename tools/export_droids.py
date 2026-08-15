@@ -130,6 +130,8 @@ ALERT_SCORE = 0x6DE8        # points per alert level, indexed by Alert >> 6
 ALERT_SCORE_N = 4
 SHOOT_SCORE = 0x6DEC        # points for a kill, also by class: 0-250
 SHOOT_SCORE_N = 10
+BUMP_SCORE = 0x6DF6         # and for killing one by ramming it
+BUMP_SCORE_N = 10
 
 # --- C64 addresses: waypoints ----------------------------------------------
 NUM_WAYPOINTS = 0xC800      # 16 bytes, one per deck
@@ -902,6 +904,9 @@ def main():
         g.write('\\ the port pays it straight away.\n')
         g.write('.drShootScore\n')
         emit_bytes(g, [mem[SHOOT_SCORE + i] for i in range(SHOOT_SCORE_N)])
+        g.write('\\ Ramming one to death pays less, except for the 999.\n')
+        g.write('.drBumpScore\n')
+        emit_bytes(g, [mem[BUMP_SCORE + i] for i in range(BUMP_SCORE_N)])
         g.write('\n')
 
         g.write('\\ Droid numbers, for reference: ')

@@ -581,6 +581,83 @@ CB_FIRE_CY = 10
   RTS
 
 \ ============================================================
+\ CbBulletFrame — A = weapon*4 + direction, returns the effect frame
+\ ============================================================
+\ THIS EXISTS BECAUSE BANK 4 CANNOT PAGE ITSELF OUT. efBullet is in bank
+\ 5 with the artwork, and DrAddBullet — which needs it — is in bank 4.
+\ A `PAGEBANK SWRAM_SPR` there swaps bank 5 in at &8000 while the 6502
+\ is executing from &8000, so the very next instruction fetch comes out
+\ of the blitter. It crashes instantly and lands in whatever ROM is up.
+\
+\ Main RAM can page freely, and bank code may call main RAM freely, so
+\ the lookup lives here and the one-way rule is not bent. DoFire uses
+\ the same table directly, and can, because it is already in main RAM.
+.CbBulletFrame
+  TAY
+  LDA #SWRAM_SPR
+  STA ROMSHAD
+  STA ROMSEL
+  LDA efBullet,Y
+  TAY
+  LDA #SWRAM_DATA               \ the resting state the caller expects
+  STA ROMSHAD
+  STA ROMSEL
+  TYA
+  RTS
+
+\ ============================================================
+\ CbCheckDeath — port of BlowInto001 ($1573), minus its modal loop
+\ ============================================================
+\ LAYER 7f. Every arm that can take the player's energy clamps at zero
+\ rather than wrapping, so the whole test is one BEQ after the collision
+\ pass has run.
+\
+\ There is NO GAME OVER, deliberately: the title screen and attract mode
+\ are Layer 11's and there is nothing to return to. shipLevel, the score
+\ and the ship's roster all survive, so dying is a setback and not a
+\ reset — you lose the droid you were riding and start again as a 001
+\ on this deck's first waypoint.
+\
+\ maxEnergy is FLOORED at 7 rather than restored: the original raises it
+\ to 7 only if it had already aged below that, so a worn-out player does
+\ not get his ceiling back by dying.
+\
+\ THE EXPLOSION IS NOT HERE YET. The C64 plays the full twelve frames on
+\ the player's own sprite before respawning, which needs a little state
+\ machine in the main loop; this respawns at once. The droids' deaths
+\ animate properly, so the machinery exists — it is the sequencing that
+\ does not.
+.CbCheckDeath
+  LDA drEnergy                  \ entry 0 is the player
+  BNE ccd_x
+
+  LDA #0
+  STA drType                    \ back to droid 001
+  STA drFireDelay
+  STA xSpd : STA xSpd+1         \ stop dead, as $15A5 does
+  STA ySpd : STA ySpd+1
+  LDA #7
+  STA drEnergy
+  LDA maxEnergy
+  CMP #7
+  BCS ccd_ceiling
+  LDA #7
+  STA maxEnergy
+.ccd_ceiling
+  LDY drType
+  LDA drWeapon,Y
+  STA weaponType
+
+  LDA #0                        \ any bullet in the air dies with him
+  STA sprActive+PLY_FIRE_SLOT
+  LDA #MM_MOBILE : STA moveMode
+
+  JSR DrSpawnPoint              \ waypoint 0, the same arrival LoadDeck uses
+  JSR SetPosFromWaypoint
+.ccd_x
+  RTS
+
+\ ============================================================
 \ state
 \ ============================================================
 \ The player's, and the ship's. drType/drEnergy/drFireDelay are NOT
