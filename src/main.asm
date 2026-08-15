@@ -248,6 +248,22 @@ DEBUG_VSYNC  = TRUE
 DEBUG_TIME   = FALSE
 DBG_T_OVERHEAD = 46
 
+\ DEBUG_ENERGY prints the player's combat state as hex on the SECOND
+\ panel row, every pass:
+\
+\   type  energy  maxEnergy  weapon  alert  score(4, BCD)
+\
+\ The panel is Layer 9's and there is nowhere else to show any of this,
+\ so until then Layer 7 is untestable without it — energy falling,
+\ a recharge pad filling it, the alert level rising off a kill and
+\ decaying back down are all invisible otherwise. Row 1 rather than row
+\ 0, so it coexists with DEBUG_VSYNC's frame digit and with DEBUG_POS.
+\
+\ Same mechanism as DbgPosOut and the same cost: a digit is five bytes
+\ at five consecutive addresses, the panel does not scroll, and there
+\ is nothing to save or restore.
+DEBUG_ENERGY = TRUE
+
 \ TEST_DROIDS and src/droidtest.asm are gone: six static droids, put
 \ there so the sprite pool could be measured before there was anything
 \ to put in it. src/droid.asm is what they were standing in for.
@@ -662,6 +678,9 @@ ORG &1100
 
   JSR NewShipDroids             \ the ship's droid complement, generated
                                 \ once and then owned by the decks
+  JSR CombatInit                \ entry 0 of that table is the PLAYER, and
+                                \ this seeds it — before LoadDeck, because
+                                \ DroidsInit places droids around it
   LDA #1 : STA deck
   LDA #0
   STA prevUp
@@ -687,6 +706,9 @@ ORG &1100
   \ rounded up to the next boundary. See docs/raster-timing.md.
   LDA fieldCount
   STA passF0
+  INC gameTick                  \ the C64's frameCount: one per ITERATION,
+                                \ never reset, and the clock the aging and
+                                \ recharge periods are expressed in
 IF DEBUG_VSYNC
   JSR DbgFrameCount             \ the boundary has just happened, so this
 ENDIF                           \ counts the iteration that has finished
@@ -876,6 +898,13 @@ ENDIF
 \     one pass later than before but never closing under a droid that
 \     is still standing at it.
   JSR DroidsUpdate
+
+  \ Alongside the AI and for the same reason: it writes no buffer. The
+  \ droid the player is riding wears out here.
+  JSR DoAging
+IF DEBUG_ENERGY
+  JSR DbgEnergyOut
+ENDIF
 
   \ The second window. Everything above ran in the first one and the
   \ display that follows it.
@@ -1167,6 +1196,7 @@ ASSERT FRAME_LOCK >= 2
 INCLUDE "src/rupture.asm"
 INCLUDE "src/bufcore.asm"       \ what screen/scroll could not leave behind
 INCLUDE "src/player.asm"
+INCLUDE "src/combat.asm"        \ main RAM: both banks' code reaches it
 INCLUDE "src/door.asm"
 INCLUDE "src/lift.asm"
 INCLUDE "src/sprite.asm"
@@ -1255,6 +1285,7 @@ ENDIF
 .sprSplit  EQUB 0               \ this pass is drawing the pool in two
 .passF0    EQUB 0               \ the window this pass started in
 .vsyncCount EQUB 0              \ bumped by IrqHandler once per field
+.gameTick  EQUB 0               \ the C64's frameCount, once per ITERATION
 .oldIrq1V  EQUW 0
 
 .code_end

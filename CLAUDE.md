@@ -193,6 +193,6 @@ it is converted game artwork. Regenerate it rather than editing it.
 - Where practical, keep variable names matching `ANNOTATION.md` for cross-referencing against
   the C64 original
 - Debug builds are switched by constants at the top of `main.asm` — `DEBUG_RASTER`, `DEBUG_DRAW`,
-  `DEBUG_VSYNC`, `DEBUG_TIME`, `DEBUG_POS`. Each carries a header explaining what it shows and
+  `DEBUG_VSYNC`, `DEBUG_TIME`, `DEBUG_POS`, `DEBUG_ENERGY`. Each carries a header explaining what it shows and
   how to read it; `DEBUG_TIME` in particular documents how to take a cycle measurement that means
   something, including why only one call site may be instrumented at a time.

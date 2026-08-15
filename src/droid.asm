@@ -25,10 +25,17 @@
 \   Regenerate       $1D45
 \   DroidNear        $321E  / FindFreeSprite $32A8
 \
-\ THE TABLE IS INDEXED 1-13 AND ENTRY 0 IS A SENTINEL, which is the
-\ C64's arrangement and the reason RunDroids' "deck cleared" test is
-\ `CPY #1` rather than a test for zero. Keeping it means the
-\ compaction loop ports across unchanged.
+\ THE TABLE IS INDEXED 1-13 AND ENTRY 0 IS THE PLAYER. Every loop here
+\ stops above it — di_loop, dru_loop and the compaction all end on a
+\ BNE — which is the C64's arrangement and the reason RunDroids' "deck
+\ cleared" test is `CPY #1` rather than a test for zero. Keeping it
+\ means the compaction loop ports across unchanged.
+\
+\ Up to Layer 6 entry 0 was empty and this header called it a sentinel.
+\ It never was one: the original reads droidType, droidEnergy and
+\ droidFireDelay UNINDEXED throughout the combat code, and unindexed is
+\ index 0. Layer 7a made it live — see combat.asm's header — so nothing
+\ may clear it on a deck change.
 \
 \ A DROID'S POSITION IS ITS REFERENCE CELL, not its top-left pixel.
 \ drPosX/drPosY are world pixels, and the map cell the droid occupies
@@ -70,6 +77,11 @@ DR_SLOTS  = 14                  \ index 1-13; 0 is the sentinel
 DR_REFY   = 13                  \ reference cell below the sprite top
 DR_NEAR_X = SPR_MAX_UNIT * 4 + 3    \ furthest left edge that still draws
 DR_ENERGY = &40                 \ a droid's full energy, from $16AA
+ASSERT DR_ENERGY == CB_ENERGY_FULL  \ the player's is the same number,
+                                    \ from StartGame ($1345). combat.asm
+                                    \ declares it because it is included
+                                    \ first and beebasm is single-pass on
+                                    \ constant assignments
 DR_999    = 23                  \ the influence device
 
 \ The collision box, in screen pixels. Smaller than the 24 x 21 sprite
@@ -289,8 +301,12 @@ DR_LOS_MAX = 96
   LDA #DR_SLOTS
   STA drCount
   LDA #0
-  STA drType                    \ the sentinel is always empty
-  STA drEnergy
+\ ENTRY 0 IS THE PLAYER FROM LAYER 7a ON, and this used to clear it —
+\ "the sentinel is always empty". It is not a sentinel: drType[0] is the
+\ droid the player is riding and drEnergy[0] is his energy, and clearing
+\ them here would reset both on every deck change and lift ride. Only
+\ drSprNum is still cleared, because the player's sprite is slot 0 and
+\ the droid table's copy of it is unused. See combat.asm's header.
   STA drSprNum
   STA drTick
   LDX #SPR_SLOTS-1              \ nothing holds a sprite slot yet

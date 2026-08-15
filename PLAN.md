@@ -21,6 +21,7 @@ detail has stopped being needed to make the next decision, it belongs in `docs/`
 | [`docs/raster-timing.md`](docs/raster-timing.md) | **Where the main loop sits against the beam** — the frame, what writes the buffer when, and the plan for flicker and edge tearing |
 | [`docs/layer-5-droids.md`](docs/layer-5-droids.md) | Droid movement: the roster, waypoints, and the waypoint-0 spawn |
 | [`docs/layer-6-droids-live.md`](docs/layer-6-droids-live.md) | Line of sight, collision, and the mode dispatch |
+| [`docs/layer-7-combat.md`](docs/layer-7-combat.md) | **Combat, planned** — bullets, explosions, damage, score, Alert, and the recharge pads |
 | [`docs/layer-8-doors-lifts.md`](docs/layer-8-doors-lifts.md) | Doors (built) and lifts (planned), and the character-map problem they raise |
 | [`docs/master-extensions.md`](docs/master-extensions.md) | Things only a Master 128 could host. Not on the critical path |
 
@@ -66,8 +67,19 @@ symptoms KC reported — edge tearing while scrolling and sprites blinking at 25
 timing, and [`docs/raster-timing.md`](docs/raster-timing.md) is the map: the frame in cycles, what
 writes the buffer when, and what is still open.
 
-**Next: Layer 7**, combat — `dMd1_bullet`, `dMd2_explosion`, `DoCollision`'s damage arms, `DoScore`,
-`KillDroid` and `DoAlertAndAging`.
+**Layer 7 is under way** — combat: bullets, explosions, damage, score, the Alert level and the
+energy recharge pads. **7a landed 2026-08-15**: the player has energy now, and the droid he is
+riding wears out on the C64's own schedule whether or not anything shoots at him. Next is 7b, the
+recharge pads. Planned in [`docs/layer-7-combat.md`](docs/layer-7-combat.md), in six stages, and
+four findings shape it: **droid-table entry 0 is the player, not a sentinel**; the C64 has an eighth
+sprite that we do not, for the player's own bullet; bullets and explosions come out of the existing
+pool of six so **the sprite count per pass does not grow**; and an explosion cannot be compiled, so
+the layer's largest new piece is a generic interpreted sprite path with a per-frame bounding box.
+The three open decisions were settled on 2026-08-15 and are tabled at the end of that document:
+the player **explodes and respawns as 001 on waypoint 0** at zero energy, **L does double duty** as
+fire and lift — which the original does too, through the `moveMode` machine, so `lift.asm`'s trigger
+was right all along — and the explosion ships as many frames as bank 4 allows while keeping its full
+twelve-iteration length.
 
 **Before trusting any speed number, read the speed model section of
 [`docs/layer-4-player.md`](docs/layer-4-player.md).** The C64's constants are per `GameLoop`
@@ -162,8 +174,8 @@ moves. The outline:
 | ZP `&00–&8F` | 144 B | **all of it used** — the map is in `main.asm`. `&90` up is the OS |
 | `&0400–&0C8F` | 2,192 B | MODE 1 charset, built at deck load — reclaimed OS workspace |
 | `&0C90–&10FF` | **1,136 B free** | rest of the reclaimed OS workspace |
-| `&1100–&27D9` | 6,362 B | code (`PARA`). DFS random-access buffer space, safe for `*LOAD` |
-| `&27DA–&2FFF` | **2,086 B free** | the level draw and the droid AI both live in bank 4 now |
+| `&1100–&2921` | 6,690 B | code (`PARA`). DFS random-access buffer space, safe for `*LOAD` |
+| `&2922–&2FFF` | **1,758 B free** | the level draw and the droid AI both live in bank 4 now |
 | `&3000–&36FF` | 1,792 B | sprite background save areas, one page per slot |
 | `&3800–&3BFF` | 1,024 B | tile map, fixed home — floating it after `code_end` once put it over the save areas |
 | `&3700`, `&3C00–&47FF` | **3,328 B free** | runtime-built data only: boot stages `PARASPR` through `&68B5` |
@@ -172,7 +184,7 @@ moves. The outline:
 | `&5500–&56FF` | 512 B | `CHAR_PTR_LO`/`HI` — character code → charset address, built at startup |
 | `&5700–&57FF` | 256 B | data byte → transparency mask table, built at startup |
 | `&5800–&7FFF` | 10,240 B | play buffer: circular strip, 16 rows × 640 |
-| SWRAM bank 4 | 16 K | `PARADAT` — char data, colour schemes, tile defs, deck RLE, waypoints, **the level-draw code and the droid AI**. Ends `&B5C3`, **2,621 B free** |
+| SWRAM bank 4 | 16 K | `PARADAT` — char data, colour schemes, tile defs, deck RLE, waypoints, the combat stat tables, **the level-draw code and the droid AI**. Ends `&B5FB`, **2,565 B free** |
 | SWRAM bank 5 | 16 K | `PARASPR` — the blitter at shifts 0 and 1 px. Ends `&B056`, **4,010 B free** |
 | SWRAM bank 6 | 16 K | `PARSPR2` — the same at 2 and 3 px, laid out identically. Ends `&B199`, **3,687 B free** |
 
@@ -264,9 +276,24 @@ deliberately smaller than the sprite, because most of a droid's corners are the 
 gaps. Costs **~1,400 cycles a pass** over Layer 5, and the frame lock holds in every case measured.
 → [`docs/layer-6-droids-live.md`](docs/layer-6-droids-live.md)
 
-### Layer 7 — Combat
-`dMd1_bullet`, `dMd2_explosion`, `DoCollision`/`DoCollision2`, `DoScore`, `KillDroid`,
-`DoAlertAndAging`. The core game is playable at this point.
+### Layer 7 — Combat — **planned, nothing built**
+`DoFire`/`MovePlyFire`, `dMd1_bullet`, `dMd2_explosion`, `DoCollision`/`DoCollision2`'s damage arms,
+`KillDroid`, `AddScore`, `DoAlertAndAging` and `DoCharUnder`. The core game is playable at this
+point. Six stages, each ending in something visible:
+
+| | |
+|---|---|
+| 7a ✅ | **DONE 2026-08-15.** `src/combat.asm`: entry 0 becomes the player, `AddScore`'s BCD, `DoAging`, the `gameTick` iteration counter, and a `DEBUG_ENERGY` readout on panel row 1 because the panel that would show any of it is Layer 9's. `DroidsInit` no longer clears entry 0 — measured surviving a deck change |
+| 7b | `DoCharUnder`'s recharger arm — **the recharge pads**, character 20: +1 energy every 4th iteration, −5 score. Also where `moveMode` is pinned down: **L does double duty as fire and lift trigger in the original too**, through that machine, so `lift.asm` keeps its trigger |
+| 7c | Effect sprites — a generic interpreted blitter path with a per-frame bounding box, the 20 effect sprites exported, and `SPR_SLOTS` to 8 for the player's bullet (save page `&3700`, already free) |
+| 7d | The player fires — `DoMoveMode`'s Mobile/Weapon/Transfer machine, then `DoFire`, `MovePlyFire`, `SpriteHitWall`, the fire delay by droid class |
+| 7e | Damage, kills, explosions and BCD score — the `CollisionType` matrix and its six arms, plus the player's own death: explode, then back as 001 on waypoint 0 with no game over |
+| 7f | Enemy fire — `DoEnemyFire` into the spot `DroidRun` already reserves for it, plus friendly fire and the disruptor |
+
+**`droid.asm`'s header is wrong from here on** and says so where it claims entry 0 is a sentinel:
+the C64 reads `droidEnergy`/`droidType`/`droidFireDelay` unindexed all through the combat code, and
+that is the player. Correct it when 7a lands.
+→ [`docs/layer-7-combat.md`](docs/layer-7-combat.md)
 
 ### Layer 8 — Doors, lifts, decks ✅ DONE — **taken ahead of 6 and 7**
 `OpenDoor`, `CloseDoors`, `DoLift`, `FindLift`, `ChangeDeck`. The whole ship becomes traversable.
@@ -331,6 +358,7 @@ that makes that safe is in `bufcore.asm`'s header.
 | `scroll.asm` | **bank 4** | **Live.** `DrawColumn`, `DrawBandRows`, `CopyCell`, `ScrollAddS`, `DoRedraws` |
 | `level.asm` | **bank 4** | **Live.** Deck decode, `BuildCharset`, `BuildLUTs`, `SetPalette` |
 | `player.asm` | main RAM | **Live.** `ReadKeys`, `CalcSpeed`, `CheckWalls`, `ApplyMove`, `DeadZone`, the clamps |
+| `combat.asm` | main RAM | **Live.** Layer 7a: the player's energy, ceiling, weapon, alert and BCD score, `CombatInit`, `AddScore`, `DoAging`. Main RAM because BOTH banks' code reaches it |
 | `sprite.asm` | main RAM | **Live.** The blitter: slot state, the tranche walk behind `SprDrawAll`/`SprRestoreAll`, `SprSplitOK`/`SprAssignTr`, the compiled-row dispatch and the wrap fallback |
 | `door.asm` | main RAM | **Live.** Door state, `DoorScan`, the patched tile definitions, `DoorsUpdate`, `DrawDoorTile` |
 | `lift.asm` | main RAM | **Live.** `LiftFind`, lift mode, stepping a shaft, `LiftPlace` |

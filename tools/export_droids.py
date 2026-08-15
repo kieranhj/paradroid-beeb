@@ -116,8 +116,18 @@ ROW_2_17_R = 0x80
 DCENT_T = 0xEA00            # hundreds digit
 DNUM_T = 0xEA20             # tens/units, packed BCD
 DSPEED_T = 0xEA40           # pixels per GameLoop iteration: 1, 2, 4 or 8
+DWEAPON_T = 0xEA80          # weapon class 0-3; 3 is the disruptor
 
 NUM_TYPES = 24
+
+# --- C64 addresses: Layer 7 combat stats -----------------------------------
+# DCent_t doubles as a CLASS index for these: it is the hundreds digit of the
+# droid's number, so it rises 0-9 with how dangerous the droid is, and the
+# score and aging tables are indexed by it rather than by the type.
+AGING_MASK = 0x6DDE         # frameCount mask per class - how fast maxEnergy ages
+AGING_MASK_N = 10           # DCent_t is 0-9
+ALERT_SCORE = 0x6DE8        # points per alert level, indexed by Alert >> 6
+ALERT_SCORE_N = 4
 
 # --- C64 addresses: waypoints ----------------------------------------------
 NUM_WAYPOINTS = 0xC800      # 16 bytes, one per deck
@@ -857,6 +867,31 @@ def main():
         emit_bytes(g, [(s * 256 * FRAME_LOCK // ITER_FRAMES) & 0xFF for s in speeds])
         g.write('.drSpeedFHi\n')
         emit_bytes(g, [(s * 256 * FRAME_LOCK // ITER_FRAMES) >> 8 for s in speeds])
+        g.write('\n')
+
+        g.write('\\ ---- Layer 7 combat stats -------------------------------\n')
+        g.write('\\ drCent is the C64\'s DCent_t, the hundreds digit of the\n')
+        g.write('\\ droid number - which rises with how dangerous the droid is,\n')
+        g.write('\\ so the original uses it as a CLASS index and looks the aging\n')
+        g.write('\\ and score tables up through it rather than through the type.\n')
+        g.write('.drCent\n')
+        emit_bytes(g, [mem[DCENT_T + t] for t in range(NUM_TYPES)])
+        g.write('\n')
+
+        g.write('\\ Weapon class per type: 0 = unarmed, 3 = the disruptor.\n')
+        g.write('\\ The player\'s own is weaponType, seeded from entry 0 here.\n')
+        g.write('.drWeapon\n')
+        emit_bytes(g, [mem[DWEAPON_T + t] for t in range(NUM_TYPES)])
+        g.write('\n')
+
+        g.write('\\ DoAlertAndAging ($3E32). drAgingMask is ANDed with the\n')
+        g.write('\\ iteration counter, so a SMALLER mask ages the droid faster:\n')
+        g.write('\\ $7F for class 0 against $0F for class 9. drAlertScore pays\n')
+        g.write('\\ out as the alert level decays, indexed by Alert >> 6.\n')
+        g.write('.drAgingMask\n')
+        emit_bytes(g, [mem[AGING_MASK + i] for i in range(AGING_MASK_N)])
+        g.write('.drAlertScore\n')
+        emit_bytes(g, [mem[ALERT_SCORE + i] for i in range(ALERT_SCORE_N)])
         g.write('\n')
 
         g.write('\\ Droid numbers, for reference: ')

@@ -343,6 +343,13 @@ IF DEBUG_VSYNC OR DEBUG_POS
   RTS
 
 .dbgLastVs EQUB 0
+ENDIF
+
+IF DEBUG_VSYNC OR DEBUG_POS OR DEBUG_ENERGY
+\ The digit font, shared by all three readouts — DbgFrameCount above,
+\ DbgHexDigit below. Guarded separately from DbgFrameCount so that a
+\ DEBUG_ENERGY-only build does not assemble the frame counter it never
+\ calls.
 .dbgMul5   EQUB 0,5,10,15,20,25,30,35,40,45,50,55,60,65,70,75
 
 \ 4x5 digits, one row per byte. A row is four pixels: bit 3 is the
@@ -368,6 +375,44 @@ DBG_PX = 17
   EQUB %1110 * DBG_PX, %1001 * DBG_PX, %1001 * DBG_PX, %1001 * DBG_PX, %1110 * DBG_PX
   EQUB %1111 * DBG_PX, %1000 * DBG_PX, %1110 * DBG_PX, %1000 * DBG_PX, %1111 * DBG_PX
   EQUB %1111 * DBG_PX, %1000 * DBG_PX, %1110 * DBG_PX, %1000 * DBG_PX, %1000 * DBG_PX
+ENDIF
+
+IF DEBUG_POS OR DEBUG_ENERGY
+\ ============================================================
+\ DbgHexDigit — A = 0-15, printed at swDst; swDst moves on one column
+\ ============================================================
+\ Shared by DbgPosOut and DbgEnergyOut. Successive digits are eight
+\ bytes apart, which is the next 4-pixel column — see the note in
+\ CLAUDE.md about adjacent columns being 8 bytes apart, not 1.
+.DbgHexDigit
+  TAX
+  LDA dbgMul5,X
+  TAX
+  LDY #0
+.dhd_row
+  LDA dbgFont,X
+  STA (swDst),Y
+  INX
+  INY
+  CPY #5
+  BNE dhd_row
+  CLC
+  LDA swDst : ADC #UNIT_BYTES : STA swDst
+  BCC dhd_x
+  INC swDst+1
+.dhd_x
+  RTS
+
+\ A = the byte, printed as two digits.
+.DbgHexByte
+  PHA
+  LSR A : LSR A : LSR A : LSR A
+  JSR DbgHexDigit
+  PLA
+  AND #&0F
+  JMP DbgHexDigit
+
+.dbgIdx EQUB 0
 ENDIF
 
 \ ruptState, fieldCount, crtcHi/crtcLo and line/pline/iline are all in
@@ -411,12 +456,7 @@ IF DEBUG_POS
   LDA dbgSrcHi,Y : STA swSrc+1
   LDY #0
   LDA (swSrc),Y
-  PHA
-  LSR A : LSR A : LSR A : LSR A
-  JSR DbgHexDigit
-  PLA
-  AND #&0F
-  JSR DbgHexDigit
+  JSR DbgHexByte
   LDY dbgIdx
   LDA dbgSrcGap,Y               \ a blank column between fields
   BEQ dpo_nogap
@@ -430,28 +470,6 @@ IF DEBUG_POS
   CPY #DBG_POS_N
   BNE dpo_next
   RTS
-
-\ A = 0-15. Prints it at swDst and moves swDst on one 4-pixel column.
-.DbgHexDigit
-  TAX
-  LDA dbgMul5,X
-  TAX
-  LDY #0
-.dhd_row
-  LDA dbgFont,X
-  STA (swDst),Y
-  INX
-  INY
-  CPY #5
-  BNE dhd_row
-  CLC
-  LDA swDst : ADC #UNIT_BYTES : STA swDst
-  BCC dhd_x
-  INC swDst+1
-.dhd_x
-  RTS
-
-.dbgIdx EQUB 0
 
 \ What to print, in order. Low byte first would read backwards on
 \ screen, so the 16-bit ones are listed high byte first.
@@ -493,4 +511,67 @@ IF DEBUG_POS
   EQUB 1
   EQUB 0, 0, 1
 DBG_POS_N = 21
+ENDIF
+
+IF DEBUG_ENERGY
+\ ============================================================
+\ DbgEnergyOut — the player's combat state, second panel row
+\ ============================================================
+\ Layer 7a. The panel is Layer 9's and holds a placeholder box, so
+\ there is nowhere the game itself shows energy, alert or score — which
+\ makes every stage of Layer 7 unverifiable by eye without this. Nine
+\ bytes as eighteen hex digits:
+\
+\   type  energy maxEnergy  weapon  alert  score(4, BCD)
+\
+\ Row 1 of the panel rather than row 0, so DEBUG_VSYNC's frame digit
+\ and DEBUG_POS's bookmark both stay readable alongside it. The panel
+\ does not scroll and nothing else draws there, so there is nothing to
+\ save or restore.
+\
+\ drType and drEnergy are entry 0 of the droid table, which lives in
+\ BANK 4. Safe to read from main RAM here because SWRAM_DATA is the
+\ resting state and this is called from the main loop, after
+\ DroidsUpdate has already returned to it.
+\
+\ swSrc/swDst are borrowed exactly as DbgPosOut borrows them: they
+\ belong to the startup bank copy and are dead from LoadDeck onwards.
+.DbgEnergyOut
+  LDA #LO(PANEL_ADDR + ROW_BYTES) : STA swDst
+  LDA #HI(PANEL_ADDR + ROW_BYTES) : STA swDst+1
+  LDY #0
+.deo_next
+  STY dbgIdx
+  LDA dbgEnSrcLo,Y : STA swSrc
+  LDA dbgEnSrcHi,Y : STA swSrc+1
+  LDY #0
+  LDA (swSrc),Y
+  JSR DbgHexByte
+  LDY dbgIdx
+  LDA dbgEnGap,Y                \ a blank column between fields
+  BEQ deo_nogap
+  CLC
+  LDA swDst : ADC #UNIT_BYTES : STA swDst
+  BCC deo_nogap
+  INC swDst+1
+.deo_nogap
+  LDY dbgIdx
+  INY
+  CPY #DBG_EN_N
+  BNE deo_next
+  RTS
+
+.dbgEnSrcLo
+  EQUB LO(drType), LO(drEnergy), LO(maxEnergy)
+  EQUB LO(weaponType), LO(alertLvl)
+  EQUB LO(score+0), LO(score+1), LO(score+2), LO(score+3)
+.dbgEnSrcHi
+  EQUB HI(drType), HI(drEnergy), HI(maxEnergy)
+  EQUB HI(weaponType), HI(alertLvl)
+  EQUB HI(score+0), HI(score+1), HI(score+2), HI(score+3)
+.dbgEnGap
+  EQUB 1, 1, 1
+  EQUB 1, 1
+  EQUB 0, 0, 0, 1
+DBG_EN_N = 9
 ENDIF
