@@ -39,7 +39,9 @@ steps, in dependency order:
    sprites live, averaged over 127 passes). There is nothing left to buy. See *Why not
    round-robin* below before reviving it.
 6. **Raster-ordered updating** — flicker, and probably `BUGS.md` #3 with it. Still open, and now
-   the only sprite-pool work outstanding.
+   the only sprite-pool work outstanding. **The mechanism is now measured rather than assumed** —
+   see *Where the sprite work actually lands* below, which also rules out the cheap version of the
+   fix.
 
 **Measured, one sprite, one frame** (User VIA T1 around the two calls; both builds at the same
 position; ±0 across repeats — the emulator is deterministic):
@@ -671,6 +673,52 @@ Ten glyphs cover all 24 types because a droid number is three independent 8-pixe
 The 205-byte difference between the two shifts is the third column — the spill — which the
 exporter used to truncate away. `drBlkSave6` is the other half of that fix, and it is in the bank
 rather than in `sprite.asm` only because main RAM had 46 bytes free and the bank had 1.9 K.
+
+## Where the sprite work actually lands — measured 2026-08-15
+
+The flicker item above had never been instrumented; it was a reasonable inference from the order of
+the main loop. It is now a measurement, and it says something sharper than the inference did.
+
+**Method, and it is cheap enough to repeat.** `ruptState` names which rupture fire is expected next,
+so it also says where the beam is: **`ruptState == 2` means fire 2 has happened and fire 3 has not —
+the play area is on screen.** Four one-byte histograms indexed by `ruptState`, bumped either side of
+the two pool calls, cost about 20 bytes of main RAM and no cycles worth counting. Over 128 passes,
+deck 1, one droid visible:
+
+| | state 0 | state 1 | **state 2 (play area displaying)** | state 3 (off-display) |
+|---|---:|---:|---:|---:|
+| entering `SprRestoreAll` | 0 | 0 | **0** | 128 |
+| entering `SprDrawAll` | 8 | 9 | **111** | 0 |
+| leaving `SprDrawAll` | 0 | 3 | **120** | 5 |
+
+**The restore is inside the window and the draw is almost never in it.** Every pass restores while
+the play area is blanked, and then 120 passes out of 128 are still *drawing* sprites while the beam
+is over them. That is the flicker: a sprite is erased at the top of the pass and put back while the
+beam is passing its rows, so for one field the eye sees background where the droid was.
+
+The order is not an accident — `SprDrawAll` has to follow `DoRedraws` so the save picks up settled
+background, and by then the next field's play cycle has started.
+
+**The cheap fix does not exist, and this is what rules it out.** The obvious move is to spend the
+idle time *before* the draw rather than after it: wait for the next off-display window and draw
+inside it. But the window is stated on `rt_drawok` itself — "deadline for the redraw is the play
+cycle starting again, **184 scanlines away**" — which is 11,776 cycles. Seven sprites cost 36,274
+and the draw half alone is about 24,000. **The work is two to three times the window, so no
+scheduling of it can fit.**
+
+That leaves the real thing: ordering the pool against the beam, updating each sprite in the gap
+after the beam has passed its own rows, which means restoring and drawing a sprite as one unit. And
+that breaks the invariant the whole file is built on — restore *all*, then draw *all*, because
+drawing one sprite while another is still on screen captures the second one's pixels into the
+first one's save area, and restoring it later stamps them into the buffer permanently. The
+overlap problem is the same one that killed round-robin below, and it has to be solved *first*, not
+alongside.
+
+So the shape of the remaining work is: an overlap test between slots (Layer 6 now has one —
+`DrCollide`'s box test — though this needs the exact 7 × 21 footprint, not a feel-based box), a
+slot order sorted by screen Y, and a beam position finer than `ruptState`. None of it is hard; all
+of it is easy to get subtly wrong, and the failure mode is permanent corruption of the play buffer
+rather than a flicker.
 
 ## Why not round-robin
 
