@@ -97,7 +97,7 @@ call into it from the main loop needs no paging at all.
 | `&A2EB` | 16 | `deckDroidBase` |
 | `&A2FB` | 112 | `doorDef` — patched tile definitions for open doors |
 | `&A36B` | 64 | `blankTileRow` |
-| `&A3AB` | 2,437 | **Code**: `screen.asm`, `scroll.asm`, `level.asm` — `DrawHalf`, `HalfPtr`, `BandSetRow`, `BandCharPtr`, `ColSetup`, `MapChar`, `RedrawAll`, `BuildCharPtrs`, `DrawColumn`, `DrawBandRows`, `DoRedraws`, `BuildLevel`, `BuildCharset`, `BuildLUTs`, `SetPalette`, `CentreOnDeck` |
+| `&A3AB` | 2,437 | **Code**: `screen.asm`, `scroll.asm`, `level.asm` — `DrawHalf`, `HalfPtr`, `BandSetRow`, `BandCharPtr`, `ColSetup`, `MapChar`, `RedrawAll`, `BuildCharPtrs`, `DrawColumn`, `DrawBandRows`, `DoRedraws`, `BuildLevel`, `BuildCharset`, `BuildLUTs`, `SetPalette` |
 
 What could **not** come with it is in `src/bufcore.asm`, 480 bytes in main RAM: `SetupScreen` and
 `SetCRTCStart` run before this bank is loaded, and `WrapBufFwd`, `SetCell` and the `rowMul`/`unitMul`

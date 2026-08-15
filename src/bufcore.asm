@@ -1,9 +1,9 @@
 \ ============================================================
 \ bufcore.asm — the parts of the screen code that CANNOT be banked
 \ ============================================================
-\ screen.asm, scroll.asm and level.asm live in SWRAM_DATA, next to
-\ the tile and deck data they read. Four routines and one pair of
-\ tables cannot go with them, for two different reasons.
+\ screen.asm, scroll.asm, level.asm and droid.asm live in SWRAM_DATA,
+\ next to the tile, deck and waypoint data they read. Four routines and
+\ one pair of tables cannot go with them, for two different reasons.
 \
 \ RUN BEFORE THE BANK EXISTS. SetupScreen is the first thing `start`
 \ calls — before the *LOAD of PARADAT, let alone the copy up into
@@ -20,7 +20,7 @@
 \ whatever the sprite bank has at the same address, which is
 \ compiled sprite rows. There is no diagnostic for that, so the rule
 \ is worth stating twice: **nothing in this file may call into
-\ screen.asm, scroll.asm or level.asm.**
+\ screen.asm, scroll.asm, level.asm or droid.asm.**
 \
 \ The other direction is always safe. Bank code calling main RAM is
 \ fine, and so is main-RAM code calling the bank while SWRAM_DATA is

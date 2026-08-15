@@ -12,6 +12,113 @@ Numbering is historical, not an order — 3 sits after 4 because it was added la
 
 ---
 
+## 8. Droids from the LAST deck survive into the next one — **FIXED 2026-08-15**
+
+Reported by KC from play as "a couple of droids stuck in the wall", then refined to *stuck on a
+wall rather than in one*, on **deck 8, two 247s**. The refinement is what cracked it: a duplicate
+droid number is a ghost, not a pathfinding failure.
+
+**The fault.** `DroidsInit` walks the ship roster and, at an index where the roster holds nothing,
+skipped the table entry entirely — leaving the **previous deck's droid** in it: its type, its
+energy and its position. `drCount` is then set to the whole table on the stated assumption that a
+hole has zero energy so `DroidsUpdate`'s compaction drops it. A hole did not have zero energy. So
+every deck after the first inherited the last one's droids, standing at the last one's coordinates
+inside the new deck's geometry.
+
+**Why it hid.** The table starts zeroed, so the **first deck entered is always clean** and only the
+second one shows it — and every unattended test in Layer 5 and Layer 6 ran on deck 1 from a cold
+boot. It was invisible to the whole verification suite by construction.
+
+**The evidence that identified it.** On deck 8, four of the stuck droids stood on cells at rows 6,
+18 and 26. Deck 8 has no waypoints on those rows. **Deck 1 does** — (54,6), (86,26), (98,18) are
+deck 1 waypoints exactly. They had never moved since deck 1 placed them there.
+
+**The fix** is four instructions on the skip path: zero `drEnergy`, `drType` and `drSprNum` for an
+empty index, so the hole really is one. The comment on `drCount` is now true rather than aspirational.
+
+**Measured, deck 8, same route from a cold boot:**
+
+| | before | after |
+|---|---|---|
+| `drCount` (deck 8 holds 6 droids) | 14 | **7** — 6 placed, plus the sentinel |
+| droids stuck over 10 s | 8 of 13 | **2 of 6**, and both explained: one mid-collision-pause, one oscillating between two waypoints |
+| droids standing on a **solid** cell | 4 | **0** |
+| droids on deck 1's waypoint rows | 4 | **0** |
+
+Deck 2, which holds 3, now gives exactly 2 droids where it previously inherited two decks' worth.
+The buffer oracle is still 0 of 10240 with the draw disabled.
+
+> **The lesson worth keeping is about the test, not the code.** Every automated check ran on deck 1
+> from a cold boot, and this bug cannot exist there. **Enter a second deck** before believing any
+> droid result — and the debug deck hop (poke `deck`, press DOWN) makes that two tool calls.
+
+---
+
+## 7. Droids can lock together, and the player's bounce is heavy — **POLISH, from play**
+
+Both reported by KC on 2026-08-15, from playing the Layer 6 build. Filed together because they are
+the same three constants seen from two directions, and neither is a correctness fault: the buffer
+oracle is clean and the frame lock holds. **This is tuning, and it should be done by eye in one
+sitting rather than reasoned about here.**
+
+### 7a. Two droids can stay stuck against each other
+
+**Severity:** polish. Makes the ship harder to explore than it should be, which is the actual
+complaint — the droids get in the way.
+
+**Why it can happen, from the code rather than from a repro.** Four properties of the original's
+structure combine, and all four are ports rather than choices of ours:
+
+1. **One pair a pass.** `DoCollision` resolves the two lowest set bits of `$D01E` and leaves the
+   rest; ours stops at the first overlapping pair. A pile-up of three unwinds one pair at a time.
+2. **`PauseDroidFor16` freezes the second droid for 16 iterations** — nearly a second at 25 Hz —
+   and a frozen droid cannot move out of the way of the one that hit it.
+3. **The reverse fires once per episode**, not once per pass: `ReverseDroidDir`'s `byte_0_6C` guard
+   is only cleared on a pass with *no* collision at all. If the one reverse does not separate them,
+   nothing reverses them again while they stay overlapped.
+4. **Droids only change direction at waypoints.** A reversed droid walks back the way it came until
+   the previous junction; it cannot route around anything.
+
+**KC believes the C64 original does this too, which is consistent with 1–4 being inherited — but
+that has NOT been verified here.** Checking it against a real C64 run would say whether this is
+faithfulness or a port artefact, and that is the first thing to do, because it decides whether the
+fix is allowed to deviate.
+
+**The port-specific suspect, if it turns out we are worse:** our collision is a box and the C64's is
+the VIC's pixel-exact `$D01E`. `DR_COL_W`/`DR_COL_H` (18 × 14) fire on overlaps the hardware would
+not see at all, so droids "touch" earlier, more often, and at distances where a single reverse is
+less likely to clear the overlap. Shrinking the box is the cheapest experiment.
+
+**Levers, cheapest first:** `DR_COL_W`/`DR_COL_H` in `droid.asm`; the 16 in `DrPause16`; resolving
+more than one pair a pass; clearing `drCollHit` when the pair *changes* rather than only when the
+screen is clear.
+
+### 7b. The player's bounce is aggressive
+
+**Severity:** polish, gameplay feel.
+
+**And it is already smaller than the original's.** `$1A85` negates the whole-pixel part of each
+player speed, forces it to at least 1, and doubles it, with no ceiling — so the C64 can bounce the
+player at 14 px an iteration. Ours clamps to `CAM_TOPSPD` = 8, because the band redraw brings in one
+character row a pass and 16 px would skip one (see `docs/layer-6-droids-live.md`). One pass is one
+C64 iteration here, so those are directly comparable numbers: **we are already the gentler of the
+two.**
+
+**So the feel probably is not the speed, and the first place to look is the camera.** A bounce that
+pushes the player past the edge of the dead zone moves the *view*, and the view moves in 4-pixel
+CRTC units. A nudge that would be a few pixels of sprite movement on the C64 can therefore lurch the
+whole world sideways in one step here. That is a port-specific amplifier that has nothing to do with
+the collision constants, and it would explain "aggressive" better than a speed that is 8 against 14.
+
+**Cheap experiments, in order:** drop the doubling (`ASL A` in `DrBounce`) and see whether it still
+reads as a bounce; clamp to 4 rather than `CAM_TOPSPD`; and check whether the same bounce with the
+player away from the dead-zone edge feels different, which would confirm the camera as the cause.
+
+**Not to be changed without noticing:** `DrBounce` leaves the speed *fraction* alone, as the C64
+does, so a bounce inherits whatever sub-pixel remainder the player had.
+
+---
+
 ## 1. `RedrawAll`'s split-row repair has no effect — the debug oracle is wrong
 
 > **Probably moot as of 2026-08-13, not fixed.** The band now draws whole character rows, so no
@@ -110,7 +217,20 @@ computed is the thing to find.
 
 ---
 
-## 4. The player can spawn inside a wall, and is then stuck
+## 4. The player can spawn inside a wall, and is then stuck — **FIXED 2026-08-15**
+
+**Fixed exactly as the entry below predicted**, in Layer 5's droid work: the player arrives on
+**waypoint 0** of the deck and `CentreOnDeck` is deleted. `SetPosFromWaypoint` (`player.asm`)
+works backwards from the reference cell, so the cell the wall probes test is the waypoint itself.
+
+Checked over the whole game rather than by sampling decks: `tools/rip_levels.py`'s RLE decoder
+reproduces the port's tile map byte-for-byte, so the same decode answers it for all sixteen at
+once — **0 of the 239 waypoints is in a wall, waypoint 0 included on every deck.** In the emulator,
+the two decks named below now walk freely from the spawn: deck 5 moves 233 px right, deck 14 moves
+364 px down. `TD_DECK` is gone with `droidtest.asm`.
+
+See [`docs/layer-5-droids.md`](docs/layer-5-droids.md). Everything below is the evidence as it was
+gathered.
 
 **Severity:** blocks play on the affected decks.
 

@@ -39,7 +39,9 @@ steps, in dependency order:
    sprites live, averaged over 127 passes). There is nothing left to buy. See *Why not
    round-robin* below before reviving it.
 6. **Raster-ordered updating** — flicker, and probably `BUGS.md` #3 with it. Still open, and now
-   the only sprite-pool work outstanding.
+   the only sprite-pool work outstanding. **The mechanism is now measured rather than assumed** —
+   see *Where the sprite work actually lands* below, and [`raster-timing.md`](raster-timing.md) for
+   the whole-loop picture and a staged plan.
 
 **Measured, one sprite, one frame** (User VIA T1 around the two calls; both builds at the same
 position; ±0 across repeats — the emulator is deterministic):
@@ -671,6 +673,48 @@ Ten glyphs cover all 24 types because a droid number is three independent 8-pixe
 The 205-byte difference between the two shifts is the third column — the spill — which the
 exporter used to truncate away. `drBlkSave6` is the other half of that fix, and it is in the bank
 rather than in `sprite.asm` only because main RAM had 46 bytes free and the bank had 1.9 K.
+
+## Where the sprite work actually lands — measured 2026-08-15
+
+> **CORRECTED 2026-08-15.** The first version of this section put the off-display window at 184
+> scanlines and 11,776 cycles and concluded that no rescheduling could fit the sprite work inside
+> it. Both numbers were wrong: a scanline is **128** CPU cycles at 2 MHz, not 64, and the window is
+> **192** scanlines. It is **24,576 cycles, and there are two of them per pass** — 49,152 against
+> 36,274 of sprite work. **The work fits; it is in the wrong place.** The full timing picture, the
+> measurements behind it and a staged plan are in [`raster-timing.md`](raster-timing.md); what
+> follows is the measurement that started it.
+
+The flicker item above had never been instrumented; it was a reasonable inference from the order of
+the main loop. It is now a measurement.
+
+**Method, and it is cheap enough to repeat.** `ruptState` names which rupture fire is expected next,
+so it also says where the beam is: **`ruptState == 2` means fire 2 has happened and fire 3 has not —
+the play area is on screen.** Four one-byte histograms indexed by `ruptState`, bumped either side of
+the two pool calls, cost about 20 bytes of main RAM and no cycles worth counting. Over 128 passes,
+deck 1, one droid visible:
+
+| | state 0 | state 1 | **state 2 (play area displaying)** | state 3 (off-display) |
+|---|---:|---:|---:|---:|
+| entering `SprRestoreAll` | 0 | 0 | **0** | 128 |
+| entering `SprDrawAll` | 8 | 9 | **111** | 0 |
+| leaving `SprDrawAll` | 0 | 3 | **120** | 5 |
+
+**The restore is inside the window and the draw is almost never in it.** Every pass restores while
+the play area is blanked, and then 120 passes out of 128 are still *drawing* sprites while the beam
+is over them. That is the flicker: a sprite is erased at the top of the pass and put back while the
+beam is passing its rows, so for one field the eye sees background where the droid was.
+
+The order is not an accident — `SprDrawAll` has to follow `DoRedraws` so the save picks up settled
+background, and by then the next field's play cycle has started. The measured gap between the erase
+and the redraw is about 40,000 cycles, which is longer than a field, so a display period always
+falls inside it.
+
+What remains is ordering the pool against the beam, which means restoring and drawing a sprite as
+one unit and so breaks the invariant this whole file is built on — restore *all*, then draw *all*,
+because drawing one sprite while another is still on screen captures the second one's pixels into
+the first one's save area, and restoring it later stamps them in permanently. The overlap problem is
+the same one that killed round-robin below, and it has to be solved first. Layer 6's `DrCollide` is
+the start of an answer, though it needs the true 7 × 21 footprint rather than a feel-based box.
 
 ## Why not round-robin
 

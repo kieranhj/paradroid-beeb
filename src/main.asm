@@ -248,13 +248,9 @@ DEBUG_VSYNC  = TRUE
 DEBUG_TIME   = FALSE
 DBG_T_OVERHEAD = 46
 
-\ TEST_DROIDS parks six static droids around the player at deck load,
-\ so the sprite pool can be looked at and measured before droid.asm
-\ exists. Scaffolding — see src/droidtest.asm.
-TEST_DROIDS  = TRUE
-TD_DECK      = 1                \ CentreOnDeck lands the player somewhere
-                                \ walkable here; on some decks it does not,
-                                \ see BUGS.md
+\ TEST_DROIDS and src/droidtest.asm are gone: six static droids, put
+\ there so the sprite pool could be measured before there was anything
+\ to put in it. src/droid.asm is what they were standing in for.
 DBG_SPR      = 5                \ magenta — the sprite pool
 DBG_LEVEL    = 3                \ yellow  — DoRedraws, the level draw
 DBG_REDRAW   = 6                \ cyan    — keys, movement, CRTC park
@@ -664,11 +660,9 @@ ORG &1100
   JSR InstallIrq                \ after the load: taking over the IRQ stops
                                 \ the MOS servicing the filing system
 
-IF TEST_DROIDS
-  LDA #TD_DECK : STA deck
-ELSE
+  JSR NewShipDroids             \ the ship's droid complement, generated
+                                \ once and then owned by the decks
   LDA #1 : STA deck
-ENDIF
   LDA #0
   STA prevUp
   STA prevDn
@@ -807,11 +801,40 @@ IF DEBUG_DRAW
   LDA #DBG_SPR : JSR DbgSetBg   \ magenta over the sprite draw
 ENDIF
 
-IF TEST_DROIDS
-  JSR TestDroidsUpdate          \ after the view has settled, before the draw
-ENDIF
   JSR SprAnimateAll             \ last: the buffer is settled, so the save
   JSR SprDrawAll                \ picks up the background the frame will show
+
+\ ============================================================
+\ The droids run HERE, after the drawing, and that is deliberate
+\ ============================================================
+\ Everything above this line writes the play buffer and therefore has
+\ to happen while the play area is off display — 192 scanlines, 24,576
+\ cycles — and the level draw has only the 22,016 up to the CRTC latch
+\ at fire 1. DroidsUpdate writes NOTHING into the buffer, and at
+\ ~17,000 cycles it was the single largest thing standing between the
+\ window opening and the level draw: measured, the work ahead of
+\ DoRedraws came to 30,780 cycles against that 22,016 deadline, so the
+\ newly exposed column was being written while the beam displayed it.
+\n\ Moved down here it runs during the play area's own display, where a
+\ routine that touches no buffer costs nothing visible, and the level
+\ draw gets its window back. Measured over 128 passes scrolling on the
+\ diagonal, entering DoRedraws with the play area on screen: 116 of
+\ 128 before, 0 of 128 after. See docs/raster-timing.md.
+\n\ WHAT IT COSTS IS ONE PASS OF LATENCY. The slot positions this writes
+\ are the ones the NEXT pass draws, so a droid appears where it was
+\ 40 ms ago. At 25 Hz and 1-8 px a pass that is not visible, and the
+\ player is untouched — his movement stays above, because the scroll
+\ depends on it.
+\n\ Three things make it safe to run after the draw rather than before:
+\   - the restore replays the DRAW's own addresses (sprPtr0/sprScan0),
+\     not sprUnit, so moving a slot after it has been drawn is already
+\     something the blitter expects;
+\   - a slot freed here still has sprSaved set, so the next restore
+\     puts its background back before SprDrawAll clears the flag;
+\   - a door probed here is held open by the NEXT pass's DoorsUpdate,
+\     one pass later than before but never closing under a droid that
+\     is still standing at it.
+  JSR DroidsUpdate
 
 IF DEBUG_DRAW
   JSR DbgDeckBg
@@ -988,19 +1011,21 @@ ENDIF
   LDA deck
   JSR BuildLevel
 
-\ Where we arrive. A lift knows exactly where it puts you; CentreOnDeck
-\ only frames the deck and has been known to land the player inside a
-\ wall, so it is now the fallback rather than the rule.
+\ Where we arrive. A lift knows exactly where it puts you; everything
+\ else arrives on WAYPOINT 0, which is the one waypoint InitDeckDroids
+\ never places a droid on and is there for exactly this. It replaces
+\ CentreOnDeck, whose centroid framed the deck without ever asking
+\ whether the cell under the player was walkable — BUGS.md #4.
   LDA liftPlace
-  BEQ ld_centre
+  BEQ ld_spawn
   LDA #0
   STA liftPlace
   JSR LiftPlace
   JMP ld_placed
-.ld_centre
-  JSR CentreOnDeck
-  JSR SetPosFromMap             \ the pixel position is the authority from
-                                \ here on; CentreOnDeck works in characters
+.ld_spawn
+  JSR DrSpawnPoint              \ -> cellX / cellY, characters
+  JSR SetPosFromWaypoint        \ the pixel position is the authority from
+                                \ here on
 .ld_placed
 \ Start the strip at the buffer base — vertically, at least. `line` is
 \ zeroed so buffer row 0 is not a split row, which RedrawAll needs
@@ -1038,9 +1063,7 @@ ENDIF
   BPL ld_unsave
   JSR SetCRTCStart
   JSR RedrawAll
-IF TEST_DROIDS
-  JSR TestDroidsInit
-ENDIF
+  JSR DroidsInit                \ the deck's droids, on its waypoints
   RTS
 
 INCLUDE "src/rupture.asm"
@@ -1049,9 +1072,6 @@ INCLUDE "src/player.asm"
 INCLUDE "src/door.asm"
 INCLUDE "src/lift.asm"
 INCLUDE "src/sprite.asm"
-IF TEST_DROIDS
-INCLUDE "src/droidtest.asm"
-ENDIF
 
 IF DEBUG_TIME
 \ ============================================================
@@ -1240,6 +1260,7 @@ INCLUDE "src/data/droidgame.asm"
 INCLUDE "src/screen.asm"
 INCLUDE "src/scroll.asm"
 INCLUDE "src/level.asm"
+INCLUDE "src/droid.asm"
 .data_end
 
 \ SAVED HERE, NOT AT THE BOTTOM. SAVE writes out whatever the assembled
