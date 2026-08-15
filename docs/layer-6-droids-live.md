@@ -184,3 +184,8 @@ written would have cost 4,700.
   is not there yet.
 - **`DR_COL_W`/`DR_COL_H` have not been played with**, only measured. They are the first thing to
   adjust if droids feel sticky or pass through each other.
+- **Three things from KC's first play of this build**, all in `BUGS.md`: droids that lock together
+  (#7a), a player bounce that reads as heavy even though it is already gentler than the C64's
+  (#7b — the camera's 4-pixel step is the likelier culprit than the speed), and **droids seen
+  inside walls** (#8), which is a correctness fault rather than feel and did not reproduce in an
+  idle 100-second run.

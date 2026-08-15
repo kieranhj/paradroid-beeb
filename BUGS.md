@@ -12,6 +12,122 @@ Numbering is historical, not an order — 3 sits after 4 because it was added la
 
 ---
 
+## 8. Droids seen inside walls — **OPEN, not reproduced, and not polish**
+
+Reported by KC on 2026-08-15 from play: "a couple of droids stuck in the wall". Filed separately
+from #7 because this is a **correctness fault**, not feel — a droid on a solid cell can never leave
+it, since `DrCheckAdvance` re-arms its two-iteration pause every pass.
+
+**Not reproduced unattended.** 100 seconds of emulated play on deck 1, player idle: all 11 droids
+walking, **0 on a solid cell**. So it needs either another deck, or the player interacting — which
+is the useful half of the report, because both suspects below involve things an idle test never
+does.
+
+**Ruled out: the spawn.** The waypoint walk takes one record per table index whether or not that
+index holds a droid, so a deck with few waypoints could in principle read into the *next* deck's
+records and place a droid at foreign coordinates. It cannot: the roster fills indices 12 downward,
+so the highest waypoint index a deck can reach is (droids placed + 1), and that is inside `wpCount`
+for **all sixteen decks** — the tightest is deck 12 at 13 against 16. Checked arithmetically, not
+by sampling. All 239 waypoints are also walkable (Layer 5).
+
+**Suspect 1: a droid caught in a doorway when the door closes.** Doors are held open by whoever
+*probes the approach pad*, and `DoorsUpdate` closes any door nothing touched that pass. A droid
+walking a corridor probes its own cell and the two ahead, and the doorway is laid out
+`pad | door | door | pad` — so at every step of the crossing the two-cell lookahead still reaches a
+pad, which is very likely *why* the lookahead is two. Two things would break that and both are
+plausible in play:
+
+- a **diagonal** direction, where `DrAdvancePos` steps both axes together, so the probes leave the
+  corridor line and may never land on the far pad;
+- a **collision** (`DrPause16`) freezing the droid mid-doorway for 16 iterations, or a
+  `DrCheckAdvance` pause doing the same, while the door counts down and closes around it.
+
+The original has the same shape — `CloseDoors` ($2B08) closes on bit 6 alone and never asks whether
+anything is standing there — so if this is the mechanism it may be inherited. That is worth knowing
+before "fixing" it.
+
+**Suspect 2: a droid whose direction faces a wall creeps into it.** `DrMove` runs *before*
+`DrCheckAdvance` — as `dMd0_droid` does, `MoveDroid` first at $18CA — so the sequence is: pause
+expires, the droid takes one step, the check re-arms the pause. One step every three passes, into
+the wall, until it is inside. Directions come from waypoint masks and should never face a wall, so
+this only fires if something else gives a droid a bad direction. **`DrReverse` is the candidate**:
+a reversed droid retraces its path, which is safe, *unless* it was reversed while already off the
+waypoint grid.
+
+**How to catch it, and this is the next step rather than more reasoning.** A ~30-byte detector in a
+debug build: after `DrCheckAdvance` has read the droid's own cell, if bit 7 is set, latch the droid
+index, its cell, `drSpdX/Y`, `drState` and `numDoors`/`doorState` into a first-offence slot. Then one
+memory read after a long run says *which* droid, *where*, and whether a door was involved — and
+`DEBUG_POS` gets the player back to the spot. Main RAM has 116 bytes, which is enough for this and
+not much else; it may want doing after `droid.asm` moves into bank 4.
+
+---
+
+## 7. Droids can lock together, and the player's bounce is heavy — **POLISH, from play**
+
+Both reported by KC on 2026-08-15, from playing the Layer 6 build. Filed together because they are
+the same three constants seen from two directions, and neither is a correctness fault: the buffer
+oracle is clean and the frame lock holds. **This is tuning, and it should be done by eye in one
+sitting rather than reasoned about here.**
+
+### 7a. Two droids can stay stuck against each other
+
+**Severity:** polish. Makes the ship harder to explore than it should be, which is the actual
+complaint — the droids get in the way.
+
+**Why it can happen, from the code rather than from a repro.** Four properties of the original's
+structure combine, and all four are ports rather than choices of ours:
+
+1. **One pair a pass.** `DoCollision` resolves the two lowest set bits of `$D01E` and leaves the
+   rest; ours stops at the first overlapping pair. A pile-up of three unwinds one pair at a time.
+2. **`PauseDroidFor16` freezes the second droid for 16 iterations** — nearly a second at 25 Hz —
+   and a frozen droid cannot move out of the way of the one that hit it.
+3. **The reverse fires once per episode**, not once per pass: `ReverseDroidDir`'s `byte_0_6C` guard
+   is only cleared on a pass with *no* collision at all. If the one reverse does not separate them,
+   nothing reverses them again while they stay overlapped.
+4. **Droids only change direction at waypoints.** A reversed droid walks back the way it came until
+   the previous junction; it cannot route around anything.
+
+**KC believes the C64 original does this too, which is consistent with 1–4 being inherited — but
+that has NOT been verified here.** Checking it against a real C64 run would say whether this is
+faithfulness or a port artefact, and that is the first thing to do, because it decides whether the
+fix is allowed to deviate.
+
+**The port-specific suspect, if it turns out we are worse:** our collision is a box and the C64's is
+the VIC's pixel-exact `$D01E`. `DR_COL_W`/`DR_COL_H` (18 × 14) fire on overlaps the hardware would
+not see at all, so droids "touch" earlier, more often, and at distances where a single reverse is
+less likely to clear the overlap. Shrinking the box is the cheapest experiment.
+
+**Levers, cheapest first:** `DR_COL_W`/`DR_COL_H` in `droid.asm`; the 16 in `DrPause16`; resolving
+more than one pair a pass; clearing `drCollHit` when the pair *changes* rather than only when the
+screen is clear.
+
+### 7b. The player's bounce is aggressive
+
+**Severity:** polish, gameplay feel.
+
+**And it is already smaller than the original's.** `$1A85` negates the whole-pixel part of each
+player speed, forces it to at least 1, and doubles it, with no ceiling — so the C64 can bounce the
+player at 14 px an iteration. Ours clamps to `CAM_TOPSPD` = 8, because the band redraw brings in one
+character row a pass and 16 px would skip one (see `docs/layer-6-droids-live.md`). One pass is one
+C64 iteration here, so those are directly comparable numbers: **we are already the gentler of the
+two.**
+
+**So the feel probably is not the speed, and the first place to look is the camera.** A bounce that
+pushes the player past the edge of the dead zone moves the *view*, and the view moves in 4-pixel
+CRTC units. A nudge that would be a few pixels of sprite movement on the C64 can therefore lurch the
+whole world sideways in one step here. That is a port-specific amplifier that has nothing to do with
+the collision constants, and it would explain "aggressive" better than a speed that is 8 against 14.
+
+**Cheap experiments, in order:** drop the doubling (`ASL A` in `DrBounce`) and see whether it still
+reads as a bounce; clamp to 4 rather than `CAM_TOPSPD`; and check whether the same bounce with the
+player away from the dead-zone edge feels different, which would confirm the camera as the cause.
+
+**Not to be changed without noticing:** `DrBounce` leaves the speed *fraction* alone, as the C64
+does, so a bounce inherits whatever sub-pixel remainder the player had.
+
+---
+
 ## 1. `RedrawAll`'s split-row repair has no effect — the debug oracle is wrong
 
 > **Probably moot as of 2026-08-13, not fixed.** The band now draws whole character rows, so no
