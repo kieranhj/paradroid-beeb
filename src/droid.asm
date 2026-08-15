@@ -232,6 +232,8 @@ DR_LOS_MAX = 96
   LDA #DR_ENERGY : STA drEnergy,Y
   LDA #0
   STA drSprNum,Y
+  STA drVis,Y
+  STA drVisNew,Y
   STA drSpdX,Y
   STA drSpdY,Y
   STA drState,Y
@@ -341,6 +343,14 @@ DR_LOS_MAX = 96
   LDA posY   : ADC #DR_REFY  : STA drOrgY
   LDA posY+1 : ADC #0        : STA drOrgY+1
 
+  LDX losTurn                   \ whose sight line gets tested this pass
+  INX
+  CPX #SPR_SLOTS
+  BCC dru_turn
+  LDX #1
+.dru_turn
+  STX losTurn
+
   LDA drCount
   CMP #2
   BCS dru_go
@@ -372,6 +382,8 @@ DR_LOS_MAX = 96
   LDA drPosYhi,X    : STA drPosYhi,Y
   LDA drState,X     : STA drState,Y
   LDA drShipIdx,X   : STA drShipIdx,Y
+  LDA drVis,X       : STA drVis,Y
+  LDA drVisNew,X    : STA drVisNew,Y
 
   LDA drSprNum,X                \ the slot points back at the droid, so a
   BEQ dru_kept                  \ droid that moves down the table has to
@@ -386,7 +398,9 @@ DR_LOS_MAX = 96
   LDX drIdx
   INX
   CPX drCount
-  BCC dru_loop
+  BCS dru_done
+  JMP dru_loop                  \ the copy-down block grew past a branch
+.dru_done
   STY drCount
   JMP DrCollide
 
@@ -946,6 +960,11 @@ ENDIF
 \ CULLED, NOT CLIPPED, like every other sprite in this port — see
 \ SprSetSlot. The test here only has to keep the arithmetic in range;
 \ the blitter culls again on its own limits.
+\ Out of range, and out of branch range of the tests below — the sight
+\ line pushed the body of this routine past 127 bytes.
+.drs_far
+  JMP drs_off
+
 .DrScreen
   LDX drIdx
 
@@ -982,6 +1001,7 @@ ENDIF
   TXA
   STA drSlotOwner,Y             \ the slot is OWNED from here until the droid
                                 \ leaves the window, whether or not it is drawn
+  LDA #1 : STA drVisNew,X       \ test the sight line at once, not in turn
   LDA #0 : STA sprDelay,Y
   TXA                           \ stagger the rotors, or a room full of
   AND #7                        \ droids spins in lockstep and reads as one
@@ -1007,19 +1027,39 @@ ENDIF
 \ behind a wall holds its hardware sprite while being invisible. Ours
 \ does the same with the two halves separated: drSlotOwner keeps the
 \ slot, sprActive says whether the blitter draws it.
+\
+\ ONE SIGHT LINE A PASS, not one per droid. The C64 tests every near
+\ droid every iteration and can afford to: the walk is the only thing
+\ it does per droid that costs more than a few hundred cycles, and it
+\ has no software blitter to pay for. Measured here, six of them cost
+\ about 8,600 cycles a pass — more than a tenth of the whole pass, on a
+\ question whose answer changes when a droid walks through a doorway
+\ and not otherwise.
+\
+\ So the slots take turns, and a droid that has just come into view is
+\ tested at once rather than waiting its turn. Worst case a droid that
+\ steps behind a wall stays drawn for five more passes, a fifth of a
+\ second. The alternative was a budget that does not fit.
+  LDA drVisNew,X
+  BNE drs_los                   \ just allocated: no answer to reuse
+  LDY drSprNum,X
+  CPY losTurn
+  BNE drs_keepvis
+.drs_los
   JSR DrLineOfSight
   LDX drIdx                     \ DrLineOfSight uses X as a scratch register
-  LDY drSprNum,X                \ in the scaling loop — it does NOT come back
-  LDA #0
+  LDA #0                        \ in the scaling loop — it does NOT come back
   BCS drs_hidden                \ carry set: a wall is in the way
   LDA #1
 .drs_hidden
+  STA drVis,X
+  LDA #0
+  STA drVisNew,X
+.drs_keepvis
+  LDA drVis,X
+  LDY drSprNum,X
   STA sprActive,Y
   RTS
-
-\ Out of range, and out of branch range of the tests above.
-.drs_far
-  JMP drs_off
 
 \ Nothing free. The C64 takes the droid off the ship entirely.
 .drs_nofree
@@ -1249,6 +1289,10 @@ ENDIF
 .drPosXhi    SKIP DR_SLOTS
 .drPosYlo    SKIP DR_SLOTS
 .drPosYhi    SKIP DR_SLOTS
+
+.drVis       SKIP DR_SLOTS      \ last sight-line answer, per droid
+.drVisNew    SKIP DR_SLOTS      \ needs one now, having just been allocated
+.losTurn     EQUB 1             \ the slot whose turn it is
 
 .drSlotOwner SKIP SPR_SLOTS     \ droid index holding each sprite slot, 0 free
 
