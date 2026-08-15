@@ -40,8 +40,8 @@ steps, in dependency order:
    round-robin* below before reviving it.
 6. **Raster-ordered updating** — flicker, and probably `BUGS.md` #3 with it. Still open, and now
    the only sprite-pool work outstanding. **The mechanism is now measured rather than assumed** —
-   see *Where the sprite work actually lands* below, which also rules out the cheap version of the
-   fix.
+   see *Where the sprite work actually lands* below, and [`raster-timing.md`](raster-timing.md) for
+   the whole-loop picture and a staged plan.
 
 **Measured, one sprite, one frame** (User VIA T1 around the two calls; both builds at the same
 position; ±0 across repeats — the emulator is deterministic):
@@ -676,8 +676,16 @@ rather than in `sprite.asm` only because main RAM had 46 bytes free and the bank
 
 ## Where the sprite work actually lands — measured 2026-08-15
 
+> **CORRECTED 2026-08-15.** The first version of this section put the off-display window at 184
+> scanlines and 11,776 cycles and concluded that no rescheduling could fit the sprite work inside
+> it. Both numbers were wrong: a scanline is **128** CPU cycles at 2 MHz, not 64, and the window is
+> **192** scanlines. It is **24,576 cycles, and there are two of them per pass** — 49,152 against
+> 36,274 of sprite work. **The work fits; it is in the wrong place.** The full timing picture, the
+> measurements behind it and a staged plan are in [`raster-timing.md`](raster-timing.md); what
+> follows is the measurement that started it.
+
 The flicker item above had never been instrumented; it was a reasonable inference from the order of
-the main loop. It is now a measurement, and it says something sharper than the inference did.
+the main loop. It is now a measurement.
 
 **Method, and it is cheap enough to repeat.** `ruptState` names which rupture fire is expected next,
 so it also says where the beam is: **`ruptState == 2` means fire 2 has happened and fire 3 has not —
@@ -697,28 +705,16 @@ is over them. That is the flicker: a sprite is erased at the top of the pass and
 beam is passing its rows, so for one field the eye sees background where the droid was.
 
 The order is not an accident — `SprDrawAll` has to follow `DoRedraws` so the save picks up settled
-background, and by then the next field's play cycle has started.
+background, and by then the next field's play cycle has started. The measured gap between the erase
+and the redraw is about 40,000 cycles, which is longer than a field, so a display period always
+falls inside it.
 
-**The cheap fix does not exist, and this is what rules it out.** The obvious move is to spend the
-idle time *before* the draw rather than after it: wait for the next off-display window and draw
-inside it. But the window is stated on `rt_drawok` itself — "deadline for the redraw is the play
-cycle starting again, **184 scanlines away**" — which is 11,776 cycles. Seven sprites cost 36,274
-and the draw half alone is about 24,000. **The work is two to three times the window, so no
-scheduling of it can fit.**
-
-That leaves the real thing: ordering the pool against the beam, updating each sprite in the gap
-after the beam has passed its own rows, which means restoring and drawing a sprite as one unit. And
-that breaks the invariant the whole file is built on — restore *all*, then draw *all*, because
-drawing one sprite while another is still on screen captures the second one's pixels into the
-first one's save area, and restoring it later stamps them into the buffer permanently. The
-overlap problem is the same one that killed round-robin below, and it has to be solved *first*, not
-alongside.
-
-So the shape of the remaining work is: an overlap test between slots (Layer 6 now has one —
-`DrCollide`'s box test — though this needs the exact 7 × 21 footprint, not a feel-based box), a
-slot order sorted by screen Y, and a beam position finer than `ruptState`. None of it is hard; all
-of it is easy to get subtly wrong, and the failure mode is permanent corruption of the play buffer
-rather than a flicker.
+What remains is ordering the pool against the beam, which means restoring and drawing a sprite as
+one unit and so breaks the invariant this whole file is built on — restore *all*, then draw *all*,
+because drawing one sprite while another is still on screen captures the second one's pixels into
+the first one's save area, and restoring it later stamps them in permanently. The overlap problem is
+the same one that killed round-robin below, and it has to be solved first. Layer 6's `DrCollide` is
+the start of an answer, though it needs the true 7 × 21 footprint rather than a feel-based box.
 
 ## Why not round-robin
 
