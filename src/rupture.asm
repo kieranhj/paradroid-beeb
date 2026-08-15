@@ -191,8 +191,13 @@ ENDIF
   LDA #6  : STA CRTC_ADDR : LDA #0        : STA CRTC_DATA
   LDA #7  : STA CRTC_ADDR : LDA #TAIL_R7  : STA CRTC_DATA
 
-  LDA #1
-  STA drawFlag
+\ COUNT the window rather than flagging it. A flag is a boolean and
+\ boolean state coalesces: work that runs past two of these sets it
+\ twice and the loop can only see one, so it consumes a stale release
+\ and then blocks for the next — turning a small overrun into a whole
+\ extra field. A counter cannot lose one, and the loop compares
+\ against it rather than consuming it. See WaitUntilField.
+  INC fieldCount
   LDA #3
   STA ruptState
   RTS
@@ -365,7 +370,7 @@ DBG_PX = 17
   EQUB %1111 * DBG_PX, %1000 * DBG_PX, %1110 * DBG_PX, %1000 * DBG_PX, %1000 * DBG_PX
 ENDIF
 
-\ ruptState, drawFlag, crtcHi/crtcLo and line/pline/iline are all in
+\ ruptState, fieldCount, crtcHi/crtcLo and line/pline/iline are all in
 \ zero page — see the block in main.asm. Everything here is read or
 \ written inside the interrupt handler, three fires a frame, so it is
 \ handler latency as much as throughput.

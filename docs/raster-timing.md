@@ -166,8 +166,13 @@ two windows hold **8.4** — against a pool of 7. So the pool splits into two tr
   window B   SprRestoreB → SprDrawB
 ```
 
-`WaitField` takes the first field and `WaitRest` the rest, so the second window is a point in the
-code rather than something the loop sleeps through. `SPR_SPLIT` = 3: slots 0-2 in the first window,
+The loop **counts windows rather than consuming a flag**. The IRQ bumps `fieldCount` at fire 3 and
+`WaitUntilField` spins until the counter reaches a target, returning at once if it is already past
+it. A boolean coalesces — work running past two fire-3s sets the same flag twice, the loop consumes
+one stale release and then blocks for the next, turning a small overrun into a whole extra field.
+A counter cannot lose one. It also makes the pass's contract explicit: **not shorter than
+FRAME_LOCK fields, and allowed to be longer**, so a heavy pass costs what it costs and the rate
+recovers on the next one instead of stepping down to 16.7 Hz for as long as the load lasts. `SPR_SPLIT` = 3: slots 0-2 in the first window,
 3-6 in the second, and the player is slot 0 so he is always in the first.
 
 **The split is abandoned for a pass when either guard fails**, and both are in `SprSplitOK`:

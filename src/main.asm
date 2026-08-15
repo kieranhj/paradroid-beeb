@@ -539,7 +539,7 @@ sfrCarry  = &1F                 \ SprFetchRow's 2 px shift carry
 \ about a missed deadline hanging the ruptState machine is reason
 \ enough to make the handler shorter wherever it is free.
 ruptState = &20                 \ which rupture stage the next T1 fire is
-drawFlag  = &21                 \ set when the play area is off-display
+fieldCount = &21                \ windows opened, bumped by the IRQ at fire 3
 crtcHi    = &22                 \ play-area start for the play cycle,
 crtcLo    = &23                 \ latched by the IRQ
 line      = &24                 \ sub-row scroll offset, 0-7 — the live value
@@ -677,10 +677,16 @@ ORG &1100
   \ Released once the play area is off-display, not at VSync. The
   \ edge redraw and the R12/R13 park both have to land before the
   \ play area is drawn again.
-    \ ONE FIELD, not FRAME_LOCK of them: this opens the FIRST of the
-  \ pass's two windows, and the second is taken further down, after
-  \ the drawing and the droid AI. See docs/raster-timing.md.
-  JSR WaitField
+    \ THE PASS IS DATED FROM THE WINDOW IT STARTS IN, and it takes its
+  \ fields one at a time: this is the first of the two windows, and the
+  \ second is taken further down after the drawing and the droid AI.
+    \ Nothing is consumed here — the loop arrives already inside window
+  \ A, because the wait at the bottom released it there. Stamping the
+  \ counter is all that is needed, and a pass that overran simply
+  \ starts from a later field with its full budget rather than being
+  \ rounded up to the next boundary. See docs/raster-timing.md.
+  LDA fieldCount
+  STA passF0
 IF DEBUG_VSYNC
   JSR DbgFrameCount             \ the boundary has just happened, so this
 ENDIF                           \ counts the iteration that has finished
@@ -869,9 +875,9 @@ ENDIF
 \     is still standing at it.
   JSR DroidsUpdate
 
-  \ The pass's REMAINING fields. Everything above ran in the first
-  \ window and the display that follows it; this opens the second.
-  JSR WaitRest
+  \ The second window. Everything above ran in the first one and the
+  \ display that follows it.
+  JSR WaitWindowB
 
   \ Tranche B, erased and redrawn inside this window so that no field
   \ ever displays it missing. On a whole pass it was drawn up there
@@ -892,6 +898,14 @@ IF DEBUG_DRAW
   JSR DbgDeckBg
 ENDIF
 
+  \ The pass is not allowed to be shorter than FRAME_LOCK fields. It IS
+  \ allowed to be longer: an overrun carries on from wherever it landed
+  \ instead of being rounded up to the next boundary, so a heavy pass
+  \ costs what it costs and the rate recovers on the next one. The
+  \ movement model wants a fixed pass, so this is a trade — a brief
+  \ overrun now shows as a brief speed-up rather than a step down to
+  \ 16.7 Hz for as long as the load lasts.
+  JSR WaitNextPass
   JMP mainloop
 
 .loadcmd
@@ -986,23 +1000,38 @@ ENDIF
 \ the top and WaitRest takes the remainder after the drawing, so the
 \ second window is a point in the code the sprite pool can be split
 \ across. See docs/raster-timing.md.
-.WaitField
-  LDA drawFlag
-  BEQ WaitField
-  LDA #0
-  STA drawFlag
+\ A = the window number to wait for. Returns at once if it has already
+\ been and gone, which is the whole point: a pass that overruns its
+\ window by a little should carry straight on into the next piece of
+\ work rather than sit out a field it has already spent.
+\ The subtract makes the comparison a SIGNED distance, so it is right
+\ across the counter's 8-bit wrap for anything within 127 fields of
+\ the target — which is 2.5 seconds, and nothing here waits that long.
+.WaitUntilField
+  STA wufTarget
+.wuf_spin
+  LDA fieldCount
+  SEC
+  SBC wufTarget
+  BMI wuf_spin
   RTS
 
-\ The rest of the pass's fields. FRAME_LOCK stays the single dial for
-\ the rate: raise it and the extra fields are taken here.
+\ The pass's own two waits, in terms of the field it started on.
+\ FRAME_LOCK stays the single dial: the pass is not allowed to be
+\ shorter than that many fields, and is allowed to be longer.
 ASSERT FRAME_LOCK >= 2
-.WaitRest
-  LDX #FRAME_LOCK-1
-.wr_field
-  JSR WaitField
-  DEX
-  BNE wr_field
-  RTS
+.WaitWindowB
+  CLC
+  LDA passF0
+  ADC #1
+  JMP WaitUntilField
+.WaitNextPass
+  CLC
+  LDA passF0
+  ADC #FRAME_LOCK
+  JMP WaitUntilField
+
+.wufTarget EQUB 0
 
 \ ============================================================
 \ IrqHandler — front of the IRQ1V chain
@@ -1220,6 +1249,7 @@ ENDIF
 .rowOfs    EQUW 0               \ row*640 accumulator for RedrawAll
 .sTmp      EQUW 0
 .sprSplit  EQUB 0               \ this pass is drawing the pool in two
+.passF0    EQUB 0               \ the window this pass started in
 .vsyncCount EQUB 0              \ bumped by IrqHandler once per field
 .oldIrq1V  EQUW 0
 
