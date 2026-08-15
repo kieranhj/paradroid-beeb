@@ -1419,6 +1419,17 @@ CLEAR SWRAM_BASE, SWRAM_BASE + &4000
 ORG SWRAM_BASE
 .spr_start
 INCLUDE "src/data/droids.asm"
+
+\ Layer 7's effect artwork rides in THIS bank rather than bank 4, and
+\ only in this one. An effect sprite is drawn entirely by the
+\ interpreted path, so its rows are read on every row of every frame
+\ instead of one in fifty like drSprData — paging a different bank in
+\ per row would cost more than the blit. An effect never uses a
+\ compiled shift, so it does not care which sprite bank is up and can
+\ live in the one the slot has already selected. Bank 4 is also the
+\ scarcer of the two now that the level draw and the droid AI are in it.
+INCLUDE "src/data/effects.asm"
+ASSERT EF_SPRITE_ROWS == SPR_H
 .spr_end
 SAVE "PARASPR", spr_start, spr_end, DATA_LOAD, DATA_LOAD
 

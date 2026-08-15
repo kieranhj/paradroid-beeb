@@ -186,7 +186,7 @@ moves. The outline:
 | `&5700–&57FF` | 256 B | data byte → transparency mask table, built at startup |
 | `&5800–&7FFF` | 10,240 B | play buffer: circular strip, 16 rows × 640 |
 | SWRAM bank 4 | 16 K | `PARADAT` — char data, colour schemes, tile defs, deck RLE, waypoints, the combat stat tables, **the level-draw code and the droid AI**. Ends `&B5FB`, **2,565 B free** |
-| SWRAM bank 5 | 16 K | `PARASPR` — the blitter at shifts 0 and 1 px. Ends `&B056`, **4,010 B free** |
+| SWRAM bank 5 | 16 K | `PARASPR` — the blitter at shifts 0 and 1 px, **plus Layer 7's effect artwork**: 31 bullet and explosion frames, 2,946 B, here rather than in bank 4 because the interpreted path reads them every row. Ends `&BBF7`, **1,033 B free** |
 | SWRAM bank 6 | 16 K | `PARSPR2` — the same at 2 and 3 px, laid out identically. Ends `&B199`, **3,687 B free** |
 
 **"Main RAM is full" meant the `PARA` image could not grow past `&3000`** — never that there was no
@@ -286,7 +286,7 @@ point. Six stages, each ending in something visible:
 |---|---|
 | 7a ✅ | **DONE 2026-08-15.** `src/combat.asm`: entry 0 becomes the player, `AddScore`'s BCD, `DoAging`, the `gameTick` iteration counter, and a `DEBUG_ENERGY` readout on panel row 1 because the panel that would show any of it is Layer 9's. `DroidsInit` no longer clears entry 0 — measured surviving a deck change |
 | 7b ✅ | **DONE 2026-08-15.** `DoCharUnder`'s recharger arm — **the recharge pads**, character 20: +1 energy every 4th iteration and −5 score, plus `SubScore`. Rate, ceiling, BCD wrap, zero-saturate and a control all measured exact. The lift arm is not ported: **L does double duty as fire and lift trigger in the original too**, through `moveMode`, so `lift.asm` keeps its trigger |
-| 7c | Effect sprites — a generic interpreted blitter path with a per-frame bounding box, the 20 effect sprites exported, and `SPR_SLOTS` to 8 for the player's bullet (save page `&3700`, already free) |
+| 7c | Effect sprites. **Artwork done 2026-08-15** — 31 frames, 2,946 B, exported with per-frame bounding boxes into **bank 5**, round-tripped 0/31 mismatches; no frames cut, because the bullets rather than the explosion were the expensive half. Still to come: the generic interpreted blitter path and `SPR_SLOTS` to 8 for the player's bullet (save page `&3700`, already free) |
 | 7d | The player fires — `DoMoveMode`'s Mobile/Weapon/Transfer machine, then `DoFire`, `MovePlyFire`, `SpriteHitWall`, the fire delay by droid class |
 | 7e | Damage, kills, explosions and BCD score — the `CollisionType` matrix and its six arms, plus the player's own death: explode, then back as 001 on waypoint 0 with no game over |
 | 7f | Enemy fire — `DoEnemyFire` into the spot `DroidRun` already reserves for it, plus friendly fire and the disruptor |

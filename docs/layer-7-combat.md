@@ -239,25 +239,52 @@ Two constraints to design against, both already written down elsewhere:
   loose to begin with and tighten only if the split refusal rate says to — `raster-timing.md`
   records what tightening it bought last time.
 
-Artwork lives in **bank 4**, beside `drSprData` and for the same reason: `SprFetchRow` already pages
-bank 4 in around itself for ~24 cycles, and the sprite banks are the scarce ones. Bank 4 has 2,621
-bytes free; 20 unclipped frames would be 2,940, so the bounding boxes are not a nicety — most effect
-frames are sparse and should come in well under half that, but **measure it in the exporter before
-committing**.
+#### The artwork — exported ✅ **2026-08-15**, `tools/export_effects.py`
 
-> **If the twelve explosion frames do not fit, ship as many as do and keep the animation the right
-> length. KC's call, 2026-08-15.** At least two, and the *timing* is not allowed to change: the
-> counter still runs `$39`→`$44` and the explosion still occupies twelve iterations, but the frame
-> index goes through a **12-entry indirection table** onto the frames that exist, so six frames play
-> each twice, four play three times, and two play six times. Held frames are cheaper, not dearer —
-> the interpreted path re-reads the same rows.
->
-> **The exporter emits that table and prints the shortfall**, and the number goes in this document
-> and in `docs/graphics.md`'s status table, not in a comment. Which frames to keep is a judgement
-> about the shape of the sequence — the first, the widest and the last at minimum — and the sheet to
-> judge it from is `tools/output/sprites_4C00_multicolor.png`. This is a **space compromise to be
-> revisited**, not a design: bank 4's 2,621 free bytes are the only reason for it, and anything that
-> frees space there buys frames back.
+**It goes in bank 5 with the blitter, not bank 4 with `drSprData`, and no frames had to be cut.**
+That reverses this document's own first answer, and the measurement is why.
+
+| | frames | bytes |
+|---|---|---|
+| Explosion, multicolour, `$39`–`$43` | 11 | 945 |
+| Bullets, hires | 20 | 1,803 |
+| Tables (`efR0`/`efH`/`efC0`/`efW`/`efData*`/`efAlt`/`efBullet`) | | 198 |
+| | **31** | **2,946** — against 4,557 unclipped |
+
+**The explosion was never the expensive half.** The bullets are, at nearly twice the size: 12
+`BulletSprite_t` entries, and every image `>= $56` animates as a pair, so 20 frames ship for 12
+table slots. Thinning explosion frames would have cut the wrong thing.
+
+2,946 into **bank 4's** 2,565 free does not fit — which is what the frame-thinning decision was for.
+Into **bank 5's** 4,010 it fits with 1,064 to spare, and bank 5 is the better home on its own merits:
+
+- **Paging.** `drSprData` is in bank 4 because `SprFetchRow` reads it on about one row in fifty and
+  can afford to page around itself. An effect sprite is drawn *entirely* by the interpreted path, so
+  its rows are read on every row of every frame — paging per row would cost more than the blit. An
+  effect never uses a compiled shift, so it does not care which sprite bank is up and can live in
+  whichever one the slot has already selected.
+- **Scarcity has swapped.** Bank 4 became the tighter of the two when the level draw and the droid
+  AI moved into it. The note in `export_droids.py` calling the sprite bank "the scarce one" was true
+  when it was written and is not any more.
+
+So **KC's frame-thinning decision does not bite** and the twelve-iteration indirection table is not
+needed. It stays on the record in case bank 5 tightens later.
+
+**Every opaque pixel becomes logical colour 1**, and on the explosion that is a real loss — it is
+multicolour on the C64 and has three. The deck palettes decide it: logical 1 is white on all 16
+decks, logical 2 is black on fourteen, and **logical 3 is black on decks 4 and 11**, so an explosion
+drawn in 3 would be invisible on two of them. Same argument that put the droids on logical 1. The
+C64's own sprite multicolour registers cannot settle it either way — `$D025`/`$D026` are never
+written by the game and the listing's dump has text data overlaying `$D022` upwards.
+
+**Verified by round-trip**: each frame rebuilt from its stored box and compared against an opacity
+grid computed independently from the C64 bytes — **31 frames, 0 mismatches**. `efAlt` is self-inverse
+over all 31, every `efBullet` entry points at a bullet frame rather than an explosion frame, and
+every box fits inside 21 rows × 6 byte columns.
+
+Bank 5 now ends `&BBF7`, **1,033 B free**, and `PARASPR` grew 49 → 60 pages. It still boots: the
+boot staging reaches ~`&6C00` instead of `&68B5`, further into the play buffer, which is safe for
+the same reason it always was — `PageBankIn` runs before anything there is read again.
 
 *Visible:* poke a slot into explosion mode and watch twelve frames play out and free the slot.
 
@@ -410,7 +437,7 @@ handlers next to `DroidRun`. All of `$EA00`–`$EA80`'s droid stats come out of 
 |---|---|
 | **Zero energy** | **Explode and respawn as 001 on waypoint 0**, `BlowInto001` without its modal loop and with `maxEnergy` floored at 7. No game over — Layer 11 owns the screen that would show one. Detail in 7e |
 | **The fire key** | **L does double duty**, shoot and enter a lift — and this is what the original does, through the `moveMode` machine rather than through a tiebreak. `lift.asm`'s trigger is unchanged. Separate buttons stay open as a later option. Detail in 7b |
-| **Explosion frames** | **Fit as many as bank 4 allows, minimum two, and hold the twelve-iteration length** through an indirection table. The exporter prints the shortfall and it gets written down. A space compromise to revisit, not a design. Detail in 7c |
+| **Explosion frames** | **Did not bite.** The decision was fit-what-fits with the length held by an indirection table; measuring found the *bullets* were the expensive half and that bank 5 holds all 31 frames with 1,064 B spare. Nothing cut. Detail in 7c |
 
 **Nothing here is blocked and nothing is left to find out.** The one open question — whether
 character 20 is the recharger in our charset numbering — was checked against `tiledefs.asm` on
