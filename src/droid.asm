@@ -222,7 +222,23 @@ DR_LOS_MAX = 96
 .di_loop
   STY diIdx
   LDA (mapptr),Y
-  BEQ di_next                   \ no droid at this index
+  BNE di_place
+
+\ NO DROID AT THIS INDEX, AND THE ENTRY HAS TO BE EMPTIED RATHER THAN
+\ SKIPPED. It holds the LAST deck's droid — its type, its energy and,
+\ fatally, its position — and `drCount` is set to the whole table below
+\ on the assumption that a hole has zero energy so the compaction drops
+\ it. Leave the energy alone and the hole is a live droid standing at
+\ the previous deck's coordinates inside this deck's walls.
+\
+\ It survives a cold boot because the table starts zeroed, so the first
+\ deck entered is always clean and only the second one shows it.
+  LDA #0
+  STA drEnergy,Y
+  STA drType,Y
+  STA drSprNum,Y
+  BEQ di_next                   \ always
+.di_place
 
   STA drType,Y
   TYA

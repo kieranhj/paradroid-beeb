@@ -12,54 +12,45 @@ Numbering is historical, not an order — 3 sits after 4 because it was added la
 
 ---
 
-## 8. Droids seen inside walls — **OPEN, not reproduced, and not polish**
+## 8. Droids from the LAST deck survive into the next one — **FIXED 2026-08-15**
 
-Reported by KC on 2026-08-15 from play: "a couple of droids stuck in the wall". Filed separately
-from #7 because this is a **correctness fault**, not feel — a droid on a solid cell can never leave
-it, since `DrCheckAdvance` re-arms its two-iteration pause every pass.
+Reported by KC from play as "a couple of droids stuck in the wall", then refined to *stuck on a
+wall rather than in one*, on **deck 8, two 247s**. The refinement is what cracked it: a duplicate
+droid number is a ghost, not a pathfinding failure.
 
-**Not reproduced unattended.** 100 seconds of emulated play on deck 1, player idle: all 11 droids
-walking, **0 on a solid cell**. So it needs either another deck, or the player interacting — which
-is the useful half of the report, because both suspects below involve things an idle test never
-does.
+**The fault.** `DroidsInit` walks the ship roster and, at an index where the roster holds nothing,
+skipped the table entry entirely — leaving the **previous deck's droid** in it: its type, its
+energy and its position. `drCount` is then set to the whole table on the stated assumption that a
+hole has zero energy so `DroidsUpdate`'s compaction drops it. A hole did not have zero energy. So
+every deck after the first inherited the last one's droids, standing at the last one's coordinates
+inside the new deck's geometry.
 
-**Ruled out: the spawn.** The waypoint walk takes one record per table index whether or not that
-index holds a droid, so a deck with few waypoints could in principle read into the *next* deck's
-records and place a droid at foreign coordinates. It cannot: the roster fills indices 12 downward,
-so the highest waypoint index a deck can reach is (droids placed + 1), and that is inside `wpCount`
-for **all sixteen decks** — the tightest is deck 12 at 13 against 16. Checked arithmetically, not
-by sampling. All 239 waypoints are also walkable (Layer 5).
+**Why it hid.** The table starts zeroed, so the **first deck entered is always clean** and only the
+second one shows it — and every unattended test in Layer 5 and Layer 6 ran on deck 1 from a cold
+boot. It was invisible to the whole verification suite by construction.
 
-**Suspect 1: a droid caught in a doorway when the door closes.** Doors are held open by whoever
-*probes the approach pad*, and `DoorsUpdate` closes any door nothing touched that pass. A droid
-walking a corridor probes its own cell and the two ahead, and the doorway is laid out
-`pad | door | door | pad` — so at every step of the crossing the two-cell lookahead still reaches a
-pad, which is very likely *why* the lookahead is two. Two things would break that and both are
-plausible in play:
+**The evidence that identified it.** On deck 8, four of the stuck droids stood on cells at rows 6,
+18 and 26. Deck 8 has no waypoints on those rows. **Deck 1 does** — (54,6), (86,26), (98,18) are
+deck 1 waypoints exactly. They had never moved since deck 1 placed them there.
 
-- a **diagonal** direction, where `DrAdvancePos` steps both axes together, so the probes leave the
-  corridor line and may never land on the far pad;
-- a **collision** (`DrPause16`) freezing the droid mid-doorway for 16 iterations, or a
-  `DrCheckAdvance` pause doing the same, while the door counts down and closes around it.
+**The fix** is four instructions on the skip path: zero `drEnergy`, `drType` and `drSprNum` for an
+empty index, so the hole really is one. The comment on `drCount` is now true rather than aspirational.
 
-The original has the same shape — `CloseDoors` ($2B08) closes on bit 6 alone and never asks whether
-anything is standing there — so if this is the mechanism it may be inherited. That is worth knowing
-before "fixing" it.
+**Measured, deck 8, same route from a cold boot:**
 
-**Suspect 2: a droid whose direction faces a wall creeps into it.** `DrMove` runs *before*
-`DrCheckAdvance` — as `dMd0_droid` does, `MoveDroid` first at $18CA — so the sequence is: pause
-expires, the droid takes one step, the check re-arms the pause. One step every three passes, into
-the wall, until it is inside. Directions come from waypoint masks and should never face a wall, so
-this only fires if something else gives a droid a bad direction. **`DrReverse` is the candidate**:
-a reversed droid retraces its path, which is safe, *unless* it was reversed while already off the
-waypoint grid.
+| | before | after |
+|---|---|---|
+| `drCount` (deck 8 holds 6 droids) | 14 | **7** — 6 placed, plus the sentinel |
+| droids stuck over 10 s | 8 of 13 | **2 of 6**, and both explained: one mid-collision-pause, one oscillating between two waypoints |
+| droids standing on a **solid** cell | 4 | **0** |
+| droids on deck 1's waypoint rows | 4 | **0** |
 
-**How to catch it, and this is the next step rather than more reasoning.** A ~30-byte detector in a
-debug build: after `DrCheckAdvance` has read the droid's own cell, if bit 7 is set, latch the droid
-index, its cell, `drSpdX/Y`, `drState` and `numDoors`/`doorState` into a first-offence slot. Then one
-memory read after a long run says *which* droid, *where*, and whether a door was involved — and
-`DEBUG_POS` gets the player back to the spot. Main RAM has 116 bytes, which is enough for this and
-not much else; it may want doing after `droid.asm` moves into bank 4.
+Deck 2, which holds 3, now gives exactly 2 droids where it previously inherited two decks' worth.
+The buffer oracle is still 0 of 10240 with the draw disabled.
+
+> **The lesson worth keeping is about the test, not the code.** Every automated check ran on deck 1
+> from a cold boot, and this bug cannot exist there. **Enter a second deck** before believing any
+> droid result — and the debug deck hop (poke `deck`, press DOWN) makes that two tool calls.
 
 ---
 
