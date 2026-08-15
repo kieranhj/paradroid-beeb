@@ -732,6 +732,57 @@ ENDIF
   JSR ApplyMove
 
 \ ============================================================
+\ Fire — and the lift gets first refusal on the same key
+\ ============================================================
+\ L DOES DOUBLE DUTY, which is what the C64 does too: there, fire drives
+\ the moveMode machine and DoCharUnder gates the lift countdown on it.
+\ We keep lift.asm's explicit trigger instead, so the two have to be told
+\ apart here — the lift takes the press when there is a lift to take it,
+\ and the weapon gets it otherwise.
+\
+\ THIS BLOCK MOVED UP FROM BELOW THE LEVEL DRAW. DoFire activates slot 7,
+\ and the tranche assignment in SprSplitOK has to see it, so everything
+\ that changes slot state must happen before the erase — the same reason
+\ the movement is up here. Nothing in LiftEnter/LiftExit draws; the
+\ deck-hop keys, which do, stay where they were.
+  LDA #0
+  STA fireDown
+  LDX #KEY_L
+  JSR keydown
+  BNE ml_lUp
+  LDA #1 : STA lDown
+  LDA prevRet
+  BNE ml_lHeld
+  LDA #1 : STA prevRet          \ the press edge
+  LDA liftMode
+  BEQ ml_lTryEnter
+  JSR LiftExit
+  LDA #1 : STA fireEaten
+  JMP ml_lDone
+.ml_lTryEnter
+  JSR LiftEnter
+  LDA liftMode                  \ did it take? if not, the press is the gun's
+  BEQ ml_lHeld
+  LDA #1 : STA fireEaten
+  JMP ml_lDone
+.ml_lHeld
+  LDA fireEaten
+  BNE ml_lDone
+  LDA liftMode
+  BNE ml_lDone
+  LDA #1 : STA fireDown
+  JMP ml_lDone
+.ml_lUp
+  LDA #0
+  STA prevRet
+  STA fireEaten
+  STA lDown
+.ml_lDone
+
+  JSR DoMoveMode                \ and DoFire, when it decides to
+  JSR MovePlyFire
+
+\ ============================================================
 \ Erase, and decide first whether the pool can be split
 \ ============================================================
 \ THE MOVEMENT RUNS BEFORE THE ERASE, which it did not used to. It is
@@ -784,24 +835,8 @@ ENDIF
   \ Deck keys are edge triggered: one press steps one deck however
   \ long it is held. A blocking wait-for-release deadlocks if the
   \ other deck key goes down before the first is released.
-\ L is fire, and fire steps into a lift and back out of it. Edge
-\ triggered, or holding it would toggle every pass.
-  LDX #KEY_L
-  JSR keydown
-  BNE ml_retOff
-  LDA prevRet
-  BNE ml_notRet
-  LDA #1 : STA prevRet
-  LDA liftMode
-  BNE ml_getout
-  JSR LiftEnter
-  JMP ml_notRet
-.ml_getout
-  JSR LiftExit
-  JMP ml_notRet
-.ml_retOff
-  LDA #0 : STA prevRet
-.ml_notRet
+\ L was handled at the top of the pass, where it has to be: DoFire
+\ activates a sprite slot and SprSplitOK must see it.
 
 \ UP and DOWN belong to the lift while it has the controls. Outside one
 \ they stay the debug free hop, which is worth keeping until every deck

@@ -349,7 +349,7 @@ the oracle covers it if it ran.
 
 *Visible:* poke a slot into explosion mode and watch twelve frames play out and free the slot.
 
-### 7d — The player fires
+### 7d — The player fires ✅ **DONE 2026-08-15**
 
 `DoMoveMode` (`$31B9`) first — the Mobile/Weapon/Transfer machine from 7b, driven by L's press and
 release edges. It is the only caller of `DoFire`, and getting it in now means the transfer arm in 7e
@@ -372,6 +372,50 @@ as an area effect. It can be stubbed in 7d and finished in 7f, since no droid th
 carries one.
 
 *Visible:* press L and a bullet flies, stops at walls, and dies at the edge of the view.
+
+#### What landed
+
+`combat.asm` gains `DoMoveMode`, `DoFire`, `MovePlyFire`, `CbFireCell`, `CbFirePlace` and
+`CbSignExt`. Three decisions worth keeping:
+
+- **`fireDown` is true-means-pressed**, the inverse of the C64's `joyFire`. The key read
+  normalises it once, so every test in the mode machine reads the opposite way round to the
+  original — which is the right trade, given that getting that polarity backwards is what made
+  this document claim lifts were automatic.
+- **The bullet's position is WORLD, not screen.** The C64 keeps it in the VIC sprite registers and
+  compensates for the scroll by adding the player's speed at `$32EA`; a world-space bullet has
+  nothing to compensate, so that fudge simply does not port. `CbFirePlace` converts to slot
+  coordinates the same way `DrScreen` does for a droid.
+- **The two animation frames are held, not looked up.** `DoFire` reads `efBullet` and then `efAlt`
+  once, and `MovePlyFire` swaps the pair. Frames that do not animate have `efAlt` pointing at
+  themselves, so the swap is a no-op and needs no test — which is why the weapon-0 bullets sit
+  still and the others flicker.
+
+**The L key is read once at the top of the pass** and the whole block moved up there from below the
+level draw, because `DoFire` activates slot 7 and `SprSplitOK`'s tranche assignment has to see it.
+The lift gets first refusal: `LiftEnter` is called on the press edge and, if it declines, the same
+press goes to the weapon. Nothing in `LiftEnter`/`LiftExit` draws, so moving it is safe; the
+deck-hop keys, which do draw, stayed where they were.
+
+##### Measured
+
+| | |
+|---|---|
+| Mode machine | Mobile → Weapon on a press with a direction held; `moveMode` = 1, `fireDown` = 1 |
+| Direction | Z gave `plyFireDX` = `&F4` (−12) and X gave `+12`, both with frame **11** — which is `efBullet[3]`, the horizontal bullet |
+| Flight | `plyFireX` 616 → 628 over exactly one pass: **+12, the C64's own `BulletDisplacement_t`** |
+| Wall | fired into the wall the player was standing against: no bullet spawned, delay still charged, as `$341C` does |
+| Rate | 32 iterations between shots, `32 − 2·drCent[type]` |
+| Space | main RAM `&1100–&2E6D`, **403 B free** |
+
+> **Main RAM is the constraint again.** 403 bytes, and 7e and 7f still to come. The next thing to
+> move is not obvious — `combat.asm` calls into bank 4 already, so it *could* follow `droid.asm`
+> across, but only if nothing in a sprite-bank-paged path needs it. Worth costing before 7e rather
+> than after.
+
+> **The lift/fire tiebreak was not re-tested in the emulator.** The logic is unchanged in substance
+> and the weapon half is verified, but the branch where `LiftEnter` succeeds needs the player
+> standing on a platform, which this session never did. Check it before trusting it.
 
 ### 7e — Damage, kills, explosions and score
 

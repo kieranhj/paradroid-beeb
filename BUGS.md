@@ -12,6 +12,51 @@ Numbering is historical, not an order — 3 sits after 4 because it was added la
 
 ---
 
+## 9. One 4-pixel column is wrong down most of the strip after horizontal scrolling — **2026-08-15**
+
+Found while verifying Layer 7d, and it has **nothing to do with Layer 7**. Scroll horizontally for
+a while, stop, let the view settle, and the play buffer no longer matches `RedrawAll`.
+
+**With every sprite disabled and the droids removed, so the level draw is the only thing writing
+the buffer: 62 of 10240 bytes differ.** The pattern is what makes it worth an entry:
+
+```
+  $5D23 $5D24    two consecutive bytes...
+  $5FA3 $5FA4    ...+640, the same two in the next strip row
+  $64A3 $64A4    ...and again
+```
+
+Two consecutive bytes is **two scanlines of one 4-pixel column**, and it repeats down **13 of the
+16 strip rows**. So a single column is being drawn wrongly, in the same two scanlines of each
+character row, over most of the strip — not scattered damage.
+
+### How it was found, and what is ruled out
+
+| | |
+|---|---|
+| Player + droids + firing | 68–122 bytes — **contaminated**, see the note below |
+| Droids removed (`drCount = 1`), player firing while scrolling | 81 bytes |
+| Droids removed, player scrolling, **not** firing | 123 bytes |
+| **No sprites drawn at all, no droids, scrolling** | **62 bytes** |
+
+The last row is the one that matters: with nothing but `DoRedraws` touching the buffer the defect
+is still there, so **sprites, the effect blitter, the eighth slot and the player's bullet are all
+ruled out**. It is in the incremental column draw.
+
+> **Zeroing `sprActive` is NOT enough to quiesce the pool for an oracle run.** `DrScreen`
+> re-activates a droid's slot every pass from `drSlotOwner`, so the droids come straight back and
+> their sprites show up as differences. That is what the 122-byte reading was. Set `drCount = 1`
+> as well — or poke the three draw call sites to NOPs, which is what `docs/raster-timing.md` says
+> and which does not depend on knowing that.
+
+### Not yet established
+
+Whether this predates Layer 7 entirely. It is independent of everything Layer 7 added, but the
+build before Layer 7a has not been run against the same test — that is the first thing to do, and
+it is cheap. The suspects after that are `DrawColumn` and `ScrollAddS`, and the fact that the two
+bad scanlines sit at the same offset in every row points at the column walk rather than the tile
+lookup.
+
 ## 8. Droids from the LAST deck survive into the next one — **FIXED 2026-08-15**
 
 Reported by KC from play as "a couple of droids stuck in the wall", then refined to *stuck on a
