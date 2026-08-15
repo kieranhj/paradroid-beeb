@@ -810,10 +810,15 @@ ENDMACRO
 \ always in the window drawn first — the one thing on screen the eye is
 \ actually tracking.
 \
-\ It fails if either tranche ends up over SPR_TR_MAX, because a window
-\ has room for four sprites restored and drawn. A single component of
-\ five or more does that, and then the pool is drawn whole.
-SPR_TR_MAX = 4
+\ IT NEVER REFUSES ON BALANCE, and it used to. A window has room for
+\ four sprites restored and drawn, so an earlier version gave up when a
+\ tranche came out bigger than that and drew the pool whole — which is
+\ the wrong trade. An oversized tranche is doing exactly what the whole
+\ pool does today, and the OTHER tranche still gets a clean window, so
+\ an unbalanced split is strictly better than none. The degenerate case
+\ falls out of the same rule: if everything overlaps everything it is
+\ one component, it all goes to A, tranche B is empty and the pass
+\ behaves as it did before any of this.
 
 .SprAssignTr
   LDX #SPR_SLOTS-1              \ label: own index, or &FF if inactive
@@ -934,16 +939,7 @@ SPR_TR_MAX = 4
   CMP #SPR_SLOTS
   BNE sat_asg
 
-  LDA satNA                     \ does each half still fit a window?
-  CMP #SPR_TR_MAX+1
-  BCS sat_no
-  LDA satNB
-  CMP #SPR_TR_MAX+1
-  BCS sat_no
-  LDA #1
-  RTS
-.sat_no
-  LDA #0
+  LDA #1                        \ always: see the note on balance above
   RTS
 
 \ Slots X and Y: carry set if they are close enough to count as

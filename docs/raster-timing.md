@@ -211,8 +211,12 @@ split was refused continuously until the droid was taken out of the pool by hand
 So the assignment stopped being a slot range. `SprAssignTr` labels each active slot with its own
 index, merges labels across every overlapping pair, and hands whole components to whichever tranche
 is emptier — slot 0 first and ties to A, so the player is always in the window drawn first. Seven
-slots makes the naive algorithm free. It fails, and the pool is drawn whole, only if a component
-comes out bigger than `SPR_TR_MAX` = 4, which is what a window holds.
+slots makes the naive algorithm free. **It never refuses on balance**, and an earlier version did — giving up when a tranche came out
+bigger than the four a window holds. That was the wrong trade: an oversized tranche is doing
+exactly what the whole pool does today, and the *other* tranche still gets a clean window, so an
+unbalanced split is strictly better than none. The degenerate case falls out of the same rule — if
+everything overlaps everything it is one component, it all goes to A with the player, tranche B is
+empty, and the pass behaves as it did before any of this.
 
 One more guard came with it: a slot that is no longer drawable but still holds a saved background
 has to be restored at the position it was *drawn* at, and nothing in the assignment knows that
