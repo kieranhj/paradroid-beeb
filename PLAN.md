@@ -19,12 +19,13 @@ detail has stopped being needed to make the next decision, it belongs in `docs/`
 | [`docs/layer-4-player.md`](docs/layer-4-player.md) | The player sprite, the speed model, the level draw rewrite |
 | [`docs/layer-5-blitter.md`](docs/layer-5-blitter.md) | Compiling the sprite blitter — 14,000 cycles to 5,800 |
 | [`docs/layer-5-droids.md`](docs/layer-5-droids.md) | Droid movement: the roster, waypoints, and the waypoint-0 spawn |
+| [`docs/layer-6-droids-live.md`](docs/layer-6-droids-live.md) | Line of sight, collision, and the mode dispatch |
 | [`docs/layer-8-doors-lifts.md`](docs/layer-8-doors-lifts.md) | Doors (built) and lifts (planned), and the character-map problem they raise |
 | [`docs/master-extensions.md`](docs/master-extensions.md) | Things only a Master 128 could host. Not on the critical path |
 
 ## Where we are — read this first
 
-**Layers 0–4 and 8 are done, and Layer 5's blitter work with them.** The port boots to a playable deck: a
+**Layers 0–6 and 8 are done.** The port boots to a playable deck: a
 static panel above a 320 × 120 play area, the player droid near the centre with its rotor spinning,
 and the deck hardware-scrolling 8 ways underneath it — 4 px horizontally, 1 scanline vertically —
 driven by the C64's own acceleration model and stopped by walls. The camera has a dead zone, so at
@@ -49,8 +50,14 @@ each deck's waypoints and patrolling between them, and the sprite pool allocated
 come into view. The player spawns on waypoint 0, which closed `BUGS.md` #4. See
 [`docs/layer-5-droids.md`](docs/layer-5-droids.md).
 
-**Next: Layer 6**, the driver and a live population — collision, line of sight, and droids that
-persist per deck across lift moves — then Layer 7 for combat.
+**And it is alive.** Layer 6 added the deck's own walls to the picture: a droid out of the player's
+line of sight is not drawn, droids bump into each other and into the player, and the driver
+dispatches on droid mode so Layer 7's bullets and explosions are a table entry rather than a
+rewrite. See [`docs/layer-6-droids-live.md`](docs/layer-6-droids-live.md).
+
+**Next: Layer 7**, combat — `dMd1_bullet`, `dMd2_explosion`, `DoCollision`'s damage arms, `DoScore`,
+`KillDroid` and `DoAlertAndAging`. **Move `droid.asm` into bank 4 first**: main RAM has 116 bytes
+left.
 
 **Before trusting any speed number, read the speed model section of
 [`docs/layer-4-player.md`](docs/layer-4-player.md).** The C64's constants are per `GameLoop`
@@ -100,10 +107,12 @@ seconds where a buffer diff would have taken an emulator run.
 |---|---|
 | ~~Main RAM below `&3000`~~ | **Relieved 2026-08-14.** It was 39 bytes; it is 2,496. The fix was moving *code* rather than data: `screen.asm`, `scroll.asm` and `level.asm` into bank 4, beside the tile and deck data they read, with `src/bufcore.asm` holding the 480 bytes that cannot be banked. The position bookmark at the end of `BUGS.md` is no longer blocked |
 | ~~1 px sprite positioning~~ | **Done 2026-08-14**, on branch `layer5-1px-shifts`. Four compiled shifts across two sprite banks; the droid is drawn exactly where it is, as the C64 draws it. Cost **+122 cycles a pass** on `SprDrawAll`, measured, and a third 16K bank. See [`docs/layer-5-blitter.md`](docs/layer-5-blitter.md) |
+| **Main RAM: 116 bytes left** | `&1100–&2F8C` against `&3000`, and Layer 7 needs bullets, explosions, damage and scoring. Move `droid.asm` into bank 4 beside the data it reads — it calls `MapChar` (already there) and `DoorProbe` (main RAM, which bank code may call freely) and runs where `SWRAM_DATA` is the resting state. **Read `bufcore.asm`'s header first.** A `DEBUG_TIME` build already overruns and needs `DEBUG_VSYNC` off to fit |
+| Droid worst case unmeasured | 7 sprites (36,274) + droids (17,000) + full-diagonal level draw (19,172) is 72,000 of 79,872 before the rest of the loop. It never arose by chance; it wants a rig on a deck with a long open corridor. See [`docs/layer-6-droids-live.md`](docs/layer-6-droids-live.md) |
 | Raster-ordered sprite updating | Flicker, and probably `BUGS.md` #3 with it. The only sprite-pool work still open |
 | 2 px world scrolling | Parked, Master-only via shadow RAM. Costs +60–80% on all drawing because both buffers must stay current — see [`docs/master-extensions.md`](docs/master-extensions.md) |
 | Play area is 320 × 120, not 128 | Consequence of the single hardware wrap — see Layer 3d. Getting the row back needs the 20K wrap or per-cycle wrap bits. **KC's call** |
-| Vertical granularity | 1 scanline against 4 px horizontal is lopsided. 2 or 4 scanlines costs nothing extra. Decide when there is a droid to move |
+| Vertical granularity | 1 scanline against 4 px horizontal is lopsided. 2 or 4 scanlines costs nothing extra. There are droids to move now, so this is decidable |
 | `$D021` is an assumption | Marked `[assumed]` in `export_bbc.py`. First suspect if deck colours look wrong on hardware |
 | Panel shares the play palette | Its colours change with the deck. Fixable at the cycle boundary — we are already in the IRQ there. Layer 9 |
 | `keydown` uses OSBYTE `&81` | The last OS call in the main loop |
@@ -231,8 +240,17 @@ records what was costed and rejected as well as what landed, and round-robin upd
 should not be revived without reading why it was dropped.
 → [`docs/layer-5-blitter.md`](docs/layer-5-blitter.md)
 
-### Layer 6 — Droids
-`RunDroids`, `dMd0_droid`, sprite slot allocation, pathfinding. Droids move and chase.
+### Layer 6 — Droids ✅ DONE
+Line of sight (`LineOfVisibility`, walked without a division and with the answer taken one droid a
+pass), collision (`DoCollision`/`DoCollision2`'s movement half), and the `DroidModeJump` dispatch.
+A droid behind a wall keeps its sprite slot and is not drawn, which needed slot **ownership**
+separated from `sprActive`.
+
+Collision is the one place in the droid work with no faithful port available: the C64 reads the
+VIC's pixel-exact `$D01E` and a software blitter has nothing to read, so it is a box test —
+deliberately smaller than the sprite, because most of a droid's corners are the rotor's transparent
+gaps. Costs **~1,400 cycles a pass** over Layer 5, and the frame lock holds in every case measured.
+→ [`docs/layer-6-droids-live.md`](docs/layer-6-droids-live.md)
 
 ### Layer 7 — Combat
 `dMd1_bullet`, `dMd2_explosion`, `DoCollision`/`DoCollision2`, `DoScore`, `KillDroid`,
@@ -304,7 +322,7 @@ that makes that safe is in `bufcore.asm`'s header.
 | `sprite.asm` | main RAM | **Live.** The blitter: slot state, `SprDrawAll`/`SprRestoreAll`, the compiled-row dispatch and the wrap fallback |
 | `door.asm` | main RAM | **Live.** Door state, `DoorScan`, the patched tile definitions, `DoorsUpdate`, `DrawDoorTile` |
 | `lift.asm` | main RAM | **Live.** `LiftFind`, lift mode, stepping a shaft, `LiftPlace` |
-| `droid.asm` | main RAM | **Live.** The ship roster, the deck's droid table, waypoints, `DroidsUpdate`, `DrNewDir`, the sprite-slot allocation |
+| `droid.asm` | main RAM | **Live.** The ship roster, the deck's droid table, waypoints, `DroidsUpdate`, `DrNewDir`, `DrLineOfSight`, `DrCollide`, the sprite-slot allocation. **Wants moving into bank 4** — see the memory item above |
 
 **Everything in `src/` is in the build.** Five inherited files that were not — `zeropage.asm`,
 `hardware.asm`, `macros.asm` and the retired `hal_video.asm` / `hal_irq.asm` — were deleted rather
