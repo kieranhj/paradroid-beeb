@@ -85,7 +85,7 @@ CHAR_BYTES = 16                 \ a character is 16 bytes: two 8-byte halves
 \ ---- frame lock ---------------------------------------------
 \ TV fields per game-loop iteration. 2 gives a fixed 25 Hz, which is
 \ the rate the C64's GameLoop actually runs at and the rate every
-\ movement constant in player.asm is expressed in — see WaitVSync for
+\ movement constant in player.asm is expressed in — see WaitField for
 \ why this is locked rather than free-running.
 \
 \ Changing it changes how fast the game plays unless PLY_ITER_FRAMES
@@ -192,7 +192,7 @@ DEBUG_POS    = FALSE
 \ have to be restored under a sprite.
 \
 \ FRAME_LOCK is the nominal reading: a 2 means the iteration fitted its
-\ two fields. A 3 or more means it overran and WaitVSync found the flag
+\ two fields. A 3 or more means it overran and WaitField found the flag
 \ already set, so the rate degraded to 16.7 Hz, 12.5 Hz and so on. This
 \ is the cheap always-on companion to DEBUG_DRAW: that one shows WHICH
 \ work overruns, this one shows THAT it did, without a screenshot.
@@ -206,7 +206,7 @@ DEBUG_POS    = FALSE
 \ left; since the tile map was given a fixed home at &3800 the code has
 \ room to &3000, so it is off by default out of tidiness rather than
 \ necessity.
-DEBUG_VSYNC  = TRUE
+DEBUG_VSYNC  = FALSE
 
 \ DEBUG_TIME measures one routine in CYCLES, which DEBUG_DRAW cannot:
 \ its bands are only visible where the CRTC is displaying something,
@@ -677,7 +677,10 @@ ORG &1100
   \ Released once the play area is off-display, not at VSync. The
   \ edge redraw and the R12/R13 park both have to land before the
   \ play area is drawn again.
-  JSR WaitVSync
+    \ ONE FIELD, not FRAME_LOCK of them: this opens the FIRST of the
+  \ pass's two windows, and the second is taken further down, after
+  \ the drawing and the droid AI. See docs/raster-timing.md.
+  JSR WaitField
 IF DEBUG_VSYNC
   JSR DbgFrameCount             \ the boundary has just happened, so this
 ENDIF                           \ counts the iteration that has finished
@@ -836,6 +839,11 @@ ENDIF
 \     is still standing at it.
   JSR DroidsUpdate
 
+  \ The pass's REMAINING fields. Everything above ran in the first
+  \ window and the display that follows it; this opens the second
+  \ window, which is idle for now and is where the split pool goes.
+  JSR WaitRest
+
 IF DEBUG_DRAW
   JSR DbgDeckBg
 ENDIF
@@ -901,7 +909,7 @@ ENDIF
   RTS
 
 \ ============================================================
-\ WaitVSync — block until the next field starts
+\ WaitField / WaitRest — the pass's fields, taken one at a time
 \
 \ Polling the System VIA IFR directly races the MOS: its own IRQ
 \ handler services vsync and clears the flag, so the poll can miss
@@ -925,18 +933,31 @@ ENDIF
 \ Locking makes the cost of a droid show up as headroom spent rather
 \ than as movement slowing down.
 \
-\ If an iteration overruns its two fields the flag is already set on
+\ If an iteration overruns its fields the flag is already set on
 \ arrival, so it is consumed at once and the next boundary is one
 \ field later. The rate degrades but never exceeds 25 Hz.
-.WaitVSync
-  LDX #FRAME_LOCK
-.wv_field
+\ THE PASS TAKES ITS FIELDS ONE AT A TIME rather than consuming all of
+\ them up front, because each field opens an off-display window and
+\ every buffer write belongs inside one. The loop takes the first at
+\ the top and WaitRest takes the remainder after the drawing, so the
+\ second window is a point in the code the sprite pool can be split
+\ across. See docs/raster-timing.md.
+.WaitField
   LDA drawFlag
-  BEQ wv_field
+  BEQ WaitField
   LDA #0
   STA drawFlag
+  RTS
+
+\ The rest of the pass's fields. FRAME_LOCK stays the single dial for
+\ the rate: raise it and the extra fields are taken here.
+ASSERT FRAME_LOCK >= 2
+.WaitRest
+  LDX #FRAME_LOCK-1
+.wr_field
+  JSR WaitField
   DEX
-  BNE wv_field
+  BNE wr_field
   RTS
 
 \ ============================================================

@@ -305,7 +305,7 @@ IF DEBUG_VSYNC OR DEBUG_POS
 \ ============================================================
 \ vsyncCount is already bumped once per field by IrqHandler's CA1 arm,
 \ so the reading is just the difference across one iteration. Called
-\ immediately after WaitVSync returns, where that boundary has just
+\ immediately after WaitField returns, where that boundary has just
 \ happened, so the digit describes the iteration that has finished.
 \
 \ ONE BYTE PER SCANLINE IS THE WHOLE TRICK. A MODE 1 byte is four
