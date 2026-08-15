@@ -68,9 +68,10 @@ timing, and [`docs/raster-timing.md`](docs/raster-timing.md) is the map: the fra
 writes the buffer when, and what is still open.
 
 **Layer 7 is under way** — combat: bullets, explosions, damage, score, the Alert level and the
-energy recharge pads. **7a landed 2026-08-15**: the player has energy now, and the droid he is
-riding wears out on the C64's own schedule whether or not anything shoots at him. Next is 7b, the
-recharge pads. Planned in [`docs/layer-7-combat.md`](docs/layer-7-combat.md), in six stages, and
+energy recharge pads. **7a and 7b landed 2026-08-15**, on branch `layer7-combat`: the player has
+energy, the droid he is riding wears out on the C64's own schedule whether or not anything shoots at
+him, and standing on a recharge pad puts energy back at 5 points of score each. Next is 7c, the
+effect sprites. Planned in [`docs/layer-7-combat.md`](docs/layer-7-combat.md), in six stages, and
 four findings shape it: **droid-table entry 0 is the player, not a sentinel**; the C64 has an eighth
 sprite that we do not, for the player's own bullet; bullets and explosions come out of the existing
 pool of six so **the sprite count per pass does not grow**; and an explosion cannot be compiled, so
@@ -284,7 +285,7 @@ point. Six stages, each ending in something visible:
 | | |
 |---|---|
 | 7a ✅ | **DONE 2026-08-15.** `src/combat.asm`: entry 0 becomes the player, `AddScore`'s BCD, `DoAging`, the `gameTick` iteration counter, and a `DEBUG_ENERGY` readout on panel row 1 because the panel that would show any of it is Layer 9's. `DroidsInit` no longer clears entry 0 — measured surviving a deck change |
-| 7b | `DoCharUnder`'s recharger arm — **the recharge pads**, character 20: +1 energy every 4th iteration, −5 score. Also where `moveMode` is pinned down: **L does double duty as fire and lift trigger in the original too**, through that machine, so `lift.asm` keeps its trigger |
+| 7b ✅ | **DONE 2026-08-15.** `DoCharUnder`'s recharger arm — **the recharge pads**, character 20: +1 energy every 4th iteration and −5 score, plus `SubScore`. Rate, ceiling, BCD wrap, zero-saturate and a control all measured exact. The lift arm is not ported: **L does double duty as fire and lift trigger in the original too**, through `moveMode`, so `lift.asm` keeps its trigger |
 | 7c | Effect sprites — a generic interpreted blitter path with a per-frame bounding box, the 20 effect sprites exported, and `SPR_SLOTS` to 8 for the player's bullet (save page `&3700`, already free) |
 | 7d | The player fires — `DoMoveMode`'s Mobile/Weapon/Transfer machine, then `DoFire`, `MovePlyFire`, `SpriteHitWall`, the fire delay by droid class |
 | 7e | Damage, kills, explosions and BCD score — the `CollisionType` matrix and its six arms, plus the player's own death: explode, then back as 001 on waypoint 0 with no game over |

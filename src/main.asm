@@ -902,6 +902,9 @@ ENDIF
   \ Alongside the AI and for the same reason: it writes no buffer. The
   \ droid the player is riding wears out here.
   JSR DoAging
+  JSR DoCharUnder               \ and a recharge pad puts it back, at 5
+                                \ points of score each. Reads plyCX/plyCY,
+                                \ which CheckWalls left earlier in the pass
 IF DEBUG_ENERGY
   JSR DbgEnergyOut
 ENDIF

@@ -118,7 +118,7 @@ hex, `00 3B 3B 00 00 00000000` after twenty seconds on deck 2. Row 1 rather than
 `DEBUG_VSYNC`'s frame digit and `DEBUG_POS` still fit alongside. It defaults **on**: the panel is
 Layer 9's and every remaining stage of this layer is unverifiable by eye without it.
 
-### 7b — `DoCharUnder`: the recharge pad, and the lift key back
+### 7b — `DoCharUnder`: the recharge pad ✅ **DONE 2026-08-15**
 
 One C64 routine (`$2E7B`) delivers both, and it is a plain test on the **character code** under the
 player — not the tile index. `charUnder` is read from the expanded character map at the player's own
@@ -170,7 +170,32 @@ the main loop already provides.
 
 **`lift.asm` keeps its trigger unchanged.** Only the **recharger** arm of `$2E7B` is new work here;
 the lift arm is a faithfulness improvement that can follow once `moveMode` exists, and the console
-arm is Layer 9's.
+arm is Layer 9's. `consoleState` is not needed until one of those two lands, so it does not exist
+yet.
+
+`SubScore` (`$3EC4`) came with it — AddScore's mirror, with its own `scoreSub` accumulator and a
+**saturate at zero** where AddScore saturates at 99999999.
+
+#### Measured in jsbeeb
+
+The pad is `MapChar` at `plyCX`/`plyCY`, so the mechanism can be tested without walking to one:
+poke the tile under the player to 20 and the identical code path runs. The player happened to spawn
+at character (22, 6) — tile (5,1), offset (2,2), which is the centre 2×2 where character 20 lives.
+
+| | |
+|---|---|
+| Rate | energy 48 → 58 in **exactly 40 iterations**, `scoreSub` 0 → 50. Ten points at 4 iterations each, ten debits of 5 |
+| Ceiling | drained to 0 and left to fill: stopped **exactly at `maxEnergy`** (61, having aged down from 64) |
+| `SubScore` BCD | 61 points × 5 = 305 debits from a poked score of 1000 → **745** (`00 00 07 45`), one wrap of 255, and `scoreSub` = 305−256+1 = **50**. Both exact |
+| Saturate | score BCD 10 with 250 already banked → next wrap floored it at **0**, not 99999999 |
+| Control | tile restored to 21: over 50 iterations energy sat at 40 and `scoreSub` did not move. Only `maxEnergy` aged |
+| Real pads | deck 2's live tile map holds tile 20 at (30,4), (32,4), (30,6) and (32,6). Deck 1 has none, which matches `level_stats.txt` |
+| Space | main RAM `&1100–&2993`, **1,645 B free** |
+
+That closes the chain end to end: the shipped map contains tile 20, tile 20's centre 2×2 is
+character 20, and character 20 drives the recharger.
+
+*Visible:* stand on the pad and energy climbs while the score falls.
 
 **Character 20 is the recharger in our charset — checked 2026-08-15, and the test ports verbatim.**
 The worry was that graphics.md lists *tile* 20 as the console/recharge station while the C64 tests

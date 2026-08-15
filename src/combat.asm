@@ -62,6 +62,7 @@ CB_ENERGY_FULL = &40
   STA drFireDelay               \ weakest host
   STA alertLvl
   STA scoreAdd
+  STA scoreSub
   STA score+0
   STA score+1
   STA score+2
@@ -114,6 +115,92 @@ CB_ENERGY_FULL = &40
   STA score+2
   STA score+3
 .as_x
+  RTS
+
+\ ============================================================
+\ SubScore — port of SubScore ($3EC4)
+\ ============================================================
+\ A = points to take away. AddScore's mirror, down to the accumulator
+\ trick and the saturate: its own scoreSub banks the debits, a wrap past
+\ 256 takes 255 off the BCD score and pushes 1 back, and a borrow out of
+\ the top digit floors the score at zero rather than letting it wrap to
+\ 99999999.
+\
+\ The score is a RESOURCE in this game and not just a tally, which is
+\ what this routine is for — the recharge pad below is the one thing
+\ that spends it.
+.SubScore
+  CLC
+  ADC scoreSub
+  STA scoreSub
+  BCC ss_x
+  SED
+  LDA score+3 : SBC #&55 : STA score+3
+  LDA score+2 : SBC #&02 : STA score+2
+  LDA score+1 : SBC #&00 : STA score+1
+  LDA score+0 : SBC #&00 : STA score+0
+  CLD
+  INC scoreSub
+  BCS ss_x                      \ no borrow: the score stood up to it
+  LDA #0
+  STA score+0
+  STA score+1
+  STA score+2
+  STA score+3
+.ss_x
+  RTS
+
+\ ============================================================
+\ DoCharUnder — port of DoCharUnder ($2E7B), recharger arm
+\ ============================================================
+\ LAYER 7b. A dispatch on the CHARACTER the player is standing on — not
+\ the tile. The original tests four things and this builds one of them:
+\
+\   char 20     RECHARGER. Built here.
+\   chars 43-46 lift. NOT ported: the C64 gates this on moveMode, which
+\               is to say on the fire button, and lift.asm already
+\               enters a lift on the fire key. See docs/layer-7-combat.md
+\   char 66     console. Layer 9, along with the consoleState countdown
+\               that both of those arms need and this one does not.
+\
+\ CHARACTER 20 IS UNIQUELY THE RECHARGER, checked offline: &14 occurs
+\ exactly once in all 32 tile definitions, as the 2x2 CENTRE of tile 20,
+\ and level_stats.txt puts that tile on the 12 decks docs/graphics.md
+\ claims. Being the centre of a 4x4-character tile is what stops a
+\ four-iteration countdown triggering as you clip the corner of one: you
+\ have to stand on the pad.
+\
+\ ENERGY IS NOT FREE. Each point costs 5 off the score, which is the
+\ original's own rate and the reason SubScore exists at all.
+\
+\ CALLS INTO BANK 4. MapChar lives in screen.asm and main RAM may call
+\ in only with SWRAM_DATA paged — true here, because this runs from the
+\ main loop where the data bank is the resting state, and door.asm's
+\ DoorScan already calls MapChar exactly this way from main RAM.
+\
+\ plyCX/plyCY are the player's reference cell, left by CheckWalls
+\ earlier in the pass. plyCX is 16-bit and its high byte is dropped, as
+\ DoorScan drops it: the map is 256 characters across.
+CHAR_RECHARGE = 20
+
+.DoCharUnder
+  LDA plyCX : STA cellX
+  LDA #0    : STA cellX+1
+  LDA plyCY : STA cellY
+  JSR MapChar
+  CMP #CHAR_RECHARGE
+  BNE dcu_x
+
+  LDA gameTick                  \ one point every 4th iteration
+  AND #3
+  BNE dcu_x
+  LDA drEnergy
+  CMP maxEnergy                 \ the ceiling holds, and it is a ceiling
+  BCS dcu_x                     \ that DoAging is still lowering
+  INC drEnergy
+  LDA #5
+  JMP SubScore
+.dcu_x
   RTS
 
 \ ============================================================
@@ -184,4 +271,5 @@ CB_ENERGY_FULL = &40
 .weaponType EQUB 0              \ 0 unarmed, 3 the disruptor
 .alertLvl   EQUB 0              \ the C64's Alert; the level is bits 6-7
 .scoreAdd   EQUB 0              \ points banked below the BCD threshold
+.scoreSub   EQUB 0              \ and the same again for debits
 .score      SKIP 4              \ 4-byte BCD, most significant first
