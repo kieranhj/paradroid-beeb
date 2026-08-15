@@ -206,7 +206,7 @@ DEBUG_POS    = FALSE
 \ left; since the tile map was given a fixed home at &3800 the code has
 \ room to &3000, so it is off by default out of tidiness rather than
 \ necessity.
-DEBUG_VSYNC  = FALSE
+DEBUG_VSYNC  = TRUE
 
 \ DEBUG_TIME measures one routine in CYCLES, which DEBUG_DRAW cannot:
 \ its bands are only visible where the CRTC is displaying something,
@@ -726,7 +726,8 @@ ENDIF
 IF DEBUG_DRAW
   LDA #DBG_SPR : JSR DbgSetBg
 ENDIF
-  JSR SprRestoreA               \ tranche A only; B stays on screen, which
+  LDA #0
+  JSR SprRestoreTr              \ tranche A only; B stays on screen, which
   JMP ml_erased                 \ is safe because nothing else writes the
                                 \ buffer on a split pass
 .ml_whole
@@ -837,7 +838,8 @@ ENDIF
   JSR SprAnimateAll             \ last: the buffer is settled, so the save
   LDA sprSplit                  \ picks up the background the frame will show
   BEQ ml_drawall
-  JSR SprDrawA
+  LDA #0
+  JSR SprDrawTr
   JMP ml_drawn
 .ml_drawall
   JSR SprDrawAll
@@ -887,8 +889,10 @@ ENDIF
 IF DEBUG_DRAW
   LDA #DBG_SPR : JSR DbgSetBg
 ENDIF
-  JSR SprRestoreB
-  JSR SprDrawB
+  LDA #1
+  JSR SprRestoreTr
+  LDA #1
+  JSR SprDrawTr
 IF DEBUG_DRAW
   JSR DbgDeckBg
 ENDIF

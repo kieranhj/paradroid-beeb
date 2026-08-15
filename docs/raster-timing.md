@@ -201,18 +201,28 @@ all three draw sites disabled on a split pass the buffer is **0 of 10240** again
 > **The oracle needs all THREE draw call sites poked now**, not one: `SprDrawA`, `SprDrawAll` and
 > `SprDrawB`. Poking only the old one leaves the split path drawing and the diff is meaningless.
 
-#### What it does not yet fix, and the next move
+#### Tranches are overlap components, not slot ranges — **2026-08-15**
 
 **Guard 2 fires more often than it should**, and it is the fixed slot range that causes it. A droid
 walking alongside the player is slot 6 against the player's slot 0 — opposite tranches — so the
 commonest situation on screen is exactly the one that refuses the split. Measured on deck 1 the
 split was refused continuously until the droid was taken out of the pool by hand.
 
-The fix is to stop assigning tranches by slot index. Overlapping sprites have to share a tranche,
-which makes the tranches unions of connected components of the overlap graph — so assign the
-components to the two windows to balance the cost instead of splitting 0-2 / 3-6. With at most
-seven slots and usually three active that is a small algorithm, and it would let the player and the
-droid beside him sit in the same window with the rest in the other.
+So the assignment stopped being a slot range. `SprAssignTr` labels each active slot with its own
+index, merges labels across every overlapping pair, and hands whole components to whichever tranche
+is emptier — slot 0 first and ties to A, so the player is always in the window drawn first. Seven
+slots makes the naive algorithm free. It fails, and the pool is drawn whole, only if a component
+comes out bigger than `SPR_TR_MAX` = 4, which is what a window holds.
+
+One more guard came with it: a slot that is no longer drawable but still holds a saved background
+has to be restored at the position it was *drawn* at, and nothing in the assignment knows that
+position — so a pass with one of those is drawn whole. It happens on the one pass a droid leaves the
+window.
+
+**Measured on deck 1 where the fixed split was refused continuously**: `sprSplit` is now 1 at the
+spawn, and with a droid walking beside the player the two land in tranches A and B when they are
+apart and in the same tranche when they overlap. The oracle on a split pass, all three draw sites
+disabled: **0 of 10240**.
 
 ### Step 3 — only if the worst case still bites
 
