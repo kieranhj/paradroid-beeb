@@ -388,7 +388,7 @@ DR_LOS_MAX = 96
 
   LDX losTurn                   \ whose sight line gets tested this pass
   INX
-  CPX #SPR_SLOTS
+  CPX #SPR_POOL_LAST+1          \ the droid pool only — slot 7 is the bullet
   BCC dru_turn
   LDX #1
 .dru_turn
@@ -1131,8 +1131,11 @@ ENDIF
 \ OWNERSHIP, not sprActive: a droid hidden behind a wall is not drawn
 \ but still holds its slot, exactly as the C64 keeps a hardware sprite
 \ allocated with SpriteEna clear.
+\ SPR_POOL_LAST, not SPR_SLOTS-1: slot 7 belongs to the player's bullet
+\ and a droid may never be given it. The two were the same number until
+\ Layer 7c added the eighth slot.
 .DrFindSlot
-  LDY #SPR_SLOTS-1
+  LDY #SPR_POOL_LAST
 .dfs_loop
   LDA drSlotOwner,Y
   BEQ dfs_got

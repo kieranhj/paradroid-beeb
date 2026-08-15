@@ -52,7 +52,23 @@
 \ did.
 \ ============================================================
 
-SPR_SLOTS = 7                   \ slot 0 = player, 1-6 = the droid pool
+\ SLOT 0 = PLAYER, 1-6 = THE DROID POOL, 7 = THE PLAYER'S BULLET.
+\ That is the C64's arrangement, which has eight hardware sprites: 7 is
+\ the player, 0 is his bullet and 1-6 are the pool FindFreeSprite
+\ ($32A8) searches. Layers 4-6 needed only seven and the eighth arrived
+\ with Layer 7, because the player's bullet is not a droid-table entry
+\ and cannot come out of the pool. Slot 7's save page is &3700, which
+\ the memory map already listed as free and which fills the gap up to
+\ the tile map at &3800 exactly — see the ASSERT below.
+SPR_SLOTS = 8
+PLY_FIRE_SLOT = 7
+
+\ THE DROID POOL IS 1-6 AND DOES NOT INCLUDE SLOT 7. FindFreeSprite
+\ ($32A8) searches Y = 6 down to 1 for exactly this reason. Anything
+\ handing a slot to a droid must bound itself with this and NOT with
+\ SPR_SLOTS-1, which used to be the same number and stopped being one
+\ the moment the player's bullet got a slot of its own.
+SPR_POOL_LAST = 6
 SPR_W     = 7                   \ 24 px, plus one byte for the 2 px shift
 SPR_H     = 21                  \ scanlines
 SPR_BYTES = SPR_W * SPR_H       \ 147 bytes of background per slot
@@ -81,6 +97,10 @@ SPR_BYTES = SPR_W * SPR_H       \ 147 bytes of background per slot
 SPR_SAVE  = &3000
 SPR_BLOCK = SPR_W * UNIT_BYTES  \ 56: one character row of save area
 ASSERT (SPR_SAVE AND &FF) == 0
+\ Eight pages now, so the save areas run &3000-&37FF and end EXACTLY where
+\ the tile map begins. That is the whole of the gap: a ninth slot would
+\ overwrite the map, and PANEL_ADDR is no longer the binding limit.
+ASSERT SPR_SAVE + SPR_SLOTS * 256 <= &3800
 ASSERT SPR_SAVE + SPR_SLOTS * 256 <= PANEL_ADDR
 
 \ 21 scanlines starting at scan 0-7 touch at most FOUR character rows,
@@ -242,6 +262,20 @@ ENDMACRO
   LDA sprShift,X
   STA sprShiftW
   STA sprShiftS,X               \ the restore needs the DRAW's shift
+
+\ AN EFFECT SLOT STOPS HERE. Everything below is the droid's — its
+\ number block and its rotor sequence — and an effect has neither. It
+\ also wants a different BANK: the compiled shifts are split across
+\ banks 5 and 6 and PAGESPRBANK picks between them, but the effect
+\ artwork exists only in bank 5, so an effect at shift 2 or 3 would
+\ otherwise read its rows out of bank 6 and draw garbage. An effect
+\ never uses a compiled shift, so forcing bank 5 costs it nothing.
+  LDA sprKind,X
+  STA sprKindS,X                \ the restore runs a frame later and the slot
+  BEQ sss_droid                 \ may have been reused by then
+  JMP SprEfSetup
+.sss_droid
+  LDA sprShift,X
   PAGESPRBANK                   \ and the bank the DRAW used — before the
                                 \ drDigit read below, which is in it
   LDY sprType,X                 \ where this type's number block lives
@@ -1055,6 +1089,297 @@ SPR_OVL_Y = SPR_H + 8
 \ cheaper and less error-prone than storing 21 addresses, and it
 \ cannot drift: the row-crossing pattern depends only on the
 \ starting scanline, which is saved with it.
+\ ============================================================
+\ EFFECT SPRITES — bullets and explosions, interpreted
+\ ============================================================
+\ LAYER 7c. A second sprite class sharing all of the slot machinery —
+\ the same pool, the same page-per-slot save areas, the same
+\ restore-before-draw ordering, the same tranche assignment — and
+\ differing only in how the pixels get there.
+\
+\ WHY NOT COMPILED. Twelve explosion frames, dense across the full
+\ 24 x 21, at ~10 bytes of 6502 a byte is ~1.4K a frame a shift. Four
+\ shifts of that is far past a bank, never mind two. So effects are
+\ drawn by an interpreted loop and pay for it, which is affordable
+\ because a bounding box means most of them are small.
+\
+\ THE BOUNDING BOX IS THE FORMAT. tools/export_effects.py stores, per
+\ frame, the first opaque row, the height, the first opaque byte column
+\ and the width — and only the bytes inside. A bullet is a streak
+\ across a mostly empty sprite, so the box is what makes the artwork
+\ fit and what makes the blit cheap. Unclipped the 31 frames would be
+\ 4,557 bytes; boxed they are 2,748.
+\
+\ THE SPILL COLUMN IS FREE. A frame's box ends at column 5 at the
+\ latest, and a shift spills one byte right into column 6 — which
+\ exists, because a droid row is seven bytes for exactly that reason.
+\ So efWid1 = efWid + 1 columns are always inside the sprite.
+\
+\ CULLING AND WRAP ARE THE DROID'S. Both are computed from the nominal
+\ 7 x 21 footprint rather than the box, which is conservative for an
+\ effect — a bullet vanishes a fraction early at the screen edge, and a
+\ sprite whose box could not actually straddle the end of the strip may
+\ still take the walked path. Consistent with the droids and not worth
+\ a second set of limits.
+
+\ efSrc WALKS THE FRAME'S ROWS AND HAS TO BE IN ZERO PAGE for (efSrc),Y.
+\ Zero page has been full since Layer 5, so it borrows psrc — the droid
+\ fetch's own row pointer, whose only user is SprFetchRow. A slot is
+\ either a droid or an effect and slots are drawn one at a time, so the
+\ two can never both want it.
+efSrc = psrc
+
+\ ---- SprEfSetup — SprSetSlot's tail for an effect slot -----
+\ sprType holds the FRAME for an effect, where it holds the droid type
+\ for a droid. Entered from SprSetSlot with X = sprSlot; must return
+\ with carry clear, like the path it replaces.
+.SprEfSetup
+  LDA #SWRAM_SPR                \ not PAGESPRBANK — see the note above
+  STA sprBank
+  STA ROMSHAD
+  STA ROMSEL
+  LDA sprType,X
+  STA sprEfFrmS,X               \ the restore needs the frame the DRAW used
+  JSR SprEfBox
+  CLC
+  RTS
+
+\ ---- SprEfBox — A = frame, unpack its box and data pointer -
+\ Reads bank 5, so the caller must have paged it in.
+.SprEfBox
+  TAY
+  LDA efR0,Y : STA efRow0
+  LDA efH,Y  : STA efHgt
+  LDA efC0,Y : STA efCol0
+  LDA efW,Y  : STA efWid
+  CLC
+  ADC #1
+  STA efWid1                    \ the data columns plus the shift's spill
+  CLC
+  LDA efDataLo,Y : ADC #LO(efData) : STA efSrc
+  LDA efDataHi,Y : ADC #HI(efData) : STA efSrc+1
+  RTS
+
+\ ---- SprEfSkip — down efRow0 scanlines to the top of the box
+\ Both passes start with it, and both must take the SAME walk, because
+\ SCANSTEP moves bufp and svp together and the save area only lines up
+\ with the screen if they stay in step.
+.SprEfSkip
+  LDX efRow0
+  BEQ efs_x
+.efs_loop
+  SCANSTEP
+  DEX
+  BNE efs_loop
+.efs_x
+  RTS
+
+\ ---- SprEfFetch — one row of artwork, shifted, plus its masks
+\ sprRowBuf[0..efWid] is the data and sprRowBuf[SPR_W..] the masks, the
+\ same layout SprFetchRow leaves for the droid path. efSrc advances a
+\ row, so the rows come out in order without an index.
+\
+\ The shift is the same one-pixel-at-a-time pass SprFetchRow uses and
+\ for the same reason — a MODE 1 pixel is bits 7-n and 3-n, so `AND
+\ #&EE` down one and `&11` carried up three moves both nibbles
+\ together, and the carry runs left to right into the spill byte.
+.SprEfFetch
+  LDY efWid
+  LDA #0
+  STA sprRowBuf,Y               \ the spill byte starts empty
+  DEY
+.eff_copy
+  LDA (efSrc),Y
+  STA sprRowBuf,Y
+  DEY
+  BPL eff_copy
+
+  CLC                           \ on to the next row's bytes
+  LDA efSrc : ADC efWid : STA efSrc
+  BCC eff_nc
+  INC efSrc+1
+.eff_nc
+
+  LDX sprShiftW
+  BEQ eff_mask
+.eff_pass
+  LDA #0
+  STA sfrCarry
+  LDY #0
+.eff_sloop
+  LDA sprRowBuf,Y
+  PHA
+  AND #&EE
+  LSR A
+  ORA sfrCarry
+  STA sprRowBuf,Y
+  PLA
+  AND #&11
+  ASL A : ASL A : ASL A
+  STA sfrCarry
+  INY
+  CPY efWid1
+  BNE eff_sloop
+  DEX
+  BNE eff_pass
+
+.eff_mask
+  LDY efWid                     \ efWid1 bytes, so efWid down to 0
+.eff_mloop
+  LDA sprRowBuf,Y
+  TAX
+  LDA SPR_MASKTAB,X
+  STA sprRowBuf+SPR_W,Y
+  DEY
+  BPL eff_mloop
+  RTS
+
+\ ---- SprEfDraw — save the background and blit the box ------
+\ Entered after SprCalcAddr and SprSetSave, exactly where the droid
+\ path starts, with bufp and svp on the sprite's top-left.
+\
+\ WHOLE-SPRITE WRAP DECISION, not per row. The droid path tests each
+\ row because only some of a wrapping sprite's rows actually straddle
+\ the end of the strip and the compiled rows cannot express a walk. The
+\ walked path here is correct whether or not the row wraps, so one test
+\ up front is enough; it costs a slower blit on the ~20% of sprites
+\ that could wrap and saves a test on every row of the rest.
+.SprEfDraw
+  JSR SprEfSkip
+  LDA efHgt
+  STA efCount
+.efd_row
+  JSR SprEfFetch
+  LDA sprNoWrap
+  BEQ efd_slow
+
+  LDX #0
+.efd_fcol
+  TXA
+  CLC
+  ADC efCol0
+  TAY
+  LDA sprMul8,Y
+  TAY
+  LDA (bufp),Y                  \ the background
+  STA (svp),Y                   \ save it — same Y addresses both
+  AND sprRowBuf+SPR_W,X
+  ORA sprRowBuf,X
+  STA (bufp),Y
+  INX
+  CPX efWid1
+  BNE efd_fcol
+  JMP efd_next
+
+\ The row may straddle the end of the strip, so the columns are not
+\ eight bytes apart in address order and bufp has to be walked. The
+\ SAVE side never wraps, so it keeps its Y offset while the screen side
+\ uses Y = 0 against a walking pointer — the same split sd_slow makes.
+.efd_slow
+  LDA bufp   : STA sprTmpPtr
+  LDA bufp+1 : STA sprTmpPtr+1
+  LDY efCol0                    \ walk across to the box's first column
+  BEQ efd_s0
+.efd_sskip
+  JSR SprNextUnit
+  DEY
+  BNE efd_sskip
+.efd_s0
+  LDX #0
+.efd_sloop
+  TXA
+  CLC
+  ADC efCol0
+  TAY
+  LDA sprMul8,Y
+  STA efYofs
+  LDY #0
+  LDA (bufp),Y
+  LDY efYofs
+  STA (svp),Y
+  AND sprRowBuf+SPR_W,X
+  ORA sprRowBuf,X
+  LDY #0
+  STA (bufp),Y
+  JSR SprNextUnit
+  INX
+  CPX efWid1
+  BNE efd_sloop
+  LDA sprTmpPtr   : STA bufp    \ back to the row's first column
+  LDA sprTmpPtr+1 : STA bufp+1
+
+.efd_next
+  DEC efCount
+  BEQ efd_done
+  SCANSTEP
+  JMP efd_row
+.efd_done
+  RTS
+
+\ ---- SprEfRestore — put the box's background back ----------
+\ The mirror of SprEfDraw with the fetch and the mask gone: the saved
+\ bytes go back exactly as they were taken. Walks the same box, from
+\ the frame the DRAW used, so it puts back what it saved even if the
+\ effect has since animated or moved.
+.SprEfRestore
+  JSR SprEfSkip
+  LDA efHgt
+  STA efCount
+.efr_row
+  LDA sprNoWrap
+  BEQ efr_slow
+
+  LDX #0
+.efr_fcol
+  TXA
+  CLC
+  ADC efCol0
+  TAY
+  LDA sprMul8,Y
+  TAY
+  LDA (svp),Y
+  STA (bufp),Y
+  INX
+  CPX efWid1
+  BNE efr_fcol
+  JMP efr_next
+
+.efr_slow
+  LDA bufp   : STA sprTmpPtr
+  LDA bufp+1 : STA sprTmpPtr+1
+  LDY efCol0
+  BEQ efr_s0
+.efr_sskip
+  JSR SprNextUnit
+  DEY
+  BNE efr_sskip
+.efr_s0
+  LDX #0
+.efr_sloop
+  TXA
+  CLC
+  ADC efCol0
+  TAY
+  LDA sprMul8,Y
+  TAY
+  LDA (svp),Y
+  LDY #0
+  STA (bufp),Y
+  JSR SprNextUnit
+  INX
+  CPX efWid1
+  BNE efr_sloop
+  LDA sprTmpPtr   : STA bufp
+  LDA sprTmpPtr+1 : STA bufp+1
+
+.efr_next
+  DEC efCount
+  BEQ efr_done
+  SCANSTEP
+  JMP efr_row
+.efr_done
+  RTS
+
 .SprDrawSlot
   JSR SprSetSlot
   BCC sd_go
@@ -1072,6 +1397,12 @@ SPR_OVL_Y = SPR_H + 8
   LDA sprNoWrap : STA sprNoWrapS,X
 
   JSR SprSetSave                \ svp = this slot's block 0, scanline sprScan
+
+  LDX sprSlot                   \ an effect has no rotor and no digits
+  LDA sprKind,X
+  BEQ sd_droid
+  JMP SprEfDraw
+.sd_droid
 
 \ ---- the fast path -----------------------------------------
 \ A sprite that cleared the wrap test up front has no row that can
@@ -1243,7 +1574,24 @@ SPR_OVL_Y = SPR_H + 8
   LDA sprNoWrapS,X  : STA sprNoWrap   \ the draw's answers, not this frame's:
   LDA sprSeqBaseS,X : STA sprSeqBase  \ the sprite may since have moved, and
   LDA sprShiftS,X   : STA sprShiftW   \ the rotor has certainly turned
-  PAGESPRBANK                   \ the DRAW's shift, so the DRAW's bank: the
+
+\ THE DRAW'S KIND TOO, not this frame's. A slot freed by an explosion
+\ and handed straight to a droid still holds the explosion's saved
+\ background, and it has to go back the way it came.
+  LDA sprKindS,X
+  BEQ sr_droid
+  LDA #SWRAM_SPR                \ where the boxes live — see SprEfSetup
+  STA sprBank
+  STA ROMSHAD
+  STA ROMSEL
+  LDA sprEfFrmS,X
+  JSR SprEfBox
+  JSR SprSetSave
+  JMP SprEfRestore
+.sr_droid
+  LDA sprShiftS,X               \ already in sprShiftW above, which the effect
+  PAGESPRBANK                   \ fetch needs; here it is only the bank select
+                                \ the DRAW's shift, so the DRAW's bank: the
                                 \ compiled restore for this sprite is there
   JSR SprSetSave                \ replays the same walk the draw took
 
@@ -1356,6 +1704,8 @@ SPR_OVL_Y = SPR_H + 8
 .saa_loop
   LDA sprActive,X
   BEQ saa_next
+  LDA sprKind,X                 \ an effect's frame is its owner's business —
+  BNE saa_next                  \ dMd1_bullet and dMd2_explosion step it
   LDA sprDelay,X
   BEQ saa_step
   DEC sprDelay,X
@@ -1388,6 +1738,8 @@ SPR_SPIN = 0                    \ frames between phases; full energy = 0
   STA sprDelay,X
   STA sprType,X
   STA sprShift,X
+  STA sprKind,X
+  STA sprKindS,X
   DEX
   BPL si_loop
 
@@ -1411,6 +1763,9 @@ SPR_SPIN = 0                    \ frames between phases; full energy = 0
 .sprNoWrapS SKIP SPR_SLOTS      \ the draw's wrap answer, for the restore
 .sprSeqBaseS SKIP SPR_SLOTS     \ the draw's rotor-sequence base
 .sprShiftS  SKIP SPR_SLOTS      \ the draw's shift
+.sprKind    SKIP SPR_SLOTS      \ 0 = droid, 1 = effect; sprType is then a frame
+.sprKindS   SKIP SPR_SLOTS      \ the kind the DRAW used, for the restore
+.sprEfFrmS  SKIP SPR_SLOTS      \ and the frame it used, so the box matches
 .sprTr      SKIP SPR_SLOTS     \ tranche per slot, &FF = neither
 .sprComp    SKIP SPR_SLOTS     \ overlap-component label, while assigning
 .sprTrWant  EQUB 0
@@ -1422,6 +1777,13 @@ SPR_SPIN = 0                    \ frames between phases; full energy = 0
 .satWhich   EQUB 0
 .satNA      EQUB 0
 .satNB      EQUB 0
+.efRow0     EQUB 0              \ the frame's box, unpacked by SprEfBox
+.efHgt      EQUB 0
+.efCol0     EQUB 0
+.efWid      EQUB 0
+.efWid1     EQUB 0              \ efWid + 1: the shift's spill column
+.efCount    EQUB 0
+.efYofs     EQUB 0
 .sprBank    EQUB SWRAM_SPR      \ the bank the slot in hand lives in, so
                                 \ SprFetchRow can put it back after paging
                                 \ SWRAM_DATA in over the top

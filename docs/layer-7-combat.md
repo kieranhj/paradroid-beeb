@@ -218,7 +218,7 @@ Cheap, but it is polish — do the function first, and it can ride along with La
 
 *Visible:* stand on the pad, energy climbs and the score drops.
 
-### 7c — Effect sprites: the second sprite class
+### 7c — Effect sprites: the second sprite class ✅ **DONE 2026-08-15**
 
 The one piece of genuinely new machinery. Twenty effect sprites at `$4C00`–`$50FF`: bullets in the
 low frames, the twelve-frame explosion from `$4E40`. `tools/export_droids.py` grows a second half
@@ -285,6 +285,67 @@ every box fits inside 21 rows × 6 byte columns.
 Bank 5 now ends `&BBF7`, **1,033 B free**, and `PARASPR` grew 49 → 60 pages. It still boots: the
 boot staging reaches ~`&6C00` instead of `&68B5`, further into the play buffer, which is safe for
 the same reason it always was — `PageBankIn` runs before anything there is read again.
+
+#### The blitter — built ✅ **2026-08-15**
+
+Six routines in `sprite.asm`, ~550 bytes of main RAM, sharing every part of the slot machinery and
+differing only in how pixels get there:
+
+| | |
+|---|---|
+| `SprEfSetup` | `SprSetSlot`'s tail for an effect: no digit block, no rotor sequence, and **bank 5 forced** rather than `PAGESPRBANK`'s shift-derived choice |
+| `SprEfBox` | frame → `efRow0`/`efHgt`/`efCol0`/`efWid`/`efWid1` and the row pointer |
+| `SprEfSkip` | down `efRow0` scanlines; both passes take the identical walk |
+| `SprEfFetch` | one row, shifted, plus masks — `SprFetchRow`'s one-pixel-a-pass idiom |
+| `SprEfDraw` | save the background and blit the box |
+| `SprEfRestore` | the mirror, from the frame the **draw** used |
+
+**Forcing bank 5 is load-bearing.** `PAGESPRBANK` selects bank 5 or 6 from the shift, because the
+compiled shifts are split across them. The effect artwork is only in bank 5, so an effect at shift
+2 or 3 would otherwise read its rows out of bank 6 and draw whatever happened to be there.
+
+**`efSrc` borrows `psrc`.** It has to be in zero page for `(efSrc),Y` and zero page has been full
+since Layer 5, so it shares the droid fetch's own row pointer — whose only user is `SprFetchRow`. A
+slot is either a droid or an effect and slots are drawn one at a time, so the two can never collide.
+
+**Three saved-at-draw fields, not one.** `sprKindS` and `sprEfFrmS` join `sprShiftS`/`sprNoWrapS`/
+`sprSeqBaseS` for the same reason those exist: the restore runs a frame later, by which time the
+slot may have animated, moved, or been freed and handed to a droid. It has to put back what it took.
+
+**One wrap decision per sprite, not per row.** The droid path tests every row because only some rows
+of a wrapping sprite actually straddle the end of the strip and a compiled row cannot express a
+walk. The walked path here is correct either way, so one test up front is enough.
+
+##### `SPR_SLOTS` 7 → 8, and a bug it introduced
+
+Slot 7 is the player's bullet, save page `&3700` — which fills the gap up to the tile map at `&3800`
+exactly, so a ninth slot would overwrite the map. The assert now says that rather than the looser
+`<= PANEL_ADDR`.
+
+**`DrFindSlot` started at `SPR_SLOTS-1` and would have handed slot 7 to a droid.** The C64's
+`FindFreeSprite` (`$32A8`) searches 6 down to 1 for precisely this reason. `SPR_SLOTS-1` and the
+last pool slot were the same number until this change and silently stopped being one; `DroidsUpdate`'s
+line-of-sight round robin had the same bug. Both now use a named `SPR_POOL_LAST = 6`.
+
+##### Measured
+
+| | |
+|---|---|
+| Draw | explosion frame 5 **at shift 3**, the hardest case: **224 opaque pixels in 21 rows, an exact pixel-for-pixel match** against the frame computed independently from the C64 bytes |
+| Restore | **0 of 10240** bytes different from the pre-draw buffer |
+| Oracle | after ~75 passes scrolling vertically with an effect live throughout, then removed: **0 of 10240** against a forced `RedrawAll` |
+| Space | main RAM `&1100–&2BBC`, **1,092 B free** |
+
+> **`save_memory` pauses wherever the cycle count lands, which is often mid-blit.** Three snapshots
+> a few thousand cycles apart showed 12 rows, 9 rows and then all 21. The first two look exactly
+> like a blitter dropping rows, and cost a real detour chasing a bug that was not there — the
+> screenshot showing the sprite drawn correctly is what broke the deadlock. **Sample until two
+> readings agree, or verify against the pixel count rather than the picture.** Same class of trap
+> as the `&F4` bank check in 7a.
+
+The walked path was not proven to have executed — it depends on where the sprite lands in the
+circular strip — but over that many scroll positions it is very unlikely to have been missed, and
+the oracle covers it if it ran.
 
 *Visible:* poke a slot into explosion mode and watch twelve frames play out and free the slot.
 

@@ -68,10 +68,11 @@ timing, and [`docs/raster-timing.md`](docs/raster-timing.md) is the map: the fra
 writes the buffer when, and what is still open.
 
 **Layer 7 is under way** — combat: bullets, explosions, damage, score, the Alert level and the
-energy recharge pads. **7a and 7b landed 2026-08-15**, on branch `layer7-combat`: the player has
+energy recharge pads. **7a, 7b and 7c landed 2026-08-15**, on branch `layer7-combat`: the player has
 energy, the droid he is riding wears out on the C64's own schedule whether or not anything shoots at
-him, and standing on a recharge pad puts energy back at 5 points of score each. Next is 7c, the
-effect sprites. Planned in [`docs/layer-7-combat.md`](docs/layer-7-combat.md), in six stages, and
+him, standing on a recharge pad puts energy back at 5 points of score each, and the pool can now
+draw bullets and explosions as well as droids. Next is 7d, the player firing. Planned in
+[`docs/layer-7-combat.md`](docs/layer-7-combat.md), in six stages, and
 four findings shape it: **droid-table entry 0 is the player, not a sentinel**; the C64 has an eighth
 sprite that we do not, for the player's own bullet; bullets and explosions come out of the existing
 pool of six so **the sprite count per pass does not grow**; and an explosion cannot be compiled, so
@@ -175,11 +176,11 @@ moves. The outline:
 | ZP `&00–&8F` | 144 B | **all of it used** — the map is in `main.asm`. `&90` up is the OS |
 | `&0400–&0C8F` | 2,192 B | MODE 1 charset, built at deck load — reclaimed OS workspace |
 | `&0C90–&10FF` | **1,136 B free** | rest of the reclaimed OS workspace |
-| `&1100–&2921` | 6,690 B | code (`PARA`). DFS random-access buffer space, safe for `*LOAD` |
-| `&2922–&2FFF` | **1,758 B free** | the level draw and the droid AI both live in bank 4 now |
-| `&3000–&36FF` | 1,792 B | sprite background save areas, one page per slot |
+| `&1100–&2BBB` | 7,356 B | code (`PARA`). DFS random-access buffer space, safe for `*LOAD` |
+| `&2BBC–&2FFF` | **1,092 B free** | the level draw and the droid AI both live in bank 4 now |
+| `&3000–&37FF` | 2,048 B | sprite background save areas, one page per slot — **eight now**, ending exactly where the tile map begins. A ninth would overwrite it |
 | `&3800–&3BFF` | 1,024 B | tile map, fixed home — floating it after `code_end` once put it over the save areas |
-| `&3700`, `&3C00–&47FF` | **3,328 B free** | runtime-built data only: boot stages `PARASPR` through `&68B5` |
+| `&3C00–&47FF` | **3,072 B free** | runtime-built data only: boot stages `PARASPR` through ~`&6C00` |
 | `&4800–&547F` | 3,200 B | panel — 5 rows × 640, displayed by rupture cycle 1 |
 | `&5480–&54FF` | **128 B free** | |
 | `&5500–&56FF` | 512 B | `CHAR_PTR_LO`/`HI` — character code → charset address, built at startup |
@@ -286,7 +287,7 @@ point. Six stages, each ending in something visible:
 |---|---|
 | 7a ✅ | **DONE 2026-08-15.** `src/combat.asm`: entry 0 becomes the player, `AddScore`'s BCD, `DoAging`, the `gameTick` iteration counter, and a `DEBUG_ENERGY` readout on panel row 1 because the panel that would show any of it is Layer 9's. `DroidsInit` no longer clears entry 0 — measured surviving a deck change |
 | 7b ✅ | **DONE 2026-08-15.** `DoCharUnder`'s recharger arm — **the recharge pads**, character 20: +1 energy every 4th iteration and −5 score, plus `SubScore`. Rate, ceiling, BCD wrap, zero-saturate and a control all measured exact. The lift arm is not ported: **L does double duty as fire and lift trigger in the original too**, through `moveMode`, so `lift.asm` keeps its trigger |
-| 7c | Effect sprites. **Artwork done 2026-08-15** — 31 frames, 2,946 B, exported with per-frame bounding boxes into **bank 5**, round-tripped 0/31 mismatches; no frames cut, because the bullets rather than the explosion were the expensive half. Still to come: the generic interpreted blitter path and `SPR_SLOTS` to 8 for the player's bullet (save page `&3700`, already free) |
+| 7c ✅ | **DONE 2026-08-15.** Effect sprites as a second class sharing all the slot machinery: 31 frames exported with bounding boxes into **bank 5** (0/31 round-trip mismatches, no frames cut), a generic interpreted draw/restore, and `SPR_SLOTS` 7 → 8 for the player's bullet at save page `&3700`. Draw verified pixel-exact at shift 3; restore and the scrolling oracle both **0 of 10240** |
 | 7d | The player fires — `DoMoveMode`'s Mobile/Weapon/Transfer machine, then `DoFire`, `MovePlyFire`, `SpriteHitWall`, the fire delay by droid class |
 | 7e | Damage, kills, explosions and BCD score — the `CollisionType` matrix and its six arms, plus the player's own death: explode, then back as 001 on waypoint 0 with no game over |
 | 7f | Enemy fire — `DoEnemyFire` into the spot `DroidRun` already reserves for it, plus friendly fire and the disruptor |
