@@ -34,7 +34,8 @@ and the deck hardware-scrolling 8 ways underneath it — 4 px horizontally, 1 sc
 driven by the C64's own acceleration model and stopped by walls. The camera has a dead zone, so at
 low speed the world holds still and the droid glides at 1 px instead of the world lurching at 4.
 Frame-locked at 25 Hz (2 fields a pass) in every direction including full diagonal. 16 decks,
-per-deck palette and charset built at load time. Keys: Z/X left/right, K/M up/down (and, in a lift,
+per-deck palette and charset built at load time, and the game **starts on a random deck 4-7** as
+`$12B6` does — `random AND 3` plus 4, the middle of the ship. Keys: Z/X left/right, K/M up/down (and, in a lift,
 choose the deck), L fire — which steps into and out of a lift — cursor up/down for a debug deck hop,
 SPACE forces a full redraw.
 
@@ -383,6 +384,14 @@ System VIA port A with handshake at `&FE41`; a latch byte is `1 cc r nnnn` and a
 attenuation is `&90 | (chan << 5) | (15 - vol)`. **That came out of the deleted `hardware.asm` and
 was never verified on hardware** — check it against the wiki before building on it, per the rule
 about recalled facts.
+
+**The title screen owes the game its randomness.** The C64's random source is `$D41B`, free-running
+SID noise, and what makes the starting deck genuinely unpredictable is that `$12B6` samples it
+after however long the player left the title up. We have no noise source, so `drSeed` is currently
+taken from the User VIA's T1 counter at boot — which varies on hardware and **not at all under an
+emulator**, where two cold boots land on the same deck. Stir `drSeed` once a frame while the title
+is waiting for fire and that goes away, by the original's own mechanism. See
+[`docs/layer-8-doors-lifts.md`](docs/layer-8-doors-lifts.md).
 
 ### Layer 12 — Balance, fidelity and feel — **the last pass, planned**
 

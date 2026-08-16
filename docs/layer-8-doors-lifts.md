@@ -372,6 +372,45 @@ main RAM is now genuinely the next structural move, not a someday one.
 - **Sound.** `ChangeDeck` and `DoLift` set `SndFx2`/`sndFx1`. No sound driver until Layer 11; leave
   the writes out rather than stubbing them.
 
+## The deck the game starts on
+
+**Added 2026-08-16, at KC's request.** The port started on deck 1, which was a testing choice and
+had been sitting there since Layer 2. `$12B6` is the original's:
+
+```
+12B6  LDA $D41B     ; SID voice 3 oscillator — the C64's random source
+12B9  AND #3
+12BB  CLC
+12BC  ADC #4
+12BE  STA deckNum   ; 4, 5, 6 or 7
+12C0  EOR #$FF
+12C2  STA prevDeck
+```
+
+so **four** decks, 4 to 7 — the middle of the ship, with somewhere to go in either direction.
+Ported verbatim into the startup, with `DrRandom` where `$D41B` is.
+
+The following two instructions are **not** ported. `prevDeck` exists so `GameLoop`'s enter-deck
+block at `$1359` can skip the per-deck setup when a lift did not actually move you, and seeding it
+to the complement of `deckNum` guarantees the first deck always sets up. `LoadDeck` does that work
+unconditionally, so there is nothing to gate.
+
+### The seed, and why it is not random yet
+
+The C64 has no seed: `$D41B` is free-running noise, and its value at `$12B6` depends on how long
+the player left the title screen up. We have neither a noise source nor, yet, a title screen.
+
+`drSeed` is now taken from the **User VIA's T1 counter** at boot — also free-running, also sampled
+at an arbitrary moment, and refused if zero because an LFSR seeded with zero stays there. Read
+T1C-L on the *user* VIA and not the system one: the read clears a T1 interrupt flag, and the system
+VIA's belongs to the rupture.
+
+**Under an emulator this is still deterministic.** Two cold boots of jsbeeb both landed on deck 6,
+because everything before the read takes exactly the same time. On real hardware the disc load
+varies. The real fix is Layer 11's title screen, which gives us the same entropy the C64 has — the
+dwell before the player presses fire — and at that point the seed should be stirred per frame while
+the title is up.
+
 ## What it unblocks
 
 The whole ship becomes traversable, which is the precondition for evaluating droid movement at deck

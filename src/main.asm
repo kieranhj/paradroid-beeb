@@ -543,6 +543,10 @@ ASSERT CHAR_PTR_LO >= PANEL_ADDR + PANEL_BYTES
 ASSERT CHAR_PTR_HI == CHAR_PTR_LO + 256
 ASSERT CHAR_PTR_HI + 256 <= SPR_MASKTAB
 
+\ The deck the game starts on: 4, 5, 6 or 7, chosen at random. $12B6
+\ computes it as `random AND 3` plus this. See the startup block.
+DECK_START_LO = 4
+
 \ The player is a droid like any other, in slot 0. Its screen Y never
 \ changes: vertical scrolling is 1 scanline, so the C64's arrangement
 \ survives here and the view carries the player rather than the other
@@ -793,12 +797,51 @@ ORG &1100
   JSR InstallIrq                \ after the load: taking over the IRQ stops
                                 \ the MOS servicing the filing system
 
+\ ---- the random seed ---------------------------------------
+\ The C64 does not have one: its random source is $D41B, SID voice 3's
+\ oscillator output, which is free-running noise. We have no equivalent,
+\ so the LFSR in DrRandom is seeded from the USER VIA's T1 counter — also
+\ free-running, also sampled at an arbitrary moment. Reading T1C-L there
+\ clears an interrupt flag nothing in this game uses; the SYSTEM VIA's
+\ would eat a rupture interrupt, so do not read that one.
+\
+\ A ZERO SEED LOCKS THE LFSR at zero for ever, so it is refused and the
+\ assembled default stands.
+\
+\ UNDER AN EMULATOR THIS IS STILL DETERMINISTIC — the counter reads the
+\ same on every boot because everything before it takes the same time.
+\ Real entropy arrives with Layer 11's title screen, which is where the
+\ C64 gets its own: $D41B has been running for however long the player
+\ left the title up.
+  LDA USR_VIA_T1CL
+  BEQ ml_keepseed
+  STA drSeed
+.ml_keepseed
+
   JSR NewShipDroids             \ the ship's droid complement, generated
                                 \ once and then owned by the decks
   JSR CombatInit                \ entry 0 of that table is the PLAYER, and
                                 \ this seeds it — before LoadDeck, because
                                 \ DroidsInit places droids around it
-  LDA #1 : STA deck
+
+\ ---- the deck the game starts on ---------------------------
+\ $12B6, verbatim: `LDA $D41B : AND #3 : CLC : ADC #4 : STA deckNum`.
+\ FOUR decks, 4 to 7 — the middle of the ship, so there is somewhere to
+\ go in both directions and the deck you start on is not the one holding
+\ the Influence Device's own class of droid.
+\
+\ The C64's next two instructions, `EOR #$FF : STA prevDeck`, are not
+\ ported. prevDeck exists so that GameLoop's enter-deck block at $1359
+\ can skip the per-deck setup when the lift did not actually move you,
+\ and seeding it to the complement of deckNum guarantees the first deck
+\ always sets up. Our LoadDeck does that work unconditionally, so there
+\ is nothing to gate.
+  JSR DrRandom
+  AND #3
+  CLC
+  ADC #DECK_START_LO
+  STA deck
+
   LDA #0
   STA prevUp
   STA prevDn
