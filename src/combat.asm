@@ -183,11 +183,16 @@ CB_ENERGY_FULL = &40
 \ DoorScan drops it: the map is 256 characters across.
 CHAR_RECHARGE = 20
 
+\ Character 66 is the console, from the same dispatch. Layer 9 builds it.
+CHAR_CONSOLE = 66
+
 .DoCharUnder
   LDA plyCX : STA cellX
   LDA #0    : STA cellX+1
   LDA plyCY : STA cellY
   JSR MapChar
+  CMP #CHAR_CONSOLE
+  BEQ dcu_console
   CMP #CHAR_RECHARGE
   BNE dcu_x
 
@@ -202,6 +207,23 @@ CHAR_RECHARGE = 20
   JMP SubScore
 .dcu_x
   RTS
+
+\ ---- LAYER 9: the console arm ------------------------------
+\ The third of DoCharUnder's four tests, and the one the header said was
+\ Layer 9's. The C64 sets consoleState here and GameLoop dispatches on
+\ it; ours opens the console directly, through main.asm's bank-6 bridge.
+\ FIRE IS THE TRIGGER, not standing on it — you walk over a console
+\ often and would not want it opening every time. That is also the C64's
+\ arrangement, which gates its own console arm on moveMode.
+\ THE LIFT GETS THE KEY FIRST, so this tests lDown rather than fireDown:
+\ fireDown is already false whenever the lift or a lift exit has eaten
+\ the press, and a console is not a lift.
+.dcu_console
+  LDA lDown
+  BEQ dcu_x
+  LDA fireEaten                 \ the lift took it
+  BNE dcu_x
+  JMP ConsoleEnter
 
 \ ============================================================
 \ DoAging — port of DoAlertAndAging ($3E32)

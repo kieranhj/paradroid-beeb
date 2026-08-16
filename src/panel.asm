@@ -1,10 +1,14 @@
 \ ============================================================
 \ panel.asm — the text engine, and the in-game HUD
 \ ============================================================
-\ LAYER 9. In SWRAM bank 4, next to the game state it reads: drType,
-\ drEnergy and drCount are all in droid.asm's tables in this bank, and
-\ SWRAM_DATA is the resting state, so the main loop calls in with no
-\ paging. See docs/layer-9-hud.md for the whole plan and its decisions.
+\ LAYER 9. In SWRAM BANK 6, with console.asm. It started in bank 4, next
+\ to the droid tables, and the console pushed that bank 224 bytes past
+\ &C000 — see the note by the INCLUDE in main.asm.
+\ **THIS FILE CANNOT READ BANK 4.** drType, drEnergy, drCount, shipLevel
+\ and the four droid tables all live there. main.asm's PanelTick mirrors
+\ the scalars into pmType/pmEnergy/pmCount/pmShip before paging this bank
+\ in, and PageTabsIn copies the tables to PN_TABS at boot. Everything
+\ else here reads main RAM directly. See docs/layer-9-hud.md.
 \
 \ ---- the font is 8 x 16, and that decides the layout --------
 \ The C64 text charset at $7000 stores a glyph's TOP half at code c and
@@ -242,6 +246,10 @@ ASSERT PN_LINES == 2
 .PnNum
   STA pnVal
   JSR PnAt
+\ ---- and the tail, which the console shares ----------------
+\ Entered with pnDst already pointed and pnVal set, so ConNum can use
+\ its own ConAt and then fall in here.
+.PnDigits
   LDX pnDigits
   DEX
   STX pnTmp                     \ index into the power table
@@ -337,6 +345,7 @@ ASSERT PN_LINES == 2
 .pnStep   EQUB 0
 .pnCount  EQUB 0
 .pnTmp    EQUB 0
+.pnTmpW   EQUW 0                \ ConClear's row base
 
 \ ============================================================
 \ THE HUD
@@ -429,7 +438,7 @@ PN_ALERT_CELLS = 4
 \ ============================================================
 .PanelUpdate
 \ ---- the droid you are riding ------------------------------
-  LDA drType
+  LDA pmType
   CMP pnShType
   BEQ pu_energy
   STA pnShType
@@ -437,23 +446,23 @@ PN_ALERT_CELLS = 4
   LDA #PN_L0       : STA pnLine
   LDA #PN_COL_NUM  : STA pnCol
   JSR PnAt
-  LDA drCent,Y                  \ hundreds
+  LDA pnTabCent,Y               \ hundreds
   CLC : ADC #PN_DIGIT0
   JSR PnGlyph
   LDY pnShType
-  LDA drNum,Y                   \ tens and units, packed BCD
+  LDA pnTabNum,Y                \ tens and units, packed BCD
   LSR A : LSR A : LSR A : LSR A
   CLC : ADC #PN_DIGIT0
   JSR PnGlyph
   LDY pnShType
-  LDA drNum,Y
+  LDA pnTabNum,Y
   AND #&0F
   CLC : ADC #PN_DIGIT0
   JSR PnGlyph
 
 \ ---- energy, as PN_BAR_CELLS cells of 8 --------------------
 .pu_energy
-  LDA drEnergy
+  LDA pmEnergy
   CLC : ADC #7                  \ any energy at all lights a cell
   LSR A : LSR A : LSR A
   CMP #PN_BAR_CELLS+1
@@ -538,7 +547,7 @@ PN_ALERT_CELLS = 4
 \ still in the table. The C64's own deck-cleared test is `CMP #2` on the
 \ same count, so this is that number less the player and nothing more.
 .pu_left
-  LDA drCount
+  LDA pmCount
   BEQ pu_lhave                  \ cannot happen; do not underflow if it does
   SEC : SBC #1
 .pu_lhave

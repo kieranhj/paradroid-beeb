@@ -357,6 +357,18 @@ FONT_ADDR = &3C00
 \ INCLUDE. This is the same arrangement SPR_W and SPR_H have.
 FONT_GLYPHS = 92                \ 26 capitals are two glyphs each
 FONT_BYTES  = FONT_GLYPHS * 32
+
+\ ---- the four droid tables, mirrored out of bank 4 ----------
+\ panel.asm and console.asm are in bank 6 and cannot read bank 4, so
+\ PageTabsIn copies these here at boot. 96 bytes in the tail of the same
+\ hole the font sits in — the font ends at &4780 and the panel starts at
+\ &4800, and this is what fills the gap.
+PN_TABS     = FONT_ADDR + FONT_BYTES
+pnTabCent   = PN_TABS + 0
+pnTabNum    = PN_TABS + 24
+pnTabWeapon = PN_TABS + 48
+pnTabSpeed  = PN_TABS + 72
+ASSERT PN_TABS + 96 <= PANEL_ADDR
 ASSERT FONT_ADDR >= tilemap_end
 
 PANEL_ADDR  = &4800             \ below &5800, clear of the play buffer
@@ -723,9 +735,13 @@ ORG &1100
   LDX #SPR2_PAGES
   JSR PageBankIn
 
-  JSR PageFontIn                \ bank 6 is still up: bring the text font
-                                \ down into main RAM before anything pages
+  LDX #LO(loadfnt)              \ and a fourth file: Layer 9's text font,
+  LDY #HI(loadfnt)              \ which loads straight to &3C00 and so has
+  JSR OSCLI                     \ to come after every staging copy
+
   PAGEBANK SWRAM_DATA           \ the data bank is the resting state
+  JSR PageTabsIn                \ and, with it up, the four droid tables the
+                                \ panel needs and cannot reach from bank 6
 
   JSR SetupRupture              \ NOW the CRTC goes into the rupture's
                                 \ shape: it stops VSync, so it has to be
@@ -781,6 +797,22 @@ ENDIF                           \ counts the iteration that has finished
 IF DEBUG_POS
   JSR DbgPosOut                 \ where we are, for getting back here
 ENDIF
+\ ============================================================
+\ The console has the machine, or it does not
+\ ============================================================
+\ GameLoop tests consoleState at $1427 and jumps past EnterGame's DoMove
+\ and DrawScreen when it is set, which is exactly this: with the console
+\ up nothing may move and nothing may write the play buffer, because the
+\ console IS the play buffer. So the whole middle of the pass is skipped
+\ and only the page keys are read.
+\ The HUD still runs. The C64's status rows survive GotoHires too.
+  LDA conActive
+  BEQ ml_noconsole
+  JSR ConsoleTick
+  JSR PanelTick
+  JMP ml_passend
+.ml_noconsole
+
   \ Z / X left-right, K / M up-down. The keys feed a direction pair
   \ and the direction pair feeds an accelerating speed, so the view
   \ position moves by 0-7 pixels a frame rather than a fixed step.
@@ -1013,9 +1045,10 @@ ENDIF
 IF DEBUG_ENERGY
   JSR DbgEnergyOut
 ELSE
-  JSR PanelUpdate               \ Layer 9's HUD. Writes only the panel, which
-                                \ nothing scrolls and nothing blits over, so it
-                                \ is outside every window the play area needs
+  JSR PanelTick                 \ Layer 9's HUD, through the bank-6 bridge.
+                                \ Writes only the panel, which nothing scrolls
+                                \ and nothing blits over, so it is outside
+                                \ every window the play area needs
 ENDIF
 
   \ The second window. Everything above ran in the first one and the
@@ -1043,6 +1076,7 @@ IF DEBUG_DRAW
   JSR DbgDeckBg
 ENDIF
 
+.ml_passend
   \ The pass is not allowed to be shorter than FRAME_LOCK fields. It IS
   \ allowed to be longer: an overrun carries on from wherever it landed
   \ instead of being rounded up to the next boundary, so a heavy pass
@@ -1061,6 +1095,9 @@ ENDIF
   EQUB 13
 .loadspr2
   EQUS "LOAD PARSPR2"
+  EQUB 13
+.loadfnt
+  EQUS "LOAD PARAFNT"
   EQUB 13
 
 \ ============================================================
@@ -1102,45 +1139,88 @@ ENDIF
   RTS
 
 \ ============================================================
-\ PageFontIn — Layer 9's text font, bank 6 to &3C00
+\ Layer 9 lives in BANK 6 and cannot see bank 4 — the bridge
 \ ============================================================
-\ Called with SWRAM_SPR2 still paged in from the last PageBankIn, and
-\ leaves it that way; the caller pages the data bank back. FONT_BYTES is
-\ 2,112, so this is 9 pages minus a tail — copied whole pages and then
-\ the remainder, the same shape PageBankIn uses.
+\ panel.asm and console.asm were pushed out of bank 4 by 224 bytes and
+\ into bank 6, which is the only one with room now the font ships as its
+\ own file. Bank 6 code cannot read drCent, drNum, drWeapon, drSpeed,
+\ drType, drEnergy, drCount or shipLevel, all of which are in bank 4.
 \
-\ ONCE, AT BOOT. The font never changes: unlike the deck charset it is
-\ not a function of the colour scheme, so there is nothing to rebuild at
-\ deck load. See docs/layer-9-hud.md.
-.PageFontIn
-  LDA #LO(spr2_font) : STA swSrc
-  LDA #HI(spr2_font) : STA swSrc+1
-  LDA #LO(FONT_ADDR) : STA swDst
-  LDA #HI(FONT_ADDR) : STA swDst+1
-  LDX #HI(FONT_BYTES)
-  BEQ pfi_tail
-.pfi_page
-  LDY #0
-.pfi_byte
-  LDA (swSrc),Y
-  STA (swDst),Y
-  INY
-  BNE pfi_byte
-  INC swSrc+1
-  INC swDst+1
+\ So main RAM carries them across, in two pieces:
+\   the four TABLES are constant and are copied once at boot, to PN_TABS;
+\   the four SCALARS move, and are mirrored per pass by PanelTick below.
+\
+\ Everything else the panel and the console read is already main RAM —
+\ the font, deck, maxEnergy, moveMode, alertLvl, score, scrollS, line —
+\ so this is the whole of the bridge. See docs/layer-9-hud.md, decision 8.
+
+\ ---- the tables, once ---------------------------------------
+\ Called at boot with SWRAM_DATA paged, which is where these live.
+.PageTabsIn
+  LDX #CON_TYPES-1
+.pti_loop
+  LDA drCent,X   : STA pnTabCent,X
+  LDA drNum,X    : STA pnTabNum,X
+  LDA drWeapon,X : STA pnTabWeapon,X
+  LDA drSpeed,X  : STA pnTabSpeed,X
   DEX
-  BNE pfi_page
-.pfi_tail
-  LDY #0
-.pfi_last
-  CPY #LO(FONT_BYTES)
-  BEQ pfi_x
-  LDA (swSrc),Y
-  STA (swDst),Y
-  INY
-  BNE pfi_last
-.pfi_x
+  BPL pti_loop
   RTS
+
+\ ---- the scalars, per call ----------------------------------
+\ PAGES BANK 6 IN AND BANK 4 BACK OUT around the call, the same way
+\ SprDrawAll does for the blitter. The mirror is filled BEFORE the page,
+\ while bank 4 is still up, and read after it — which is the only order
+\ that works.
+MACRO PNMIRROR
+  LDA drType   : STA pmType
+  LDA drEnergy : STA pmEnergy
+  LDA drCount  : STA pmCount
+  LDA shipLevel: STA pmShip
+ENDMACRO
+
+.PanelTick
+  PNMIRROR
+  PAGEBANK SWRAM_SPR2
+  JSR PanelUpdate
+  PAGEBANK SWRAM_DATA
+  RTS
+
+.PanelSetup
+  PNMIRROR
+  PAGEBANK SWRAM_SPR2
+  JSR PanelInit
+  PAGEBANK SWRAM_DATA
+  RTS
+
+.ConsoleEnter
+  PNMIRROR
+  PAGEBANK SWRAM_SPR2
+  JSR ConsoleOpen
+  PAGEBANK SWRAM_DATA
+  RTS
+
+\ ConsoleRun may decide to leave, and leaving means ReframeView, which
+\ calls RedrawAll IN BANK 4. So the console only clears conActive — which
+\ is in main RAM for exactly this reason — and the re-frame happens here,
+\ after the data bank is back.
+.ConsoleTick
+  PNMIRROR
+  PAGEBANK SWRAM_SPR2
+  JSR ConsoleRun
+  PAGEBANK SWRAM_DATA
+  LDA conActive
+  BNE ct_x
+  JSR ReframeView
+  JSR PanelSetup                \ the deck line and the shadows, as a load does
+.ct_x
+  RTS
+
+.pmType   EQUB 0
+.pmEnergy EQUB 0
+.pmCount  EQUB 0
+.pmShip   EQUB 0
+.conActive EQUB 0               \ main RAM: the loop and the bridge both read it
 
 \ ============================================================
 \ keydown — is a key held?  X = negative INKEY code, Z set if down
@@ -1313,7 +1393,7 @@ ASSERT FRAME_LOCK >= 2
   JSR ReframeView
   JSR DroidsInit                \ the deck's droids, on its waypoints
 IF NOT(DEBUG_ENERGY)
-  JSR PanelInit                 \ Layer 9: the static words and the deck
+  JSR PanelSetup                \ Layer 9: the static words and the deck
                                 \ number. AFTER DroidsInit, so the droid
                                 \ count PanelUpdate reads is this deck's
 ENDIF
@@ -1582,7 +1662,6 @@ INCLUDE "src/screen.asm"
 INCLUDE "src/scroll.asm"
 INCLUDE "src/level.asm"
 INCLUDE "src/droid.asm"
-INCLUDE "src/panel.asm"
 .data_end
 
 \ SAVED HERE, NOT AT THE BOTTOM. SAVE writes out whatever the assembled
@@ -1631,19 +1710,39 @@ ORG SWRAM_BASE
 .spr2_start
 INCLUDE "src/data/droids2.asm"
 
-\ ---- Layer 9's text font rides here ------------------------
-\ SHIPPED here, RUN from &3C00. It is 2,112 bytes and bank 6 is the only
-\ one with that much room — bank 4 has ~1,300 and main RAM 220 — but a
-\ font read from bank 6 would be unreachable from the panel engine in
-\ bank 4, and the two cannot both be paged. So PageFontIn copies it into
-\ main RAM at boot and everything reads it there with no paging at all,
-\ which is also what lets Layer 10 reuse it. See docs/layer-9-hud.md,
-\ decision 1.
-.spr2_font
-INCLUDE "src/data/textfont.asm"
+\ ---- Layer 9's panel and console ride here -----------------
+\ NOT IN BANK 4, where they started. The console pushed that bank 224
+\ bytes past &C000 and there is nothing left in it to move: chardata is
+\ read by BuildCharset, which also reads deckScheme, colourMap, schemes
+\ and charSlot, so the two cannot be separated. Bank 6 is where the room
+\ is once the font ships as its own disc file.
+\ THE PRICE IS THAT THEY CANNOT SEE BANK 4. Everything they read is
+\ therefore in main RAM: the font at FONT_ADDR, the four droid tables
+\ mirrored to PN_TABS by PageTabsIn, and four live scalars mirrored per
+\ pass by PanelTick. See docs/layer-9-hud.md, decision 8.
+INCLUDE "src/panel.asm"
+INCLUDE "src/console.asm"
 .spr2_end
 SAVE "PARSPR2", spr2_start, spr2_end, DATA_LOAD, DATA_LOAD
 
+\ ---- the text font: its own file, straight to &3C00 ---------
+\ It has no bank to belong to. Bank 4 is full, bank 6 now holds the panel
+\ and the console, and the font is read by main-RAM addresses anyway — so
+\ it is a fourth disc file with a catalogue load address of FONT_ADDR and
+\ *LOAD puts it exactly where it runs. That is cheaper than shipping it
+\ in a bank and copying it down, and it is why PageFontIn is gone.
+\ LOADED LAST, after all three banks. The staging area for PARADAT runs
+\ from &3000 through past &7000, straight over &3C00.
+CLEAR FONT_ADDR, FONT_ADDR + FONT_BYTES
+ORG FONT_ADDR
+.font_start
+INCLUDE "src/data/textfont.asm"
+.font_end
+ASSERT font_end - font_start == FONT_BYTES
+SAVE "PARAFNT", font_start, font_end, FONT_ADDR, FONT_ADDR
+
+ASSERT CON_TYPES == DR_TYPES    \ console.asm is in bank 4 and cannot see
+                                \ the sprite bank's count when it needs it
 ASSERT DR_W == SPR_W            \ sprite.asm declares these ahead of the
 ASSERT DR_H == SPR_H            \ generated data; keep the two in step
 ASSERT DR_SEQSHIFT == SPR_SEQSHIFT
