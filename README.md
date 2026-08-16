@@ -4,16 +4,18 @@ A port of Andrew Braybrook's *Paradroid* (Commodore 64, 1985) to the BBC Micro M
 
 It plays. The deck hardware-scrolls eight ways under a droid you steer, a pool of seven sprites runs
 over it, doors open as you walk into them and lifts carry you between decks — so the whole ship is
-traversable. Droid AI, combat, the console and the transfer minigame are still to come. See
-[`PLAN.md`](PLAN.md) for the layered build plan, the memory map, decisions taken and current status.
+traversable. Droids patrol it, shoot at you and can kill you; you shoot back, and score. The status
+line and the console screen are the original's, down to the deck being called `Reactor` rather than
+`5`. **The transfer minigame is what is left** — that, and sound. See [`PLAN.md`](PLAN.md) for the
+layered build plan, the memory map, decisions taken and current status.
 
 ## Target
 
 | | |
 |---|---|
-| Machine | BBC Model B / B+ with 2 × 16K sideways RAM banks |
+| Machine | BBC Model B / B+ with 3 × 16K sideways RAM banks |
 | CPU | Plain 6502 (`CPU 0` — no 65C12 opcodes) |
-| Display | MODE 1, 4 colours. A 5-row static panel at `&4800` above a 320 × 120 play area, driven by a three-cycle vertical rupture |
+| Display | MODE 1, 4 colours. A 4-row static panel at `&4A00` above a 320 × 120 play area, driven by a three-cycle vertical rupture. The panel has its own palette, swapped at the cycle boundary |
 | Play area | 10K circular strip at `&5800` with a 10K hardware wrap, scrolled by the CRTC — 4 px horizontally, 1 scanline vertically |
 | Game loop | Locked to 2 fields a pass, 25 Hz |
 | Assembler | [BeebASM](https://github.com/stardot/beebasm) |
@@ -60,9 +62,12 @@ deliberately rejected.
 Put `beebasm.exe` in `bin/`, then:
 
 ```powershell
-.\build.ps1          # assemble to PARADROID.SSD
+.\build.ps1          # assemble into build/
 .\build.ps1 -Run     # assemble and launch in b-em
 ```
+
+Everything it produces goes in `build/`: `PARADROID.SSD`, a 200K-padded copy for emulators, and
+beebasm's assembly listing.
 
 Or, without PowerShell:
 
@@ -81,14 +86,14 @@ beebasm -i src/main.asm -do PARADROID.SSD -boot PARA -v
 ```
 
 The build needs `src/data/`, which is converted game artwork and so is not in the repository —
-generate it with `tools/export_bbc.py` and `tools/export_droids.py` (see below) before assembling.
+generate it with the `tools/export_*.py` scripts (see below) before assembling.
 
 The result is a bootable DFS disc image. Note that DFS filenames are limited to 7 characters, so
 the executable on disc is `PARA`.
 
 > **jsbeeb will not boot an unpadded SSD.** It hangs in the DFS FDC poll loading `PARASPR`, because
-> beebasm's image ends mid-track and jsbeeb will not read the last partial one. Pad a copy to 200K
-> before handing it to an emulator.
+> beebasm's image ends mid-track and jsbeeb will not read the last partial one. `build.ps1` writes
+> the padded copy for you; pad it yourself if you invoke beebasm directly.
 
 ## Repository layout
 
@@ -132,8 +137,13 @@ Those write to `tools/output/` and are for inspection. The two that feed the bui
 source into `src/data/`:
 
 ```
-python tools/export_bbc.py      # tiles, decks, palettes -> src/data/
-python tools/export_droids.py   # droid sprites and game data -> src/data/
+python tools/export_bbc.py        # tiles, decks, palettes -> src/data/
+python tools/export_droids.py     # droid sprites and game data -> src/data/
+python tools/export_effects.py    # bullet and explosion frames -> src/data/
+python tools/export_font.py       # the $7000 text font and the status box -> src/data/
+python tools/export_strings.py    # the $C000 name table -> src/data/
+python tools/export_icons.py      # the console's menu icons -> src/data/
+python tools/export_droidicon.py  # the console's droid icon -> src/data/
 ```
 
 The tools require Python 3 and Pillow. Regenerate `src/data/` rather than editing it.

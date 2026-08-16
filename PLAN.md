@@ -24,18 +24,20 @@ detail has stopped being needed to make the next decision, it belongs in `docs/`
 | [`docs/layer-7-combat.md`](docs/layer-7-combat.md) | **Combat — 7a-7f all landed** — bullets, explosions, damage, score, Alert, the recharge pads, and what is deliberately deferred |
 | [`docs/bug-map-corruption.md`](docs/bug-map-corruption.md) | **OPEN BUG, read before resuming** — something writes the tile map in play. The instrument is built and verified; it needs a play session to fire |
 | [`docs/layer-8-doors-lifts.md`](docs/layer-8-doors-lifts.md) | Doors (built) and lifts (planned), and the character-map problem they raise |
+| [`docs/layer-9-hud.md`](docs/layer-9-hud.md) | **The status line and the console** — what the C64's status area actually is, the $7000 font's three out-of-line codes, the $C000 string table, and what is still outstanding behind the menu icons |
 | [`docs/master-extensions.md`](docs/master-extensions.md) | Things only a Master 128 could host. Not on the critical path |
 
 ## Where we are — read this first
 
-**Layers 0–8 are done.** The port boots to a playable deck: a
-static panel above a 320 × 120 play area, the player droid near the centre with its rotor spinning,
+**Layers 0–9 are done.** The port boots to a playable deck: the C64's own status box above a 320 × 120 play area, the player droid near the centre with its rotor spinning,
 and the deck hardware-scrolling 8 ways underneath it — 4 px horizontally, 1 scanline vertically —
 driven by the C64's own acceleration model and stopped by walls. The camera has a dead zone, so at
 low speed the world holds still and the droid glides at 1 px instead of the world lurching at 4.
 Frame-locked at 25 Hz (2 fields a pass) in every direction including full diagonal. 16 decks,
 per-deck palette and charset built at load time, and the game **starts on a random deck 4-7** as
-`$12B6` does — `random AND 3` plus 4, the middle of the ship. Keys: Z/X left/right, K/M up/down (and, in a lift,
+`$12B6` does — `random AND 3` plus 4, the middle of the ship. The status line is the original's:
+the rounded box, the Paradroid logo, the mode word and the score, in a palette of its own. Walk
+onto a console and the play area becomes the original's console screen, names and all. Keys: Z/X left/right, K/M up/down (and, in a lift,
 choose the deck), L fire — which steps into and out of a lift — cursor up/down for a debug deck hop,
 SPACE forces a full redraw.
 
@@ -336,7 +338,7 @@ else — the first deck and the debug deck hop included. `CentreOnDeck` is gone,
 "lands inside a wall on some decks", closed with it in Layer 5.
 → [`docs/layer-8-doors-lifts.md`](docs/layer-8-doors-lifts.md)
 
-### Layer 9 — HUD and console — **BUILT on `layer9-hud`, awaiting KC's verification**
+### Layer 9 — HUD and console — **the status line and the console screen are DONE**
 Plan and every decision taken: [`docs/layer-9-hud.md`](docs/layer-9-hud.md).
 
 Two things the earlier one-line plan ran together. The C64's **status area is eight character rows**
@@ -369,10 +371,26 @@ mode word at column 2 — `Mobile`/`Weapon`/`Transfer`/`Console` — and the sco
 bar and droids-left the port used to show are **gone**, and with them the only two synthesised
 glyphs in the project.
 
-**Not built, and the honest remainder:** the console's **deck map** (`DrawPacked` over the level
-RLE) and the **ship side view** (`SideView_dat`, `$F180`, 201 B of RLE into a 64 × 16 grid). Both
-need data porting rather than more code. Also deferred: the low-energy sprite flash, which is now
-the *only* energy cue the port has — see decisions 4 and 5.
+**The console screen is `ConsoleMain`'s, line for line**, with the original's own names out of the
+`$C000` string table — `Unit type 001 - Influence Device`, `Access granted.`, and the ship, deck and
+alert by name rather than number. All four menu icons are drawn, the fourth composed from a rotor
+and the droid's own digits because the C64 builds it at run time and our droid artwork is compiled.
+
+**Outstanding, and written up in [`docs/layer-9-hud.md`](docs/layer-9-hud.md) §6e:**
+
+| | |
+|---|---|
+| the menu selection | `conWaitInput` (`$2C63`) — up/down walk `consoleState` $80-$83, fire dispatches through `conJump_t`. The icons are inert without it, so nothing behind them is reachable |
+| the **droid database** | `con_DroidInfo` (`$2CC6`). Code and tables only; the tables are already mirrored to `PN_TABS` |
+| the **deck plan** | `con_DeckInfo` (`$3061`) — `DrawPacked` over the level RLE, at a different scale from the play area |
+| the **ship plan** | `con_ShipInfo` — `SideView_dat` (`$F180`), 201 B of RLE into a 64 × 16 grid. `tools/rip_sideview.py` reads it; nothing is exported yet |
+
+Also deferred: the low-energy sprite flash, which is now the *only* energy cue the port has — see
+decisions 4 and 5.
+
+> **Bank 6 has 23 bytes free** and none of the above fits in it. A fourth bank does not help on its
+> own: bank 6's *code* cannot read another bank, so the code would have to move with the data.
+> Layer 13's reshuffle is the other way out.
 
 ### Layer 10 — Transfer minigame
 `SubGameSelectSide` and the circuit puzzle. Paged from a sideways bank.

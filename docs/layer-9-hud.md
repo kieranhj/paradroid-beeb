@@ -413,6 +413,32 @@ everything else.
 next thing that touches it.
 
 
+## 6e. Outstanding: the three sub-pages, and the selection that reaches them
+
+**Nothing behind the icons is built.** The main console screen is complete and faithful; the four
+icons are drawn and inert. What is missing is the menu itself and the three pages it leads to —
+`conJump_t` at `$6BE1` has four entries and the first is `con_Exit`:
+
+| icon | routine | what it draws | what it needs |
+|---|---|---|---|
+| 2, the `?` emblem | `con_DroidInfo` (`$2CC6`) | the **droid database** — one page per type, walked with up/down, `dInfoPage` selecting among five sub-pages through `dInfoPgJump_t` (`$6BE9`) | `PrintDroidInfo` (`$3172`), and the per-type stat tables, which are already in bank 4 and mirrored to `PN_TABS` |
+| 3, the circular badge | `con_DeckInfo` (`$3061`) | the **deck plan** — the current deck's map, drawn by `DrawPacked` over the level RLE | a second decoder over `leveldata`, which is already ported; it draws to a different scale from the play area |
+| 4, the side view | `con_ShipInfo` | the **ship plan** — a cross-section of all sixteen decks | `SideView_dat` (`$F180`), 201 bytes of RLE into a 64 × 16 character grid. `tools/rip_sideview.py` already reads it; nothing is exported yet |
+
+**The selection has to come first**, and it is `conWaitInput` (`$2C63`): `consoleState` walks
+between `$80` and `$83` with up/down, the selected sprite is recoloured through `RdSpriteState` /
+`WrSpriteState`, and fire dispatches through `conJump_t`. `con_Back2Main` (`$2CBB`) sets bits 6 and
+7 to return. None of that is ported — see decision 15 — so the pages have no way in even once they
+exist.
+
+**Two of the three need real data ported**, which is the honest measure of what is left: the deck
+plan needs a second use of the level RLE, and the ship plan needs `SideView_dat`. The droid
+database needs only code and tables that are already here.
+
+> **Bank 6 has 23 bytes free.** None of this fits without either Layer 13's reshuffle or a fourth
+> bank — and a fourth bank does not help by itself, because bank 6's *code* cannot read it. The
+> code would have to move with the data.
+
 ## 7. Decisions to revisit
 
 Decisions 3, 4 and 9 are **reversed**, and 7 is **closed**, by KC's ruling of 2026-08-16: the
