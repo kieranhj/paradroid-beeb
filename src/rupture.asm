@@ -48,6 +48,83 @@ ENDIF
 \ there is no reason to write it anywhere near the edge.
 
 \ ============================================================
+\ THE PANEL HAS ITS OWN PALETTE
+\ ============================================================
+\ The panel and the play area are separate CRTC cycles, so they can be
+\ separate palettes too: sixteen ULA writes at each boundary, and the
+\ status box gets the C64's colours instead of the deck's.
+\
+\ It has to. The deck palettes share only logical 0 (blue) and logical 1
+\ (white) across all sixteen decks — 2 and 3 vary, and are BLACK on some
+\ of them, so a panel drawn in either would vanish on those decks. That
+\ is the open item PLAN.md listed as "panel shares the play palette".
+\
+\ WHERE THE TWO WRITES GO, and why neither is anywhere else:
+\
+\   the panel's, at the END of RuptVSync. The tail cycle displays
+\   nothing and the panel starts 40 scanlines later, so there is no
+\   deadline — but it must come AFTER the T1 restart, because delaying
+\   that would shift every fire in the frame by however long this takes.
+\
+\   the deck's, at the END of fire 1. The panel's display ended at P+32
+\   and the play cycle starts at P+64-line, so the whole window is free;
+\   putting it last means R4 and the T1 latch are already written and
+\   nothing that IS timing-critical moves. ~210 cycles, three scanlines.
+\
+\ &FE21 takes (logical << 4) | (physical EOR 7), and in a 4-colour mode
+\ the CAM compares only bits 7 and 5 — so all sixteen entries are written
+\ and four of them land on each logical colour. SetPalette has the
+\ derivation; these tables are that arithmetic done at assembly time.
+
+\ The C64's status area is grey on white with the logo and the score in
+\ red. The BBC has no grey, so the frame and the mode word take black.
+PN_PHYS_PAPER = 7               \ white — the inside of the box
+PN_PHYS_SPARE = 0               \ logical 1 is not used by the panel
+PN_PHYS_RED   = 1               \ the logo and the score
+PN_PHYS_INK   = 0               \ black — the frame and the mode word
+
+MACRO PALENT n, phys
+  EQUB (n * 16) OR (phys EOR 7)
+ENDMACRO
+
+\ Grouped by logical colour rather than by entry: the four entries that
+\ share one are the four that have to agree, and the ULA does not care
+\ what order they arrive in.
+.palPanel
+  PALENT  0, PN_PHYS_PAPER : PALENT  1, PN_PHYS_PAPER
+  PALENT  4, PN_PHYS_PAPER : PALENT  5, PN_PHYS_PAPER
+  PALENT  2, PN_PHYS_SPARE : PALENT  3, PN_PHYS_SPARE
+  PALENT  6, PN_PHYS_SPARE : PALENT  7, PN_PHYS_SPARE
+  PALENT  8, PN_PHYS_RED   : PALENT  9, PN_PHYS_RED
+  PALENT 12, PN_PHYS_RED   : PALENT 13, PN_PHYS_RED
+  PALENT 10, PN_PHYS_INK   : PALENT 11, PN_PHYS_INK
+  PALENT 14, PN_PHYS_INK   : PALENT 15, PN_PHYS_INK
+
+\ The deck's sixteen, built by SetPalette at deck load. IT IS HERE, IN
+\ MAIN RAM, and not in bank 4 with SetPalette: the interrupt reads it
+\ three times a frame and may fire with bank 5 or 6 paged in.
+.palPlay
+  EQUB 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+
+.SetPalPanel
+  LDX #15
+.spp_loop
+  LDA palPanel,X
+  STA VIDEO_ULA_PAL
+  DEX
+  BPL spp_loop
+  RTS
+
+.SetPalPlay
+  LDX #15
+.spl_loop
+  LDA palPlay,X
+  STA VIDEO_ULA_PAL
+  DEX
+  BPL spl_loop
+  RTS
+
+\ ============================================================
 \ RuptInit
 \ ============================================================
 .RuptInit
@@ -89,6 +166,13 @@ ENDIF
   LDA #LO(T1_I2) : STA SYS_VIA_T1LL
   LDA #HI(T1_I2) : STA SYS_VIA_T1LH
 
+\ The panel's palette, AFTER the T1 restart — see the header. Not under
+\ DEBUG_RASTER, whose bands are ULA writes of their own and which this
+\ would overwrite twice a frame.
+IF NOT(DEBUG_RASTER)
+  JSR SetPalPanel
+ENDIF
+
   LDA #0
   STA ruptState
   RTS
@@ -126,7 +210,8 @@ ENDIF
   LDA #4  : STA CRTC_ADDR : LDA #PANEL_R4 : STA CRTC_DATA
 
 \ No VSync in the panel or play cycles. The panel's own display
-\ ended 4 scanlines ago, so R6 is free to become the play cycle's.
+\ ended 12 scanlines ago (PANEL_ROWS = 4, so P+32), so R6 is free
+\ to become the play cycle's.
   LDA #7  : STA CRTC_ADDR : LDA #255      : STA CRTC_DATA
   LDA #6  : STA CRTC_ADDR : LDA #PLAY_R6  : STA CRTC_DATA
 
@@ -145,6 +230,13 @@ ENDIF
 
   LDA #LO(T1_I3) : STA SYS_VIA_T1LL
   LDA #HI(T1_I3) : STA SYS_VIA_T1LH
+
+\ The deck's palette, last of all — see the header. The panel stopped
+\ displaying twelve scanlines ago and the play cycle is at least seven
+\ away, so this whole window is free.
+IF NOT(DEBUG_RASTER)
+  JSR SetPalPlay
+ENDIF
 
   LDA #1
   STA ruptState

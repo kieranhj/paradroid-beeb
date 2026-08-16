@@ -1,4 +1,7 @@
 # ---- Build output ----
+# build.ps1 puts everything it produces in build/ — the disc image, the 200K
+# copy for jsbeeb, and beebasm's assembly listing
+build/
 *.SSD
 *.ssd
 *.dsd

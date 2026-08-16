@@ -13,12 +13,33 @@ Two separate things, and the plan in `PLAN.md` ran them together:
 (`$391A`) writes the deck to `$4940`, which is 320 bytes — eight rows of 40 — into the `$4800`
 screen, and draws 17 rows. So rows 0-7 are status and rows 8-24 are the deck.
 
-What is written there during play is much less than the space suggests:
+**The artwork in it is four `DrawString` calls from `StartGame`, `$1135-$114E`:**
+
+| addr | Y,X | contents |
+|---|---|---|
+| `$6900` | 0,0 | `$55` + 18 × `$56` + `$57` — the top border |
+| `$6917` | 2,0 | `$7C`, 14 spaces, **the logo** `$31 $32 $33 $32 $34 $33 $35 $36 $37`, 6 spaces |
+| `$6937` | 2,38 | space, `$7C` — the right edge |
+| `$693C` | 4,0 | `$58` + 18 × `$59` + `$7A` `$7B` — the bottom border |
+
+`$6917` runs on past its own end into `$6937`'s two header bytes and prints four cells of junk at
+columns 30-33 — which is exactly where `DoScore` then writes, so nothing shows. The overlap is
+deliberate, not a disassembly artefact.
+
+`$55`-`$59` fall in `DrawChar`'s wide range, so each is 16 px and two cells; `$7A`, `$7B` and `$7C`
+are 8 px and one. Both border rows therefore have the **same shape** — two cells, eighteen pairs,
+two cells — which is why one loop draws either.
+
+What changes during play is much less than the space suggests:
 
 | | |
 |---|---|
-| `DoScore` (`$0A7D`) | the score, at `prntY = 2`, `prntX = 30` — and **only when it changes** |
+| `DoScore` (`$0A7D`) | the score, at `prntY = 2`, `prntX = 30`, **eight BCD digits with leading zeros blanked** — and only when it changes |
 | `DoMoveMode` (`$31B9`) | `Mobile_txt` / `Weapon_txt` / `Transfer_txt` at row 2, column 2 — **only on the transition**, not every frame |
+| `Console` (`$2C5B`) | `Console_txt` (`$69E4`) into the same field, on entering the console |
+
+All four mode words are `prntY = 2`, `prntX = 2` and **11 cells wide**, padded with `$30`, so a
+shorter one wipes a longer one behind it.
 
 **There is no energy bar.** Energy is shown by the player's own sprite: `AnimateDroids` (`$3DE5`)
 flashes sprite colour `$D02E` through `LowNrgColor_t` once `droidEnergy < 8`, and beeps. That is
@@ -34,16 +55,47 @@ sprites as the menu icons and then `ConsoleMain`. `con_DroidInfo`, `con_DeckInfo
 
 The text font is the charset at **`$7000`**, and it is **8 × 16, not 8 × 8**: the glyph's top half
 is at code `c` and its bottom half at code `c + $80`. Rendered, codes `$00-$09` are the digits,
-`$0A-$23` lowercase `a-z`, `$30` space, `$31-$37` frame pieces, `$3A-$53` capitals `A-Z`, and
-`$2E` a full stop. `Mobile_txt` reads `$46 $18 $0B $12 $15 $0E` = `M o b i l e`, which confirms it.
+`$0A-$23` lowercase `a-z`, `$2E` a full stop, `$30` space, **`$31-$37` the Paradroid logo**,
+`$3A-$53` capitals `A-Z`, and `$55-$59`, `$7A-$7C` the status box frame. `Mobile_txt` reads
+`$46 $18 $0B $12 $15 $0E` = `M o b i l e`, which confirms it.
+
+`export_font.py` used to call `$31-$37` "frame pieces (not exported)". They are not: rendered side
+by side in `$6917`'s order they read `▌aradroid.` under an overline — the stylised logo. The frame
+is `$55-$59`, `$7A`, `$7B` and `$7C`, and the two sets were transposed.
 
 **A MODE 1 character cell is 8 px × 8 scanlines = 16 bytes, so an 8 × 16 glyph is 32 bytes in two
-stacked cells.** Our panel is `PANEL_ROWS = 5` rows of 640 bytes, so:
+stacked cells.**
 
-> **The panel holds exactly two lines of 40 characters, with one character row spare.**
+## 2a. Thirty-two scanlines, not sixty-four
 
-The C64's eight rows hold four such lines. That is the single biggest constraint on this layer and
-it is geometry, not effort — the 5-row panel was fixed in Layer 3 by the rupture and the 10K wrap.
+The four strings fill screen rows 0-5, but **the ink does not**. Render them and scan for ink:
+
+```
+    scanlines  0-7    solid, all 40 cells        the surround above the box
+    scanline   8      the corners start to curve
+    scanline   10     the top edge
+    scanlines  16-31  the text line
+    scanline   37     the bottom edge
+    scanline   39     the corners finish
+    scanlines  40-63  solid, all 40 cells        the surround below it
+```
+
+> **The box is scanlines 8 to 39 — exactly 32 — inside a 64-scanline region that is otherwise
+> flat surround.**
+
+That maps onto **four** BBC character rows and not five, so `PANEL_ROWS` went 5 → 4:
+
+```
+    row 0     the BOTTOM halves of $55/$56/$57 and their right halves
+    rows 1-2  ONE line of 40: the bars, the mode word, the logo, the score
+    row 3     the TOP halves of $58/$59/$7A/$7B
+```
+
+**It cost one CRTC register.** The panel cycle is 7 rows and displays `PANEL_ROWS` of them via R6,
+written at VSync; nothing else in the rupture moved, no T1 interval changed, and the play cycle
+still starts at P+64−`line`. The gap below the box grew from 24−`line` scanlines to 32−`line`,
+which is the original's own gap. `PANEL_ADDR` moved `&4800` → `&4A00` so the 640 bytes freed go to
+the font, which needed another 448 for the logo and frame glyphs.
 
 ## 3. Where it all lives
 
@@ -52,9 +104,10 @@ about 250 bytes. This moved twice while the layer was built, and the final arran
 
 | | | |
 |---|---|---|
-| the font | **its own disc file, `PARAFNT`** | 92 glyphs × 32 B = 2,944 B, catalogue load address `&3C00`, so `*LOAD` puts it exactly where it runs |
-| the font, at run time | **`&3C00-&477F`**, main RAM | readable with no paging from main RAM, bank 4 and bank 6 alike |
-| the four droid tables | **`&4780-&47DF`**, main RAM | `drCent`, `drNum`, `drWeapon`, `drSpeed`, copied out of bank 4 at boot by `PageTabsIn` |
+| the font | **its own disc file, `PARAFNT`** | 98 glyphs × 32 B = 3,136 B **+ 192 B of border cells**, catalogue load address `&3C00`, so `*LOAD` puts it exactly where it runs |
+| the font, at run time | **`&3C00-&48FF`**, main RAM | readable with no paging from main RAM, bank 4 and bank 6 alike |
+| the four droid tables | **`&4900-&495F`**, main RAM | `drCent`, `drNum`, `drWeapon`, `drSpeed`, copied out of bank 4 at boot by `PageTabsIn` |
+| the panel | **`&4A00-&53FF`**, 4 rows | moved up from `&4800` when it shrank; the 640 bytes went to the font |
 | the panel engine, the HUD and the console | **bank 6** | with a main-RAM bridge for the live state |
 
 **[DECISION 1]** The font is a **fourth disc file** rather than bank data copied down. It started
@@ -68,9 +121,9 @@ The console pushed bank 4 to `&C0E0`, 224 bytes past the end, and there is nothi
 bank to move: the obvious candidate, `chardata`, is read by `BuildCharset`, which also reads
 `deckScheme`, `colourMap`, `schemes` and `charSlot`, so it cannot be separated from them.
 
-**The price is that neither file can read bank 4**, where `drType`, `drEnergy`, `drCount`,
-`shipLevel` and the four droid tables live. Main RAM carries them across in two pieces: the tables
-are constant and are copied once at boot; the four scalars move and are mirrored per call by
+**The price is that neither file can read bank 4**, where `drCount`, `shipLevel` and the four
+droid tables live. Main RAM carries them across in two pieces: the tables
+are constant and are copied once at boot; the two scalars move and are mirrored per call by
 `PanelTick`, `PanelSetup`, `ConsoleEnter` and `ConsoleTick` in `main.asm`, each of which fills the
 mirror **before** paging bank 6 in. `conActive` is in main RAM for the same reason — `ConsoleTick`
 has to read it after paging bank 6 back out, because leaving the console means `ReframeView`, which
@@ -84,7 +137,7 @@ which owns the same panel row; turning that one on suppresses the HUD rather tha
 
 ## 4. The glyph set, and how strings are written
 
-92 glyphs, indexed:
+98 glyphs, indexed:
 
 ```
     0        space
@@ -93,9 +146,16 @@ which owns the same panel row; turning that one on suppresses the HUD rather tha
     37-62    capitals A-Z, RIGHT half
     63-88    lowercase a-z
     89       full stop
-    90       bar cell, full        \  synthesised, not in the C64 font
-    91       bar cell, empty       /
+    90-96    the logo, cells 0-6      ($31-$37)
+    97       the box's vertical bar   ($7C)
 ```
+
+plus a separate 192-byte `panelframe` table of **twelve 16-byte border cells** — half glyphs, not
+whole ones, because the border rows contribute only their inner 8 scanlines to the box. Both ship
+in `PARAFNT`, one after the other.
+
+**Nothing is synthesised any more.** The two energy-bar cells that used to sit at 90 and 91 went
+with the energy bar itself.
 
 **CAPITALS ARE 16 PIXELS WIDE**, which `DrawChar` (`$0C5F`) states outright. Having written the
 code and `code | $80` for the glyph's two rows it tests
@@ -108,50 +168,80 @@ code and `code | $80` for the glyph's two rows it tests
 so a capital's right half is at code `+ $20` and it occupies two character cells. Each is exported
 as two glyphs and `PnStr` draws the second whenever the first is in the capital range — the same
 test in the same place. Lowercase and digits stay one cell. **Columns therefore count cells, not
-letters**: `Deck` is 5 wide, `Alert` 6, `Droids` 7, `Transfer` 9.
-
-**[DECISION 3]** The two bar cells are **synthesised, not ported.** The C64 has no energy bar to
-take them from — see §1 — so there is nothing to be faithful to. They are a solid 6 × 12 block and
-an outline of the same, drawn to sit on the same baseline as the letters.
+letters**: `Mobile` is 7 wide, `Transfer` 9, `Console` 8 — all padded to the original's 11.
 
 Source strings are written as ordinary `EQUS "Mobile"` and converted at draw time by `PnAscii`,
 twenty bytes of code, so the assembly reads as text rather than as a table of glyph numbers.
 
 ## 5. What the panel shows
 
-Two lines of 40. Static labels are drawn once by `PanelInit` at deck load; only the fields change.
+**The C64's status line, cell for cell, and nothing else.** One line of 40 between the two border
+rows. The frame, the two bars and the logo never move and are drawn once by `PanelInit` at deck
+load; two fields change.
 
 ```
- line 0   001 ########  062  Mobile          00000000
- line 1   Deck 01   Alert ####   Droids 11
+ |  Mobile        Paradroid.          335 |
+ 0  2             15                30  37 39
 ```
 
-| field | source | updated |
+| field | column | source | updated |
+|---|---|---|---|
+| box bars | 0 and 39 | `$7C`, from `$6917` and `$6937` | never |
+| mode | 2, 11 cells | `moveMode`, or `conActive` | on change, as `DoMoveMode` does |
+| logo | 15-23, 9 cells | `$31-$37` in `$6917`'s order, in red | never |
+| score | 30-37, 8 BCD digits | `score`, in red | on change, as `DoScore` does |
+
+The score's **leading zeros are blanked and the last digit is not**, which is `DoScore`'s own rule
+at `$0AE6`-`$0B01`: a "blank char" starts as `$30` and becomes `0` at the first non-zero digit.
+Our glyph indices make that arithmetic rather than a branch — `PN_SPACE` is 0 and `PN_DIGIT0` is
+1, so the blank char *is* the base the nibble is added to.
+
+**Console is the fourth mode word.** `DoMoveMode` only writes three; the C64 draws `Console_txt`
+from `Console` itself at `$2C5B`, into the same field. `PanelUpdate` dispatches on `conActive`
+first and `moveMode` second, and `PanelTick` still runs while the console is up — as the C64's
+status rows survive `GotoHires`.
+
+### 5a. Colour: the panel has its own palette
+
+The C64's status area is **grey on white with the logo and the score in red**. Our panel used to
+share the deck's four colours, and those share only logical 0 (blue) and logical 1 (white) across
+all sixteen decks — 2 and 3 vary, and are *black* on some, so a panel drawn in either would vanish
+on those decks. This is the item `PLAN.md` carried as "panel shares the play palette", and it is
+now closed.
+
+The panel and the play area are separate CRTC cycles, so they are separate palettes: sixteen ULA
+writes at each boundary, ~210 cycles each.
+
+| logical | panel | drawn in it |
 |---|---|---|
-| droid number | `drType[0]` through `drCent` + `drNum` | on change |
-| energy bar, 8 cells | `drEnergy[0]`, **one cell per 8** | on change |
-| the ceiling | `maxEnergy`, three digits | on change |
-| mode | `moveMode` | on change, as `DoMoveMode` does |
-| score | `score`, 4 bytes BCD | on change, as `DoScore` does |
-| deck | `deck` | at deck load |
-| alert bar, 4 cells | `alertLvl` bits 6-7 | on change |
-| droids left | `drCount` | on change |
+| 0 | white | the inside of the box |
+| 1 | — | unused |
+| 2 | red | the logo, the score |
+| 3 | black | the frame, the mode word |
 
-**[DECISION 9]** The energy bar is **absolute, one cell per 8**, not a fraction of `maxEnergy`.
-It needs no divide, and 8 is the number the C64 itself treats as the danger line — `AnimateDroids`
-starts flashing the player's sprite below it — so **one cell lit is exactly that warning**. A full
-`CB_ENERGY_FULL` of `$40` fills all eight. The cost is that the bar does not shrink as the ceiling
-ages, which the number beside it shows instead.
+Where the two writes go is not free choice:
 
-**[DECISION 4]** Two fields are shown that the C64 never displays in play: the **energy bar** and
-**droids left**. Energy on the C64 is the sprite flash below 8 (§1), which is a fine cue for "about
-to die" and useless for "should I transfer yet" — and the whole economy of the game is that
-judgement. Droids-left is on the console's deck page there. Both are cheap and both make the game
-readable; both are trivially removable if KC wants the original's austerity.
+- **the panel's, at the END of `RuptVSync`.** The tail cycle displays nothing and the panel starts
+  40 scanlines later, so there is no deadline — but it must come *after* the T1 restart, because
+  delaying that shifts every fire in the frame.
+- **the deck's, at the END of fire 1.** The panel stopped displaying at P+32 and the play cycle
+  starts at P+64−`line`, so the window is free; last means R4 and the T1 latch are already written
+  and nothing timing-critical moves.
+
+`SetPalette` therefore builds a 16-byte `palPlay` table instead of writing the ULA, and that table
+is **in main RAM** although `SetPalette` is in bank 4: the interrupt reads it three times a frame
+and may fire with bank 5 or 6 paged in.
+
+Recolouring is an **AND per byte**. A MODE 1 byte's bits 7-4 are its four pixels' high colour bits
+and bits 3-0 their low ones, so the font — exported as logical 3 — becomes logical 2 with `AND
+#&F0` and logical 1 with `AND #&0F`. `pnMask` carries it; `PnAt` and `ConAt` both reset it to
+`&FF`, so a red field cannot leak into the next thing drawn.
 
 **[DECISION 5]** The sprite flash below energy 8 is **not** built. It needs a per-slot palette,
 which MODE 1 does not have — the C64 changes one sprite's colour register, we would have to
 re-blit the player in a different logical colour or flash the whole palette. Left for Layer 12.
+With the energy bar gone (decision 4), **this is now the only energy readout the port is missing**,
+and the game has none at all until it lands.
 
 ## 6. The console
 
@@ -172,15 +262,21 @@ one piece of Layer 9 with real data still to port.
 
 ## 7. Decisions to revisit
 
-| # | Decision | Why it might be wrong |
+Decisions 3, 4 and 9 are **reversed**, and 7 is **closed**, by KC's ruling of 2026-08-16: the
+status line is to be the C64's exactly — the frame, the logo, the score and the mode word, and
+nothing else. Kept below with the outcome, because the reasoning is the record of what was traded.
+
+| # | Decision | Status |
 |---|---|---|
-| 1 | Font copied to `&3C00` in main RAM | 2,112 B of a 3,072 B hole. If Layer 10 or 11 needs that hole more, the font can go back to being read from bank 6 at a cost of ~16 cycles a glyph |
-| 2 | `MG_COPY` moved to `&4400`, `DEBUG_MAPGUARD` off | only matters if another map-corruption bug turns up |
-| 3 | Bar cells synthesised | they are the only non-C64 artwork in the port |
-| 4 | Energy bar and droids-left shown, which the original does not | it is a readability change, and readability changes are exactly what "preserve the gameplay" might not want |
-| 5 | No low-energy sprite flash | a real cue is missing until Layer 12 |
-| 6 | Console in the play area, not full screen | the C64's is full screen and has a different shape; ours fits seven lines where theirs fits eleven |
-| 8 | Panel, HUD and console in bank 6, with a main-RAM bridge | it is a bank boundary in the middle of one layer's code. If bank 4 ever gets 1.4K back they could all move home and the bridge would go |
-| 9 | Energy bar absolute, one cell per 8 | it does not track the ceiling as it ages |
-| 10 | Console pages are Ship and Droids | the C64 has the **deck map** (`DrawPacked` over the level RLE) and the **ship side view** (`SideView_dat`, `$F180`, 201 B of RLE into a 64 × 16 grid). Both need real data ported and are the honest remainder of this layer |
-| 7 | Panel palette still shared with the deck | `PLAN.md` flagged this. The panel's colours change per deck, so the text could read badly on some schemes. Fixing it means a palette write in the rupture IRQ, per cycle — deferred, and the text colour is checked by eye across decks instead |
+| 1 | Font at `&3C00` in main RAM | **stands.** Now 3,328 B of a 3,584 B hole. It must be main RAM: bank 4 and bank 6 both read it and only one is visible at a time |
+| 2 | `MG_COPY` moved, `DEBUG_MAPGUARD` off | stands; only matters if another map-corruption bug turns up |
+| 3 | Bar cells synthesised | **reversed.** Gone with the energy bar. Every byte of panel artwork is now the C64's |
+| 4 | Energy bar and droids-left shown, which the original does not | **reversed.** Both dropped. The cost is that the game has *no* energy readout at all until decision 5 is built — the C64's cue is the sprite flash, and that is Layer 12 |
+| 5 | No low-energy sprite flash | stands, and matters more now: it is the only energy cue the port is missing rather than one of two |
+| 6 | Console in the play area, not full screen | stands. The C64's is full screen and has a different shape; ours fits seven lines where theirs fits eleven |
+| 7 | Panel palette shared with the deck | **closed.** The panel is a separate CRTC cycle and now has its own four colours — §5a. Sixteen ULA writes at each boundary, ~210 cycles, twice a frame |
+| 8 | Panel, HUD and console in bank 6, with a main-RAM bridge | stands, and is now Layer 13's to unpick. The bridge shrank to two scalars when the droid number and energy bar went |
+| 9 | Energy bar absolute, one cell per 8 | **reversed** with decision 4 |
+| 10 | Console pages are Ship and Droids | stands. The C64 has the **deck map** (`DrawPacked` over the level RLE) and the **ship side view** (`SideView_dat`, `$F180`, 201 B of RLE into a 64 × 16 grid). Both need real data ported and are the honest remainder of this layer |
+| 11 | The surround is **black**, where the C64's is grey | new. The original fills all eight status rows with the surround colour and puts the box in the middle 32 scanlines; we draw the box alone and leave the rest CRTC-blanked. Covering it needs all eight rows displayed — 5,120 bytes against a 7-row panel cycle |
+| 12 | The box sits at the **top** of the display; the C64's is 8 scanlines down | new, and cosmetic given 11: the same 32 scanlines of box, 8 px higher against black. Matching it exactly means displaying 5 rows with the first blank, which costs 640 bytes and a second `PANEL_ADDR` |

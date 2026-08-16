@@ -33,6 +33,22 @@ decision, move it out of `PLAN.md` rather than letting it accumulate.
 
 ## Working approach
 
+**The C64 original is the specification. Go and read it before planning anything.** Every feature
+starts by finding what the original does — the routine in `paradroid_ce_annotated.asm`, the data
+table it reads, the exact layout it produces — and the port reproduces that. Prefer taking the
+original's code, constants, data and layout **verbatim** over writing something equivalent: a
+transliterated routine and a copied table are faithful by construction, and an "equivalent" one is
+only faithful until the first thing it gets subtly wrong. When the C64 hardware forces a change
+(a different display mode, a different sprite model, a smaller screen), port the *decision* the
+original made, not just the effect.
+
+**Rewrites and deviations must be agreed with KC before they are built, and written down after.**
+That includes anything the original does not have, anything it has that the port drops, and any
+place the port's geometry or timing forces a different arrangement. Raise it as an explicit
+decision, get an answer, then record it in the layer's `docs/` file with the reason — the numbered
+**[DECISION]** lists in `docs/layer-9-hud.md` and `docs/layer-10-transfer.md` are the pattern.
+Do not quietly substitute a design of your own for the original's.
+
 **No hardware abstraction layer.** An earlier iteration of this project designed a HAL up front;
 that was explicitly rejected. Build one layer at a time, get each working and visible in the
 emulator before starting the next, and revise `PLAN.md` as you go.
@@ -66,21 +82,39 @@ proves no instruction was added, removed or reordered.
 ## Build
 
 ```powershell
-.\build.ps1          # assemble to PARADROID.SSD
+.\build.ps1          # assemble into build/
 .\build.ps1 -Run     # assemble and launch in b-em
 ```
 
+**Everything the build produces goes in `build/`, which is gitignored:**
+
+| | |
+|---|---|
+| `build/PARADROID.SSD` | the disc image |
+| `build/PARADROID-200K.SSD` | the same, padded — **give this one to jsbeeb** |
+| `build/PARADROID.lst` | beebasm's `-v` listing, ~870 KB |
+
 DFS filenames are max 7 characters — the executable on disc is `PARA`.
 
-**beebasm writes its progress and success messages to stderr.** In PowerShell that renders as an
-error, and if you pipe or redirect it under `$ErrorActionPreference = 'Stop'` it raises
-`NativeCommandError` and `build.ps1` throws even though the assembly succeeded. Check the exit
-code. The reliable way to capture a build log is `./bin/beebasm.exe ... 2>&1` from the Bash tool,
-not from PowerShell.
-
 **jsbeeb will not boot an unpadded SSD.** It hangs in the DFS FDC poll loading `PARASPR`, because
-beebasm's image ends mid-track and jsbeeb will not read the last partial one. Pad a copy to 200K
-before handing it to an emulator or publishing it.
+beebasm's image ends mid-track and jsbeeb will not read the last partial one. `build.ps1` writes
+the padded copy for you; if you invoke beebasm by hand, pad before handing the image to an
+emulator or publishing it.
+
+**beebasm writes its progress and success messages to stderr.** In PowerShell that renders as an
+error, and if you pipe or redirect *that stream* under `$ErrorActionPreference = 'Stop'` it raises
+`NativeCommandError` and `build.ps1` throws even though the assembly succeeded. Check the exit
+code. Redirecting **stdout** alone is safe, which is how `build.ps1` captures the listing; it is
+`2>&1` that does the damage. From the Bash tool, `./bin/beebasm.exe ... 2>&1` is fine.
+
+**If loose `PARA`, `PARADAT`, `PARASPR`, `PARSPR2`, `PARAFNT` files appear in the project root, the
+disc image was not written.** beebasm's `SAVE` falls back to a host file when `-do` fails — an
+unwritable path, a missing directory — so their presence means the build did *not* do what it
+looked like it did. They are not a normal build product.
+
+Symbol addresses come from `./bin/beebasm.exe -i src/main.asm -d`, which dumps every global label
+as one long line of `'name':decimal`. That is the quick way to find a variable's runtime address
+for an emulator poke.
 
 ## Confirmed hardware facts (measured, not assumed)
 

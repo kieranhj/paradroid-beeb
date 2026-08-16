@@ -15,10 +15,19 @@
 \ its BOTTOM half at c + $80. A MODE 1 character cell is 8 px by 8
 \ scanlines and 16 bytes, so a glyph is TWO STACKED CELLS, 32 bytes.
 \
-\ The panel is PANEL_ROWS = 5 character rows, so it holds exactly TWO
-\ lines of 40 characters with one row spare. The C64's eight status rows
-\ hold four such lines. That is geometry, not effort: the 5-row panel was
-\ fixed in Layer 3 by the rupture and the 10K wrap.
+\ THE PANEL IS THE C64's STATUS BOX AND NOTHING ELSE. PANEL_ROWS = 4,
+\ 32 scanlines, which is exactly the height of the ink in the original's
+\ status area — see the note by PANEL_ADDR in main.asm for the derivation
+\ from $6900/$6917/$6937/$693C. The four rows are:
+\
+\   row 0     the top border      panelframe cells 0-5
+\   rows 1-2  ONE line of 40      the box bars, the mode word, the logo,
+\                                 the score — nothing else
+\   row 3     the bottom border   panelframe cells 6-11
+\
+\ Everything the port used to show here that the C64 does not — the droid
+\ number, the energy bar, the ceiling, the deck, the alert level and the
+\ droids-left count — is gone. See docs/layer-9-hud.md.
 \
 \ ---- why the panel is easy where the play area is not -------
 \ The panel does not scroll and nothing is blitted over it, so:
@@ -53,8 +62,24 @@ PN_UPPER_Z  = 36
 PN_WIDE_OFS = 26
 PN_LOWER_A  = 63
 PN_DOT      = 89
-PN_BAR_ON   = 90
-PN_BAR_OFF  = 91
+PN_LOGO0    = 90                \ the seven logo cells, 90-96
+PN_BOXBAR   = 97                \ $7C, the box's vertical bar
+
+\ ---- INK, as a mask ANDed into every glyph byte ------------
+\ A MODE 1 byte carries four pixels: bits 7-4 are their HIGH colour bits
+\ and bits 3-0 their LOW ones, so a logical colour is high*2 + low. The
+\ font is exported with both planes set — logical 3 — and dropping one
+\ plane recolours a glyph for the cost of an AND per byte:
+\
+\   &FF  logical 3    the frame and the mode word   (black)
+\   &F0  logical 2    the logo and the score        (red)
+\   &0F  logical 1
+\
+\ which is how the original's status area is coloured: it is grey on
+\ white with the logo and the score in red. Grey is not a BBC colour, so
+\ the frame and the text take black. See docs/layer-9-hud.md.
+PN_INK_TEXT = &FF
+PN_INK_RED  = &F0
 
 \ ---- CAPITALS ARE TWO CELLS WIDE ---------------------------
 \ DrawChar ($0C5F) writes the code, then tests it:
@@ -65,19 +90,29 @@ PN_BAR_OFF  = 91
 \ draws the second whenever the first is a capital — the same test, in
 \ the same place. Lowercase and digits stay one cell.
 
-PN_COLS    = 40                 \ characters across the panel
-PN_LINES   = PANEL_ROWS DIV 2   \ 8x16 glyphs: two character rows each
-ASSERT PN_LINES == 2
+PN_COLS     = 40                \ characters across the panel
+PN_TEXT_ROW = 1                 \ the text line sits between the borders
+ASSERT PN_TEXT_ROW + 2 == PANEL_ROWS - 1
+
+\ The text line's base address, used by PnAt and by nothing else. The
+\ panel has ONE line now, so pnLine is not read here — it still exists
+\ because console.asm's ConAt has seven lines and uses it.
+PN_TEXT_ADDR = PANEL_ADDR + PN_TEXT_ROW * ROW_BYTES
 
 \ ============================================================
-\ PnAt — point pnDst at text cell (pnLine, pnCol)
+\ PnAt — point pnDst at text cell pnCol on the panel's one line
 \ ============================================================
 \ The glyph's top cell; its bottom cell is ROW_BYTES further on, which
 \ the draw adds as it goes rather than keeping a second pointer.
 \
-\ pnLine * 2 * ROW_BYTES is 1280 per line, and there are only two lines,
-\ so the multiply is a shift and an add rather than a table.
+\ IT ALSO RESETS THE INK. Every caller that wants red sets pnMask after
+\ this returns, so there is no restore to forget and no path that leaves
+\ the panel — or the console, whose ConAt does the same — drawing in a
+\ colour the previous field chose.
 .PnAt
+  LDA #PN_INK_TEXT
+  STA pnMask
+
   LDA pnCol                     \ col * 16
   ASL A : ASL A : ASL A : ASL A
   STA pnDst
@@ -86,15 +121,8 @@ ASSERT PN_LINES == 2
   STA pnDst+1
 
   CLC
-  LDA pnDst   : ADC #LO(PANEL_ADDR) : STA pnDst
-  LDA pnDst+1 : ADC #HI(PANEL_ADDR) : STA pnDst+1
-
-  LDA pnLine
-  BEQ pn_at_x
-  CLC                           \ line 1 is 2 * ROW_BYTES down
-  LDA pnDst   : ADC #LO(2*ROW_BYTES) : STA pnDst
-  LDA pnDst+1 : ADC #HI(2*ROW_BYTES) : STA pnDst+1
-.pn_at_x
+  LDA pnDst   : ADC #LO(PN_TEXT_ADDR) : STA pnDst
+  LDA pnDst+1 : ADC #HI(PN_TEXT_ADDR) : STA pnDst+1
   RTS
 
 \ ============================================================
@@ -120,6 +148,7 @@ ASSERT PN_LINES == 2
   LDY #15                       \ the top cell
 .pn_top
   LDA (pnSrc),Y
+  AND pnMask                    \ the ink — see PN_INK_TEXT above
   STA (pnDst),Y
   DEY
   BPL pn_top
@@ -134,6 +163,7 @@ ASSERT PN_LINES == 2
   LDY #15
 .pn_bot
   LDA (pnSrc),Y
+  AND pnMask
   STA (pnDst),Y
   DEY
   BPL pn_bot
@@ -142,6 +172,72 @@ ASSERT PN_LINES == 2
   LDA pnDst   : SBC #LO(ROW_BYTES - 16) : STA pnDst
   LDA pnDst+1 : SBC #HI(ROW_BYTES - 16) : STA pnDst+1
   RTS
+
+\ ============================================================
+\ PnCell — draw border cell A at pnDst, then advance one column
+\ ============================================================
+\ HALF a glyph: 16 bytes, one character row, because the border rows
+\ contribute only their inner 8 scanlines to the box. Twelve cells at 16
+\ bytes is 192, so the index times 16 stays in one byte and the pointer
+\ arithmetic is a shift and one add rather than PnGlyph's shift-and-roll.
+.PnCell
+  ASL A : ASL A : ASL A : ASL A \ * 16, and 11 * 16 = 176: no carry out
+  CLC
+  ADC #LO(PN_FRAME_ADDR) : STA pnSrc
+  LDA #0
+  ADC #HI(PN_FRAME_ADDR) : STA pnSrc+1
+
+  LDY #15
+.pn_c_loop
+  LDA (pnSrc),Y
+  AND pnMask
+  STA (pnDst),Y
+  DEY
+  BPL pn_c_loop
+
+  CLC
+  LDA pnDst : ADC #16 : STA pnDst
+  BCC pn_c_x
+  INC pnDst+1
+.pn_c_x
+  RTS
+
+\ ============================================================
+\ PnFrame — the box's top and bottom borders, rows 0 and 3
+\ ============================================================
+\ $6900 draws the top as $55 + 18 x $56 + $57 and $693C the bottom as
+\ $58 + 18 x $59 + $7A $7B. $55-$59 are wide, so each contributes two
+\ cells, and $7A and $7B are one each — which makes BOTH rows the same
+\ shape: two cells, eighteen pairs, two cells. One loop draws either,
+\ with X the first of its six panelframe entries.
+.PnFrame
+  LDA #PN_INK_TEXT : STA pnMask
+
+  LDA #LO(PANEL_ADDR) : STA pnDst
+  LDA #HI(PANEL_ADDR) : STA pnDst+1
+  LDX #0
+  JSR pn_f_row
+
+  LDA #LO(PANEL_ADDR + (PANEL_ROWS-1) * ROW_BYTES) : STA pnDst
+  LDA #HI(PANEL_ADDR + (PANEL_ROWS-1) * ROW_BYTES) : STA pnDst+1
+  LDX #6
+.pn_f_row
+  STX pnTmp
+  TXA
+  JSR PnCell
+  LDA pnTmp : CLC : ADC #1 : JSR PnCell
+
+  LDX #18
+.pn_f_mid
+  STX pnCount
+  LDA pnTmp : CLC : ADC #2 : JSR PnCell
+  LDA pnTmp : CLC : ADC #3 : JSR PnCell
+  LDX pnCount
+  DEX
+  BNE pn_f_mid
+
+  LDA pnTmp : CLC : ADC #4 : JSR PnCell
+  LDA pnTmp : CLC : ADC #5 : JMP PnCell
 
 \ ============================================================
 \ PnAscii — A = ASCII, out = glyph index
@@ -233,22 +329,19 @@ ASSERT PN_LINES == 2
   JMP PnGlyph                   \ and its RTS
 
 \ ============================================================
-\ PnNum — A = value, print pnDigits decimal digits at (pnLine, pnCol)
+\ PnDigits — print pnDigits decimal digits of pnVal at pnDst
 \ ============================================================
-\ Leading zeros are PRINTED, not blanked: every field on the panel is
-\ fixed width and a blanked digit would have to be erased when the number
-\ grows again. The C64 blanks them (DoScore's `LDA #$30` for "empty
-\ leading chars") because its score is eight digits wide and ours is a
-\ two-digit deck number.
+\ THE CONSOLE'S, not the panel's: ConNum points pnDst with its own ConAt
+\ and then jumps in here. The panel has no decimal field left — its one
+\ number is the score, which is BCD and blanks its leading zeros, so it
+\ has its own loop in PanelUpdate exactly as DoScore does.
+\
+\ Leading zeros are PRINTED here, because every console field is fixed
+\ width and a blanked digit would have to be erased when the number grows
+\ again.
 \
 \ Repeated subtraction, not a divide: the widest field is three digits
 \ and a value of 255, so the inner loop runs at most 2 + 5 + 9 times.
-.PnNum
-  STA pnVal
-  JSR PnAt
-\ ---- and the tail, which the console shares ----------------
-\ Entered with pnDst already pointed and pnVal set, so ConNum can use
-\ its own ConAt and then fall in here.
 .PnDigits
   LDX pnDigits
   DEX
@@ -278,33 +371,6 @@ ASSERT PN_LINES == 2
   RTS
 
 .pnPow10 EQUB 1, 10, 100
-
-\ ============================================================
-\ PnBar — A = cells lit, pnDigits = cells total
-\ ============================================================
-\ The two bar glyphs are the only artwork in the port that is not the
-\ C64's. There is nothing to port: the original has no energy bar at all
-\ and shows low energy by flashing the player's sprite instead. See
-\ docs/layer-9-hud.md, decisions 3 and 4.
-.PnBar
-  STA pnCount
-  JSR PnAt
-  LDX pnDigits
-.pn_b_loop
-  LDA pnCount
-  BEQ pn_b_off
-  DEC pnCount
-  LDA #PN_BAR_ON
-  BNE pn_b_put                  \ always
-.pn_b_off
-  LDA #PN_BAR_OFF
-.pn_b_put
-  STX pnTmp
-  JSR PnGlyph
-  LDX pnTmp
-  DEX
-  BNE pn_b_loop
-  RTS
 
 \ ============================================================
 \ PnClear — blank the whole panel
@@ -338,8 +404,9 @@ ASSERT PN_LINES == 2
 \ pnSrc and pnDst are not here: they are swSrc and swDst — see the top.
 .pnStrLo  EQUB 0
 .pnStrHi  EQUB 0
-.pnLine   EQUB 0
+.pnLine   EQUB 0                \ console.asm's ConAt only; the panel has one line
 .pnCol    EQUB 0
+.pnMask   EQUB PN_INK_TEXT      \ the ink, ANDed into every glyph byte
 .pnDigits EQUB 0
 .pnVal    EQUB 0
 .pnStep   EQUB 0
@@ -350,262 +417,192 @@ ASSERT PN_LINES == 2
 \ ============================================================
 \ THE HUD
 \ ============================================================
-\ Two lines of 40, and what goes in them is set out in
-\ docs/layer-9-hud.md §5 along with the two fields the C64 does not have.
+\ ONE line of 40, and it is the C64's, cell for cell. $6917, $6937,
+\ DoMoveMode and DoScore between them put:
 \
-\   line 0   001 ########  064  Mobile          00000000
-\   line 1   Deck 01   Alert ####   Droids 12
+\   |  Mobile        Paradroid.          335 |
+\   0  2             15                30  37 39
+\
+\ | the box bars | cols 0 and 39 | $6917 and $6937, $7C both |
+\ | the mode word | col 2, 11 cells | DoMoveMode's own prntX |
+\ | the logo | cols 15-23, 9 cells | $6917, in red |
+\ | the score | cols 30-37, 8 BCD digits | DoScore's own prntX, in red |
 \
 \ EVERY FIELD IS DRAWN ONLY WHEN IT CHANGES, which is the original's own
 \ arrangement — DoScore repaints the score only when the BCD moves, and
 \ DoMoveMode writes Mobile/Weapon/Transfer on the transition and not per
-\ frame. A shadow copy per field is a byte each and turns a 40-glyph
-\ repaint into six compares on a quiet pass.
+\ frame. Two shadow bytes turn a repaint into two compares on a quiet pass.
 \
-\ The static words are drawn once by PanelInit at deck load. Only the
-\ values below move.
+\ The frame, the bars and the logo never move and are drawn once by
+\ PanelInit at deck load.
 
-PN_L0 = 0
-PN_L1 = 1
+\ COLUMNS COUNT CELLS, NOT LETTERS, because a capital is two cells. The
+\ numbers are the C64's: prntX = 2 for the mode word, 30 for the score,
+\ and the logo where $6917's fourteen spaces leave it.
+PN_COL_BARL  = 0
+PN_COL_MODE  = 2
+PN_COL_LOGO  = 15
+PN_COL_SCORE = 30
+PN_COL_BARR  = 39
 
-\ COLUMNS COUNT CELLS, NOT LETTERS, because a capital is two cells:
-\ "Deck" is 5 wide, "Alert" 6, "Droids" 7, "Transfer" 9.
-PN_COL_NUM   = 0                \ 001, three digits
-PN_COL_BAR   = 4                \ energy, PN_BAR_CELLS cells
-PN_COL_MAX   = 13               \ the ceiling, three digits
-PN_COL_MODE  = 17               \ Mobile / Weapon / Transfer, 9 cells
-PN_COL_SCORE = 32               \ eight BCD digits
-
-PN_COL_DECKW = 0                \ the word Deck
-PN_COL_DECK  = 6                \ and its two digits
-PN_COL_ALERTW = 11              \ the word Alert
-PN_COL_ALERT = 18               \ and its four cells
-PN_COL_LEFTW = 25               \ the word Droids
-PN_COL_LEFT  = 33               \ and its two digits
-
-\ ENERGY IS SHOWN ABSOLUTELY, ONE CELL PER 8, not as a fraction of
-\ maxEnergy. It needs no divide, and 8 is the number the C64 itself
-\ treats as the danger line — AnimateDroids ($3DE5) starts flashing the
-\ player's sprite below it — so ONE CELL LIT IS EXACTLY THAT WARNING.
-\ CB_ENERGY_FULL is $40, so a fresh droid fills all eight.
-PN_BAR_CELLS  = 8
-PN_ALERT_CELLS = 4
+PN_LOGO_CELLS = 9               \ nine cells from seven glyphs
+PN_SCORE_BYTES = 4              \ eight BCD digits
 
 \ ============================================================
-\ PanelInit — clear the panel and draw everything that never moves
+\ PanelInit — the box, the bars and the logo, all of them static
 \ ============================================================
-\ Called from LoadDeck, after the deck is framed. Also invalidates every
-\ shadow so the first PanelUpdate repaints the lot.
+\ Called from LoadDeck, after the deck is framed. Also invalidates both
+\ shadows so the first PanelUpdate repaints the two live fields.
 .PanelInit
   JSR PnClear
+  JSR PnFrame
 
-  LDA #PN_L1 : STA pnLine
-  LDA #PN_COL_DECKW : STA pnCol
-  LDA #LO(pnTxtDeck) : STA pnStrLo
-  LDA #HI(pnTxtDeck) : STA pnStrHi
-  JSR PnStr
+\ ---- the box's two vertical bars, $6917 and $6937 ----------
+  LDA #PN_COL_BARL : STA pnCol
+  JSR PnAt
+  LDA #PN_BOXBAR
+  JSR PnGlyph
 
-  LDA #PN_L1 : STA pnLine
-  LDA #PN_COL_ALERTW : STA pnCol
-  LDA #LO(pnTxtAlert) : STA pnStrLo
-  LDA #HI(pnTxtAlert) : STA pnStrHi
-  JSR PnStr
+  LDA #PN_COL_BARR : STA pnCol
+  JSR PnAt
+  LDA #PN_BOXBAR
+  JSR PnGlyph
 
-  LDA #PN_L1 : STA pnLine
-  LDA #PN_COL_LEFTW : STA pnCol
-  LDA #LO(pnTxtDroids) : STA pnStrLo
-  LDA #HI(pnTxtDroids) : STA pnStrHi
-  JSR PnStr
+\ ---- the logo, nine cells in red ---------------------------
+\ $6917 draws $31 $32 $33 $32 $34 $33 $35 $36 $37 — seven glyphs, two of
+\ them twice — so the order is a table rather than a run.
+  LDA #PN_COL_LOGO : STA pnCol
+  JSR PnAt
+  LDA #PN_INK_RED : STA pnMask  \ after PnAt, which resets the ink
+  LDX #0
+.pi_logo
+  STX pnTmp
+  LDA pnLogoSeq,X
+  CLC : ADC #PN_LOGO0
+  JSR PnGlyph
+  LDX pnTmp
+  INX
+  CPX #PN_LOGO_CELLS
+  BNE pi_logo
 
-  LDA #PN_L1     : STA pnLine
-  LDA #PN_COL_DECK : STA pnCol
-  LDA #2         : STA pnDigits
-  LDA deck                      \ AS-IS, not +1: BUGS.md, the docs and the
-  JSR PnNum                     \ debug deck hop all name decks by this number
-
-  LDA #&FF                      \ every shadow invalid: repaint it all
-  STA pnShType
-  STA pnShEnergy
-  STA pnShMax
+  LDA #&FF                      \ both shadows invalid: repaint them
   STA pnShMode
-  STA pnShAlert
-  STA pnShLeft
   STA pnShScore
   RTS
 
+.pnLogoSeq EQUB 0, 1, 2, 1, 3, 2, 4, 5, 6
+
 \ ============================================================
-\ PanelUpdate — the fields that move. Once a pass, from the main loop
+\ PanelUpdate — the two fields that move. Once a pass, from the main loop
 \ ============================================================
 .PanelUpdate
-\ ---- the droid you are riding ------------------------------
-  LDA pmType
-  CMP pnShType
-  BEQ pu_energy
-  STA pnShType
-  TAY
-  LDA #PN_L0       : STA pnLine
-  LDA #PN_COL_NUM  : STA pnCol
-  JSR PnAt
-  LDA pnTabCent,Y               \ hundreds
-  CLC : ADC #PN_DIGIT0
-  JSR PnGlyph
-  LDY pnShType
-  LDA pnTabNum,Y                \ tens and units, packed BCD
-  LSR A : LSR A : LSR A : LSR A
-  CLC : ADC #PN_DIGIT0
-  JSR PnGlyph
-  LDY pnShType
-  LDA pnTabNum,Y
-  AND #&0F
-  CLC : ADC #PN_DIGIT0
-  JSR PnGlyph
-
-\ ---- energy, as PN_BAR_CELLS cells of 8 --------------------
-.pu_energy
-  LDA pmEnergy
-  CLC : ADC #7                  \ any energy at all lights a cell
-  LSR A : LSR A : LSR A
-  CMP #PN_BAR_CELLS+1
-  BCC pu_ehave
-  LDA #PN_BAR_CELLS
-.pu_ehave
-  CMP pnShEnergy
-  BEQ pu_max
-  STA pnShEnergy
-  LDA #PN_L0      : STA pnLine
-  LDA #PN_COL_BAR : STA pnCol
-  LDA #PN_BAR_CELLS : STA pnDigits
-  LDA pnShEnergy
-  JSR PnBar
-
-\ ---- the ceiling, which only ever falls --------------------
-.pu_max
-  LDA maxEnergy
-  CMP pnShMax
-  BEQ pu_mode
-  STA pnShMax
-  LDA #PN_L0      : STA pnLine
-  LDA #PN_COL_MAX : STA pnCol
-  LDA #3          : STA pnDigits
-  LDA pnShMax
-  JSR PnNum
-
-\ ---- Mobile / Weapon / Transfer ----------------------------
+\ ---- Mobile / Weapon / Transfer / Console ------------------
 \ moveMode's four states collapse to the original's three words: $80
-\ Mobile, 1 Weapon, 0 Transfer, and 2 is the settling state on its way
-\ to Transfer, which the C64 does not name either.
-.pu_mode
-\ TWO WAYS TO LOSE THE FLAGS HERE, and this arm found both.
+\ Mobile, 1 Weapon, 0 Transfer, and 2 is the settling state on its way to
+\ Transfer, which the C64 does not name either. CONSOLE IS THE FOURTH and
+\ does not come from moveMode at all — the C64 draws Console_txt ($69E4)
+\ from Console itself, at $2C5B, into the same field.
 \
-\ **CMP leaves N from the SUBTRACTION, not from the value.** The change
-\ test has to happen first, so by the time the mode is dispatched on, N
-\ describes `moveMode - pnShMode`. Going from $80 to 1 that is $81,
-\ negative, so `BMI` took the Mobile arm on the very transition that was
-\ meant to leave it. Hence the reload below.
-\
-\ **LDY sets N too.** Loading the string pointer before the branch means
-\ `BMI` tests the string's high byte instead. That is why the dispatch
-\ picks the pointer inside each arm rather than ahead of them.
-\
-\ Both bugs read as "the mode field never changes", and the shadow byte
-\ says otherwise — pnShMode tracks moveMode correctly throughout.
+\ The dispatch reduces to an INDEX first and compares second, which is
+\ deliberate: the arm this replaced tested moveMode after a CMP and after
+\ an LDY, and both clobber N. Both bugs read as "the mode never changes".
+  LDA conActive
+  BEQ pu_m_play
+  LDA #3                        \ Console
+  BNE pu_m_have                 \ always
+.pu_m_play
   LDA moveMode
-  CMP pnShMode
-  BEQ pu_alert
-  STA pnShMode
-  LDA pnShMode                  \ reload: CMP above clobbered N
-  BMI pu_mmob                   \ $80 Mobile
+  BMI pu_m_mob                  \ $80 Mobile
   CMP #MM_WEAPON
-  BEQ pu_mwep
-  LDX #LO(pnTxtXfer)   : LDY #HI(pnTxtXfer)   : JMP pu_mset
-.pu_mwep
-  LDX #LO(pnTxtWeapon) : LDY #HI(pnTxtWeapon) : JMP pu_mset
-.pu_mmob
-  LDX #LO(pnTxtMobile) : LDY #HI(pnTxtMobile)
-.pu_mset
-  STX pnStrLo : STY pnStrHi
-  LDA #PN_L0       : STA pnLine
+  BEQ pu_m_wep
+  LDA #2                        \ Transfer: moveMode 0, and 2 settling
+  BNE pu_m_have                 \ always
+.pu_m_wep
+  LDA #1
+  BNE pu_m_have                 \ always
+.pu_m_mob
+  LDA #0
+.pu_m_have
+  CMP pnShMode
+  BEQ pu_score
+  STA pnShMode
+  ASL A
+  TAX
+  LDA pnTxtTab+0,X : STA pnStrLo
+  LDA pnTxtTab+1,X : STA pnStrHi
   LDA #PN_COL_MODE : STA pnCol
   JSR PnStr
 
-\ ---- the alert level, its top two bits ---------------------
-.pu_alert
-  LDA alertLvl
-  LSR A : LSR A : LSR A
-  LSR A : LSR A : LSR A
-  CMP pnShAlert
-  BEQ pu_left
-  STA pnShAlert
-  LDA #PN_L1        : STA pnLine
-  LDA #PN_COL_ALERT : STA pnCol
-  LDA #PN_ALERT_CELLS : STA pnDigits
-  LDA pnShAlert
-  JSR PnBar
-
-\ ---- droids left on the deck -------------------------------
-\ drCount includes entry 0, the player, and any bullet or explosion
-\ still in the table. The C64's own deck-cleared test is `CMP #2` on the
-\ same count, so this is that number less the player and nothing more.
-.pu_left
-  LDA pmCount
-  BEQ pu_lhave                  \ cannot happen; do not underflow if it does
-  SEC : SBC #1
-.pu_lhave
-  CMP pnShLeft
-  BEQ pu_score
-  STA pnShLeft
-  LDA #PN_L1       : STA pnLine
-  LDA #PN_COL_LEFT : STA pnCol
-  LDA #2           : STA pnDigits
-  LDA pnShLeft
-  JSR PnNum
-
-\ ---- the score, four bytes of BCD --------------------------
+\ ---- the score, four bytes of BCD, in red ------------------
 \ Only the low byte is watched: it moves on every award, so a change
 \ anywhere above it has always moved it too.
+\
+\ LEADING ZEROS ARE BLANKED, which is DoScore's own behaviour and the
+\ reason this does not go through PnDigits. $0AE6 starts a "blank char"
+\ at $30 (space) and zeroes it at the first non-zero digit, so every
+\ later zero prints as a digit; the LAST digit prints even when zero,
+\ which is what `CPX #3 : BEQ _11` at $0B01 is for. Our glyph indices
+\ make that arithmetic rather than a branch: PN_SPACE is 0 and PN_DIGIT0
+\ is 1, so the blank char IS the base the nibble is added to.
 .pu_score
   LDA score+3
   CMP pnShScore
   BEQ pu_x
   STA pnShScore
-  LDA #PN_L0        : STA pnLine
+
   LDA #PN_COL_SCORE : STA pnCol
   JSR PnAt
+  LDA #PN_INK_RED : STA pnMask
+  LDA #PN_SPACE
+  STA pnStep                    \ DoScore's tmp1: the blank char
   LDX #0
-.pu_sloop
+.pu_s_byte
   LDA score,X
   LSR A : LSR A : LSR A : LSR A
-  CLC : ADC #PN_DIGIT0
-  STX pnTmp
-  JSR PnGlyph
+  JSR pu_s_digit
   LDX pnTmp
   LDA score,X
   AND #&0F
-  CLC : ADC #PN_DIGIT0
-  STX pnTmp
-  JSR PnGlyph
+  CPX #PN_SCORE_BYTES-1         \ the last digit is never blanked
+  BNE pu_s_low
+  LDY #PN_DIGIT0 : STY pnStep
+.pu_s_low
+  JSR pu_s_digit
   LDX pnTmp
   INX
-  CPX #4
-  BNE pu_sloop
+  CPX #PN_SCORE_BYTES
+  BNE pu_s_byte
 .pu_x
   RTS
 
-\ ---- the words ---------------------------------------------
-\ Mixed case, as the original's are: Mobile_txt at $698A reads
-\ $46 $18 $0B $12 $15 $0E = M o b i l e. Each mode word is padded to
-\ eight so a shorter one wipes a longer one behind it.
-.pnTxtMobile EQUS "Mobile  " : EQUB 0   \ 7 cells + 2 pad = 9
-.pnTxtWeapon EQUS "Weapon  " : EQUB 0   \ 7 cells + 2 pad = 9
-.pnTxtXfer   EQUS "Transfer" : EQUB 0   \ 9 cells exactly
-.pnTxtDeck   EQUS "Deck"     : EQUB 0
-.pnTxtAlert  EQUS "Alert"    : EQUB 0
-.pnTxtDroids EQUS "Droids"   : EQUB 0
+\ A = the nibble. Prints pnStep + A, and any non-zero nibble turns the
+\ blank char into PN_DIGIT0 so nothing after it is blanked.
+.pu_s_digit
+  STX pnTmp
+  CMP #0
+  BEQ pu_sd_put
+  LDY #PN_DIGIT0 : STY pnStep
+.pu_sd_put
+  CLC
+  ADC pnStep
+  JMP PnGlyph                   \ and its RTS
 
-.pnShType   EQUB &FF
-.pnShEnergy EQUB &FF
-.pnShMax    EQUB &FF
+\ ---- the words ---------------------------------------------
+\ Mixed case, as the original's are, and PADDED TO ELEVEN CELLS because
+\ that is the width the C64 pads them to: Mobile_txt at $698A is
+\ $46 $18 $0B $12 $15 $0E then four $30s, and Transfer_txt at $697D is
+\ eight letters then two — eleven cells either way, so a shorter word
+\ wipes a longer one behind it. Capitals are two cells each.
+.pnTxtTab
+  EQUW pnTxtMobile              \ 0
+  EQUW pnTxtWeapon              \ 1
+  EQUW pnTxtXfer                \ 2
+  EQUW pnTxtConsole             \ 3
+
+.pnTxtMobile  EQUS "Mobile    " : EQUB 0    \ 7 cells + 4 pad = 11
+.pnTxtWeapon  EQUS "Weapon    " : EQUB 0    \ 7 cells + 4 pad = 11
+.pnTxtXfer    EQUS "Transfer  " : EQUB 0    \ 9 cells + 2 pad = 11
+.pnTxtConsole EQUS "Console   " : EQUB 0    \ 8 cells + 3 pad = 11
+
 .pnShMode   EQUB &FF
-.pnShAlert  EQUB &FF
-.pnShLeft   EQUB &FF
 .pnShScore  EQUB &FF

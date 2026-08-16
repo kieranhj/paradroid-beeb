@@ -17,6 +17,12 @@
 \     logical = ((n AND 8) >> 2) OR ((n AND 2) >> 1)
 \
 \ which gives four entries per logical colour, covering 0-15 exactly.
+\
+\ IT BUILDS palPlay RATHER THAN WRITING THE ULA, because the panel now
+\ has a palette of its own and the rupture swaps between the two three
+\ times a frame — see the header in rupture.asm. palPlay is in main RAM
+\ for the same reason: this routine is in bank 4 and the interrupt that
+\ reads the table cannot see bank 4 while a sprite is being blitted.
 .SetPalette
   LDA deck
   ASL A : ASL A                 \ deck * 4 -> index into deckPalette
@@ -39,10 +45,10 @@
   TXA
   ASL A : ASL A : ASL A : ASL A \ logical selector in the top nibble
   ORA palTmp
-  STA VIDEO_ULA_PAL
+  STA palPlay,X
   DEX
   BPL sp_loop
-  RTS
+  JMP SetPalPlay                \ live immediately, not at the next fire 1
 
 \ ============================================================
 \ BuildLevel — RLE-decode a deck into the tile map

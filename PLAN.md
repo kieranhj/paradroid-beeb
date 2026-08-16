@@ -144,7 +144,7 @@ seconds where a buffer diff would have taken an emulator run.
 | Play area is 320 × 120, not 128 | Consequence of the single hardware wrap — see Layer 3d. Getting the row back needs the 20K wrap or per-cycle wrap bits. **KC's call** |
 | Vertical granularity | 1 scanline against 4 px horizontal is lopsided. 2 or 4 scanlines costs nothing extra. There are droids to move now, so this is decidable |
 | `$D021` is an assumption | Marked `[assumed]` in `export_bbc.py`. First suspect if deck colours look wrong on hardware |
-| Panel shares the play palette | Its colours change with the deck. Fixable at the cycle boundary — we are already in the IRQ there. Layer 9 |
+| ~~Panel shares the play palette~~ | **Fixed 2026-08-16.** The panel is its own CRTC cycle, so it is its own palette: `SetPalette` builds a `palPlay` table in main RAM and the rupture blasts sixteen ULA writes at each boundary — the panel's at the end of `RuptVSync`, the deck's at the end of fire 1. The status box is white/black/red as the C64's is, on every deck. ~210 cycles twice a frame |
 | `keydown` uses OSBYTE `&81` | The last OS call in the main loop |
 | 8 decks draw ALERT in multicolour | Confirmed faithful to the C64 original, not a bug. Worth a look on real hardware |
 
@@ -184,11 +184,12 @@ moves. The outline:
 | `&2EC5–&2FFF` | **315 B free** | **the binding constraint now.** Layer 7 put its bulk in bank 4 for this reason; anything new in main RAM needs a plan |
 | `&3000–&37FF` | 2,048 B | sprite background save areas, one page per slot — **eight now**, ending exactly where the tile map begins. A ninth would overwrite it |
 | `&3800–&3BFF` | 1,024 B | tile map, fixed home — floating it after `code_end` once put it over the save areas |
-| `&3C00–&477F` | 2,944 B | **Layer 9's text font**, `PARAFNT`, `*LOAD`ed straight here |
-| `&4780–&47DF` | 96 B | the four droid tables, mirrored out of bank 4 for the panel in bank 6 |
-| `&47E0–&47FF` | 32 B free | |
-| `&4800–&547F` | 3,200 B | panel — 5 rows × 640, displayed by rupture cycle 1 |
-| `&5480–&54FF` | **128 B free** | |
+| `&3C00–&483F` | 3,136 B | **Layer 9's text font**, `PARAFNT`, `*LOAD`ed straight here — 98 glyphs |
+| `&4840–&48FF` | 192 B | the status box's twelve border cells, same file |
+| `&4900–&495F` | 96 B | the four droid tables, mirrored out of bank 4 for the panel in bank 6 |
+| `&4960–&49FF` | 160 B free | |
+| `&4A00–&53FF` | 2,560 B | panel — **4 rows** × 640, the C64's status box exactly, displayed by rupture cycle 1 |
+| `&5400–&54FF` | **256 B free** | |
 | `&5500–&56FF` | 512 B | `CHAR_PTR_LO`/`HI` — character code → charset address, built at startup |
 | `&5700–&57FF` | 256 B | data byte → transparency mask table, built at startup |
 | `&5800–&7FFF` | 10,240 B | play buffer: circular strip, 16 rows × 640 |
@@ -338,28 +339,39 @@ else — the first deck and the debug deck hop included. `CentreOnDeck` is gone,
 Plan and every decision taken: [`docs/layer-9-hud.md`](docs/layer-9-hud.md).
 
 Two things the earlier one-line plan ran together. The C64's **status area is eight character rows**
-at the top of the screen, and almost nothing is written there — the score when it changes and the
-`Mobile`/`Weapon`/`Transfer` word on the transition. There is **no energy bar**: energy is the
-player's own sprite flashing below 8. The **console is a separate full-screen mode**, entered from
-character 66.
+at the top of the screen; the **console is a separate full-screen mode**, entered from character 66.
+
+**The status area's artwork is four `DrawString` calls** — `$6900`, `$6917`, `$6937`, `$693C` from
+`StartGame` — and the ink in them runs from scanline 8 to scanline 39. **The box is 32 scanlines,
+not 64**, inside a region that is otherwise flat surround. So `PANEL_ROWS` is **4**, and dropping
+from 5 cost one CRTC register: R6, written at VSync. No T1 interval moved and the play area did not
+shift a scanline.
 
 The constraint that shapes the layer: the text font at `$7000` is **8 × 16, not 8 × 8** — top half
-at code `c`, bottom half at `c + $80` — so a glyph is two stacked MODE 1 cells, 32 bytes, and our
-5-row panel holds exactly **two lines of 40 characters**. The C64's eight rows hold four.
+at code `c`, bottom half at `c + $80` — so a glyph is two stacked MODE 1 cells, 32 bytes. The
+4-row panel is therefore a border row, **one** line of 40, and a border row.
 
-A second thing the listing settles: **capitals are 16 px wide**, right half at code `+ $20`, which
-`DrawChar` tests for outright at `$0C82`. So columns count cells, not letters.
+Two things the listing settles that the earlier plan had wrong. **Capitals are 16 px wide**, right
+half at code `+ $20`, which `DrawChar` tests for outright at `$0C82` — so columns count cells, not
+letters. And **`$31-$37` are the Paradroid logo**, not "frame pieces": the frame is `$55-$59`,
+`$7A`, `$7B`, `$7C`.
 
-**Built:** the font as a fourth disc file `PARAFNT` at `&3C00`; the panel text engine, the live HUD
-and the console, all in **bank 6** — bank 4 had 224 bytes too few — with a main-RAM bridge carrying
-the four droid tables and four live scalars across the bank boundary. The console takes over the
-**play area** rather than the whole screen, 40 × 15 being seven text lines, because suspending the
-three-cycle rupture is a bigger change than this layer should carry.
+**Built:** the font as a fourth disc file `PARAFNT` at `&3C00`, now carrying the logo, the box bar
+and twelve border cells as well; the panel text engine, the HUD and the console, all in **bank 6**
+— bank 4 had 224 bytes too few — with a main-RAM bridge for the droid tables and two live scalars.
+The console takes over the **play area** rather than the whole screen. **The panel has its own
+palette**, swapped at both cycle boundaries, so the box is white/black/red on every deck.
+
+**The status line is the C64's and nothing else** (KC, 2026-08-16): the rounded box, the logo, the
+mode word at column 2 — `Mobile`/`Weapon`/`Transfer`/`Console` — and the score at column 30 with
+`DoScore`'s own leading-zero blanking. The droid number, energy bar, ceiling, deck number, alert
+bar and droids-left the port used to show are **gone**, and with them the only two synthesised
+glyphs in the project.
 
 **Not built, and the honest remainder:** the console's **deck map** (`DrawPacked` over the level
 RLE) and the **ship side view** (`SideView_dat`, `$F180`, 201 B of RLE into a 64 × 16 grid). Both
-need data porting rather than more code. Also deferred: the low-energy sprite flash, and the panel
-palette, which still follows the deck's.
+need data porting rather than more code. Also deferred: the low-energy sprite flash, which is now
+the *only* energy cue the port has — see decisions 4 and 5.
 
 ### Layer 10 — Transfer minigame
 `SubGameSelectSide` and the circuit puzzle. Paged from a sideways bank.
@@ -447,6 +459,50 @@ see them" is.
 **Entry condition:** Layers 9, 10 and 11 done, so the pass measures the finished game and not a
 subset of it. **Exit condition:** the fidelity table complete, the Redux list triaged, and a
 build KC is happy to put in front of someone else.
+
+### Layer 13 — Memory, banks and machine compatibility — **the second-to-last pass, planned**
+
+**Until this layer, RAM is not a constraint worth designing around.** KC's ruling, 2026-08-16:
+where a layer needs room, take a **fourth sideways bank in slot 7** and move on. Squeezing a
+feature into a hole that a later layer will rearrange anyway costs more design time than the RAM is
+worth, and every such squeeze is a decision that has to be re-litigated when the next layer lands.
+Layer 13 is where the accumulated cost is paid off in one pass, with the whole game in front of us.
+
+Three strands:
+
+#### 13a — The RAM pass
+
+Every bank and every main-RAM hole re-audited with the finished game's real requirements, not the
+requirements each layer guessed at while it was being built. The questions already known to be
+waiting:
+
+| | |
+|---|---|
+| how many banks are actually needed | four is the working assumption from this layer on; the target says three. Deciding is this pass's job, not each layer's |
+| the bank-4/bank-6 split | Layer 9's panel, HUD and console are in bank 6 with a main-RAM bridge for four scalars and the droid tables, purely because bank 4 was 224 bytes short (`docs/layer-9-hud.md`, decision 8). If bank 4 gets 1.4 K back they all move home and the bridge goes |
+| the font in main RAM | `&3C00` upward, because it must be readable from bank 4 and bank 6 alike (decision 1). Costs a 3 K hole that nothing else can use |
+| `&2F03–&3000` and `&5400–&57FF` | the leftovers, and what wants them |
+
+#### 13b — Sideways RAM detection at boot
+
+There is **no detection at all today**: the build assumes banks 4, 5 and 6 are RAM and writes into
+them regardless. On a machine where any of those is a ROM socket the game loads garbage and runs.
+What this needs is the standard write/read-back probe over all 16 banks at boot, a table of which
+are usable, and the bank assignments chosen from it rather than hard-coded — plus an honest message
+and a stop when there are not enough.
+
+#### 13c — Machine compatibility testing
+
+The target is a Model B / B+ with sideways RAM, but the port has only ever been run on
+jsbeeb's `B-DFS1.2` and b-em. This is the pass that runs it on the machines people actually have:
+B with DFS 1.2 and 2.26, B+, Master 128 (whose shadow RAM and different `PAGE` are the obvious
+hazards), and second-processor configurations, which the IRQ takeover and the CRTC rupture are
+both likely to dislike. Each combination either works, or is documented as unsupported with the
+reason.
+
+**Entry condition:** Layer 12 done, so the game is finished and its memory needs are final.
+**Exit condition:** a build that detects what it is running on, says so, and either runs correctly
+or refuses honestly.
 
 ## `src/` as it stands
 

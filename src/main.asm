@@ -332,7 +332,7 @@ VIA_PORTB  = &FE40
 \
 \ P = start of the panel cycle. Frame layout:
 \
-\   panel   P            7 rows,  5 displayed, R5 = 8-line
+\   panel   P            7 rows,  4 displayed, R5 = 8-line
 \   play    P+64-line   18 rows, 17 displayed, R5 = line
 \   tail    P+208       13 rows,  0 displayed, R5 = 0, VSync at row 8
 \                       ------
@@ -355,15 +355,24 @@ FONT_ADDR = &3C00
 \ assert needs the size before src/data/textfont.asm is reached. The
 \ generated file checks itself against both — see the ASSERTs by its
 \ INCLUDE. This is the same arrangement SPR_W and SPR_H have.
-FONT_GLYPHS = 92                \ 26 capitals are two glyphs each
+FONT_GLYPHS = 98                \ 26 capitals are two glyphs each
 FONT_BYTES  = FONT_GLYPHS * 32
+
+\ ---- the status box border, twelve MODE 1 cells -------------
+\ HALF glyphs, 16 bytes each and not 32: the box is 32 scanlines tall and
+\ the border rows contribute only their inner 8 — see PANEL_ADDR below and
+\ the header of tools/export_font.py. Loaded as part of PARAFNT, straight
+\ after the glyphs.
+PN_FRAME_ADDR  = FONT_ADDR + FONT_BYTES
+PN_FRAME_CELLS = 12
+PN_FRAME_BYTES = PN_FRAME_CELLS * 16
 
 \ ---- the four droid tables, mirrored out of bank 4 ----------
 \ panel.asm and console.asm are in bank 6 and cannot read bank 4, so
 \ PageTabsIn copies these here at boot. 96 bytes in the tail of the same
 \ hole the font sits in — the font ends at &4780 and the panel starts at
 \ &4800, and this is what fills the gap.
-PN_TABS     = FONT_ADDR + FONT_BYTES
+PN_TABS     = PN_FRAME_ADDR + PN_FRAME_BYTES
 pnTabCent   = PN_TABS + 0
 pnTabNum    = PN_TABS + 24
 pnTabWeapon = PN_TABS + 48
@@ -371,8 +380,34 @@ pnTabSpeed  = PN_TABS + 72
 ASSERT PN_TABS + 96 <= PANEL_ADDR
 ASSERT FONT_ADDR >= tilemap_end
 
-PANEL_ADDR  = &4800             \ below &5800, clear of the play buffer
-PANEL_ROWS  = 5                 \ rows of title
+\ ---- the panel is FOUR rows, because the C64's box is 32 scanlines ----
+\ The C64 status area is eight character rows, but the artwork inside it
+\ is not. StartGame draws four strings ($6900, $6917, $6937, $693C) of
+\ 8 x 16 glyphs into screen rows 0-5, and the ink they carry runs from
+\ scanline 8 to scanline 39 — a rounded box exactly 32 scanlines tall,
+\ with solid surround above it and below. So the box maps onto FOUR BBC
+\ character rows:
+\
+\   row 0   the BOTTOM halves of $55/$56/$57   top border and corners
+\   row 1   the text line, top cells           bars, mode, logo, score
+\   row 2   the text line, bottom cells
+\   row 3   the TOP halves of $58/$59/$7A/$7B  bottom border and corners
+\
+\ Dropping from 5 rows to 4 is R6 ALONE — it is written at VSync for the
+\ panel cycle and nothing else moves. The panel cycle stays 7 rows, the
+\ play cycle still starts at P+64-line, and no T1 interval changes. What
+\ grows is the gap below the box, from 24-line scanlines to 32-line,
+\ which is the C64's own 32-line gap between the box and the deck.
+\
+\ THE C64 FILLS THAT GAP WITH THE SURROUND COLOUR and we leave it blank,
+\ because covering it would need all 8 rows displayed — 5120 bytes, and
+\ the panel cycle is only 7 rows long. See docs/layer-9-hud.md.
+\
+\ PANEL_ADDR moved up from &4800 when the panel shrank: the 640 bytes
+\ that freed go to the font, which needs another 448 for the logo and
+\ frame glyphs and had only 32 spare below the old panel.
+PANEL_ADDR  = &4A00             \ below &5800, clear of the play buffer
+PANEL_ROWS  = 4                 \ rows of status box = 32 scanlines
 PANEL_BYTES = PANEL_ROWS * ROW_BYTES
 PANEL_START = PANEL_ADDR / 8    \ what R12/R13 wants
 
@@ -437,8 +472,8 @@ R8_BLANK = &30
 \   fire 3  P+184  play cycle R5, blank, release the main loop —
 \                  the visible BOTTOM edge, 15 rows below the top
 \
-\ Fire 1's window is only [P+40, P+48]: it cannot blank before P+40
-\ or it clips the panel, and it must write R4 = 6 before C4 reaches
+\ Fire 1's window is [P+32, P+48]: it cannot blank before P+32, where
+\ the panel's four displayed rows end, and it must write R4 = 6 before C4 reaches
 \ 6 at P+48. Fires 2 and 3 must land inside horizontal blanking —
 \ MODE 1 displays 80 of 128 character times, so ~24 us of the 64 us
 \ line is available and a write in the displayed part cuts that
@@ -1144,15 +1179,15 @@ ENDIF
 \ panel.asm and console.asm were pushed out of bank 4 by 224 bytes and
 \ into bank 6, which is the only one with room now the font ships as its
 \ own file. Bank 6 code cannot read drCent, drNum, drWeapon, drSpeed,
-\ drType, drEnergy, drCount or shipLevel, all of which are in bank 4.
+\ drCount or shipLevel, all of which are in bank 4.
 \
 \ So main RAM carries them across, in two pieces:
 \   the four TABLES are constant and are copied once at boot, to PN_TABS;
-\   the four SCALARS move, and are mirrored per pass by PanelTick below.
+\   the two SCALARS move, and are mirrored per pass by PanelTick below.
 \
 \ Everything else the panel and the console read is already main RAM —
-\ the font, deck, maxEnergy, moveMode, alertLvl, score, scrollS, line —
-\ so this is the whole of the bridge. See docs/layer-9-hud.md, decision 8.
+\ the font, deck, moveMode, conActive, score, scrollS, line — so this is
+\ the whole of the bridge. See docs/layer-9-hud.md, decision 8.
 
 \ ---- the tables, once ---------------------------------------
 \ Called at boot with SWRAM_DATA paged, which is where these live.
@@ -1172,9 +1207,11 @@ ENDIF
 \ SprDrawAll does for the blitter. The mirror is filled BEFORE the page,
 \ while bank 4 is still up, and read after it — which is the only order
 \ that works.
+\ TWO scalars, not four. drType and drEnergy were mirrored for the droid
+\ number and the energy bar, and the HUD is the C64's status line now —
+\ neither is shown. drCount and shipLevel remain because the CONSOLE's
+\ deck and ship pages read them.
 MACRO PNMIRROR
-  LDA drType   : STA pmType
-  LDA drEnergy : STA pmEnergy
   LDA drCount  : STA pmCount
   LDA shipLevel: STA pmShip
 ENDMACRO
@@ -1216,8 +1253,6 @@ ENDMACRO
 .ct_x
   RTS
 
-.pmType   EQUB 0
-.pmEnergy EQUB 0
 .pmCount  EQUB 0
 .pmShip   EQUB 0
 .conActive EQUB 0               \ main RAM: the loop and the bridge both read it
@@ -1733,12 +1768,17 @@ SAVE "PARSPR2", spr2_start, spr2_end, DATA_LOAD, DATA_LOAD
 \ in a bank and copying it down, and it is why PageFontIn is gone.
 \ LOADED LAST, after all three banks. The staging area for PARADAT runs
 \ from &3000 through past &7000, straight over &3C00.
-CLEAR FONT_ADDR, FONT_ADDR + FONT_BYTES
+\ The twelve border cells are in the same file, straight after the glyphs:
+\ they are read by the same code, from the same main RAM, and a separate
+\ 192-byte disc file would buy nothing.
+CLEAR FONT_ADDR, FONT_ADDR + FONT_BYTES + PN_FRAME_BYTES
 ORG FONT_ADDR
 .font_start
 INCLUDE "src/data/textfont.asm"
 .font_end
-ASSERT font_end - font_start == FONT_BYTES
+ASSERT textfont_end - font_start == FONT_BYTES
+ASSERT panelframe == PN_FRAME_ADDR
+ASSERT font_end - font_start == FONT_BYTES + PN_FRAME_BYTES
 SAVE "PARAFNT", font_start, font_end, FONT_ADDR, FONT_ADDR
 
 ASSERT CON_TYPES == DR_TYPES    \ console.asm is in bank 4 and cannot see

@@ -13,11 +13,39 @@ at code c + $80. Rendered, the map is:
     $0A-$23   lowercase a-z
     $2E       full stop
     $30       space
-    $31-$37   frame pieces (not exported)
+    $31-$37   the PARADROID LOGO, nine cells wide
     $3A-$53   capitals A-Z
+    $55-$59   status box frame, wide (right half at +$20)
+    $7A-$7C   status box frame, narrow
 
 confirmed against Mobile_txt at $698A, which reads $46 $18 $0B $12 $15 $0E
 = M o b i l e.
+
+THE STATUS BOX, AND WHY THE FRAME IS EXPORTED AS HALF GLYPHS
+------------------------------------------------------------
+StartGame draws the whole status area with four DrawString calls:
+
+    $6900  Y=0 X=0    $55 + 18 x $56 + $57            top border
+    $6917  Y=2 X=0    $7C, 14 spaces, the logo, spaces
+    $6937  Y=2 X=38   space, $7C                      right edge
+    $693C  Y=4 X=0    $58 + 18 x $59 + $7A $7B        bottom border
+
+$55-$59 are inside DrawChar's "wide" range so each is 16 px and occupies
+two cells; $7A, $7B and $7C are 8 px. That fills screen rows 0-5, but the
+INK does not: the top border's glyphs are solid for their whole top half
+and only start curving in their bottom half, and the bottom border's are
+the mirror of that. The box therefore runs from scanline 8 to scanline
+39 -- exactly 32 scanlines -- with solid surround above and below it.
+
+So the port takes 32 scanlines, four BBC character rows:
+
+    row 0   the BOTTOM halves of $55/$75, $56/$76, $57/$77
+    rows 1-2  the text line: $7C bars, mode word, logo, score
+    row 3   the TOP halves of $58/$78, $59/$79, $7A, $7B
+
+A half glyph is 8 px by 8 scanlines, which is ONE MODE 1 cell of 16
+bytes, so the twelve distinct border pieces are emitted as a separate
+192-byte `panelframe` table rather than as 32-byte font glyphs.
 
 MODE 1 CONVERSION
 -----------------
@@ -32,16 +60,23 @@ both bits and comes out as logical colour 3.
 
 GLYPH INDEX
 -----------
-The port indexes glyphs 0-65 rather than by C64 code, so the table is
+The port indexes glyphs 0-97 rather than by C64 code, so the table is
 contiguous and PnAscii can map ASCII onto it with four compares:
 
     0        space
     1-10     digits 0-9
-    11-36    capitals A-Z
-    37-62    lowercase a-z
-    63       full stop
-    64       bar cell, full     synthesised -- the C64 has no energy bar
-    65       bar cell, empty    and so nothing to be faithful to
+    11-36    capitals A-Z, LEFT half
+    37-62    capitals A-Z, RIGHT half
+    63-88    lowercase a-z
+    89       full stop
+    90-96    the logo, cells 0-6 ($31-$37)
+    97       the box's vertical bar ($7C)
+
+then, separately, `panelframe`: twelve 16-byte border cells.
+
+NOTHING HERE IS SYNTHESISED. The two energy-bar cells that used to sit at
+90 and 91 are gone along with the energy bar itself -- the C64 has no such
+readout, so there was nothing to be faithful to and it is not shown.
 """
 
 import sys
@@ -78,14 +113,33 @@ for i in range(26):
 for i in range(26):
     GLYPHS.append((f"'{chr(97+i)}'", 0x0A + i))
 GLYPHS.append(("'.'", 0x2E))
-GLYPHS.append(('bar full', None))
-GLYPHS.append(('bar empty', None))
+# The logo. $6917 draws it as $31 $32 $33 $32 $34 $33 $35 $36 $37 -- nine
+# cells from seven distinct glyphs, two of them used twice.
+for i in range(7):
+    GLYPHS.append(('logo cell %d' % i, 0x31 + i))
+GLYPHS.append(('box bar', 0x7C))
 
-# The two synthesised bar cells, as 8x16 1bpp rows. A solid 6x12 block and
-# an outline of the same, both sitting on the letters' baseline: the C64
-# glyphs occupy source rows 2-13 of the 16, so these do too.
-BAR_FULL = [0x00, 0x00] + [0x7E] * 12 + [0x00, 0x00]
-BAR_EMPTY = [0x00, 0x00, 0x7E] + [0x42] * 10 + [0x7E, 0x00, 0x00]
+# The order $6917 draws the logo in, as indices into the seven glyphs above.
+LOGO_SEQ = [0, 1, 2, 1, 3, 2, 4, 5, 6]
+
+# The twelve border cells, each ONE MODE 1 cell of 16 bytes. 'bot' takes
+# the glyph's TOP half (source rows 0-7), 'top' its BOTTOM half (rows
+# 8-15) -- see the header: the box's ink is the inner half of each.
+#   name, C64 code, which half
+FRAME = [
+    ('top-left  L', 0x55, 'lower'),
+    ('top-left  R', 0x75, 'lower'),
+    ('top-mid   L', 0x56, 'lower'),
+    ('top-mid   R', 0x76, 'lower'),
+    ('top-right L', 0x57, 'lower'),
+    ('top-right R', 0x77, 'lower'),
+    ('bot-left  L', 0x58, 'upper'),
+    ('bot-left  R', 0x78, 'upper'),
+    ('bot-mid   L', 0x59, 'upper'),
+    ('bot-mid   R', 0x79, 'upper'),
+    ('bot-end 1  ', 0x7A, 'upper'),
+    ('bot-end 2  ', 0x7B, 'upper'),
+]
 
 
 def load_memory():
@@ -135,7 +189,8 @@ def main():
     out.append('\\ IT IS 8 x 16, NOT 8 x 8: the glyph top half is at C64 code c and')
     out.append('\\ its bottom half at c + $80. A MODE 1 cell is 8 x 8 in 16 bytes, so')
     out.append('\\ a glyph is TWO STACKED CELLS, 32 bytes - top cell then bottom. That')
-    out.append('\\ is why the panel holds two lines of text in five character rows.')
+    out.append('\\ is why the four-row panel holds ONE line of text with a border row')
+    out.append('\\ above it and another below.')
     out.append('\\')
     out.append('\\ CAPITALS ARE 16 PX WIDE, right half at C64 code + $20, which is')
     out.append('\\ DrawChar\'s own arrangement at $0C82 — "see if it was wide". Each is')
@@ -144,23 +199,21 @@ def main():
     out.append('\\')
     out.append('\\ Glyph index, contiguous so PnAscii can map ASCII with four compares:')
     out.append('\\   0 space, 1-10 digits, 11-36 capitals LEFT, 37-62 capitals RIGHT,')
-    out.append('\\   63-88 lowercase, 89 full stop, 90 bar full, 91 bar empty.')
-    out.append('\\ The two bar cells are SYNTHESISED - the C64 has no energy bar and so')
-    out.append('\\ nothing to be faithful to. See docs/layer-9-hud.md, decision 3.')
+    out.append('\\   63-88 lowercase, 89 full stop, 90-96 the LOGO, 97 the box bar.')
+    out.append('\\ NOTHING IS SYNTHESISED: every byte below is the C64\'s own artwork.')
     out.append('')
     out.append("\ Declared here and checked against main.asm's FONT_GLYPHS and")
     out.append('\ FONT_BYTES, which have to come first: beebasm resolves constants in')
     out.append('\ file order and droid.asm asserts on the font size before this file.')
     out.append('GEN_FONT_GLYPHS = %d' % len(GLYPHS))
     out.append('GEN_FONT_BYTES  = %d' % (len(GLYPHS) * 32))
+    out.append('GEN_FRAME_CELLS = %d' % len(FRAME))
+    out.append('GEN_FRAME_BYTES = %d' % (len(FRAME) * 16))
     out.append('')
     out.append('.textfont')
 
     for idx, (name, code) in enumerate(GLYPHS):
-        if code is None:
-            rows = BAR_FULL if name == 'bar full' else BAR_EMPTY
-        else:
-            rows = glyph_rows(mem, code)
+        rows = glyph_rows(mem, code)
         data = cell_bytes(rows[:8]) + cell_bytes(rows[8:])
         assert len(data) == 32
         out.append('  \\ %2d  %s' % (idx, name))
@@ -173,22 +226,47 @@ def main():
     out.append('ASSERT GEN_FONT_BYTES  == FONT_BYTES')
     out.append('')
 
+    # ---- the twelve border cells ------------------------------------
+    out.append('\\ ------------------------------------------------------------')
+    out.append('\\ panelframe - the status box border, twelve MODE 1 cells')
+    out.append('\\ ------------------------------------------------------------')
+    out.append('\\ HALF glyphs, 16 bytes each, not 32: the box is 32 scanlines and')
+    out.append('\\ the border rows contribute only their inner 8. Row 0 of the panel')
+    out.append('\\ is cells 0,1 then 18 x (2,3) then 4,5; row 3 is 6,7 then')
+    out.append('\\ 18 x (8,9) then 10, 11 - which is $6900 and $693C exactly.')
+    out.append('.panelframe')
+    for idx, (name, code, half) in enumerate(FRAME):
+        rows = glyph_rows(mem, code)
+        data = cell_bytes(rows[:8] if half == 'upper' else rows[8:])
+        assert len(data) == 16
+        out.append('  \\ %2d  %s  ($%02X %s half)' % (idx, name, code, half))
+        out.append('  EQUB ' + ', '.join('&%02X' % b for b in data))
+    out.append('.panelframe_end')
+    out.append('ASSERT panelframe_end - panelframe == GEN_FRAME_BYTES')
+    out.append('ASSERT GEN_FRAME_CELLS == PN_FRAME_CELLS')
+    out.append('ASSERT GEN_FRAME_BYTES == PN_FRAME_BYTES')
+    out.append('')
+
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text('\n'.join(out) + '\n')
-    print(f'wrote {OUT}  ({len(GLYPHS)} glyphs, {len(GLYPHS)*32} bytes)')
+    print(f'wrote {OUT}  ({len(GLYPHS)} glyphs, {len(GLYPHS)*32} bytes'
+          f' + {len(FRAME)} frame cells, {len(FRAME)*16} bytes)')
 
     # sanity: report which glyphs came out blank, which would mean a bad map
-    blank = []
-    for idx, (name, code) in enumerate(GLYPHS):
-        if code is None:
-            continue
-        rows = glyph_rows(mem, code)
-        if not any(rows):
-            blank.append((idx, name, code))
+    blank = [(i, n, c) for i, (n, c) in enumerate(GLYPHS)
+             if n != 'space' and not any(glyph_rows(mem, c))]
     if blank:
         print('WARNING blank glyphs:', blank)
     else:
         print('no blank glyphs except space')
+
+    # sanity: the logo, drawn the way $6917 draws it, as ASCII art
+    print('\nthe logo, $31 $32 $33 $32 $34 $33 $35 $36 $37:')
+    cells = [glyph_rows(mem, 0x31 + i) for i in range(7)]
+    for r in range(16):
+        print('  ' + ''.join(
+            ''.join('#' if cells[s][r] & (0x80 >> b) else '.' for b in range(8))
+            for s in LOGO_SEQ))
 
 
 if __name__ == '__main__':

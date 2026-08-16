@@ -43,6 +43,9 @@ CON_TYPES = 24
 \ than a multiply because there are seven of them and it runs once per
 \ string, not once per glyph.
 .ConAt
+  LDA #PN_INK_TEXT              \ as PnAt does: the panel's red fields must
+  STA pnMask                    \ not leak into the console's text
+
   LDA pnCol                     \ col * 16
   ASL A : ASL A : ASL A : ASL A
   STA pnDst
