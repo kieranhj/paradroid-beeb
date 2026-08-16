@@ -65,6 +65,23 @@ CON_TOK_SHIP   = 105            \ eight, by (shipLevel - 1) AND 7
 CON_TOK_DECK   = 122            \ sixteen, by deck
 CON_TOK_ALERT  = 208            \ green, yellow, amber, red
 
+\ ---- the four menu icons ------------------------------------
+\ conRedraw's sprite table at $6B94 puts them at Y $90, $AC, $C8 and $E0
+\ and X $34, $34, $28, $28. Sprite Y 144 is 11.75 character rows down a
+\ display whose first visible line is 50, and the four text lines are at
+\ rows 12, 15, 18 and 21 — so each icon sits level with a line, three
+\ rows apart, which is exactly the spacing of the four lower lines here.
+\ They therefore go on OUR rows 2, 5, 8 and 11, one per line, and the
+\ last ends at row 13 of fifteen.
+\ X IS IN 4-PIXEL UNITS, not characters. Sprite X 52 and 40 are 28 and 16
+\ pixels from the left edge, which is 7 and 4 units — not a whole number
+\ of characters either way, and it does not need to be: the buffer's
+\ natural step is the 8-byte 4-pixel column. The two indents are the
+\ original's; a menu with its icons in one column would not be.
+CON_ICON_COUNT = 3              \ of four — see conicons.asm
+CON_ICON_ROWS  = 3              \ 21 scanlines, so three character rows
+CON_ICON_BYTES = CON_ICON_ROWS * 6 * 8
+
 \ ============================================================
 \ ConAt — point pnDst at console text cell (conRow, pnCol)
 \ ============================================================
@@ -304,6 +321,61 @@ CON_TOK_ALERT  = 208            \ green, yellow, amber, red
   RTS
 
 \ ============================================================
+\ ConIcons — the menu down the left-hand side
+\ ============================================================
+\ THREE FLAT 48-BYTE COPIES AN ICON, because the six 4-pixel columns of a
+\ 24 px sprite are 48 consecutive bytes within one character row — see
+\ conicons.asm. No shifting, no masking, and nothing to save: ConClear
+\ has just blanked the area and ConsoleClose repaints the deck.
+\ THE TOP SLOT IS EMPTY, and that is the one thing here that is not the
+\ original's. Its sprite image is built at run time by BuildDroidSprite
+\ from the player's own droid, and the artwork for that is in the SPRITE
+\ bank behind the compiled blitter, not in a table this file can copy.
+\ See docs/layer-9-hud.md, decision 16.
+.ConIcons
+  LDX #CON_ICON_COUNT-1
+.ci_icon
+  LDA conIconDstLo,X : STA pnDst
+  LDA conIconDstHi,X : STA pnDst+1
+  LDA conIconSrcLo,X : STA pnSrc
+  LDA conIconSrcHi,X : STA pnSrc+1
+  STX conTmp
+
+  LDX #CON_ICON_ROWS
+.ci_row
+  LDY #47
+.ci_byte
+  LDA (pnSrc),Y
+  STA (pnDst),Y
+  DEY
+  BPL ci_byte
+  CLC
+  LDA pnSrc   : ADC #48 : STA pnSrc
+  LDA pnSrc+1 : ADC #0  : STA pnSrc+1
+  CLC
+  LDA pnDst   : ADC #LO(ROW_BYTES) : STA pnDst
+  LDA pnDst+1 : ADC #HI(ROW_BYTES) : STA pnDst+1
+  DEX
+  BNE ci_row
+
+  LDX conTmp
+  DEX
+  BPL ci_icon
+  RTS
+
+\ Rows 5, 8 and 11 at units 7, 4 and 4 — the top slot, row 2 unit 7, is
+\ the droid image and is not drawn. Held as whole addresses because the
+\ row multiply would otherwise be three 16-bit shifts for a table that
+\ never changes.
+CON_ICON_D0 = BUF_BASE +  5 * ROW_BYTES + 7 * UNIT_BYTES
+CON_ICON_D1 = BUF_BASE +  8 * ROW_BYTES + 4 * UNIT_BYTES
+CON_ICON_D2 = BUF_BASE + 11 * ROW_BYTES + 4 * UNIT_BYTES
+.conIconDstLo EQUB LO(CON_ICON_D0), LO(CON_ICON_D1), LO(CON_ICON_D2)
+.conIconDstHi EQUB HI(CON_ICON_D0), HI(CON_ICON_D1), HI(CON_ICON_D2)
+.conIconSrcLo EQUB LO(conicons), LO(conicons + CON_ICON_BYTES), LO(conicons + 2 * CON_ICON_BYTES)
+.conIconSrcHi EQUB HI(conicons), HI(conicons + CON_ICON_BYTES), HI(conicons + 2 * CON_ICON_BYTES)
+
+\ ============================================================
 \ ConUnitType — ShowRobotType ($3149), the top line
 \ ============================================================
 \ "Unit type 001 - Influence Device". The C64 patches the three digits
@@ -375,6 +447,7 @@ CON_TOK_ALERT  = 208            \ green, yellow, amber, red
 \ Called from ConsoleOpen. There is one page, so nothing repaints it.
 .ConDraw
   JSR ConClear
+  JSR ConIcons
   JSR ConUnitType
 
   LDA #CON_ROW_ACC : STA conRow

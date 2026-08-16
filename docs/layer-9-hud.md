@@ -340,10 +340,28 @@ through `conJump_t` on fire; none of that is ported, because KC asked for L-to-e
 else. The port's own droid-database page went with it — it was never the C64's.
 
 The icons themselves are sprites 1-4 in `conRedraw`'s table at `$6B94`, at Y `$90`, `$AC`, `$C8`,
-`$E0` and image pointers `$4F`, `$50`, `$A1`, `$A2`. Three are static hires artwork at `$5400`,
-`$6840` and `$6880` — the droid-number emblem, a circular ship-plan badge and a ship side view.
-**The first is blank in ROM**: `$53C0` is where `BuildDroidSprite` composes the player's own droid
-at run time, which is why `conRedraw` sets `dType` from `droidType` before it draws.
+`$E0` and image pointers `$4F`, `$50`, `$A1`, `$A2`. **Three are built** — static hires artwork at
+`$5400`, `$6840` and `$6880`: the droid `?` emblem, a circular ship-plan badge and a ship side
+view, exported by `tools/export_icons.py`.
+
+Sprite Y 144 is 11.75 character rows down a display whose first visible line is 50, and the four
+text lines are at rows 12, 15, 18 and 21 — so **each icon sits level with a line**, three rows
+apart, which is exactly the spacing of the four lower lines here. They go on our rows 2, 5, 8 and
+11, one per line, and the last ends at row 13 of fifteen. X is in **4-pixel units**, not
+characters: sprite X 52 and 40 are 28 and 16 pixels from the left edge, 7 and 4 units, and the
+buffer's natural step is the 8-byte 4-pixel column so it does not need to be a whole character.
+The two different indents are the original's.
+
+An icon is **three flat 48-byte copies**. The six 4-pixel columns of a 24 px sprite are 48
+consecutive bytes within one character row, and 21 scanlines is three rows — no shifting, no
+masking, and nothing to save, because `ConClear` has just blanked the area.
+
+**[DECISION 16]** The **top icon is not built**, and it is the one that is not a copy. `$53C0` is
+blank in ROM: it is where `BuildDroidSprite` composes the **player's own droid** at run time, which
+is why `conRedraw` sets `dType` from `droidType` before it draws. Ours would have to come from the
+sprite bank, behind the compiled blitter, which is a different mechanism from every other thing on
+this screen — a sprite slot set up and `SprDrawSlot` called across a bank boundary, from bank 6
+into bank 5. The slot beside `Access granted.` is empty until that is decided.
 
 ## 7. Decisions to revisit
 

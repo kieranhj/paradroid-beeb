@@ -1819,6 +1819,7 @@ INCLUDE "src/console.asm"
 CON_STR_COUNT = 248
 CON_STR_BYTES = 1542            \ 1,541 plus the terminating sentinel
 INCLUDE "src/data/strings.asm"
+INCLUDE "src/data/conicons.asm"
 .spr2_end
 SAVE "PARSPR2", spr2_start, spr2_end, DATA_LOAD, DATA_LOAD
 
