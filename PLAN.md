@@ -332,11 +332,22 @@ else — the first deck and the debug deck hop included. `CentreOnDeck` is gone,
 "lands inside a wall on some decks", closed with it in Layer 5.
 → [`docs/layer-8-doors-lifts.md`](docs/layer-8-doors-lifts.md)
 
-### Layer 9 — HUD and console
-The mid-frame split already exists (Layer 3c/3d) and the panel is a placeholder bordered box at
-`&4800`. This layer fills it with real content: `Console`, `con_DroidInfo`, `con_DeckInfo`,
-`con_ShipInfo`, side view. Also the point to revisit the panel palette — it currently shares the
-play area's four colours and so changes with the deck.
+### Layer 9 — HUD and console — **in progress on `layer9-hud`**
+Plan and every decision taken: [`docs/layer-9-hud.md`](docs/layer-9-hud.md).
+
+Two things the earlier one-line plan ran together. The C64's **status area is eight character rows**
+at the top of the screen, and almost nothing is written there — the score when it changes and the
+`Mobile`/`Weapon`/`Transfer` word on the transition. There is **no energy bar**: energy is the
+player's own sprite flashing below 8. The **console is a separate full-screen mode**, entered from
+character 66.
+
+The constraint that shapes the layer: the text font at `$7000` is **8 × 16, not 8 × 8** — top half
+at code `c`, bottom half at `c + $80` — so a glyph is two stacked MODE 1 cells, 32 bytes, and our
+5-row panel holds exactly **two lines of 40 characters**. The C64's eight rows hold four.
+
+Font shipped in bank 6 and copied to `&3C00` at boot; panel engine and HUD in bank 4. The console
+takes over the **play area** rather than the whole screen — 40 × 15 is seven text lines — because
+suspending the three-cycle rupture is a bigger change than this layer should carry.
 
 ### Layer 10 — Transfer minigame
 `SubGameSelectSide` and the circuit puzzle. Paged from a sideways bank.
