@@ -882,6 +882,15 @@ def main():
         emit_bytes(g, [mem[DCENT_T + t] for t in range(NUM_TYPES)])
         g.write('\n')
 
+        g.write('\\ DNum_t ($EA20): the tens and units of the droid number, as\n')
+        g.write('\\ PACKED BCD in one byte. With drCent above it that is the whole\n')
+        g.write('\\ three-digit number, which is what Layer 9\'s panel prints. The\n')
+        g.write('\\ blitter has drDigit0/1/2 for the same digits, but those live in\n')
+        g.write('\\ the SPRITE bank and the panel, in bank 4, cannot page it in.\n')
+        g.write('.drNum\n')
+        emit_bytes(g, [mem[DNUM_T + t] for t in range(NUM_TYPES)])
+        g.write('\n')
+
         g.write('\\ Weapon class per type: 0 = unarmed, 3 = the disruptor.\n')
         g.write('\\ The player\'s own is weaponType, seeded from entry 0 here.\n')
         g.write('.drWeapon\n')

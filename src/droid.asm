@@ -2017,8 +2017,17 @@ IF DEBUG_MAPGUARD
 \ about 4,000 cycles rather than 16,000 and a corruption is caught
 \ within four passes. The FIRST hit is kept and checking stops, so the
 \ readout shows where it began rather than wherever it has spread to.
-MG_COPY = &3C00
-ASSERT MG_COPY >= &3C00                 \ the free block, per the memory map
+\ **THE FONT AND THE GUARD NO LONGER BOTH FIT.** Layer 9 put the text
+\ font at &3C00-&443F, and the only 1K left below the panel at &4800
+\ starts at &4440 and runs 64 bytes past it. The two asserts below say
+\ so rather than letting a debug build quietly scribble on the panel.
+\ DEBUG_MAPGUARD is therefore OFF by default — BUGS.md #10 is fixed and
+\ this was written for it. To use it again, move FONT_ADDR up to &4400
+\ and MG_COPY down to &3C00: the font is only read by the panel engine
+\ and nothing else cares where it is.
+MG_COPY = &4400
+ASSERT MG_COPY >= FONT_ADDR + FONT_BYTES
+ASSERT MG_COPY + 1024 <= PANEL_ADDR
 
 \ Zero page is full, so these borrow the startup bank-copy pointers —
 \ dead from LoadDeck onwards, and the only other borrowers are the debug

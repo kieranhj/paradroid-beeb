@@ -215,7 +215,10 @@ DEBUG_POS    = FALSE
 \ left; since the tile map was given a fixed home at &3800 the code has
 \ room to &3000, so it is off by default out of tidiness rather than
 \ necessity.
-DEBUG_VSYNC  = TRUE
+\
+\ OFF SINCE LAYER 9, and now it has to be: DbgFrameCount writes its digit
+\ to PANEL_ADDR+0..4, which is the top-left of the HUD's droid number.
+DEBUG_VSYNC  = FALSE
 
 \ DEBUG_TIME measures one routine in CYCLES, which DEBUG_DRAW cannot:
 \ its bands are only visible where the CRTC is displaying something,
@@ -271,7 +274,10 @@ DBG_T_OVERHEAD = 46
 \ Same mechanism as DbgPosOut and the same cost: a digit is five bytes
 \ at five consecutive addresses, the panel does not scroll, and there
 \ is nothing to save or restore.
-DEBUG_ENERGY = TRUE
+\ OFF since Layer 9: the real HUD lives on the same panel row and the
+\ two would fight. It is kept for the next time a raw hex readout is
+\ wanted — turning it on suppresses PanelUpdate rather than colliding.
+DEBUG_ENERGY = FALSE
 
 \ DEBUG_MAPGUARD watches the TILE MAP for anything scribbling on it, and
 \ exists because KC saw the map itself go bad in play — collision data
@@ -289,7 +295,11 @@ DEBUG_ENERGY = TRUE
 \ tilemap + quarter*256 + offset, which is map row (that/64), column
 \ (that MOD 64). got is what is there now and want what the deck load
 \ put there.
-DEBUG_MAPGUARD = TRUE
+\ OFF since Layer 9: the text font took &3C00 and the guard's 1K
+\ snapshot no longer fits below the panel. droid.asm's asserts say what
+\ to move to turn it back on. BUGS.md #10, which it was written for, is
+\ fixed.
+DEBUG_MAPGUARD = FALSE
 
 \ TEST_DROIDS and src/droidtest.asm are gone: six static droids, put
 \ there so the sprite pool could be measured before there was anything
@@ -330,6 +340,25 @@ VIA_PORTB  = &FE40
 \
 \ Visible play area: P+64 to P+192, and VSync at P+272 — the same
 \ geometry Layer 3c had, so nothing moves and no RAM changes.
+\ ---- Layer 9's text font, in main RAM -----------------------
+\ Shipped in bank 6 and copied here at boot by PageFontIn. &3C00-&47FF
+\ is listed free in docs/memory-map.md for exactly this — runtime-built
+\ data only, and the boot staging that runs through it is finished long
+\ before the copy. 2,112 bytes of a 3,072-byte hole.
+\ IT IS HERE RATHER THAN IN A BANK because the panel engine lives in
+\ bank 4 and the font in bank 6, and only one bank is visible at a time.
+\ Main RAM is reachable from both, and from Layer 10's transfer game
+\ wherever that ends up. See docs/layer-9-hud.md, decision 1.
+FONT_ADDR = &3C00
+\ Declared here rather than taken from the generated file, because
+\ beebasm resolves constants in file order and droid.asm's MG_COPY
+\ assert needs the size before src/data/textfont.asm is reached. The
+\ generated file checks itself against both — see the ASSERTs by its
+\ INCLUDE. This is the same arrangement SPR_W and SPR_H have.
+FONT_GLYPHS = 92                \ 26 capitals are two glyphs each
+FONT_BYTES  = FONT_GLYPHS * 32
+ASSERT FONT_ADDR >= tilemap_end
+
 PANEL_ADDR  = &4800             \ below &5800, clear of the play buffer
 PANEL_ROWS  = 5                 \ rows of title
 PANEL_BYTES = PANEL_ROWS * ROW_BYTES
@@ -694,6 +723,8 @@ ORG &1100
   LDX #SPR2_PAGES
   JSR PageBankIn
 
+  JSR PageFontIn                \ bank 6 is still up: bring the text font
+                                \ down into main RAM before anything pages
   PAGEBANK SWRAM_DATA           \ the data bank is the resting state
 
   JSR SetupRupture              \ NOW the CRTC goes into the rupture's
@@ -981,6 +1012,10 @@ ENDIF
                                 \ which CheckWalls left earlier in the pass
 IF DEBUG_ENERGY
   JSR DbgEnergyOut
+ELSE
+  JSR PanelUpdate               \ Layer 9's HUD. Writes only the panel, which
+                                \ nothing scrolls and nothing blits over, so it
+                                \ is outside every window the play area needs
 ENDIF
 
   \ The second window. Everything above ran in the first one and the
@@ -1064,6 +1099,47 @@ ENDIF
   INC swDst+1
   DEX
   BNE pdi_page
+  RTS
+
+\ ============================================================
+\ PageFontIn — Layer 9's text font, bank 6 to &3C00
+\ ============================================================
+\ Called with SWRAM_SPR2 still paged in from the last PageBankIn, and
+\ leaves it that way; the caller pages the data bank back. FONT_BYTES is
+\ 2,112, so this is 9 pages minus a tail — copied whole pages and then
+\ the remainder, the same shape PageBankIn uses.
+\
+\ ONCE, AT BOOT. The font never changes: unlike the deck charset it is
+\ not a function of the colour scheme, so there is nothing to rebuild at
+\ deck load. See docs/layer-9-hud.md.
+.PageFontIn
+  LDA #LO(spr2_font) : STA swSrc
+  LDA #HI(spr2_font) : STA swSrc+1
+  LDA #LO(FONT_ADDR) : STA swDst
+  LDA #HI(FONT_ADDR) : STA swDst+1
+  LDX #HI(FONT_BYTES)
+  BEQ pfi_tail
+.pfi_page
+  LDY #0
+.pfi_byte
+  LDA (swSrc),Y
+  STA (swDst),Y
+  INY
+  BNE pfi_byte
+  INC swSrc+1
+  INC swDst+1
+  DEX
+  BNE pfi_page
+.pfi_tail
+  LDY #0
+.pfi_last
+  CPY #LO(FONT_BYTES)
+  BEQ pfi_x
+  LDA (swSrc),Y
+  STA (swDst),Y
+  INY
+  BNE pfi_last
+.pfi_x
   RTS
 
 \ ============================================================
@@ -1236,6 +1312,11 @@ ASSERT FRAME_LOCK >= 2
                                 \ the one we are entering
   JSR ReframeView
   JSR DroidsInit                \ the deck's droids, on its waypoints
+IF NOT(DEBUG_ENERGY)
+  JSR PanelInit                 \ Layer 9: the static words and the deck
+                                \ number. AFTER DroidsInit, so the droid
+                                \ count PanelUpdate reads is this deck's
+ENDIF
 IF DEBUG_MAPGUARD
   JSR MapGuardSnap              \ LAST: the map as the finished load left it
 ENDIF
@@ -1501,6 +1582,7 @@ INCLUDE "src/screen.asm"
 INCLUDE "src/scroll.asm"
 INCLUDE "src/level.asm"
 INCLUDE "src/droid.asm"
+INCLUDE "src/panel.asm"
 .data_end
 
 \ SAVED HERE, NOT AT THE BOTTOM. SAVE writes out whatever the assembled
@@ -1548,6 +1630,17 @@ CLEAR SWRAM_BASE, SWRAM_BASE + &4000
 ORG SWRAM_BASE
 .spr2_start
 INCLUDE "src/data/droids2.asm"
+
+\ ---- Layer 9's text font rides here ------------------------
+\ SHIPPED here, RUN from &3C00. It is 2,112 bytes and bank 6 is the only
+\ one with that much room — bank 4 has ~1,300 and main RAM 220 — but a
+\ font read from bank 6 would be unreachable from the panel engine in
+\ bank 4, and the two cannot both be paged. So PageFontIn copies it into
+\ main RAM at boot and everything reads it there with no paging at all,
+\ which is also what lets Layer 10 reuse it. See docs/layer-9-hud.md,
+\ decision 1.
+.spr2_font
+INCLUDE "src/data/textfont.asm"
 .spr2_end
 SAVE "PARSPR2", spr2_start, spr2_end, DATA_LOAD, DATA_LOAD
 
