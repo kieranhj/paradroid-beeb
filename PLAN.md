@@ -487,7 +487,7 @@ see them" is.
 subset of it. **Exit condition:** the fidelity table complete, the Redux list triaged, and a
 build KC is happy to put in front of someone else.
 
-### Layer 13 — Memory, banks and machine compatibility — **the second-to-last pass, planned**
+### Layer 13 — Memory, banks and machine compatibility — **planned**
 
 **Until this layer, RAM is not a constraint worth designing around.** KC's ruling, 2026-08-16:
 where a layer needs room, take a **fourth sideways bank in slot 7** and move on. Squeezing a
@@ -530,6 +530,34 @@ reason.
 **Entry condition:** Layer 12 done, so the game is finished and its memory needs are final.
 **Exit condition:** a build that detects what it is running on, says so, and either runs correctly
 or refuses honestly.
+
+### Layer 14 — Visual pass — **the last pass, planned**
+
+Asked for by KC, 2026-08-16. Everything is drawn by now and has been seen on real hardware; this is
+the pass that settles how it **looks**, as one deliberate sitting rather than a decision taken
+sixteen times in passing.
+
+Two strands:
+
+1. **The final palettes, for every deck and every game screen.** MODE 1 gives four logical colours
+   at a time and the C64 gives sixteen with per-character colour, so a deck's palette here is a
+   choice, not a transcription — and the choice has been made deck by deck as decks landed. This
+   pass sets all sixteen decks together, plus the panel, the console, the transfer board and the
+   title, so they read as one game and so no two adjacent decks land on the same scheme by
+   accident. The original's own per-deck colours are the starting point, not the answer.
+2. **Redrawing graphics characters that fight the palette.** Where a tile or a glyph only works
+   because of a colour MODE 1 cannot give it, the honest fix is to change the artwork rather than
+   spend a palette entry on it. That is a **deviation from the original's graphics and needs
+   agreeing case by case** under the usual rule — each one written down with what it was and why
+   the ported character did not survive the four-colour restriction.
+
+**Why last:** judging a palette wants the finished screens and a real machine and a real display —
+`13c` is what puts the build in front of one, and an emulator's colours are not the ones the game
+will be played in. Some of this can be prototyped earlier (a palette is a poke), but nothing should
+be *settled* before then.
+
+**Exit condition:** every deck and screen has a palette recorded in the source with a comment
+saying why, and every redrawn character has a decision entry.
 
 ## `src/` as it stands
 

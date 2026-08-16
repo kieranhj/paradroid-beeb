@@ -12,6 +12,23 @@ Numbering is historical, not an order — 3 sits after 4 because it was added la
 
 ---
 
+## 12. Lasers on screen when a console is activated stay there and corrupt the console text — **2026-08-16**
+
+Reported by KC from play. Activate a console while enemy (or player) laser sprites are live on
+screen, and the laser sprites remain drawn over the console display, breaking up the text.
+
+**Not investigated — filed only.** The likely shape: the console takes over the screen without
+tearing down the sprite pool, so the bullets' already-drawn pixels are left in the buffer, and
+whatever restore/draw state they hold is stale against the console's own drawing. Compare with
+the entry-path teardown `LoadDeck`/`ReframeView` does — dropping every `sprSaved` and redrawing —
+which the console entry may not be doing.
+
+Whether the bullets keep *updating* behind the console (i.e. moving, and writing more pixels) or
+are simply frozen where they were is the first thing to establish; it decides between "clear the
+pool on console entry" and "also stop the bullet update".
+
+---
+
 ## 11. Enemy lasers crawl, and the player can walk through them — **FIXED 2026-08-16**
 
 Reported by KC from play: "the lasers are sometimes very slow moving", and "the lasers don't
