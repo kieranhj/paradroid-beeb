@@ -27,8 +27,13 @@ bytes, three bytes a row.
     ptr $A1 -> $6840   a circular ship-plan badge
     ptr $A2 -> $6880   a ship side view
 
-They are HIRES, not multicolour: read as multicolour the shapes come out
-as doubled-width mush, and as hires they are clean line art.
+ALL FOUR ARE HIRES -- SpriteMC is 0 in every record -- BUT SPRITES 3 AND
+4 ARE X-EXPANDED. The 11 bytes map onto SpriteNum ($04) through
+SpriteImage ($0E), so byte 8 is SpriteXExp, and it is $FF for the ship
+plan and the side view and 0 for the other two. They are 48 pixels wide
+on screen, not 24. SpriteYExp is 0 throughout, so all four stay 21
+scanlines. The widening is baked into the data here: the BBC has no
+equivalent register.
 
 THE MODE 1 LAYOUT, AND WHY EACH ICON IS THREE FLAT COPIES
 ---------------------------------------------------------
@@ -48,14 +53,15 @@ PROJECT = Path(__file__).resolve().parent.parent
 OUT = PROJECT / 'src' / 'data' / 'conicons.asm'
 
 VIC_BANK = 0x4000
+# name, image pointer, X-expanded
 ICONS = [
-    ('droid number emblem', 0x50),
-    ('ship plan badge', 0xA1),
-    ('ship side view', 0xA2),
+    ('droid ? emblem', 0x50, False),
+    ('ship plan badge', 0xA1, True),
+    ('ship side view', 0xA2, True),
 ]
 SPR_W, SPR_H = 24, 21
 ROWS = 3                        # character rows an icon spans
-UNITS = SPR_W // 4              # 4-pixel columns
+UNITS = SPR_W // 4              # 4-pixel columns, unexpanded
 
 
 def load_memory():
@@ -84,9 +90,14 @@ def pixels(mem, ptr):
     return out
 
 
-def to_mode1(px):
+def to_mode1(px, expand):
     """Character row major, then 4-pixel column, then scanline: the order
-    the buffer itself is in, so drawing is a straight copy."""
+    the buffer itself is in, so drawing is a straight copy.
+
+    THE X-EXPANDED ONES ARE STORED NARROW and doubled by ConIcons as it
+    draws, from a 16-entry nibble table. Baking the widening in costs 288
+    bytes and bank 6 does not have them; doubling four pixels to eight is
+    two table lookups, and the icons are drawn once."""
     data = []
     for crow in range(ROWS):
         for unit in range(UNITS):
@@ -123,31 +134,42 @@ def main():
     out.append('')
     out.append('GEN_ICON_COUNT = %d' % len(ICONS))
     out.append('GEN_ICON_ROWS  = %d' % ROWS)
-    out.append('GEN_ICON_BYTES = %d' % (ROWS * UNITS * 8))
     out.append('')
-    out.append('.conicons')
-    for name, ptr in ICONS:
-        data = to_mode1(pixels(mem, ptr))
+
+    body, labels, total = [], [], 0
+    for name, ptr, expand in ICONS:
+        data = to_mode1(pixels(mem, ptr), expand)
         assert len(data) == ROWS * UNITS * 8
-        out.append('  \\ %s  (sprite pointer $%02X, $%04X)' % (name, ptr, VIC_BANK + ptr * 64))
+        body.append('  \\ %s  (pointer $%02X at $%04X%s)'
+                    % (name, ptr, VIC_BANK + ptr * 64,
+                       ', X-EXPANDED at draw time' if expand else ''))
         for i in range(0, len(data), 16):
-            out.append('  EQUB ' + ', '.join('&%02X' % b for b in data[i:i + 16]))
+            body.append('  EQUB ' + ', '.join('&%02X' % b for b in data[i:i + 16]))
+        labels.append((name, total, len(data), expand))
+        total += len(data)
+
+    out.append('.conicons')
+    out.extend(body)
     out.append('.conicons_end')
-    out.append('ASSERT conicons_end - conicons == GEN_ICON_COUNT * GEN_ICON_BYTES')
+    out.append('ASSERT conicons_end - conicons == %d' % total)
     out.append('ASSERT GEN_ICON_COUNT == CON_ICON_COUNT')
-    out.append('ASSERT GEN_ICON_BYTES == CON_ICON_BYTES')
+    out.append('')
+    out.append('\\ All three are stored 24 px wide. CON_ICON_EXP is a bit per icon')
+    out.append('\\ saying which the VIC draws X-expanded; ConIcons doubles those as')
+    out.append('\\ it copies, from a 16-entry nibble table.')
+    for i, (name, off, size, expand) in enumerate(labels):
+        out.append('CON_ICON%d_OFS = %-5d \\ %-18s%s'
+                   % (i, off, name, '  X-EXPANDED' if expand else ''))
+    out.append('CON_ICON_EXP  = %%%s' % ''.join(
+        '1' if l[3] else '0' for l in reversed(labels)))
     out.append('')
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text('\n'.join(out) + '\n')
-    print('wrote %s  (%d icons, %d bytes each, %d total)'
-          % (OUT, len(ICONS), ROWS * UNITS * 8, len(ICONS) * ROWS * UNITS * 8))
-
-    for name, ptr in ICONS:
-        px = pixels(mem, ptr)
-        print('\n  %s:' % name)
-        for y in range(SPR_H):
-            print('    ' + ''.join('#' if p else '.' for p in px[y]))
+    print('wrote %s  (%d icons, %d bytes)' % (OUT, len(ICONS), total))
+    for name, off, size, expand in labels:
+        print('   %-18s offset %4d, %3d bytes%s'
+              % (name, off, size, '  (doubled at draw time)' if expand else ''))
 
 
 if __name__ == '__main__':

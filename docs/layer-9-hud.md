@@ -352,9 +352,31 @@ characters: sprite X 52 and 40 are 28 and 16 pixels from the left edge, 7 and 4 
 buffer's natural step is the 8-byte 4-pixel column so it does not need to be a whole character.
 The two different indents are the original's.
 
-An icon is **three flat 48-byte copies**. The six 4-pixel columns of a 24 px sprite are 48
-consecutive bytes within one character row, and 21 scanlines is three rows — no shifting, no
-masking, and nothing to save, because `ConClear` has just blanked the area.
+**Two of them are X-expanded.** The eleven bytes of a record map onto `SpriteNum` (`$04`) through
+`SpriteImage` (`$0E`), so byte 8 is `SpriteXExp` — and it is `$FF` for the ship plan and the side
+view, `0` for the other two. They are **48 pixels wide on screen, not 24**. `SpriteMC` is `0` in
+all four records, so none of them is multicolour, and `SpriteYExp` is `0`, so all four stay 21
+scanlines.
+
+The doubling happens **as they are drawn**, not in the data: baking it in costs 288 bytes and bank
+6 does not have them — it overflowed the moment both wide icons were stored expanded. Doubling
+four pixels to eight is two lookups in a **sixteen**-entry table, not 256, because the icons are
+drawn white and white is logical 1, which is the low colour plane alone — so all four pixels of a
+byte live in one nibble.
+
+A narrow icon is **three flat 48-byte copies**: the six 4-pixel columns of a 24 px sprite are 48
+consecutive bytes within one character row, and 21 scanlines is three rows. Nothing has to be
+saved, because `ConClear` has just blanked the area.
+
+> **The destination is not twice the source index**, and assuming it was produced convincing
+> noise. A source byte is one *scanline* of one 4-pixel column — a column's eight bytes are eight
+> consecutive scanlines — so doubling it produces the same scanline of **two columns**, which are
+> eight bytes apart, not adjacent. Source `u*8 + s` goes to `u*16 + s` and `u*16 + s + 8`.
+
+**The console is drawn in logical colour 1, not 3.** It lives in the play area and takes the
+*deck's* palette, where logical 1 is physical 7 on all sixteen decks while 2 and 3 vary and are
+black on several — so white is the only reliably light ink it has. `ConAt` sets `pnMask` to
+`PN_INK_WHITE` for the text and `ConIcons` ANDs the same mask into every icon byte.
 
 **[DECISION 16]** The **top icon is not built**, and it is the one that is not a copy. `$53C0` is
 blank in ROM: it is where `BuildDroidSprite` composes the **player's own droid** at run time, which

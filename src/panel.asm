@@ -89,15 +89,21 @@ PN_W_RIGHT  = 101
 \ font is exported with both planes set — logical 3 — and dropping one
 \ plane recolours a glyph for the cost of an AND per byte:
 \
-\   &FF  logical 3    the frame and the mode word   (black)
-\   &F0  logical 2    the logo and the score        (red)
-\   &0F  logical 1
+\   &FF  logical 3    the frame and the mode word   (black, panel palette)
+\   &F0  logical 2    the logo and the score        (red,   panel palette)
+\   &0F  logical 1    the console                   (white, DECK palette)
 \
 \ which is how the original's status area is coloured: it is grey on
 \ white with the logo and the score in red. Grey is not a BBC colour, so
 \ the frame and the text take black. See docs/layer-9-hud.md.
-PN_INK_TEXT = &FF
-PN_INK_RED  = &F0
+\
+\ THE CONSOLE IS THE ODD ONE and has to be, because it is drawn into the
+\ PLAY area and takes the deck's palette rather than the panel's. There,
+\ logical 1 is physical 7 on all sixteen decks while 2 and 3 vary and are
+\ black on several — so white is the only reliably light ink it has.
+PN_INK_TEXT  = &FF
+PN_INK_RED   = &F0
+PN_INK_WHITE = &0F
 
 \ ---- CAPITALS ARE TWO CELLS WIDE ---------------------------
 \ DrawChar ($0C5F) writes the code, then tests it:

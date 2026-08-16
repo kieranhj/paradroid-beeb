@@ -78,9 +78,20 @@ CON_TOK_ALERT  = 208            \ green, yellow, amber, red
 \ of characters either way, and it does not need to be: the buffer's
 \ natural step is the 8-byte 4-pixel column. The two indents are the
 \ original's; a menu with its icons in one column would not be.
+\ SPRITES 3 AND 4 ARE X-EXPANDED. SpriteXExp is byte 8 of their records
+\ and it is $FF for both, 0 for the other two — the eleven bytes map onto
+\ SpriteNum ($04) through SpriteImage ($0E), so the field is not a guess.
+\ They are FORTY-EIGHT pixels wide on screen, not 24. SpriteMC is 0 on all
+\ four, so none of them is multicolour, and SpriteYExp is 0, so all four
+\ stay 21 scanlines.
+\ THE DOUBLING HAPPENS AS THEY ARE DRAWN, not in the data. Baking it in
+\ costs 288 bytes and bank 6 does not have them — it overflowed by the
+\ time both wide icons were stored expanded. Doubling four pixels to
+\ eight is two lookups in a sixteen-entry table, and an icon is drawn
+\ once per console.
 CON_ICON_COUNT = 3              \ of four — see conicons.asm
 CON_ICON_ROWS  = 3              \ 21 scanlines, so three character rows
-CON_ICON_BYTES = CON_ICON_ROWS * 6 * 8
+CON_ICON_RB    = 6 * UNIT_BYTES \ source bytes a row: six 4-pixel columns
 
 \ ============================================================
 \ ConAt — point pnDst at console text cell (conRow, pnCol)
@@ -94,8 +105,13 @@ CON_ICON_BYTES = CON_ICON_ROWS * 6 * 8
 \ express the layout. The row step is a loop rather than a multiply
 \ because it runs once per string, not once per glyph.
 .ConAt
-  LDA #PN_INK_TEXT              \ as PnAt does: the panel's red fields must
-  STA pnMask                    \ not leak into the console's text
+\ THE CONSOLE IS WHITE, and the panel's ink is not. Logical 1 is physical
+\ 7 on every one of the sixteen decks, where logical 3 varies and is
+\ BLACK on several of them — the console lives in the play area and takes
+\ the deck's palette, so it is the only reliably light colour available.
+\ Setting it here also stops the panel's red score leaking in.
+  LDA #PN_INK_WHITE
+  STA pnMask
 
   LDA pnCol                     \ col * 16
   ASL A : ASL A : ASL A : ASL A
@@ -337,31 +353,109 @@ CON_ICON_BYTES = CON_ICON_ROWS * 6 * 8
 .ci_icon
   LDA conIconDstLo,X : STA pnDst
   LDA conIconDstHi,X : STA pnDst+1
-  LDA conIconSrcLo,X : STA pnSrc
-  LDA conIconSrcHi,X : STA pnSrc+1
+  LDA conIconSrcLo,X : STA ci_get+1 : STA ci_wget+1
+  LDA conIconSrcHi,X : STA ci_get+2 : STA ci_wget+2
+  LDA conIconExp,X
+  STA ci_wide+1                 \ patched, so the row loop tests nothing
   STX conTmp
 
-  LDX #CON_ICON_ROWS
+\ THE ROW COUNT IS IN MEMORY, NOT X. The wide path needs X for the source
+\ index and again for the doubling-table lookup, so a row counter left in
+\ it survives the narrow copy and is destroyed by the other one — which
+\ showed as the console clearing and then drawing nothing at all.
+  LDA #CON_ICON_ROWS
+  STA conIconRow
 .ci_row
-  LDY #47
-.ci_byte
-  LDA (pnSrc),Y
+.ci_wide
+  LDA #0                        \ operand patched above: 0 narrow, else wide
+  BNE ci_w
+
+\ ---- 24 px: 48 bytes straight across -----------------------
+  LDY #CON_ICON_RB-1
+.ci_n
+.ci_get
+  LDA &FFFF,Y
+  AND #PN_INK_WHITE             \ exported as logical 3, drawn as 1 — the
+  STA (pnDst),Y                 \ same recolour PnGlyph does, and for the
+  DEY                           \ same reason: 3 is black on some decks
+  BPL ci_n
+  JMP ci_rowend
+
+\ ---- 48 px: every source byte becomes two ------------------
+\ conTmp2 holds the source index while X does the table lookup, because
+\ Y is the destination and there is no third index register.
+.ci_w
+  LDX #0
+.ci_wb
+\ THE DESTINATION IS NOT 2 * THE SOURCE INDEX. A source byte is ONE
+\ SCANLINE of ONE 4-pixel column — the column's eight bytes are eight
+\ consecutive scanlines — so doubling it produces the same scanline of
+\ TWO columns, which are eight bytes apart, not adjacent. Source index
+\ u*8 + s therefore goes to u*16 + s and u*16 + s + 8. Writing it to
+\ 2k and 2k+1 instead interleaves the scanlines of every column with its
+\ neighbour's, which looks exactly like noise, and did.
+  TXA
+  AND #&F8                      \ the column, doubled: u * 16
+  ASL A
+  STA conTmp3
+  TXA
+  AND #7                        \ plus the scanline within it
+  ORA conTmp3
+  TAY
+  STX conTmp2
+.ci_wget
+  LDA &FFFF,X
+  AND #PN_INK_WHITE             \ white is the LOW plane, so one nibble
+  TAX                           \ carries all four pixels
+  LDA conDblHi,X
   STA (pnDst),Y
-  DEY
-  BPL ci_byte
+  TYA
   CLC
-  LDA pnSrc   : ADC #48 : STA pnSrc
-  LDA pnSrc+1 : ADC #0  : STA pnSrc+1
+  ADC #UNIT_BYTES               \ the next 4-pixel column, eight bytes on
+  TAY
+  LDA conDblLo,X
+  STA (pnDst),Y
+  LDX conTmp2
+  INX
+  CPX #CON_ICON_RB
+  BNE ci_wb
+
+\ ---- on to the next character row --------------------------
+.ci_rowend
+  CLC                           \ the source is 48 bytes a row either way,
+  LDA ci_get+1 : ADC #CON_ICON_RB : STA ci_get+1   \ and the two loops
+  LDA ci_get+2 : ADC #0           : STA ci_get+2   \ read it through
+  LDA ci_get+1 : STA ci_wget+1                     \ their own operand
+  LDA ci_get+2 : STA ci_wget+2
   CLC
-  LDA pnDst   : ADC #LO(ROW_BYTES) : STA pnDst
-  LDA pnDst+1 : ADC #HI(ROW_BYTES) : STA pnDst+1
-  DEX
+  LDA pnDst    : ADC #LO(ROW_BYTES) : STA pnDst
+  LDA pnDst+1  : ADC #HI(ROW_BYTES) : STA pnDst+1
+  DEC conIconRow
   BNE ci_row
 
   LDX conTmp
   DEX
-  BPL ci_icon
+  BMI ci_done                   \ JMP, not BPL: ci_icon is 142 bytes back
+  JMP ci_icon
+.ci_done
   RTS
+
+\ ---- doubling a nibble to a byte ---------------------------
+\ The icons are drawn white, which is logical 1, which is the LOW colour
+\ plane alone — so all four pixels of a byte live in one nibble and the
+\ table is sixteen entries and not two hundred and fifty-six. conDblHi
+\ takes the nibble's top two pixels to a whole byte and conDblLo its
+\ bottom two, so one source byte becomes the two the VIC's X-expansion
+\ would have produced.
+\
+\ Bits 3-0 are pixels 0-3, so entry n of conDblHi is p0 p0 p1 p1 and of
+\ conDblLo is p2 p2 p3 p3.
+.conDblHi
+  EQUB %0000, %0000, %0000, %0000, %0011, %0011, %0011, %0011
+  EQUB %1100, %1100, %1100, %1100, %1111, %1111, %1111, %1111
+.conDblLo
+  EQUB %0000, %0011, %1100, %1111, %0000, %0011, %1100, %1111
+  EQUB %0000, %0011, %1100, %1111, %0000, %0011, %1100, %1111
 
 \ Rows 5, 8 and 11 at units 7, 4 and 4 — the top slot, row 2 unit 7, is
 \ the droid image and is not drawn. Held as whole addresses because the
@@ -372,8 +466,9 @@ CON_ICON_D1 = BUF_BASE +  8 * ROW_BYTES + 4 * UNIT_BYTES
 CON_ICON_D2 = BUF_BASE + 11 * ROW_BYTES + 4 * UNIT_BYTES
 .conIconDstLo EQUB LO(CON_ICON_D0), LO(CON_ICON_D1), LO(CON_ICON_D2)
 .conIconDstHi EQUB HI(CON_ICON_D0), HI(CON_ICON_D1), HI(CON_ICON_D2)
-.conIconSrcLo EQUB LO(conicons), LO(conicons + CON_ICON_BYTES), LO(conicons + 2 * CON_ICON_BYTES)
-.conIconSrcHi EQUB HI(conicons), HI(conicons + CON_ICON_BYTES), HI(conicons + 2 * CON_ICON_BYTES)
+.conIconSrcLo EQUB LO(conicons + CON_ICON0_OFS), LO(conicons + CON_ICON1_OFS), LO(conicons + CON_ICON2_OFS)
+.conIconSrcHi EQUB HI(conicons + CON_ICON0_OFS), HI(conicons + CON_ICON1_OFS), HI(conicons + CON_ICON2_OFS)
+.conIconExp   EQUB 0, &FF, &FF  \ SpriteXExp, per icon
 
 \ ============================================================
 \ ConUnitType — ShowRobotType ($3149), the top line
@@ -507,4 +602,7 @@ CON_ICON_D2 = BUF_BASE + 11 * ROW_BYTES + 4 * UNIT_BYTES
 .conRow    EQUB 0
 .conCap    EQUB 0
 .conTmp    EQUB 0
+.conTmp2   EQUB 0
+.conIconRow EQUB 0
+.conTmp3   EQUB 0
 .conPrevL  EQUB 0
