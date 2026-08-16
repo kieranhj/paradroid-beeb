@@ -10,11 +10,14 @@ The $7000 charset stores a glyph's top half at code c and its bottom half
 at code c + $80. Rendered, the map is:
 
     $00-$09   digits 0-9
-    $0A-$23   lowercase a-z
-    $2E       full stop
+    $0A-$23   lowercase a-z BY POSITION, but see the m/w/I note below:
+              $16 is capital I and $20 is a symbol
+    $28       full stop     $29 comma    $2A colon    $2B semicolon
+    $2E       DASH -- the separator in "Blk-Whte" and "robo-stores"
     $30       space
     $31-$37   the PARADROID LOGO, nine cells wide
-    $3A-$53   capitals A-Z
+    $3A-$53   capitals A-Z BY POSITION, but $42 is lowercase m
+    $54       lowercase w, wide
     $55-$59   status box frame, wide (right half at +$20)
     $7A-$7C   status box frame, narrow
 
@@ -60,7 +63,7 @@ both bits and comes out as logical colour 3.
 
 GLYPH INDEX
 -----------
-The port indexes glyphs 0-97 rather than by C64 code, so the table is
+The port indexes glyphs 0-101 rather than by C64 code, so the table is
 contiguous and PnAscii can map ASCII onto it with four compares:
 
     0        space
@@ -101,23 +104,63 @@ FONT_BASE = 0x7000
 # PnStr draws the second whenever the first is in the capital range —
 # exactly DrawChar's own test.
 #
-# glyph index -> C64 code of the TOP-LEFT cell, or None if synthesised
+# THREE CODES ARE NOT WHERE THE ALPHABET PUTS THEM, and ToUpper ($2E3D) is
+# where the original says so. It converts lowercase to wide capitals and
+# special-cases exactly these before falling back to "capital = lowercase
+# + $30":
+#
+#     CMP #$54 : BEQ _1     ; 'w' is $54, and its capital is $50
+#     CMP #$42 : BEQ _2     ; 'm' is $42, and its capital is $46
+#     CMP #$12 : BEQ _3     ; 'i' $12 -> capital I is $16, not $42
+#     CMP #$16 : BEQ _x     ; and $16 is already that capital
+#     CMP #$A : BCC _x : CMP #$24 : BCS _x : ADC #$30
+#
+# so LOWERCASE m AND w ARE 16 PX WIDE and live at $42 and $54, outside the
+# a-z run; the $16 and $20 slots where they would sit hold CAPITAL I --
+# which is narrow, being a bare stem -- and a symbol. Render $42 and $46
+# side by side and they are the same double-arch shape, one lowercase and
+# one capital, which is the giveaway.
+#
+# This file had m, w and I all wrong, and the full stop as $2E. $2E is the
+# DASH: it is the separator in "Blk/Whte" ($69D8), in the deck name
+# "robo-stores", and on the console's own "Unit type 001 - Influence
+# device" line, where ShowRobotType prints it as token 50. The full stop
+# is $28 -- the low dot that $29 (comma) and $2B (semicolon) are built
+# from by adding a tail.
+#
+# None of it ever showed, because no word on the panel -- Mobile, Weapon,
+# Transfer, Console -- contains m, w, capital I or a full stop.
+C64_LOWER = {12: 0x42, 22: 0x54}        # m and w, wide and out of line
+C64_UPPER = {8: 0x16}                   # capital I, narrow and out of line
+
+# glyph index -> C64 code of the TOP-LEFT cell
 GLYPHS = []
 GLYPHS.append(('space', 0x30))
 for d in range(10):
     GLYPHS.append((f"'{d}'", 0x00 + d))
 for i in range(26):
-    GLYPHS.append((f"'{chr(65+i)}' left", 0x3A + i))
+    GLYPHS.append((f"'{chr(65+i)}' left", C64_UPPER.get(i, 0x3A + i)))
 for i in range(26):
-    GLYPHS.append((f"'{chr(65+i)}' right", 0x3A + 0x20 + i))
+    # Capital I has no right half. Space fills the slot so the index stays
+    # LEFT + 26 for every capital and PnWide needs one test, not a table.
+    GLYPHS.append((f"'{chr(65+i)}' right",
+                   0x30 if i in C64_UPPER else 0x3A + 0x20 + i))
 for i in range(26):
-    GLYPHS.append((f"'{chr(97+i)}'", 0x0A + i))
-GLYPHS.append(("'.'", 0x2E))
+    GLYPHS.append((f"'{chr(97+i)}'", C64_LOWER.get(i, 0x0A + i)))
+GLYPHS.append(("'.'", 0x28))
 # The logo. $6917 draws it as $31 $32 $33 $32 $34 $33 $35 $36 $37 -- nine
 # cells from seven distinct glyphs, two of them used twice.
 for i in range(7):
     GLYPHS.append(('logo cell %d' % i, 0x31 + i))
 GLYPHS.append(('box bar', 0x7C))
+
+# The console's punctuation, and the right halves of the two wide
+# lowercase letters. They go on the end rather than in the alphabet so
+# that a-z stays a contiguous run PnAscii can index arithmetically.
+GLYPHS.append(("'-'", 0x2E))            # token 50, and "robo-stores"
+GLYPHS.append(("':'", 0x2A))            # "Ship  :" at $6E12
+GLYPHS.append(("'m' right", 0x62))
+GLYPHS.append(("'w' right", 0x74))
 
 # The order $6917 draws the logo in, as indices into the seven glyphs above.
 LOGO_SEQ = [0, 1, 2, 1, 3, 2, 4, 5, 6]
@@ -253,8 +296,9 @@ def main():
           f' + {len(FRAME)} frame cells, {len(FRAME)*16} bytes)')
 
     # sanity: report which glyphs came out blank, which would mean a bad map
+    # 'I' right is deliberately the space glyph -- capital I is narrow.
     blank = [(i, n, c) for i, (n, c) in enumerate(GLYPHS)
-             if n != 'space' and not any(glyph_rows(mem, c))]
+             if c != 0x30 and not any(glyph_rows(mem, c))]
     if blank:
         print('WARNING blank glyphs:', blank)
     else:

@@ -137,7 +137,7 @@ which owns the same panel row; turning that one on suppresses the HUD rather tha
 
 ## 4. The glyph set, and how strings are written
 
-98 glyphs, indexed:
+102 glyphs, indexed:
 
 ```
     0        space
@@ -145,10 +145,40 @@ which owns the same panel row; turning that one on suppresses the HUD rather tha
     11-36    capitals A-Z, LEFT half
     37-62    capitals A-Z, RIGHT half
     63-88    lowercase a-z
-    89       full stop
+    89       full stop                ($28)
     90-96    the logo, cells 0-6      ($31-$37)
     97       the box's vertical bar   ($7C)
+    98       dash                     ($2E)
+    99       colon                    ($2A)
+    100-101  the RIGHT halves of m and w
 ```
+
+### WIDE is not the same as CAPITAL
+
+**Corrected 2026-08-16, while porting the console.** `ToUpper` (`$2E3D`) is the authority on the
+code map, and it special-cases three codes before falling back to "capital = lowercase + `$30`":
+
+```
+2E4B  CMP #$54 : BEQ _1     ; 'w' is $54, and its capital is $50
+2E4F  CMP #$42 : BEQ _2     ; 'm' is $42, and its capital is $46
+2E53  CMP #$12 : BEQ _3     ; 'i' $12 -> capital I is $16, not $42
+2E57  CMP #$16 : BEQ _x     ; and $16 is already that capital
+2E5B  CMP #$A : BCC _x : CMP #$24 : BCS _x : ADC #$30
+```
+
+So **lowercase m and w are 16 px** and live at `$42` and `$54`, outside the a-z run; the `$16` and
+`$20` slots the alphabet would give them hold **capital I**, which is narrow — a bare stem — and a
+symbol. Render `$42` and `$46` side by side and they are the same double-arch shape, one lowercase
+and one capital.
+
+`export_font.py` had all three wrong, and the full stop as `$2E`. `$2E` is the **dash**: the
+separator in `Blk-Whte` (`$69D8`), in the deck name `robo-stores`, and on the console's own
+`Unit type 001 - Influence device` line. The full stop is `$28`, the low dot that the comma `$29`
+and semicolon `$2B` are built from by adding a tail.
+
+**None of it ever showed**, because no word the panel draws — `Mobile`, `Weapon`, `Transfer`,
+`Console`, and before them `Deck`, `Alert`, `Droids` — contains m, w, capital I or a full stop.
+`PnWide` now makes exactly the three exceptions the original makes.
 
 plus a separate 192-byte `panelframe` table of **twelve 16-byte border cells** — half glyphs, not
 whole ones, because the border rows contribute only their inner 8 scanlines to the box. Both ship

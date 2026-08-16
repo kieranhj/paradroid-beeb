@@ -61,9 +61,27 @@ PN_UPPER_A  = 11                \ the LEFT half; the right is +PN_WIDE_OFS
 PN_UPPER_Z  = 36
 PN_WIDE_OFS = 26
 PN_LOWER_A  = 63
+PN_LOWER_Z  = 88
 PN_DOT      = 89
 PN_LOGO0    = 90                \ the seven logo cells, 90-96
 PN_BOXBAR   = 97                \ $7C, the box's vertical bar
+PN_DASH     = 98                \ $2E — the console's separator
+PN_COLON    = 99                \ $2A
+
+\ ---- WIDE IS NOT THE SAME AS CAPITAL -----------------------
+\ ToUpper ($2E3D) is where the original says so: it special-cases $54,
+\ $42 and $12 before falling back to "capital = lowercase + $30", which
+\ puts lowercase m at $42 and w at $54 — both SIXTEEN PIXELS — and capital
+\ I at $16, which is NARROW, being a bare stem. The $16 and $20 slots the
+\ alphabet would have given m and w hold capital I and a symbol instead.
+\
+\ So the wide set is the capitals minus I, plus m and w. PnWide tests for
+\ exactly that, and these three indices are why it is not one range check.
+PN_UPPER_I  = PN_UPPER_A + 8
+PN_LOWER_M  = PN_LOWER_A + 12
+PN_LOWER_W  = PN_LOWER_A + 22
+PN_M_RIGHT  = 100
+PN_W_RIGHT  = 101
 
 \ ---- INK, as a mask ANDed into every glyph byte ------------
 \ A MODE 1 byte carries four pixels: bits 7-4 are their HIGH colour bits
@@ -275,8 +293,18 @@ PN_TEXT_ADDR = PANEL_ADDR + PN_TEXT_ROW * ROW_BYTES
   RTS
 .pn_a_punct
   CMP #'.'
-  BNE pn_a_bad
+  BNE pn_a_dash
   LDA #PN_DOT
+  RTS
+.pn_a_dash
+  CMP #'-'
+  BNE pn_a_colon
+  LDA #PN_DASH
+  RTS
+.pn_a_colon
+  CMP #':'
+  BNE pn_a_bad
+  LDA #PN_COLON
   RTS
 .pn_a_bad
   LDA #PN_SPACE
@@ -311,15 +339,26 @@ PN_TEXT_ADDR = PANEL_ADDR + PN_TEXT_ROW * ROW_BYTES
   RTS
 
 \ ============================================================
-\ PnWide — draw glyph A, and its right half too if it is a capital
+\ PnWide — draw glyph A, and its right half too if it is 16 px
 \ ============================================================
-\ DrawChar's test, ported. Only PnStr needs it: every other caller draws
-\ digits or bar cells, which are never wide.
+\ DrawChar's test, ported — but on OUR indices, and the wide set is not
+\ simply "the capitals". Lowercase m and w are 16 px and capital I is 8;
+\ see the note by PN_UPPER_I above and ToUpper at $2E4B. Three tests, one
+\ per exception the original itself makes.
+\
+\ Only PnStr and ConStr need this: every other caller draws digits, which
+\ are never wide.
 .PnWide
+  CMP #PN_LOWER_M
+  BEQ pn_w_m
+  CMP #PN_LOWER_W
+  BEQ pn_w_w
   CMP #PN_UPPER_A
   BCC pn_w_one
   CMP #PN_UPPER_Z+1
   BCS pn_w_one
+  CMP #PN_UPPER_I               \ a bare stem, and the only narrow capital
+  BEQ pn_w_one
   PHA
   JSR PnGlyph
   PLA
@@ -327,6 +366,15 @@ PN_TEXT_ADDR = PANEL_ADDR + PN_TEXT_ROW * ROW_BYTES
   ADC #PN_WIDE_OFS
 .pn_w_one
   JMP PnGlyph                   \ and its RTS
+
+.pn_w_m
+  JSR PnGlyph
+  LDA #PN_M_RIGHT
+  JMP PnGlyph
+.pn_w_w
+  JSR PnGlyph
+  LDA #PN_W_RIGHT
+  JMP PnGlyph
 
 \ ============================================================
 \ PnDigits — print pnDigits decimal digits of pnVal at pnDst

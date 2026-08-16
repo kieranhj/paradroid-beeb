@@ -355,7 +355,7 @@ FONT_ADDR = &3C00
 \ assert needs the size before src/data/textfont.asm is reached. The
 \ generated file checks itself against both — see the ASSERTs by its
 \ INCLUDE. This is the same arrangement SPR_W and SPR_H have.
-FONT_GLYPHS = 98                \ 26 capitals are two glyphs each
+FONT_GLYPHS = 102               \ 26 capitals are two glyphs each
 FONT_BYTES  = FONT_GLYPHS * 32
 
 \ ---- the status box border, twelve MODE 1 cells -------------
