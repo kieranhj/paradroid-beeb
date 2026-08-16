@@ -1821,6 +1821,8 @@ CON_STR_BYTES = 1542            \ 1,541 plus the terminating sentinel
 INCLUDE "src/data/strings.asm"
 INCLUDE "src/data/conicons.asm"
 INCLUDE "src/data/droidicon.asm"
+INCLUDE "src/xfer.asm"
+INCLUDE "src/data/xferboard.asm"
 .spr2_end
 SAVE "PARSPR2", spr2_start, spr2_end, DATA_LOAD, DATA_LOAD
 

@@ -144,6 +144,21 @@ about first.
 
 ## 8. What was built on this branch
 
-The plan, and nothing else. §5, §6 and §7 are all decisions that want KC's eye before code goes in,
-and two of them — the ownership model and where the code lives — are large enough that guessing
+**The board, and only the board.** `tools/export_xfer.py` converts the fifteen characters and the
+200 bytes of layout, and `src/xfer.asm`'s `XferBoard` draws it into the play area. It renders: two
+vertical buses, eleven horizontal wires, the central result bar and the arrow terminals, checked in
+jsbeeb against the original's layout.
+
+It is reachable as the console's **third page**, which is a scaffold and not a design — the game is
+entered from `Capture` (`$229D`) through `DoCollision`'s transfer arm, and the page goes when the
+game itself is built.
+
+**Nothing of the game logic is here**: no pulsers, no gates, no CPU opponent, no control bar, no
+counter, no `FinishTransfer`. §5, §6 and §7 are decisions that want KC's eye before that code goes
+in, and two of them — the ownership model and where the code lives — are large enough that guessing
 wrong would waste a session.
+
+One thing the conversion settled, and it makes §5's route A cheaper than it looked: **every pixel of
+every wire character is a multicolour `11` pair.** Rendered, the fifteen characters are entirely
+logical 3. So a per-owner variant is the same 16 bytes with all the 3s rewritten to 1 or 2 — a
+mechanical transform in the exporter, not artwork.
