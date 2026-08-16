@@ -1223,23 +1223,51 @@ ASSERT FRAME_LOCK >= 2
   JSR SetPosFromWaypoint        \ the pixel position is the authority from
                                 \ here on
 .ld_placed
+  JSR DoorInit                  \ a door left open on the deck we are
+                                \ leaving would patch a tile position on
+                                \ the one we are entering
+  JSR ReframeView
+  JSR DroidsInit                \ the deck's droids, on its waypoints
+IF DEBUG_MAPGUARD
+  JSR MapGuardSnap              \ LAST: the map as the finished load left it
+ENDIF
+  RTS
+
+\ ============================================================
+\ ReframeView — put the strip back under the player, wherever he
+\ has just been PUT rather than moved
+\ ============================================================
+\ ANY teleport must come through here. The incremental scroll keeps
+\ scrollS in step with mapHX by adding the SAME delta to both; a
+\ routine that assigns mapHX outright — SetMapFromPos, from a waypoint
+\ spawn or a lift — breaks that link and nothing downstream repairs it.
+\
+\ Two things then go wrong, and only one of them is cosmetic:
+\
+\   - the buffer holds the deck at the OLD offset, so the view is
+\     somewhere else entirely until something redraws it;
+\   - the parity invariant `scrollS/8 == mapHX (mod 2)` is broken on
+\     half of all teleports, and COPYCHAR in scroll.asm then writes its
+\     second half 8 bytes past &8000 — into whatever sideways bank is
+\     paged, which at level-draw time is SWRAM_DATA. The first bytes of
+\     that bank are chardata, then colours, then tiledefs: exactly the
+\     tile characters and the tile layout. It survives a deck change,
+\     because BuildCharset and BuildLevel re-read the corrupted source.
+\
+\ That was BUGS.md #10 / docs/bug-map-corruption.md, and it is why the
+\ tile map at &3800 always came back clean: nothing was ever writing
+\ to it.
+\
 \ Start the strip at the buffer base — vertically, at least. `line` is
 \ zeroed so buffer row 0 is not a split row, which RedrawAll needs
-\ because it writes whole rows.
+\ because it writes whole rows. Both callers place the player on a
+\ whole character row, so SetMapFromPos has already made line 0 and
+\ this only restates it.
 \
-\ HORIZONTALLY the strip starts one unit in when mapHX is odd, and
-\ that is load bearing: DrawBandRows copies a whole character as one
-\ 16-byte run and would write past the end of the buffer if the strip's
-\ wrap ever fell between a character's two halves. It cannot, provided
-\ scrollS/8 and mapHX agree in parity — see COPYCHAR in scroll.asm for
-\ why that is then preserved for the rest of the deck. This is where it
-\ becomes true.
-\
-\ CentreOnDeck happens to produce an even mapHX today (it is charX * 2),
-\ so this is a no-op as things stand. It is written out anyway because
-\ the consequence of it being false is a write into sideways RAM rather
-\ than a wrong pixel, and that should not rest on another routine's
-\ arithmetic staying as it is.
+\ HORIZONTALLY the strip starts one unit in when mapHX is odd, which is
+\ what makes the wrap fall on a character boundary — see COPYCHAR for
+\ the derivation, and for why the incremental scroll then preserves it.
+.ReframeView
   LDA mapHX
   AND #1
   ASL A : ASL A : ASL A         \ 0 or 8
@@ -1248,22 +1276,16 @@ ASSERT FRAME_LOCK >= 2
   STA scrollS+1
   STA line
   STA iline
-  JSR DoorInit                  \ a door left open on the deck we are
-                                \ leaving would patch a tile position on
-                                \ the one we are entering
-  LDX #SPR_SLOTS-1              \ the saved backgrounds belong to the deck
+  STA bandDo                    \ the exposed edges belonged to the frame
+  STA colCount                  \ we have just thrown away
+  LDX #SPR_SLOTS-1              \ the saved backgrounds belong to the view
   LDA #0                        \ we are leaving; RedrawAll replaces them
-.ld_unsave
+.rv_unsave
   STA sprSaved,X
   DEX
-  BPL ld_unsave
+  BPL rv_unsave
   JSR SetCRTCStart
-  JSR RedrawAll
-  JSR DroidsInit                \ the deck's droids, on its waypoints
-IF DEBUG_MAPGUARD
-  JSR MapGuardSnap              \ LAST: the map as the finished load left it
-ENDIF
-  RTS
+  JMP RedrawAll                 \ and its RTS
 
 INCLUDE "src/rupture.asm"
 INCLUDE "src/bufcore.asm"       \ what screen/scroll could not leave behind

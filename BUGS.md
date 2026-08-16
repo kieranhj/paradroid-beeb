@@ -12,71 +12,58 @@ Numbering is historical, not an order — 3 sits after 4 because it was added la
 
 ---
 
-## 10. The TILE MAP itself gets scribbled on, in play — **OPEN, 2026-08-16**
+## 10. The level is corrupted when a droid's shot kills you — **FIXED 2026-08-16**
 
-> **[`docs/bug-map-corruption.md`](docs/bug-map-corruption.md) is the working document** — how to
-> run the experiment, how to read the five numbers off the panel, what to bring back, and what the
-> answers would mean. Read that first; this entry is the summary.
+> **[`docs/bug-map-corruption.md`](docs/bug-map-corruption.md) is the working document.** It is
+> named for the wrong hypothesis: the tile map was never the thing being written.
 
-Reported by KC from play, on **deck 8**, on the first interaction with a droid that fires: the laser
-sprite is left on screen and the level goes wrong — **including its collision data**, so this is the
-map at `&3800-&3BFF` being written, not merely stray pixels in the play buffer. It survives until
-the deck is reloaded (the debug deck hop away and back clears it) and then returns on meeting the
-firing droid again.
+Reported by KC from play, on **deck 8**, meeting a droid that fires: the laser sprite is left on
+screen and the level goes wrong. Two later sessions sharpened it decisively — the corruption
+**survived a deck hop to deck 7**, and individual **tile characters** turned into 4×4 blocks of red
+vertical lines. That is not the tile map. It is the CHARSET SOURCE, which lives at `&8000` in
+SWRAM bank 4 and which `BuildCharset` re-reads on every deck load.
 
-### Not reproduced on demand
+### The cause
 
-Two attempts, both on deck 8 with droids firing and the player taking damage:
+`CbCheckDeath` respawns the player with `DrSpawnPoint` + `SetPosFromWaypoint`, and stops there.
+`SetPosFromWaypoint` ends in `SetMapFromPos`, which **assigns `mapHX` outright**. `scrollS` does not
+follow it — the incremental scroll keeps the two in step by adding the same delta to both, and there
+is no delta here.
 
-| | |
-|---|---|
-| ~12 s of play, then the buffer oracle | **0 of 10240** — the play buffer was clean too |
-| ~12 s more, tile map dumped before and after | **0 of 1024 bytes changed** |
-
-So it is intermittent, and inspection has not found it either. `DEBUG_MAPGUARD` exists to catch it
-rather than to keep guessing — see below.
-
-### The leading structural suspicion
-
-**The sprite save areas now end exactly where the map begins.** They were seven pages, `&3000-&36FF`,
-with `&3700` free below the map at `&3800`. Layer 7c's eighth slot — the player's bullet — took that
-page, so they run `&3000-&37FF` and the map is the very next byte. **Any save-area overrun that used
-to land in a free page now lands on the map**, which is precisely the reported symptom.
-
-`ASSERT tilemap >= SPR_SAVE + SPR_SLOTS * 256` still passes, but it is now exact rather than slack,
-and `main.asm`'s comment claiming "&3700-&47FF is clear" was stale and has been corrected.
-
-The bound that should make an overrun impossible is
-`3 * SPR_BLOCK + (SPR_W - 1) * UNIT_BYTES + 7 = 223 < 256`, and the effect path was checked against
-it by hand: `efRow0 + efHgt <= 21` for all 31 frames, so it walks no more scanlines than a droid,
-and its Y offsets reach the same 48. That is an argument, not a measurement.
-
-### Ruled out
-
-- **Not the tranche split.** `sprSplit` was 1 during the failed reproduction and the buffer still
-  came out clean.
-- **Not the level draw.** BUGS.md #9 is a separate, reproducible defect in the incremental column
-  draw, and it does not touch the map.
-
-### The instrument — `DEBUG_MAPGUARD`
-
-On by default while this is open. It snapshots the map into `&3C00` at the **end** of `LoadDeck` and
-compares a quarter of it each pass (~4,000 cycles), so a corruption is caught within four passes.
-The **first** hit is kept and checking then stops, so the readout shows where it began rather than
-where it spread to. Five bytes are appended to the `DEBUG_ENERGY` line:
+`COPYCHAR` in `scroll.asm` depends on exactly that link. Its 16-byte run writes a character's two
+halves in one go, which is only safe while the strip's wrap falls on a character boundary, i.e. while
 
 ```
-  hit  quarter  offset  got  want
+    scrollS/8 == mapHX   (mod 2)
 ```
 
-`hit` goes to `01` when it fires; the byte is `tilemap + quarter*256 + offset`, i.e. map row
-`that DIV 64`, column `that MOD 64`; `got` is what is there now and `want` what the deck load put
-there. **Verified by poking one map byte**: it reported quarter 1, offset 44, got `FF`, want `00` —
-exactly the byte poked — and does not false-positive over a clean boot.
+The teleport flips that parity whenever the spawn's `mapHX` parity differs from the view's, and the
+band draw then writes its second half **8 bytes past `&8000`** — into whichever sideways bank is
+paged, which during the level draw is `SWRAM_DATA`. Bank 4 begins with `chardata`, then `colours`, then `tiledefs`: precisely the tile
+characters and the tile layout, in that order, and both of them re-read from the bank on every
+subsequent deck load. `COPYCHAR`'s own header names this failure mode; nothing had ever violated it
+before Layer 7f gave the player a way to be teleported mid-deck.
 
-> The snapshot has to be the **last** thing `LoadDeck` does. Placed earlier it captured the previous
-> deck's map, or boot staging garbage, and reported a hit immediately. The first version of this
-> guard sat in unreachable code after a `JMP` and silently never ran.
+The stuck laser and the wrong-looking level are the same event: no `RedrawAll` and no `sprSaved`
+clear, so the buffer still holds the old view and every slot's saved background belongs to it.
+
+### The fix
+
+`LoadDeck`'s re-framing block is now `ReframeView` in `main.asm` — scrollS parity from `mapHX`,
+`line`/`iline` zeroed, `bandDo`/`colCount` cleared, every `sprSaved` dropped, `SetCRTCStart`,
+`RedrawAll` — and `CbCheckDeath` tail-calls it. **Any teleport must go through it.**
+
+### Why the guard read zero
+
+`DEBUG_MAPGUARD` was right and the hypothesis it was built for was wrong: the tile map at
+`&3800-&3BFF` is never written. The guard reported `hit = 00` through a live reproduction, which is
+the result that pointed at the bank. It is verified in both directions (it fires correctly on a
+poked byte, and does not false-positive on a clean boot) and is worth keeping for the next scribble.
+
+### Superseded suspicion
+
+The save areas ending exactly at the map (`&3000-&37FF`, map at `&3800`) was the leading theory and
+is not implicated. It remains true and remains tight, so the `ASSERT` stays.
 
 ## 9. One 4-pixel column is wrong down most of the strip after horizontal scrolling — **2026-08-15**
 

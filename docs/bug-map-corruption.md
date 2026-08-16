@@ -1,187 +1,113 @@
-# The tile map gets scribbled on — handover
+# The level gets scribbled on when a droid's shot kills you
 
-**Status: OPEN, not reproduced on demand. An instrument is built and verified; it needs a play
-session to fire.** This document is self-contained: it is what a fresh session should read first,
-and what KC needs to run the experiment.
+**Status: cause found and fixed, 2026-08-16. KC confirms the corruption is gone in play.**
 
-`BUGS.md` #10 is the short entry; this is the working detail.
-
----
-
-## 1. The symptom
-
-From play, on **deck 8**, on the first interaction with a droid that fires:
-
-- the **laser sprite is left on screen**, and
-- **the level goes wrong, including its collision data** — so the tile map at `&3800-&3BFF` is being
-  written, not merely stray pixels in the play buffer at `&5800`.
-
-It **survives until the deck is reloaded**. The debug deck hop away and back clears it, and it comes
-back on meeting the firing droid again.
-
-The deck was identified by peeking `&8B`, which is the `deck` variable.
+The title is the wrong hypothesis, kept because `BUGS.md` #10 and several commits refer to it. The
+**tile map was never being written**. The thing being written is **sideways RAM bank 4**, and the
+route to it is the player's respawn.
 
 ---
 
-## 2. Run the experiment
+## 1. What the evidence actually said
 
-```powershell
-.\build.ps1 -Run          # assembles and launches b-em
-```
+Three sessions, in order:
 
-`DEBUG_MAPGUARD` is **on by default** in `src/main.asm` while this is open, so nothing needs
-switching on.
+1. Deck 8, first interaction with a droid that fires: laser sprite stuck on screen, level goes
+   wrong, "including its collision data". Cleared by a deck hop away and back.
+2. Deck 8 again, with `DEBUG_MAPGUARD` on. Corruption reproduced. **`hit` stayed `00`.**
+3. After a corruption, hopped to deck 7: **the corruption came with it**, and individual tile
+   characters had become 4×4 blocks of red vertical lines. A second run corrupted the tile
+   characters the instant the player was hit by a laser.
 
-**Get to deck 8 and meet a firing droid.** Cursor up/down is the debug deck hop, so seven presses of
-cursor-down from the start gets there. Then play until the corruption appears — the visual tell is
-the laser sprite stuck on screen and the level going wrong around it.
+Reading 2 rules out the tile map at `&3800-&3BFF` — the guard is verified to fire on a single poked
+byte and it did not fire. Reading 3 rules out the play buffer and the charset at `&0400` as the
+*origin*, because both are rebuilt by a deck load and the fault survived one.
 
-**Then read the last five hex pairs off the second panel row** (the debug line) and write them down.
+What is left is data that a deck load **re-reads rather than rebuilds**: the contents of bank 4.
+Its layout, from `&8000` up, is `chardata`, `colours`, `tiledefs`, `levels`, `droidgame`. The two
+symptoms are the first and third of those, in address order — corrupted character definitions
+(red vertical lines inside otherwise normal tiles) and a corrupted tile layout.
 
-### Reading the debug line
+## 2. The cause
 
-The second row of the panel is `DEBUG_ENERGY`, and `DEBUG_MAPGUARD` appends five bytes to it. The
-whole line, in hex pairs, is:
-
-```
-  TT EE MM WW AA SSSSSSSS HH QQOO GGWW
-   |  |  |  |  |     |     |  | |  | |
-   |  |  |  |  |     |     |  | |  | +-- want:    what the deck load put there
-   |  |  |  |  |     |     |  | |  +---- got:     what the map holds NOW
-   |  |  |  |  |     |     |  | +------- offset:  0-255 within that quarter
-   |  |  |  |  |     |     |  +--------- quarter: 0-3, which 256 bytes of the map
-   |  |  |  |  |     |     +------------ hit:     00 clean, 01 the map has changed
-   |  |  |  |  |     +------------------ score, 4 bytes BCD
-   |  |  |  |  +------------------------ alert level
-   |  |  |  +--------------------------- weapon type
-   |  |  +------------------------------ maxEnergy
-   |  +--------------------------------- energy
-   +------------------------------------ the droid type you are riding
-```
-
-`hit` latches at `01` and checking then **stops**, so the reading is where the corruption *began*,
-not wherever it has spread to by the time you look. It resets on the next deck load.
-
-The corrupted byte is `tilemap + quarter*256 + offset`, and the tile map is 64 columns × 16 rows,
-so:
+`CbCheckDeath` in `src/combat.asm` respawns the player:
 
 ```
-  index  = quarter*256 + offset
-  map row    = index DIV 64
-  map column = index MOD 64
+  JSR DrSpawnPoint
+  JSR SetPosFromWaypoint
 ```
 
-### What to bring back
+`SetPosFromWaypoint` ends in `SetMapFromPos`, which computes `mapHX` from `posX` and **assigns it**.
+Nothing updates `scrollS`. The incremental scroll never has to think about this because it moves
+both by the same `sDelta`; a teleport has no delta.
 
-1. The five numbers: **hit, quarter, offset, got, want**.
-2. Which **deck** it happened on (`&8B`).
-3. Whether the stuck laser sprite appeared at the same moment.
-4. Roughly what you were doing — standing still, moving, firing, being fired at.
+`COPYCHAR` in `src/scroll.asm` writes a character's two halves as one 16-byte run to consecutive
+buffer bytes. Its header states the one condition and derives it:
 
-If `hit` never reaches `01` but the level still visibly corrupts, that is **also** a result and an
-important one: it would mean the play buffer is being corrupted while the map is intact, and the
-collision-data impression came from somewhere else.
+```
+    scrollS/8 == mapHX   (mod 2)
+```
 
----
+When that holds, the strip's 10K wrap always falls on a character boundary. When it does not, the
+wrap falls *between* the halves and the second half is written **8 bytes past `&8000`**, into
+whatever sideways bank is paged in. The level draw runs at the resting state, which is
+`SWRAM_DATA` — bank 4.
 
-## 3. What is already known
+A respawn flips the parity whenever waypoint 0's `mapHX` parity differs from the parity the view
+happens to be at. That is the intermittency — and it is not a coin toss: `mapHX` was observed even
+at every point sampled on deck 1, so the flip looks to be a property of the DECK's waypoint 0, which
+would explain why the reports are all from deck 8. Not established for every deck.
 
-### Not reproduced
+`LoadDeck` is where the invariant was established, and it was the only place, precisely because
+until Layer 7f nothing else could move the player without moving the view.
 
-Two attempts in jsbeeb, both on deck 8 with droids firing and the player taking damage:
+### The other two symptoms are the same omission
+
+`CbCheckDeath` also skipped `RedrawAll` and the `sprSaved` clear. So after a respawn the buffer
+still held the *old* view (the level "goes wrong"), and every sprite slot's saved background
+belonged to that old view — which is the laser sprite that stays on screen: its restore paints
+stale pixels back forever.
+
+## 3. The fix
+
+`LoadDeck`'s re-framing block is now a routine, `ReframeView`, in `src/main.asm`:
 
 | | |
 |---|---|
-| ~12 s of play, then the buffer oracle against `RedrawAll` | **0 of 10240** |
-| ~12 s more, tile map dumped before and after | **0 of 1024 changed** |
+| `scrollS` | `(mapHX AND 1) * 8` — re-establishes the parity invariant |
+| `scrollS+1`, `line`, `iline` | 0 |
+| `bandDo`, `colCount` | 0 — the exposed edges belonged to the frame just discarded |
+| `sprSaved[0..7]` | 0 — the saved backgrounds belong to the old view |
+| | `SetCRTCStart`, then `RedrawAll` |
 
-### Ruled out
+`LoadDeck` calls it (with its own `DoorInit` kept alongside, which is deck-specific and not part of
+re-framing) and `CbCheckDeath` tail-calls it. **Any future teleport must go through it.** The two
+routines that assign `mapHX` outright are `SetPosFromWaypoint` and `LiftPlace`, and both callers of
+`LiftPlace` are inside `LoadDeck`.
 
-- **The tranche split.** `sprSplit` was 1 throughout a run that came out clean, so the
-  split-pool draw order is not obviously implicated.
-- **`BUGS.md` #9**, the incremental column draw, which is a separate reproducible defect and does
-  not touch the map.
+## 4. Verification
 
-### The leading suspicion — adjacency
+- **In play, by KC**: the corruption no longer happens.
+- **Still worth doing once**: several deaths on **deck 8** specifically, which is where every report
+  came from and therefore the deck whose waypoint 0 is most likely to be the odd-parity one. The
+  cheap check afterwards is `(scrollS/8) AND 1 == mapHX AND 1`.
 
-**The sprite save areas now end exactly where the map begins.**
+## 5. Superseded
 
-| | |
-|---|---|
-| Before Layer 7c | save areas `&3000-&36FF` (7 slots), **`&3700` free**, map at `&3800` |
-| Now | save areas `&3000-&37FF` (8 slots — the eighth is the player's bullet), map at `&3800` |
+The leading suspicion was that the eighth sprite save page (`&3700`, added by Layer 7c) had removed
+the gap below the tile map, so a save-area overrun would now land on it. That remains structurally
+true and the `ASSERT` stays, but it is not this bug — the map was never touched.
 
-So **any save-area overrun that used to land in a free page now lands on the map**, which is exactly
-the reported symptom. `ASSERT tilemap >= SPR_SAVE + SPR_SLOTS * 256` still passes but is now exact
-rather than slack.
+`DEBUG_MAPGUARD` is `MapGuardSnap` / `MapGuardCheck` at the end of `src/droid.asm`, with its
+snapshot at `MG_COPY = &3C00` and its readout appended to the `DEBUG_ENERGY` line. It is verified in
+both directions and worth keeping. Its readout format is documented in `src/main.asm` at the flag.
 
-The bound that should make an overrun impossible is
-`3 * SPR_BLOCK + (SPR_W-1) * UNIT_BYTES + 7 = 223 < 256`. The Layer 7c effect path was checked
-against it **by hand, not measured**: `efRow0 + efHgt <= 21` holds for all 31 frames, so an effect
-walks no more scanlines than a droid, and its Y offsets reach the same 48.
-
-### How the numbers will discriminate
-
-- **`got` looks like sprite pixels** — `&0F`, `&F0`, `&FF`, `&11`, `&EE` and similar — and the index
-  is low, in the first page or two (`&3800-&39FF`): consistent with a **save-area overrun from slot
-  7**, whose page is `&3700-&37FF`. That confirms adjacency.
-- **`got` is a plausible tile index (0-31)**: something is writing *map-shaped* data to the wrong
-  place — look at `BuildLevel` and anything indexing the map.
-- **The index is high or scattered**: a different writer entirely. Suspects then are `DoorCopyDef` /
-  `DoorMoveDef`, or an indexed store with a bad index.
-
----
-
-## 4. Candidate fixes, once it is confirmed
-
-**Do not apply these before the numbers come back** — the point of the guard is to avoid another
-guess.
-
-1. **Put the gap back.** Move the tile map to `&3C00` (`&3C00-&47FF` is free) so there is a 1K dead
-   zone between the save areas and the map. Cheap, but **masks** rather than fixes an overrun, so
-   only after the cause is understood. Note `MG_COPY` currently uses `&3C00` and would have to move.
-2. **Confirm by bisection.** Temporarily set `SPR_SLOTS = 7` and disable the player's bullet. If the
-   corruption stops, the eighth slot is implicated directly.
-3. **Fix the overrun itself**, if that is what it is — most likely in `SprEfDraw` / `SprEfRestore`'s
-   `svp` walk in `src/sprite.asm`.
-
----
-
-## 5. Where things are
-
-| | |
-|---|---|
-| Branch | `layer7-combat`, 8 commits, **not merged** to `main` |
-| The guard | `MapGuardSnap` / `MapGuardCheck` at the end of `src/droid.asm`, under `IF DEBUG_MAPGUARD` |
-| Its flag | `DEBUG_MAPGUARD` in `src/main.asm`, with a header explaining the readout |
-| Snapshot buffer | `MG_COPY = &3C00`, 1K |
-| Readout | `dbgEnSrcLo/Hi/Gap` in `src/rupture.asm`, `DBG_EN_N = 14` |
-| Effect blitter | `SprEfSetup`…`SprEfRestore` in `src/sprite.asm` |
-| Save areas | `SPR_SAVE = &3000`, `SPR_SLOTS = 8`, so `&3000-&37FF` |
-| Tile map | `ORG &3800` in `src/main.asm`, 64 × 16 |
-
-**The snapshot must be the LAST thing `LoadDeck` does.** The first version of this guard sat in
-unreachable code after a `JMP` and silently never ran; moved to just before `ld_spawn` it captured
-boot-staging garbage and fired immediately. It is now after `DroidsInit`.
-
-### The guard is verified in both directions
-
-- **No false positive** over a clean boot and a settled deck.
-- **Fires correctly**: poking one map byte at `tilemap+300` reported quarter 1, offset 44, got `FF`,
-  want `00` — exactly the byte poked.
-
----
-
-## 6. Other things left open on this branch
-
-Not related to this bug, but a fresh session should know about them:
+## 6. Other things still open on this branch
 
 - **`BUGS.md` #9** — the leftmost 4-pixel column of the view is displaced one character row after
-  horizontal scrolling. Reproducible, level-draw side, independent of Layer 7. Not yet checked
-  against a pre-Layer-7 build.
+  horizontal scrolling. Reproducible, level-draw side, independent of this.
 - **The lift/fire tiebreak was never exercised** — `L` firing is verified, but the branch where
-  `LiftEnter` succeeds needs the player standing on a lift platform, which no test session did.
+  `LiftEnter` succeeds needs the player standing on a lift platform.
 - **Deferred from 7f**: the disruptor, `EnemyFireEnemy`'s friendly fire, the enemy bullet's colour
   flicker, and the player's own explosion before he respawns.
-- **Main RAM is at ~315 bytes free.** It is the binding constraint; Layer 7 put its bulk in bank 4
-  for that reason.
+- **Main RAM** — `code_end` is `&2EE4` against `SPR_SAVE` at `&3000`.

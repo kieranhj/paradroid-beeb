@@ -654,6 +654,12 @@ CB_FIRE_CY = 10
 
   JSR DrSpawnPoint              \ waypoint 0, the same arrival LoadDeck uses
   JSR SetPosFromWaypoint
+  JMP ReframeView               \ ...and the same re-frame, which is NOT
+                                \ optional: SetPosFromWaypoint assigns mapHX
+                                \ outright and scrollS does not follow it.
+                                \ Half of all respawns then break COPYCHAR's
+                                \ parity invariant and the level draw writes
+                                \ into sideways RAM. See ReframeView.
 .ccd_x
   RTS
 
