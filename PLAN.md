@@ -349,6 +349,82 @@ attenuation is `&90 | (chan << 5) | (15 - vol)`. **That came out of the deleted 
 was never verified on hardware** — check it against the wiki before building on it, per the rule
 about recalled facts.
 
+### Layer 12 — Balance, fidelity and feel — **the last pass, planned**
+
+Not a feature layer. Everything is built by now; this is the pass that decides whether it plays
+like Paradroid. Four strands, and the order matters — verify before tuning, or a fidelity bug gets
+"balanced" around instead of fixed.
+
+#### 12a — Fidelity audit against the C64
+
+**Every gameplay routine walked against `paradroid_ce.lst`, one at a time, and each one either
+confirmed identical or the departure written down with its reason.** Layers 7f and 7g both shipped
+a constant that had been read out of the listing without following where its input came from —
+`AddBullet`'s `deltaX` looked like a raw distance and was a normalised direction (BUGS.md #11), and
+the collision debounce was applied to three arms where the original applies it to one. Those are not
+the kind of thing playtesting finds; they need the listing open beside the source.
+
+The output is a table, one row per routine: C64 address, our label, **identical / deviates /
+not ported**, and for a deviation the reason. Candidates already known to deviate, so the audit
+starts with them rather than discovering them:
+
+| | |
+|---|---|
+| collision | the VIC's `SprSprCollision` register is pixel-exact and free; ours is a box test with `DR_COL_W/H` tuned by eye. **No faithful port exists** — this is the one place with no alternative |
+| the sight line | the C64 tests every near droid every iteration; ours tests one a pass (`losTurn`) on a cycle budget. A droid that steps behind a wall stays drawn up to five passes longer |
+| speed | `PLY_ITER_FRAMES` and the CE's faster loop, already written up in `docs/layer-4-player.md` — confirm the movement constants still transfer byte for byte |
+| the death respawn | the C64 does not move the player at all; ours teleports to waypoint 0 and re-frames. Deliberate, and the reason the corruption in BUGS.md #10 existed |
+| the death explosion | the C64 draws the player's droid *under* the explosion; ours replaces it, because our player slot is always a 001 with a spinning rotor |
+| culling | sprites are culled, not clipped, so a droid pops in and out a sprite's width from the edge. The C64's hardware clips |
+
+#### 12b — The Redux fix list
+
+**Paradroid Redux is a different codebase** — `docs/decisions.md` has the evidence: it relocates
+everything and matches this listing at 1–3%. So its fixes cannot be lifted as code. What it is
+good for is a **list of what Braybrook himself thought was wrong**, and each one is then a question
+to ask of our own port: does the same defect exist here, and do we want it fixed or preserved?
+
+Two of the original's own bugs are already ported deliberately and are the precedent for how to
+decide: `dhp_bullet` keeps the type1/type2 damage mix-up the disassembly flags at `$1AF8`, and
+`AddBullet`'s logical shift makes a bullet flying left one pixel a pass faster than its mirror
+image. Both are invisible in play and removing them would be a silent divergence.
+
+#### 12c — Playtesting and balance
+
+The dials, all of them already isolated:
+
+| | |
+|---|---|
+| `PLY_ITER_FRAMES` | `src/player.asm` — the CE speed dial, and the one that changes the game most |
+| `DR_COL_W/H`, `BUL_COL_W/H` | the collision boxes, explicitly "meant to be tuned by eye" |
+| `SPR_OVL_U/Y` | the tranche overlap test, deliberately loose |
+| `drAgingMask` | the economy: how fast the droid you are riding wears out |
+| the `random AND $1F` vs `shipLevel` draw | the difficulty curve |
+
+Feedback goes into a session log — what deck, what was happening, what felt wrong — because
+"feels wrong" is not actionable and "the 872s on deck 8 corner me because they fire before I can
+see them" is.
+
+#### 12d — Performance and graceful degradation
+
+`docs/raster-timing.md` has the method. Two questions:
+
+1. **Is the feel consistent?** `FRAME_LOCK` is a floor, not a fixed length: a pass that overruns
+   carries on rather than waiting out another field, so a busy deck runs at a different rate from
+   an empty one. Measure `vsyncCount` against the pass count across the worst decks and decide
+   whether the variation is visible — and remember
+   the standing rule that judder in an emulator is 60 Hz beat, not the code — measure, do not watch.
+2. **Does an overrun degrade gracefully?** The known cliff is the level draw's 22,016-cycle window
+   before the CRTC latch at fire 1; miss it and a newly exposed column is written while the beam is
+   displaying it. The tranche split (`SprSplitOK`) is the existing relief valve and only fires when
+   the level draw has nothing to do. What is *not* built is any behaviour for a pass that overruns
+   anyway — it currently just runs long. Options to cost: dropping the rotor animation, thinning
+   the sight-line budget further, skipping a tranche.
+
+**Entry condition:** Layers 9, 10 and 11 done, so the pass measures the finished game and not a
+subset of it. **Exit condition:** the fidelity table complete, the Redux list triaged, and a
+build KC is happy to put in front of someone else.
+
 ## `src/` as it stands
 
 Single-pass flat build, everything included from `main.asm`. No linker. **Four files assemble into
