@@ -84,14 +84,23 @@ CON_TOK_ALERT  = 208            \ green, yellow, amber, red
 \ They are FORTY-EIGHT pixels wide on screen, not 24. SpriteMC is 0 on all
 \ four, so none of them is multicolour, and SpriteYExp is 0, so all four
 \ stay 21 scanlines.
-\ THE DOUBLING HAPPENS AS THEY ARE DRAWN, not in the data. Baking it in
-\ costs 288 bytes and bank 6 does not have them — it overflowed by the
-\ time both wide icons were stored expanded. Doubling four pixels to
-\ eight is two lookups in a sixteen-entry table, and an icon is drawn
-\ once per console.
+\ ALL FOUR ARE STORED AS THE C64'S OWN SPRITE BYTES, three a row, and
+\ converted as they are drawn. That is half the size of storing the MODE
+\ 1 form and costs nothing: the icons are logical colour 1, which is the
+\ LOW colour plane alone, so four pixels ARE one nibble. Bank 6 ran out
+\ by 346 bytes with the converted form, which is what forced the
+\ question — and the answer is smaller AND closer to the original.
+\
+\ The X-expansion happens there too, from a sixteen-entry nibble table.
 CON_ICON_COUNT = 3              \ of four — see conicons.asm
 CON_ICON_ROWS  = 3              \ 21 scanlines, so three character rows
-CON_ICON_RB    = 6 * UNIT_BYTES \ source bytes a row: six 4-pixel columns
+CON_ICON_LINES = 21             \ scanlines: a C64 sprite is 21 tall
+
+\ The FIRST icon is the player's own droid and is composed, not copied —
+\ see droidicon.asm. Same 24 x 21 as the rest, in the slot the other
+\ three leave empty: row 2, unit 7.
+CON_DRICON_W = 3                \ C64 sprite bytes a row
+CON_DROID_D  = BUF_BASE + 2 * ROW_BYTES + 7 * UNIT_BYTES
 
 \ ============================================================
 \ ConAt — point pnDst at console text cell (conRow, pnCol)
@@ -351,105 +360,231 @@ CON_ICON_RB    = 6 * UNIT_BYTES \ source bytes a row: six 4-pixel columns
 .ConIcons
   LDX #CON_ICON_COUNT-1
 .ci_icon
+  STX conTmp
   LDA conIconDstLo,X : STA pnDst
   LDA conIconDstHi,X : STA pnDst+1
-  LDA conIconSrcLo,X : STA ci_get+1 : STA ci_wget+1
-  LDA conIconSrcHi,X : STA ci_get+2 : STA ci_wget+2
-  LDA conIconExp,X
-  STA ci_wide+1                 \ patched, so the row loop tests nothing
-  STX conTmp
-
-\ THE ROW COUNT IS IN MEMORY, NOT X. The wide path needs X for the source
-\ index and again for the doubling-table lookup, so a row counter left in
-\ it survives the narrow copy and is destroyed by the other one — which
-\ showed as the console clearing and then drawing nothing at all.
-  LDA #CON_ICON_ROWS
-  STA conIconRow
-.ci_row
-.ci_wide
-  LDA #0                        \ operand patched above: 0 narrow, else wide
-  BNE ci_w
-
-\ ---- 24 px: 48 bytes straight across -----------------------
-  LDY #CON_ICON_RB-1
-.ci_n
-.ci_get
-  LDA &FFFF,Y
-  AND #PN_INK_WHITE             \ exported as logical 3, drawn as 1 — the
-  STA (pnDst),Y                 \ same recolour PnGlyph does, and for the
-  DEY                           \ same reason: 3 is black on some decks
-  BPL ci_n
-  JMP ci_rowend
-
-\ ---- 48 px: every source byte becomes two ------------------
-\ conTmp2 holds the source index while X does the table lookup, because
-\ Y is the destination and there is no third index register.
-.ci_w
-  LDX #0
-.ci_wb
-\ THE DESTINATION IS NOT 2 * THE SOURCE INDEX. A source byte is ONE
-\ SCANLINE of ONE 4-pixel column — the column's eight bytes are eight
-\ consecutive scanlines — so doubling it produces the same scanline of
-\ TWO columns, which are eight bytes apart, not adjacent. Source index
-\ u*8 + s therefore goes to u*16 + s and u*16 + s + 8. Writing it to
-\ 2k and 2k+1 instead interleaves the scanlines of every column with its
-\ neighbour's, which looks exactly like noise, and did.
-  TXA
-  AND #&F8                      \ the column, doubled: u * 16
-  ASL A
-  STA conTmp3
-  TXA
-  AND #7                        \ plus the scanline within it
-  ORA conTmp3
-  TAY
-  STX conTmp2
-.ci_wget
-  LDA &FFFF,X
-  AND #PN_INK_WHITE             \ white is the LOW plane, so one nibble
-  TAX                           \ carries all four pixels
-  LDA conDblHi,X
-  STA (pnDst),Y
-  TYA
-  CLC
-  ADC #UNIT_BYTES               \ the next 4-pixel column, eight bytes on
-  TAY
-  LDA conDblLo,X
-  STA (pnDst),Y
-  LDX conTmp2
-  INX
-  CPX #CON_ICON_RB
-  BNE ci_wb
-
-\ ---- on to the next character row --------------------------
-.ci_rowend
-  CLC                           \ the source is 48 bytes a row either way,
-  LDA ci_get+1 : ADC #CON_ICON_RB : STA ci_get+1   \ and the two loops
-  LDA ci_get+2 : ADC #0           : STA ci_get+2   \ read it through
-  LDA ci_get+1 : STA ci_wget+1                     \ their own operand
-  LDA ci_get+2 : STA ci_wget+2
-  CLC
-  LDA pnDst    : ADC #LO(ROW_BYTES) : STA pnDst
-  LDA pnDst+1  : ADC #HI(ROW_BYTES) : STA pnDst+1
-  DEC conIconRow
-  BNE ci_row
-
+  LDA conIconSrcLo,X : STA ci_get+1
+  LDA conIconSrcHi,X : STA ci_get+2
+  LDA conIconExp,X   : STA conWide
+  LDA #LO(ConIconRow) : STA cs_get+1
+  LDA #HI(ConIconRow) : STA cs_get+2
+  JSR ConSprite
   LDX conTmp
   DEX
-  BMI ci_done                   \ JMP, not BPL: ci_icon is 142 bytes back
-  JMP ci_icon
-.ci_done
+  BPL ci_icon
+  RTS
+
+\ Three C64 sprite bytes for row conDrR, or nothing past row 20.
+.ConIconRow
+  LDX #2
+  LDA conDrR
+  CMP #CON_ICON_LINES
+  BCS cir_blank
+  ASL A                         \ row * 3
+  CLC : ADC conDrR
+  CLC : ADC #2                  \ and the loop fills 2 down to 0
+  TAY
+  LDA #2
+  STA conTmp3
+.cir_copy
+  LDX conTmp3
+.ci_get
+  LDA &FFFF,Y
+  STA conSrcRow,X
+  DEY
+  DEC conTmp3
+  BPL cir_copy
+  RTS
+.cir_blank
+  LDA #0
+.cir_bl
+  STA conSrcRow,X
+  DEX
+  BPL cir_bl
+  RTS
+
+\ ============================================================
+\ ConDroid — the first icon: the player's own droid
+\ ============================================================
+\ BuildDroidSprite ($3C77) and AnimateDroids ($3CFB) together, which is
+\ what the C64 leaves in the dynamic sprite area at $53C0 for conRedraw to
+\ draw. The rotor and the digits are stored separately and composed a row
+\ at a time -- see droidicon.asm for why this cannot be the port's own
+\ droid artwork.
+.ConDroid
+  LDY pmType                    \ the number, as three separate digits
+  LDA pnTabCent,Y
+  STA conDrDig+0
+  LDA pnTabNum,Y
+  LSR A : LSR A : LSR A : LSR A
+  STA conDrDig+1
+  LDY pmType
+  LDA pnTabNum,Y
+  AND #&0F
+  STA conDrDig+2
+
+  LDA #LO(CON_DROID_D) : STA pnDst
+  LDA #HI(CON_DROID_D) : STA pnDst+1
+  LDA #0 : STA conWide
+  LDA #LO(ConDroidRow) : STA cs_get+1
+  LDA #HI(ConDroidRow) : STA cs_get+2
+  JMP ConSprite                 \ and its RTS
+
+\ ---- one row of the droid ----------------------------------
+\ Rows 0-4 rotor top, 6-13 the digits, 15-19 rotor bottom. Rows 5, 14 and
+\ 20 are written by neither routine, so they stay transparent, and 21-23
+\ are past the sprite; blanking first makes all of them fall out.
+.ConDroidRow
+  LDA #0
+  LDX #2
+.cdr_blank
+  STA conSrcRow,X
+  DEX
+  BPL cdr_blank
+
+  LDA conDrR
+  CMP #5
+  BCC cdr_rotor                 \ 0-4, and the index is the row
+  CMP #6
+  BCC cdr_x
+  CMP #14
+  BCC cdr_digits
+  CMP #15
+  BCC cdr_x
+  CMP #20
+  BCS cdr_x
+  SEC                           \ 15-19 are rotor rows 5-9
+  SBC #10
+
+.cdr_rotor
+  STA conTmp3                   \ index * 3
+  ASL A
+  CLC : ADC conTmp3
+  TAY
+  LDX #0
+.cdr_rcopy
+  LDA conDrRotor,Y
+  STA conSrcRow,X
+  INY
+  INX
+  CPX #3
+  BNE cdr_rcopy
+.cdr_x
+  RTS
+
+\ Each glyph is EIGHT ROWS OF ONE BYTE, because BuildDroidSprite writes
+\ each digit into a byte column of its own -- so the three go straight
+\ into the three bytes of the row with no packing at all.
+.cdr_digits
+  SEC
+  SBC #6                        \ the row within the glyph, 0-7
+  STA conTmp3
+  LDX #0
+.cdr_dloop
+  STX conTmp2
+  LDA conDrDig,X                \ digit * 8 bytes a glyph
+  ASL A : ASL A : ASL A
+  CLC : ADC conTmp3
+  TAY
+  LDX conTmp2
+  LDA conDrDigits,Y
+  STA conSrcRow,X
+  INX
+  CPX #3
+  BNE cdr_dloop
+  RTS
+
+\ ============================================================
+\ ConSprite -- 21 rows of a 24 px sprite, transposed into the buffer
+\ ============================================================
+\ ONE ROUTINE FOR ALL FOUR ICONS. Each supplies its own row through the
+\ patched JSR at cs_get, which fills conSrcRow with THREE C64 SPRITE
+\ BYTES -- the form the original stores every one of them in, the droid
+\ included, since BuildDroidSprite writes into a sprite too.
+\
+\ THE SOURCE IS ROW MAJOR AND THE BUFFER IS NOT. A 4-pixel column's eight
+\ bytes are eight consecutive SCANLINES, so row r column u goes to
+\ (r DIV 8) * 640 + u * 8 + (r MOD 8). The compiled blitter gets that
+\ transpose for nothing by being compiled; this pays for it in a loop,
+\ which is affordable because it runs once per console.
+.ConSprite
+  LDA #0
+  STA conDrR
+.cs_crow
+  LDA #0
+  STA conRowY
+.cs_row
+.cs_get
+  JSR ConIconRow                \ operand patched by the caller
+  JSR ConSprRow
+
+  INC conDrR
+  INC conRowY
+  LDA conRowY
+  CMP #8
+  BNE cs_row
+
+  CLC
+  LDA pnDst   : ADC #LO(ROW_BYTES) : STA pnDst
+  LDA pnDst+1 : ADC #HI(ROW_BYTES) : STA pnDst+1
+  LDA conDrR
+  CMP #CON_ICON_ROWS * 8
+  BNE cs_crow
+  RTS
+
+\ ---- one row: three C64 bytes to six or twelve MODE 1 -------
+\ A HIRES SPRITE BYTE IS EIGHT 1-BIT PIXELS, and the icons are drawn in
+\ logical colour 1, which is the LOW colour plane alone -- so four pixels
+\ ARE one nibble and the conversion is a shift and a mask, with no table
+\ and no stored MODE 1 copy. That is what halves the data.
+\
+\ X-expanded, a nibble becomes two bytes instead of one, and conDblHi and
+\ conDblLo below are the sixteen entries that do it.
+.ConSprRow
+  LDA conRowY                   \ the scanline is the offset within a
+  STA conDrTmp                  \ column, and columns are eight apart
+  LDX #0
+.csr_byte
+  STX conTmp2
+  LDA conSrcRow,X
+  LSR A : LSR A : LSR A : LSR A \ pixels 0-3
+  JSR ConSprNib
+  LDX conTmp2
+  LDA conSrcRow,X
+  AND #&0F                      \ pixels 4-7
+  JSR ConSprNib
+  LDX conTmp2
+  INX
+  CPX #3
+  BNE csr_byte
+  RTS
+
+.ConSprNib
+  TAX
+  LDA conWide
+  BNE csn_wide
+  TXA
+  LDY conDrTmp
+  STA (pnDst),Y
+  JMP ConSprAdv
+.csn_wide
+  LDA conDblHi,X
+  LDY conDrTmp
+  STA (pnDst),Y
+  JSR ConSprAdv
+  LDA conDblLo,X
+  LDY conDrTmp
+  STA (pnDst),Y
+.ConSprAdv
+  LDA conDrTmp
+  CLC : ADC #UNIT_BYTES
+  STA conDrTmp
   RTS
 
 \ ---- doubling a nibble to a byte ---------------------------
-\ The icons are drawn white, which is logical 1, which is the LOW colour
-\ plane alone — so all four pixels of a byte live in one nibble and the
-\ table is sixteen entries and not two hundred and fifty-six. conDblHi
-\ takes the nibble's top two pixels to a whole byte and conDblLo its
-\ bottom two, so one source byte becomes the two the VIC's X-expansion
-\ would have produced.
-\
-\ Bits 3-0 are pixels 0-3, so entry n of conDblHi is p0 p0 p1 p1 and of
-\ conDblLo is p2 p2 p3 p3.
+\ Four pixels to eight, for the two X-expanded icons. Sixteen entries and
+\ not 256, because white is the low plane alone. Bits 3-0 are pixels 0-3,
+\ so entry n of conDblHi is p0 p0 p1 p1 and of conDblLo is p2 p2 p3 p3.
 .conDblHi
   EQUB %0000, %0000, %0000, %0000, %0011, %0011, %0011, %0011
   EQUB %1100, %1100, %1100, %1100, %1111, %1111, %1111, %1111
@@ -457,10 +592,9 @@ CON_ICON_RB    = 6 * UNIT_BYTES \ source bytes a row: six 4-pixel columns
   EQUB %0000, %0011, %1100, %1111, %0000, %0011, %1100, %1111
   EQUB %0000, %0011, %1100, %1111, %0000, %0011, %1100, %1111
 
-\ Rows 5, 8 and 11 at units 7, 4 and 4 — the top slot, row 2 unit 7, is
-\ the droid image and is not drawn. Held as whole addresses because the
-\ row multiply would otherwise be three 16-bit shifts for a table that
-\ never changes.
+\ Rows 5, 8 and 11 at units 7, 4 and 4; the droid takes row 2, unit 7.
+\ Held as whole addresses because the row multiply would otherwise be
+\ three 16-bit shifts for a table that never changes.
 CON_ICON_D0 = BUF_BASE +  5 * ROW_BYTES + 7 * UNIT_BYTES
 CON_ICON_D1 = BUF_BASE +  8 * ROW_BYTES + 4 * UNIT_BYTES
 CON_ICON_D2 = BUF_BASE + 11 * ROW_BYTES + 4 * UNIT_BYTES
@@ -543,6 +677,7 @@ CON_ICON_D2 = BUF_BASE + 11 * ROW_BYTES + 4 * UNIT_BYTES
 .ConDraw
   JSR ConClear
   JSR ConIcons
+  JSR ConDroid
   JSR ConUnitType
 
   LDA #CON_ROW_ACC : STA conRow
@@ -605,4 +740,11 @@ CON_ICON_D2 = BUF_BASE + 11 * ROW_BYTES + 4 * UNIT_BYTES
 .conTmp2   EQUB 0
 .conIconRow EQUB 0
 .conTmp3   EQUB 0
+.conDrR    EQUB 0
+.conDrSL   EQUB 0
+.conDrTmp  EQUB 0
+.conDrDig  EQUB 0, 0, 0
+.conSrcRow EQUB 0, 0, 0
+.conRowY   EQUB 0
+.conWide   EQUB 0
 .conPrevL  EQUB 0

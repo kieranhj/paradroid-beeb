@@ -90,6 +90,21 @@ def pixels(mem, ptr):
     return out
 
 
+def raw(mem, ptr):
+    """The 63 C64 sprite bytes, untouched.
+
+    STORING THE C64'S OWN BYTES IS HALF THE SIZE of storing the MODE 1
+    conversion, and needs no table to undo. A hires sprite byte is eight
+    1-bit pixels; the icons are drawn in logical colour 1, which is the
+    LOW colour plane alone, so four pixels are one nibble and a byte
+    splits into its two nibbles with a shift and a mask. ConSprRow does
+    that as it draws. Bank 6 ran out by 346 bytes with both wide icons
+    and the droid stored converted, which is what forced the question.
+    """
+    base = VIC_BANK + ptr * 64
+    return [mem[base + i] for i in range(SPR_H * 3)]
+
+
 def to_mode1(px, expand):
     """Character row major, then 4-pixel column, then scanline: the order
     the buffer itself is in, so drawing is a straight copy.
@@ -134,12 +149,13 @@ def main():
     out.append('')
     out.append('GEN_ICON_COUNT = %d' % len(ICONS))
     out.append('GEN_ICON_ROWS  = %d' % ROWS)
+    out.append('GEN_ICON_LINES = %d' % SPR_H)
     out.append('')
 
     body, labels, total = [], [], 0
     for name, ptr, expand in ICONS:
-        data = to_mode1(pixels(mem, ptr), expand)
-        assert len(data) == ROWS * UNITS * 8
+        data = raw(mem, ptr)
+        assert len(data) == SPR_H * 3
         body.append('  \\ %s  (pointer $%02X at $%04X%s)'
                     % (name, ptr, VIC_BANK + ptr * 64,
                        ', X-EXPANDED at draw time' if expand else ''))

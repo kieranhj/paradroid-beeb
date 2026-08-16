@@ -378,12 +378,40 @@ saved, because `ConClear` has just blanked the area.
 black on several — so white is the only reliably light ink it has. `ConAt` sets `pnMask` to
 `PN_INK_WHITE` for the text and `ConIcons` ANDs the same mask into every icon byte.
 
-**[DECISION 16]** The **top icon is not built**, and it is the one that is not a copy. `$53C0` is
-blank in ROM: it is where `BuildDroidSprite` composes the **player's own droid** at run time, which
-is why `conRedraw` sets `dType` from `droidType` before it draws. Ours would have to come from the
-sprite bank, behind the compiled blitter, which is a different mechanism from every other thing on
-this screen — a sprite slot set up and `SprDrawSlot` called across a bank boundary, from bank 6
-into bank 5. The slot beside `Access granted.` is empty until that is decided.
+**[DECISION 16]** The top icon is the **player's own droid**, and it is composed rather than
+copied. `$53C0` is blank in ROM: it is where `BuildDroidSprite` (`$3C77`) writes the three-digit
+number and `AnimateDroids` (`$3CFB`) the rotor, which is why `conRedraw` sets `dType` from
+`droidType` before it draws.
+
+The port's own droid artwork could not be used. `export_droids.py` **compiles** it — 6502 with the
+pixels baked in as immediates — so the compiled form cannot be read back, and it lives in the
+sprite banks, which bank 6 cannot see. `tools/export_droidicon.py` emits a small copy of the two
+pieces instead: one rotor phase, 10 rows × 3 bytes, and the ten digit glyphs at 8 rows × 1 byte.
+**110 bytes** against 1,743 for the full animated set at one shift. One phase, because the console
+is a still screen — the C64's keeps spinning there only because its sprite is the same one the game
+animates.
+
+### 6d. All four are stored as the C64's own sprite bytes
+
+Storing the MODE 1 conversion overflowed bank 6 by **346 bytes** once both wide icons and the droid
+were in. Storing the original's 3-bytes-a-row form instead is **half the size and costs nothing to
+undo**: a hires sprite byte is eight 1-bit pixels, the icons are drawn in logical colour 1, and
+logical 1 is the *low colour plane alone* — so four pixels **are** one nibble, and a byte splits
+into two output bytes with a shift and a mask. The X-expansion rides on the same nibble, through a
+sixteen-entry table rather than 256.
+
+That collapsed four icons onto one routine, `ConSprite`, each supplying its rows through a patched
+`JSR` — because the droid is a sprite too, and `BuildDroidSprite` writes three bytes a row like
+everything else.
+
+> **The source is row major and the buffer is not.** A 4-pixel column's eight bytes are eight
+> consecutive *scanlines*, so row `r` column `u` goes to `(r DIV 8)*640 + u*8 + (r MOD 8)`. The
+> compiled blitter gets that transpose for nothing by being compiled; this pays for it in a loop,
+> which is affordable because it runs once per console.
+
+**Bank 6 now ends at `&BFE9` — 23 bytes free.** It is full, and Layer 13 or a fourth bank is the
+next thing that touches it.
+
 
 ## 7. Decisions to revisit
 
