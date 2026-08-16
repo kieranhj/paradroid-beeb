@@ -184,7 +184,9 @@ moves. The outline:
 | `&2EC5–&2FFF` | **315 B free** | **the binding constraint now.** Layer 7 put its bulk in bank 4 for this reason; anything new in main RAM needs a plan |
 | `&3000–&37FF` | 2,048 B | sprite background save areas, one page per slot — **eight now**, ending exactly where the tile map begins. A ninth would overwrite it |
 | `&3800–&3BFF` | 1,024 B | tile map, fixed home — floating it after `code_end` once put it over the save areas |
-| `&3C00–&47FF` | **3,072 B free** | runtime-built data only: boot stages `PARASPR` through ~`&6C00` |
+| `&3C00–&477F` | 2,944 B | **Layer 9's text font**, `PARAFNT`, `*LOAD`ed straight here |
+| `&4780–&47DF` | 96 B | the four droid tables, mirrored out of bank 4 for the panel in bank 6 |
+| `&47E0–&47FF` | 32 B free | |
 | `&4800–&547F` | 3,200 B | panel — 5 rows × 640, displayed by rupture cycle 1 |
 | `&5480–&54FF` | **128 B free** | |
 | `&5500–&56FF` | 512 B | `CHAR_PTR_LO`/`HI` — character code → charset address, built at startup |
@@ -192,7 +194,7 @@ moves. The outline:
 | `&5800–&7FFF` | 10,240 B | play buffer: circular strip, 16 rows × 640 |
 | SWRAM bank 4 | 16 K | `PARADAT` — char data, colour schemes, tile defs, deck RLE, waypoints, the combat stat tables, **the level-draw code, the droid AI and Layer 7's combat**. Ends `&BA92`, **1,390 B free** |
 | SWRAM bank 5 | 16 K | `PARASPR` — the blitter at shifts 0 and 1 px, **plus Layer 7's effect artwork**: 31 bullet and explosion frames, 2,946 B, here rather than in bank 4 because the interpreted path reads them every row. Ends `&BBF7`, **1,033 B free** |
-| SWRAM bank 6 | 16 K | `PARSPR2` — the same at 2 and 3 px, laid out identically. Ends `&B199`, **3,687 B free** |
+| SWRAM bank 6 | 16 K | `PARSPR2` — the same at 2 and 3 px, laid out identically, **plus Layer 9's panel engine, HUD and console**, which bank 4 had no room for. Ends `&B808`, **2,040 B free** |
 
 **"Main RAM is full" meant the `PARA` image could not grow past `&3000`** — never that there was no
 RAM. Moving code rather than data is what fixed it: `screen.asm`, `scroll.asm` and `level.asm` now
@@ -332,7 +334,7 @@ else — the first deck and the debug deck hop included. `CentreOnDeck` is gone,
 "lands inside a wall on some decks", closed with it in Layer 5.
 → [`docs/layer-8-doors-lifts.md`](docs/layer-8-doors-lifts.md)
 
-### Layer 9 — HUD and console — **in progress on `layer9-hud`**
+### Layer 9 — HUD and console — **BUILT on `layer9-hud`, awaiting KC's verification**
 Plan and every decision taken: [`docs/layer-9-hud.md`](docs/layer-9-hud.md).
 
 Two things the earlier one-line plan ran together. The C64's **status area is eight character rows**
@@ -345,9 +347,19 @@ The constraint that shapes the layer: the text font at `$7000` is **8 × 16, not
 at code `c`, bottom half at `c + $80` — so a glyph is two stacked MODE 1 cells, 32 bytes, and our
 5-row panel holds exactly **two lines of 40 characters**. The C64's eight rows hold four.
 
-Font shipped in bank 6 and copied to `&3C00` at boot; panel engine and HUD in bank 4. The console
-takes over the **play area** rather than the whole screen — 40 × 15 is seven text lines — because
-suspending the three-cycle rupture is a bigger change than this layer should carry.
+A second thing the listing settles: **capitals are 16 px wide**, right half at code `+ $20`, which
+`DrawChar` tests for outright at `$0C82`. So columns count cells, not letters.
+
+**Built:** the font as a fourth disc file `PARAFNT` at `&3C00`; the panel text engine, the live HUD
+and the console, all in **bank 6** — bank 4 had 224 bytes too few — with a main-RAM bridge carrying
+the four droid tables and four live scalars across the bank boundary. The console takes over the
+**play area** rather than the whole screen, 40 × 15 being seven text lines, because suspending the
+three-cycle rupture is a bigger change than this layer should carry.
+
+**Not built, and the honest remainder:** the console's **deck map** (`DrawPacked` over the level
+RLE) and the **ship side view** (`SideView_dat`, `$F180`, 201 B of RLE into a 64 × 16 grid). Both
+need data porting rather than more code. Also deferred: the low-energy sprite flash, and the panel
+palette, which still follows the deck's.
 
 ### Layer 10 — Transfer minigame
 `SubGameSelectSide` and the circuit puzzle. Paged from a sideways bank.
