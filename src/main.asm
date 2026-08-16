@@ -833,6 +833,14 @@ IF DEBUG_POS
   JSR DbgPosOut                 \ where we are, for getting back here
 ENDIF
 \ ============================================================
+\ The score's pending points, one a pass
+\ ============================================================
+\ GameLoop calls DoScore at $13E3, BEFORE it tests consoleState at $1427,
+\ so it runs whether the console is up or not and this is here for the
+\ same reason. AddScore only banks points; DoScore is what moves them.
+  JSR DoScore
+
+\ ============================================================
 \ The console has the machine, or it does not
 \ ============================================================
 \ GameLoop tests consoleState at $1427 and jumps past EnterGame's DoMove

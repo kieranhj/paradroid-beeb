@@ -107,14 +107,19 @@ error, and if you pipe or redirect *that stream* under `$ErrorActionPreference =
 code. Redirecting **stdout** alone is safe, which is how `build.ps1` captures the listing; it is
 `2>&1` that does the damage. From the Bash tool, `./bin/beebasm.exe ... 2>&1` is fine.
 
-**If loose `PARA`, `PARADAT`, `PARASPR`, `PARSPR2`, `PARAFNT` files appear in the project root, the
-disc image was not written.** beebasm's `SAVE` falls back to a host file when `-do` fails — an
-unwritable path, a missing directory — so their presence means the build did *not* do what it
-looked like it did. They are not a normal build product.
+**beebasm's `SAVE` writes a loose host file whenever it has no disc image to put it in**, so any
+run without a working `-do` drops `PARA`, `PARADAT`, `PARASPR`, `PARSPR2` and `PARAFNT` in the
+project root. They are gitignored. Two things follow: a `-do` path that cannot be written leaves a
+build that *looks* like it worked, and the symbol dump below litters unless you give it one.
 
-Symbol addresses come from `./bin/beebasm.exe -i src/main.asm -d`, which dumps every global label
-as one long line of `'name':decimal`. That is the quick way to find a variable's runtime address
-for an emulator poke.
+Symbol addresses come from
+
+```bash
+./bin/beebasm.exe -i src/main.asm -do build/symbols.ssd -d | tr ',' '\n' | grep "'score'"
+```
+
+which dumps every global label as one long line of `'name':decimal` — the quick way to find a
+variable's runtime address for an emulator poke. `-do` is there only to stop the five loose files.
 
 ## Confirmed hardware facts (measured, not assumed)
 

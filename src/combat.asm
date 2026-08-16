@@ -85,11 +85,18 @@ CB_ENERGY_FULL = &40
 \ behave identically on this 6502, which ANNOTATION.md listed as a
 \ no-change candidate and it is.
 \
+\ THIS DOES NOT MOVE THE SCORE, except on overflow. scoreAdd is a queue
+\ of PENDING points and DoScore below is what drains it, one point a
+\ pass — so an award here shows up over the following passes and not at
+\ once. Reading this routine alone leaves you thinking the score moves in
+\ jumps of 255, which is what it did for as long as DoScore was missing.
+\
 \ THE ACCUMULATOR IS NOT A FRACTION OF A POINT. scoreAdd banks raw
-\ points until they carry past 256, and the carry credits 255 to the
-\ score and pushes the odd 1 back into the accumulator with the INC.
-\ It looks like an off-by-one and is not: 255 out and 1 retained is
-\ exactly the 256 that came in.
+\ points until they carry past 256 — a queue 256 deep is more than a
+\ pass can be owed — and the carry credits 255 to the score and pushes
+\ the odd 1 back into the accumulator with the INC. It looks like an
+\ off-by-one and is not: 255 out and 1 retained is exactly the 256 that
+\ came in.
 \
 \ CLD AND INC BOTH LEAVE CARRY ALONE, which is what makes the second
 \ BCC work — it is testing the carry out of the TOP BCD digit, four
@@ -148,6 +155,79 @@ CB_ENERGY_FULL = &40
   STA score+2
   STA score+3
 .ss_x
+  RTS
+
+\ ============================================================
+\ DoScore — port of DoScore ($0A7D), the arithmetic half
+\ ============================================================
+\ THE ACCUMULATORS ARE PENDING POINTS, AND THIS IS WHAT SPENDS THEM.
+\ AddScore and SubScore only bank into scoreAdd and scoreSub; the score
+\ itself moves ONE POINT A PASS, here, and GameLoop calls this every
+\ iteration at $13E3. Without it the BCD score only moves on AddScore's
+\ overflow path — once per 256 points banked — so shooting a droid worth
+\ 20 changed nothing on screen and thirteen kills changed it by 255. That
+\ is the bug KC reported; the routine had simply never been ported.
+\
+\ It also makes the score CLIMB rather than jump, which is the original's
+\ feel: a kill ticks the display up over the following passes.
+\
+\ A CREDIT AND A DEBIT CANCEL WITHOUT TOUCHING THE SCORE. $0A83 takes one
+\ off each and starts again, so a pass that owes 3 and is owed 3 does
+\ nothing and costs three loops. That is why this is a loop and not a
+\ pair of ifs.
+\
+\ Only the arithmetic is here. The C64 falls through into its own digit
+\ draw at $0AD9; ours is PanelUpdate's, which repaints when score+3 moves
+\ — see panel.asm.
+.DoScore
+.ds_again
+  LDA scoreAdd
+  BEQ ds_sub
+  DEC scoreAdd
+  LDA scoreSub
+  BEQ ds_add
+  DEC scoreSub                  \ they cancel: look for the next one
+  JMP ds_again
+
+.ds_add
+  SED
+  CLC
+  LDA score+3 : ADC #1 : STA score+3
+  LDX #2
+.ds_addhi
+  LDA score,X : ADC #0 : STA score,X
+  DEX
+  BPL ds_addhi
+  BCC ds_x
+  LDA #&99                      \ saturate rather than wrap
+  STA score+0
+  STA score+1
+  STA score+2
+  STA score+3
+  BNE ds_x                      \ always: A is &99
+
+.ds_sub
+  LDA scoreSub
+  BEQ ds_none
+  DEC scoreSub
+  SED
+  SEC
+  LDA score+3 : SBC #1 : STA score+3
+  LDX #2
+.ds_subhi
+  LDA score,X : SBC #0 : STA score,X
+  DEX
+  BPL ds_subhi
+  BCS ds_x
+  LDA #0                        \ floor at zero, and drop the rest of the
+  STA score+0                   \ debt with it, as $0AD3 does
+  STA score+1
+  STA score+2
+  STA score+3
+  STA scoreSub
+.ds_x
+  CLD
+.ds_none
   RTS
 
 \ ============================================================

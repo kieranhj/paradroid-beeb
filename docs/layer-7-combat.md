@@ -176,6 +176,31 @@ yet.
 `SubScore` (`$3EC4`) came with it — AddScore's mirror, with its own `scoreSub` accumulator and a
 **saturate at zero** where AddScore saturates at 99999999.
 
+> ### `DoScore` was missing, and the accumulators are why nobody noticed
+>
+> **Fixed 2026-08-16, reported by KC: the score did not move when you shot a droid.**
+>
+> `AddScore` and `SubScore` do not touch the BCD score. They bank into `scoreAdd` and `scoreSub`,
+> and the only path that reaches the score is their **overflow** — a wrap past 256 credits 255 and
+> pushes 1 back. What actually spends the accumulators is **`DoScore` (`$0A7D`)**, which `GameLoop`
+> calls every iteration at `$13E3`: one point off `scoreAdd` and one point onto the score, per pass.
+> That routine had never been ported.
+>
+> So a kill worth 20 banked 20 invisible points and the display sat still until thirteen more kills
+> pushed the accumulator past 256, at which point it jumped by 255. It also cost the original's
+> feel, which is a score that *climbs* over the passes after an award rather than stepping.
+>
+> **Every test in this document measured `scoreAdd` or `scoreSub` rather than `score`** — the
+> `SubScore` BCD row above says so outright — so all of them passed against a routine that was
+> half-built. Measuring the accumulator proves the arithmetic and says nothing about whether
+> anything drains it.
+>
+> `DoScore` is now in `combat.asm` and called from the main loop *before* the `conActive` test,
+> because `$13E3` runs before `GameLoop`'s `consoleState` test at `$1427`. Verified in jsbeeb over
+> all four paths: 20 credits → score 20; `scoreAdd` 7 with `scoreSub` 17 → the sevens cancel and the
+> score falls by 10; 50 debits against a score of 10 → floored at 0 with `scoreSub` cleared, which
+> is `$0AD3`. The 99999999 saturate is the C64's own code and is untested — it needs 100M points.
+
 #### Measured in jsbeeb
 
 The pad is `MapChar` at `plyCX`/`plyCY`, so the mechanism can be tested without walking to one:

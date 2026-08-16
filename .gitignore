@@ -8,6 +8,15 @@ build/
 compile.txt
 *.labels
 
+# beebasm's SAVE writes a loose host file whenever it has no disc image to
+# put it in — so any run without a working -do, the -d symbol dump included,
+# drops these five in the project root
+/PARA
+/PARADAT
+/PARASPR
+/PARSPR2
+/PARAFNT
+
 # ---- Third-party tools (fetch locally, see README) ----
 bin/
 
