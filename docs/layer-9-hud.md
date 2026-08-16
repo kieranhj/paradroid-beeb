@@ -278,17 +278,72 @@ and the game has none at all until it lands.
 **[DECISION 6]** The console takes over the **play area**, not the whole screen, and the panel
 stays. The C64 switches the whole display to hires and repaints it; our display is three CRTC
 cycles with a scrolled 10K strip in the middle, and suspending that is a much larger change than
-this layer should carry. The play buffer is 40 characters × 15 rows = **seven text lines**, which
-is enough for the real pages, and leaving the panel up means the status stays visible exactly as it
-does on the C64 (whose panel rows are also untouched by `GotoHires`).
+this layer should carry. Leaving the panel up means the status stays visible exactly as it does on
+the C64, whose panel rows are also untouched by `GotoHires`.
 
-Entry is `DoCharUnder`'s missing arm: character 66, the console tile, plus fire. Exit and page
-selection follow `conWaitInput` — up/down move the selection, fire chooses, fire again returns.
-Leaving restores the deck with `RedrawAll`.
+Entry is `DoCharUnder`'s missing arm: character 66, the console tile, plus fire. **L leaves.**
 
-Pages, in the order `conJump_t` has them: droid info, deck info, ship info. The **ship side view**
-(`SideView_dat`, `$F180`, 201 bytes of RLE into a 64 × 16 character grid) is the fourth and is the
-one piece of Layer 9 with real data still to port.
+### 6a. The screen is `ConsoleMain`'s, line for line
+
+**Rebuilt 2026-08-16 at KC's request.** `ConsoleMain` (`$2955`) and `ShowRobotType` (`$3149`) draw
+five lines, and the strings carry their own `prntY`/`prntX`:
+
+| C64 | ours | |
+|---|---|---|
+| row 10, col 2 | row 0 | `Unit type 001 - Influence Device` |
+| row 12, col 12 | row 2 | `Access granted.` |
+| row 15, col 12 | row 5 | `Ship  : Paradroid` |
+| row 18, col 12 | row 8 | `Deck  : Staterooms` |
+| row 21, col 12 | row 11 | `Alert : Green` |
+
+The C64's console area starts at screen row 8, so those are deck rows 2, 4, 7, 10 and 13 with rows
+0 and 1 empty. **KC: plot from the top row**, so everything moves up two and lands on buffer rows
+0, 2, 5, 8 and 11 of our fifteen, three to spare. The 2/3/3/3 spacing is the original's, and is
+what leaves a blank row between the lower four. `ConAt` therefore takes a **buffer row** and not a
+text line — a line-times-two index cannot express 5, 8, 11.
+
+### 6b. The names are real, and they cost 1,542 bytes
+
+`$C000` holds a count and 1,541 bytes of strings in which **the first character of each string has
+bit 7 set**. There is no length byte and no terminator: string N starts at the Nth bit-7 byte and
+runs to just before the next. `FindStrings` (`$2BCA`) walks it once at startup into 249 pointers;
+we scan instead, because 498 bytes of index is more than bank 6 has and the console draws once.
+
+`tools/export_strings.py` translates it to **our glyph indices** rather than the C64's charset
+codes, so the 6502 printer is a straight copy with no code arithmetic, and appends one bit-7
+sentinel so the last string terminates without a bounds check.
+
+Everything is in there: the ten droid class words, `robot`/`droid`/`cyborg`, the eight ship names,
+the sixteen deck names — `observation`, `bridge`, `airlock`, `reactor`, `research`, `stores`,
+`staterooms`, `repairs`, `quarters`, `robo-stores`, `upper cargo`, `mid cargo`, `vehicle hold`,
+`shuttle bay`, `engineering`, `maintenance` — and `green`, `yellow`, `amber`, `red`.
+
+**[DECISION 13]** KC asked for `Ship : Paradroid` fixed and the deck and alert as numbers. Porting
+the table for the droid name — which was asked for — makes the other three free, because
+`ConsoleMain` indexes the same table for all four. So all of them are the original's, and there
+are no placeholders to come back to.
+
+`ShowRobotType` builds the droid name from three tokens: token 50, the hundreds digit as a token,
+and then `device` if that digit is 0 or `((digit - 1) >> 2) + 10` otherwise — `robot` for 1-4,
+`droid` for 5-8, `cyborg` for 9. Every token carries a **leading space**, which `$0BF1` draws
+before the string and which is where the gaps between the words come from; `$3172`'s `DEC prntX`
+closes the double gap after the separator, and is ported as a 16-byte subtract.
+
+**[DECISION 14]** The separator is the original's `$2E`, a dash, and not the colon the request
+described. It is the same glyph as in `Blk-Whte` and the deck name `robo-stores`.
+
+### 6c. What is not built
+
+**[DECISION 15]** The four menu icons are **drawn and inert**. `conWaitInput` (`$2C63`) walks
+`consoleState` between `$80` and `$83` with up/down, recolours the selected sprite and dispatches
+through `conJump_t` on fire; none of that is ported, because KC asked for L-to-exit and nothing
+else. The port's own droid-database page went with it — it was never the C64's.
+
+The icons themselves are sprites 1-4 in `conRedraw`'s table at `$6B94`, at Y `$90`, `$AC`, `$C8`,
+`$E0` and image pointers `$4F`, `$50`, `$A1`, `$A2`. Three are static hires artwork at `$5400`,
+`$6840` and `$6880` — the droid-number emblem, a circular ship-plan badge and a ship side view.
+**The first is blank in ROM**: `$53C0` is where `BuildDroidSprite` composes the player's own droid
+at run time, which is why `conRedraw` sets `dType` from `droidType` before it draws.
 
 ## 7. Decisions to revisit
 

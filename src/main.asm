@@ -355,7 +355,7 @@ FONT_ADDR = &3C00
 \ assert needs the size before src/data/textfont.asm is reached. The
 \ generated file checks itself against both — see the ASSERTs by its
 \ INCLUDE. This is the same arrangement SPR_W and SPR_H have.
-FONT_GLYPHS = 102               \ 26 capitals are two glyphs each
+FONT_GLYPHS = 103               \ 26 capitals are two glyphs each
 FONT_BYTES  = FONT_GLYPHS * 32
 
 \ ---- the status box border, twelve MODE 1 cells -------------
@@ -1258,11 +1258,12 @@ ENDIF
 \ SprDrawAll does for the blitter. The mirror is filled BEFORE the page,
 \ while bank 4 is still up, and read after it — which is the only order
 \ that works.
-\ TWO scalars, not four. drType and drEnergy were mirrored for the droid
-\ number and the energy bar, and the HUD is the C64's status line now —
-\ neither is shown. drCount and shipLevel remain because the CONSOLE's
-\ deck and ship pages read them.
+\ THREE scalars. drEnergy went with the energy bar the HUD no longer
+\ shows; drType came back for the console's "Unit type 001" line, which
+\ ShowRobotType ($3149) indexes DCent_t and DNum_t with. drCount and
+\ shipLevel are the console's deck and ship lines.
 MACRO PNMIRROR
+  LDA drType   : STA pmType
   LDA drCount  : STA pmCount
   LDA shipLevel: STA pmShip
 ENDMACRO
@@ -1304,6 +1305,7 @@ ENDMACRO
 .ct_x
   RTS
 
+.pmType   EQUB 0
 .pmCount  EQUB 0
 .pmShip   EQUB 0
 .conActive EQUB 0               \ main RAM: the loop and the bridge both read it
@@ -1808,6 +1810,15 @@ INCLUDE "src/data/droids2.asm"
 \ pass by PanelTick. See docs/layer-9-hud.md, decision 8.
 INCLUDE "src/panel.asm"
 INCLUDE "src/console.asm"
+
+\ ---- the $C000 string table, beside the code that reads it -
+\ Every name the console prints — the droid classes, the eight ships, the
+\ sixteen decks, the four alert levels. Here rather than in bank 4 for the
+\ same reason as everything else in this file: bank 6 is where the reader
+\ is, and only one bank is visible at a time.
+CON_STR_COUNT = 248
+CON_STR_BYTES = 1542            \ 1,541 plus the terminating sentinel
+INCLUDE "src/data/strings.asm"
 .spr2_end
 SAVE "PARSPR2", spr2_start, spr2_end, DATA_LOAD, DATA_LOAD
 

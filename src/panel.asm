@@ -4,9 +4,9 @@
 \ LAYER 9. In SWRAM BANK 6, with console.asm. It started in bank 4, next
 \ to the droid tables, and the console pushed that bank 224 bytes past
 \ &C000 — see the note by the INCLUDE in main.asm.
-\ **THIS FILE CANNOT READ BANK 4.** drType, drEnergy, drCount, shipLevel
+\ **THIS FILE CANNOT READ BANK 4.** drType, drCount, shipLevel
 \ and the four droid tables all live there. main.asm's PanelTick mirrors
-\ the scalars into pmType/pmEnergy/pmCount/pmShip before paging this bank
+\ the scalars into pmType/pmCount/pmShip before paging this bank
 \ in, and PageTabsIn copies the tables to PN_TABS at boot. Everything
 \ else here reads main RAM directly. See docs/layer-9-hud.md.
 \
@@ -113,8 +113,8 @@ PN_TEXT_ROW = 1                 \ the text line sits between the borders
 ASSERT PN_TEXT_ROW + 2 == PANEL_ROWS - 1
 
 \ The text line's base address, used by PnAt and by nothing else. The
-\ panel has ONE line now, so pnLine is not read here — it still exists
-\ because console.asm's ConAt has seven lines and uses it.
+\ panel has ONE line, so there is no line index to add — the console has
+\ its own conRow, which counts buffer rows rather than lines.
 PN_TEXT_ADDR = PANEL_ADDR + PN_TEXT_ROW * ROW_BYTES
 
 \ ============================================================
@@ -283,11 +283,15 @@ PN_TEXT_ADDR = PANEL_ADDR + PN_TEXT_ROW * ROW_BYTES
   SEC : SBC #'A'
   CLC : ADC #PN_UPPER_A
   RTS
+\ BOTH WAYS OUT OF THE DIGIT RANGE GO TO THE PUNCTUATION, which the colon
+\ is the reason for: ':' is ASCII 58 and '9' is 57, so an above-the-range
+\ exit that went straight to pn_a_bad drew it as a space. The dash worked
+\ throughout because '-' is 45 and leaves below the range.
 .pn_a_digit
   CMP #'0'
   BCC pn_a_punct
   CMP #'9'+1
-  BCS pn_a_bad
+  BCS pn_a_punct
   SEC : SBC #'0'
   CLC : ADC #PN_DIGIT0
   RTS
@@ -377,50 +381,6 @@ PN_TEXT_ADDR = PANEL_ADDR + PN_TEXT_ROW * ROW_BYTES
   JMP PnGlyph
 
 \ ============================================================
-\ PnDigits — print pnDigits decimal digits of pnVal at pnDst
-\ ============================================================
-\ THE CONSOLE'S, not the panel's: ConNum points pnDst with its own ConAt
-\ and then jumps in here. The panel has no decimal field left — its one
-\ number is the score, which is BCD and blanks its leading zeros, so it
-\ has its own loop in PanelUpdate exactly as DoScore does.
-\
-\ Leading zeros are PRINTED here, because every console field is fixed
-\ width and a blanked digit would have to be erased when the number grows
-\ again.
-\
-\ Repeated subtraction, not a divide: the widest field is three digits
-\ and a value of 255, so the inner loop runs at most 2 + 5 + 9 times.
-.PnDigits
-  LDX pnDigits
-  DEX
-  STX pnTmp                     \ index into the power table
-.pn_n_digit
-  LDX pnTmp
-  LDA pnPow10,X
-  STA pnStep
-  LDA #0
-  STA pnCount
-.pn_n_sub
-  LDA pnVal
-  CMP pnStep
-  BCC pn_n_have
-  SEC
-  SBC pnStep
-  STA pnVal
-  INC pnCount
-  JMP pn_n_sub
-.pn_n_have
-  LDA pnCount
-  CLC
-  ADC #PN_DIGIT0
-  JSR PnGlyph
-  DEC pnTmp
-  BPL pn_n_digit
-  RTS
-
-.pnPow10 EQUB 1, 10, 100
-
-\ ============================================================
 \ PnClear — blank the whole panel
 \ ============================================================
 \ Not FillPanel's bordered box: that was the Layer 3 placeholder and it
@@ -452,11 +412,8 @@ PN_TEXT_ADDR = PANEL_ADDR + PN_TEXT_ROW * ROW_BYTES
 \ pnSrc and pnDst are not here: they are swSrc and swDst — see the top.
 .pnStrLo  EQUB 0
 .pnStrHi  EQUB 0
-.pnLine   EQUB 0                \ console.asm's ConAt only; the panel has one line
 .pnCol    EQUB 0
 .pnMask   EQUB PN_INK_TEXT      \ the ink, ANDed into every glyph byte
-.pnDigits EQUB 0
-.pnVal    EQUB 0
 .pnStep   EQUB 0
 .pnCount  EQUB 0
 .pnTmp    EQUB 0
