@@ -119,6 +119,6 @@ both directions and worth keeping. Its readout format is documented in `src/main
   horizontal scrolling. Reproducible, level-draw side, independent of this.
 - **The lift/fire tiebreak was never exercised** — `L` firing is verified, but the branch where
   `LiftEnter` succeeds needs the player standing on a lift platform.
-- **Deferred from 7f**: the disruptor, `EnemyFireEnemy`'s friendly fire, the enemy bullet's colour
-  flicker, and the player's own explosion before he respawns.
+- **Deferred from 7f**: the disruptor, `EnemyFireEnemy`'s friendly fire, and the enemy bullet's
+  colour flicker. The player's death explosion landed on 2026-08-16.
 - **Main RAM** — `code_end` is `&2EE4` against `SPR_SAVE` at `&3000`.

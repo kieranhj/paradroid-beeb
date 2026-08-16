@@ -74,7 +74,8 @@ energy, the droid he is riding wears out on the C64's own schedule whether or no
 him, standing on a recharge pad puts energy back at 5 points of score each, the pool draws bullets
 and explosions as well as droids, and **L fires** — a bullet that flies at the original's own 12 px
 a pass and dies on walls, a droid it hits explodes and scores, and **the droids shoot back and can
-kill you** — at which point you come back as a 001 on waypoint 0. Planned in
+kill you** — at which point you explode where you fell, over `EF_EXPLODE_N` iterations, and come
+back as a 001 on waypoint 0. Planned in
 [`docs/layer-7-combat.md`](docs/layer-7-combat.md), in six stages, and
 four findings shape it: **droid-table entry 0 is the player, not a sentinel**; the C64 has an eighth
 sprite that we do not, for the player's own bullet; bullets and explosions come out of the existing

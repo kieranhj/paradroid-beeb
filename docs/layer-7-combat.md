@@ -467,13 +467,34 @@ The **deck-cleared bonus** already has its home: `DroidsUpdate`'s `dru_done` is 
 already clamps at zero rather than wrapping, so the test is one `BEQ` on `drEnergy[0]` after the
 collision pass. What follows is `BlowInto001` (`$1573`) with its modal loop taken out:
 
-1. Slot 0 goes to explosion artwork and plays the full twelve iterations — the player's own death is
-   the one explosion nothing can interrupt, so it does not need a droid-table entry and can be a
-   flag on slot 0.
+1. The explosion plays for `EF_EXPLODE_N` iterations, and **slot 0 becomes the effect** — `sprKind`
+   1, the frame in `sprType`, back to a droid at the end. `plyDying` in `combat.asm` is the flag,
+   and `DoFire` checks it so a burning droid does not shoot.
+
+   **This is a deliberate divergence, tried the other way first.** The C64 draws both: `$1577`
+   reads sprite 7's state (the player's), `$157C` retargets `SpriteNum` to 0 — the bullet sprite —
+   and `$158A` writes the player's position back out as sprite 0 with the explosion image in it.
+   Sprite 7 is never disabled, and `$15A9` rebuilds it as a 001, so on the original the explosion
+   burns *on top of* the droid. Ported literally onto slot 7 it does not read: our player slot is
+   drawn as a 001 whatever he is riding — nothing writes `sprType+PLY_SLOT` until Layer 10 — so a
+   rotor spins through every transparent pixel of the explosion and the two sprites fight. KC
+   called it on sight. Taking slot 0 also needs no position tracking, because the slot being
+   animated is the one `DeadZone` and `PLY_Y` already place.
 2. Type := 0 (droid 001), `drEnergy[0]` := 7, `maxEnergy` floored at 7 — the original raises it to 7
    if it is lower and otherwise leaves it, so an aged player does *not* get their ceiling back.
 3. `weaponType` := `DWeapon_t[0]`, speeds zeroed, and `SetPosFromWaypoint` to waypoint 0 — the same
-   call Layer 5 already uses for a deck arrival, so no new placement code.
+   call Layer 5 already uses for a deck arrival, so no new placement code — followed by
+   `ReframeView`, which is **not optional**: see BUGS.md #10.
+
+**The order is ours, not the original's.** `BlowInto001` resets the type, the energy and the weapon
+*before* its loop and never moves the player at all, so it can afford to. We respawn on waypoint 0,
+and exploding after that teleport would light him up somewhere he never died — so steps 2-4 are
+held back to the last frame of the animation and only the speeds are zeroed up front.
+
+**And the loop is a state machine, not a loop.** `$15B0` calls `RunGame` and `RunDroids` itself,
+eleven times over. We cannot nest the main loop — the rupture, the two-window sprite split and the
+field waits all live in it — so `CbCheckDeath` counts the same eleven iterations one per pass and
+returns each time.
 4. The deck's droids are left exactly as they are. Dying is a setback, not a reset.
 
 **There is no game over**, deliberately: the title screen and attract mode are Layer 11's and there
@@ -603,10 +624,9 @@ often:
 
 The **disruptor** (weapon 3, an area effect rather than a bullet — `Disruptor` at `$1B37`);
 **`EnemyFireEnemy`**, the friendly fire that lets droids kill each other; the enemy bullet's
-per-pass **colour flicker**, which needs `efAlt` from bank 5 and a second per-entry field; and the
-**player's own explosion** before he respawns — the droids' deaths animate properly, so the
-machinery exists and it is only the sequencing that does not. The `CollisionType` matrix is still
-not needed: with friendly fire absent, every pair that can meet is handled directly.
+per-pass **colour flicker**, which needs `efAlt` from bank 5 and a second per-entry field. The
+player's own explosion is **done** (2026-08-16) — see the death section above. The `CollisionType`
+matrix is still not needed: with friendly fire absent, every pair that can meet is handled directly.
 
 ---
 

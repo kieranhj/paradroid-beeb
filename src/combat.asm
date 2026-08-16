@@ -352,6 +352,11 @@ MM_DELAY    = 8                 \ DoMobile ($3835) loads 8
 \ ONE BULLET AT A TIME. The C64 tests sprite 0's enable bit ($33BA);
 \ ours tests the slot.
 .DoFire
+  LDA plyDying                  \ a burning droid does not shoot. The C64
+  BNE df_no                     \ keeps the whole loop running under the
+                                \ explosion and lets him; ours does not,
+                                \ because slot 0 IS the explosion and a
+                                \ bullet leaving a corpse reads badly
   LDA drFireDelay               \ entry 0 is the player's
   BNE df_no
   LDA sprActive+PLY_FIRE_SLOT
@@ -622,14 +627,77 @@ CB_FIRE_CY = 10
 \ to 7 only if it had already aged below that, so a worn-out player does
 \ not get his ceiling back by dying.
 \
-\ THE EXPLOSION IS NOT HERE YET. The C64 plays the full twelve frames on
-\ the player's own sprite before respawning, which needs a little state
-\ machine in the main loop; this respawns at once. The droids' deaths
-\ animate properly, so the machinery exists — it is the sequencing that
-\ does not.
+\ ---- the explosion, and why it is a state machine ----------
+\ $15B0 is a MODAL LOOP: BlowInto001 runs `JSR RunGame / JSR RunDroids`
+\ itself, eleven times, stepping the explosion image between iterations
+\ and only then falling through to EnterGame. We cannot nest the main
+\ loop — the rupture, the two-window sprite split and the field waits
+\ all live in it — so the same eleven iterations are counted here
+\ instead, one per pass, and CbCheckDeath returns each time.
+\
+\ IT REPLACES THE PLAYER'S SPRITE, and that is a DELIBERATE DIVERGENCE.
+\ The C64 draws both: $1577 reads sprite 7's state (the player's), $157C
+\ retargets SpriteNum to 0 — the bullet sprite — and $158A writes the
+\ player's position back out as sprite 0 with the explosion image in it.
+\ Sprite 7 is never disabled and $15A9 rebuilds it as a 001, so there
+\ the explosion burns ON TOP of the droid.
+\
+\ It does not read that way here. Our player slot is drawn as a 001
+\ whatever he is riding — the transfer game is Layer 10 and nothing yet
+\ writes sprType+PLY_SLOT — so a rotor spins through every transparent
+\ pixel of the explosion and the two sprites fight each other. So slot 0
+\ BECOMES the effect for the duration: sprKind 1, the frame in sprType,
+\ and back to a droid at the end. It also needs no position tracking,
+\ because the slot being animated is the one DeadZone and PLY_Y are
+\ already placing.
+\
+\ THE ORDER IS OURS, NOT THE ORIGINAL'S. The C64 resets the type, the
+\ energy and the weapon BEFORE the loop and never moves the player at
+\ all, so it can afford to. We respawn on waypoint 0 — see the note
+\ above — and exploding after the teleport would light him up somewhere
+\ he never died, so the reset is held back until the last frame.
+\ EF_EXPLODE is frame 0 of the effect set, the same eleven the droids
+\ use; the C64 gives the player "explosion2" ($39-$43) and the droids
+\ their own, and only one set has been exported.
 .CbCheckDeath
+  LDA plyDying
+  BNE ccd_burn                  \ already going up: step the animation
+
   LDA drEnergy                  \ entry 0 is the player
-  BNE ccd_x
+  BEQ ccd_start
+  RTS
+
+\ ---- first pass: light him up and stop him dead -------------
+.ccd_start
+  LDA #0
+  STA xSpd : STA xSpd+1         \ $15A5, brought forward with the rest of
+  STA ySpd : STA ySpd+1         \ the reset held back to ccd_reset
+  STA sprActive+PLY_FIRE_SLOT   \ any bullet in the air dies with him
+
+  LDA #1          : STA plyDying
+  LDA #1          : STA sprKind+PLY_SLOT
+  LDA #EF_EXPLODE : STA sprType+PLY_SLOT
+  RTS
+
+\ ---- and one frame a pass until the set runs out ------------
+.ccd_burn
+  LDA sprType+PLY_SLOT
+  CLC
+  ADC #1
+  CMP #EF_EXPLODE + EF_EXPLODE_N
+  BCS ccd_reset
+  STA sprType+PLY_SLOT
+  RTS
+
+\ ---- the set is finished: put him back on a waypoint --------
+\ Slot 0 goes back to being a droid. sprType is the DROID TYPE again
+\ and 0 is a 001, which is what he respawns as — SprInit sets exactly
+\ these two and nothing else has written them since.
+.ccd_reset
+  LDA #0
+  STA plyDying
+  STA sprKind+PLY_SLOT
+  STA sprType+PLY_SLOT
 
   LDA #0
   STA drType                    \ back to droid 001
@@ -648,8 +716,6 @@ CB_FIRE_CY = 10
   LDA drWeapon,Y
   STA weaponType
 
-  LDA #0                        \ any bullet in the air dies with him
-  STA sprActive+PLY_FIRE_SLOT
   LDA #MM_MOBILE : STA moveMode
 
   JSR DrSpawnPoint              \ waypoint 0, the same arrival LoadDeck uses
@@ -660,8 +726,6 @@ CB_FIRE_CY = 10
                                 \ Half of all respawns then break COPYCHAR's
                                 \ parity invariant and the level draw writes
                                 \ into sideways RAM. See ReframeView.
-.ccd_x
-  RTS
 
 \ ============================================================
 \ state
@@ -677,6 +741,8 @@ CB_FIRE_CY = 10
 .score      SKIP 4              \ 4-byte BCD, most significant first
 
 \ ---- Layer 7d: the fire button and the player's bullet -----
+.plyDying   EQUB 0              \ non-zero while the death explosion runs on
+                                \ the bullet's slot — see CbCheckDeath
 .moveMode   EQUB MM_MOBILE
 .mmDelay    EQUB MM_DELAY
 .fireDown   EQUB 0              \ TRUE means pressed — see DoMoveMode
