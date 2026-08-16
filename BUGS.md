@@ -14,6 +14,10 @@ Numbering is historical, not an order — 3 sits after 4 because it was added la
 
 ## 10. The TILE MAP itself gets scribbled on, in play — **OPEN, 2026-08-16**
 
+> **[`docs/bug-map-corruption.md`](docs/bug-map-corruption.md) is the working document** — how to
+> run the experiment, how to read the five numbers off the panel, what to bring back, and what the
+> answers would mean. Read that first; this entry is the summary.
+
 Reported by KC from play, on **deck 8**, on the first interaction with a droid that fires: the laser
 sprite is left on screen and the level goes wrong — **including its collision data**, so this is the
 map at `&3800-&3BFF` being written, not merely stray pixels in the play buffer. It survives until

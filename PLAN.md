@@ -22,6 +22,7 @@ detail has stopped being needed to make the next decision, it belongs in `docs/`
 | [`docs/layer-5-droids.md`](docs/layer-5-droids.md) | Droid movement: the roster, waypoints, and the waypoint-0 spawn |
 | [`docs/layer-6-droids-live.md`](docs/layer-6-droids-live.md) | Line of sight, collision, and the mode dispatch |
 | [`docs/layer-7-combat.md`](docs/layer-7-combat.md) | **Combat — 7a-7f all landed** — bullets, explosions, damage, score, Alert, the recharge pads, and what is deliberately deferred |
+| [`docs/bug-map-corruption.md`](docs/bug-map-corruption.md) | **OPEN BUG, read before resuming** — something writes the tile map in play. The instrument is built and verified; it needs a play session to fire |
 | [`docs/layer-8-doors-lifts.md`](docs/layer-8-doors-lifts.md) | Doors (built) and lifts (planned), and the character-map problem they raise |
 | [`docs/master-extensions.md`](docs/master-extensions.md) | Things only a Master 128 could host. Not on the critical path |
 
