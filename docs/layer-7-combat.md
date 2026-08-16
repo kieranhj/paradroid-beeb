@@ -558,17 +558,25 @@ exactly as on the C64, and the per-pass sprite cost does not grow.
   inside `dMd0`'s `SpriteEna` arm, so a droid that cannot see the player does not shoot at him.
 - **The random draw is the difficulty curve.** `random AND $1F` against `shipLevel` means ship 1
   fires on one draw in 32 and ship 8 on eight — the same droids get steadily deadlier.
-- **The bullet's speed is the distance to the player shifted down five**, so a shot from across the
-  deck travels faster than one from close by and the flight time comes out roughly constant. Odd as
-  it looks, that is the original's.
+- **The bullet's speed is a NORMALISED DIRECTION, not a distance** — 4-7 pixels an iteration on the
+  dominant axis at any range. `AddBullet` shifts `deltaX`/`deltaY` down five, and those are not the
+  raw offset: `LineOfVisibility` differenced the two *character* positions and then ran them through
+  `CalcDeltaAdd`, which scales the pair up together until the longer sits in [128, 255]. The shift
+  is logical rather than arithmetic and both speeds are then negated, which is what points the
+  bullet at the player. `DrScaleDelta` is shared by `DrLineOfSight` and `DrAddBullet` for this;
+  reading it as a raw pixel distance instead was BUGS.md #11, and made point-blank shots crawl.
 - **The type counts `$25` down to `$20` and the bullet is invisible while it does** — four passes
   inside the droid that fired it, so it is not born already overlapping. At `$20` it arms and stays
   there until it meets a wall, and then becomes an explosion in place, which is why
   `DrExplodeSprite` takes it with no special case.
 - **`DrHurtPlayer`** carries the three arms that cost him energy: a droid (the stronger hurts the
-  weaker, his damage halved and theirs doubled), an enemy bullet, and standing in an explosion. All
-  on the episode edge only — the C64 debounces damage with the same test it debounces the bounce
-  with, or standing against a droid would drain you in a second.
+  weaker, his damage halved and theirs doubled), an enemy bullet, and standing in an explosion.
+  **Only the droid arm is debounced**, and only it should be: the C64 tests `byte_0_6C` inside
+  `_ply_droid` ($1A77) and nowhere else, because a bullet frees its own sprite when it lands and so
+  can only count once, and standing in an explosion is meant to hurt every pass. The flag is
+  latched by `DrReverse` — the C64 writes it in `ReverseDroidDir` — so it means "we bumped last
+  pass" and not "something was touching". Debouncing all three arms was the other half of
+  BUGS.md #11.
 
 > **A bank-4 routine cannot page itself out, and this is where that bit.** `DrAddBullet` needs
 > `efBullet`, which is in bank 5 with the artwork, and a `PAGEBANK SWRAM_SPR` there swaps bank 5 in

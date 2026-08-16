@@ -12,6 +12,78 @@ Numbering is historical, not an order — 3 sits after 4 because it was added la
 
 ---
 
+## 11. Enemy lasers crawl, and the player can walk through them — **FIXED 2026-08-16**
+
+Reported by KC from play: "the lasers are sometimes very slow moving", and "the lasers don't
+always hit the player if they are moving slowly, I can move through them". Both are real and they
+are the same bug twice.
+
+### The speed is a DIRECTION, not a distance
+
+`AddBullet` ($34B5) reads `deltaX`/`deltaY` and shifts them down five. Those look like the raw
+droid-to-player offset and are not:
+
+1. `LineOfVisibility` ($24AE) differences the two **character** positions — `ptr_12` from
+   `GetDroidCharPos`, `plyMapPos` — so the delta is in cells, not pixels;
+2. it then calls **`CalcDeltaAdd` ($25AF)**, which doubles both, then adds the originals, until the
+   **longer of the two sits in [128, 255]** — a normalised direction vector in 8-bit fixed point;
+3. `DoEnemyFire` runs immediately after, in the same `dMd0_droid` arm, so `AddBullet` inherits the
+   *scaled* pair.
+
+`>> 5` of that is **4-7 pixels an iteration on the dominant axis, at any range**. Our port had read
+the listing without following `deltaX` through `CalcDeltaAdd`, and used the raw **pixel** offset —
+so speed was proportional to distance. A droid firing from two characters away produced a speed of
+0 or 1, and a droid fires at exactly that range. Hence "very slow", and hence walking through them:
+a bullet with both speeds 0 never arrives anywhere.
+
+Two more details of `AddBullet` were missing, both load-bearing:
+
+- **the shift is logical** (`LSR A / ROR`, $34BE) rather than arithmetic, so a negative delta
+  rounds the other way;
+- **both speeds are negated** at $3560, which is what turns droid-minus-player into a velocity
+  *towards* the player.
+
+### The bullet arm must not be debounced
+
+`DoCollision`'s `_ply_droid` arm tests `byte_0_6C` at $1A77 and skips the whole episode if it
+matches. **`_ply_bullet` ($1AF1) and `_ply_xplosion` ($1B1A) test nothing.** They do not need to: a
+bullet frees its own sprite the instant it lands, so it can only count once, and standing in an
+explosion is meant to hurt every pass.
+
+Ours had the debounce in front of all three arms, so a bullet did nothing at all whenever anything
+had touched in the previous pass. Worse, `drCollHit` was set on **any** colliding pair, and a bullet
+crawling at zero speed sits inside the droid that fired it — so the flag was held down permanently
+and the player's own bounce went with it. On the C64 `byte_0_6C` is written in `ReverseDroidDir`
+($1C67) and nowhere else, i.e. on a *bump*, so that is where ours sets it now.
+
+### Also corrected: the sprite choice
+
+The chain of subtracts at $353E is not the symmetric rule it looks like. Worked through, on speeds
+of 0-7:
+
+```
+    |dy| >  |dx|        vertical    the |dx| < |dy| arm always reaches _6,
+                                    because the second SBC cannot borrow
+    |dx| >= 2 * |dy|    horizontal
+    otherwise           diagonal, by the sign of dx EOR dy
+```
+
+The vertical band is much wider than the horizontal one. Ours used "twice the other" on both axes
+and drew a diagonal through most of it.
+
+### Verified
+
+Live in jsbeeb, deck 1 with `shipLevel` poked to 31 so the droids fire constantly:
+
+| | |
+|---|---|
+| a spawned bullet's speeds | `drSpdX = +2`, `drSpdY = -7` — dominant 7, as the model predicts |
+| `drEnergy[0]` from 64 over 75 passes | **down to 15** — six hits at 8 apiece, against ~0-1 from aging |
+
+`DrScaleDelta` is now shared by `DrLineOfSight` and `DrAddBullet`, which is the same sharing the
+C64 gets for free by leaving the vector in `deltaX`/`deltaY`. Ours has to recompute it because it
+tests one sight line a pass rather than all six, so the pair in hand belongs to another droid.
+
 ## 10. The level is corrupted when a droid's shot kills you — **FIXED 2026-08-16**
 
 > **[`docs/bug-map-corruption.md`](docs/bug-map-corruption.md) is the working document.** It is

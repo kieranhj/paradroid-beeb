@@ -539,10 +539,13 @@ DR_LOS_MAX = 96
   RTS
 
 \ dcOuter and dcInner are the two slots; act on the droids behind them.
+\ THE DEBOUNCE IS HELD BY DrReverse, not here. byte_0_6C is written in
+\ ReverseDroidDir ($1C67) and nowhere else, so on the C64 it latches on
+\ a BUMP and not on mere contact. Setting it here instead meant a bullet
+\ parked inside the droid that fired it — which, before the speed fix
+\ above, was every bullet — held the debounce down for as long as it
+\ lived and suppressed the player's own bounce with it.
 .DrCollided
-  LDA #&FF
-  STA drCollHit                 \ something touched: hold the debounce
-
   LDA dcOuter                   \ slot 0 is the player, and the pairs are
   BEQ dc_player                 \ ordered so he can only be the outer one
 
@@ -568,6 +571,15 @@ DR_LOS_MAX = 96
   JMP DrPause16
 
 \ ---- the player has walked into a droid ---------------------
+\ THE DEBOUNCE IS THE DROID ARM'S ALONE, and putting it in front of all
+\ three arms was BUGS.md #11's second half: a bullet could pass through
+\ the player doing nothing, because something else had touched in the
+\ previous pass. The C64 tests byte_0_6C at $1A77, inside _ply_droid and
+\ before the pause, the reverse and the bounce — while _ply_bullet
+\ ($1AF1) and _ply_xplosion ($1B1A) test nothing at all. They do not
+\ need to: a bullet frees its own sprite the moment it lands, so it can
+\ only ever be counted once, and standing in an explosion is meant to
+\ hurt every pass.
 .dc_player
   LDY dcInner
   LDA drSlotOwner,Y
@@ -576,18 +588,13 @@ DR_LOS_MAX = 96
   STX dcHit                     \ the thing he touched, for the damage arm
   LDA drType,X
   CMP #DR_TYPE_BULLET
-  BCS dc_noshove                \ a bullet or an explosion is not shoved
-  JSR DrPause16
-  JSR DrReverse
-.dc_noshove
+  BCS dc_hurt                   \ a bullet or an explosion: no shove, no
+                                \ bounce, and no debounce
 
   LDA drCollWas                 \ once per episode, or he sticks to the droid
   BNE dc_x                      \ shaking — and would be drained in a second
-
-  LDX dcHit
-  LDA drType,X
-  CMP #DR_TYPE_BULLET
-  BCS dc_hurt                   \ no bounce off a bullet or an explosion
+  JSR DrPause16
+  JSR DrReverse
   LDX #0                        \ the C64 negates the whole-pixel part of
   JSR DrBounce                  \ each speed, forces it to at least 1, and
   LDX #2                        \ doubles it
@@ -648,9 +655,15 @@ DR_LOS_MAX = 96
   STA drState,X
   RTS
 
-\ ReverseDroidDir ($1C5F), without its own debounce — DrCollide holds
-\ that for both arms.
+\ ReverseDroidDir ($1C5F). It LATCHES THE DEBOUNCE, as the original does
+\ at $1C67 — this is the only thing that writes byte_0_6C other than the
+\ clear on a pass with no collision, so contact that does not bump
+\ (a bullet, an explosion) leaves it alone. The original's own copy of
+\ the test sits here too and is redundant for us: both call sites have
+\ already made it.
 .DrReverse
+  LDA #&FF
+  STA drCollHit
   SEC
   LDA #0 : SBC drSpdX,X : STA drSpdX,X
   SEC
@@ -1253,50 +1266,7 @@ ENDIF
 .dls_setdom
   STA lsDom
 
-\ ---- scale the pair so the long axis steps ~1 character ----
-\ Straight from CalcDeltaAdd: double while BOTH still fit in a byte,
-\ then add the originals while both still fit. Neither half is ever
-\ committed until the other has been tried, which is what keeps the
-\ two in proportion.
-  LDA lsAx : STA lsSx
-  LDA lsAy : STA lsSy
-.dls_dbl
-  LDA lsSx
-  ASL A
-  BCS dls_add
-  TAX
-  LDA lsSy
-  ASL A
-  BCS dls_add
-  STA lsSy
-  STX lsSx
-  JMP dls_dbl
-.dls_add
-  LDA lsSx
-  CLC
-  ADC lsAx
-  BCS dls_scaled
-  TAX
-  LDA lsSy
-  ADC lsAy                      \ carry is clear: the BCS above did not take
-  BCS dls_scaled
-  STA lsSy
-  STX lsSx
-  JMP dls_add
-.dls_scaled
-
-\ ---- signs: the integer part of a negative step is $FF ------
-  LDA #0 : STA lsIx : STA lsIy
-  LDA lsDx
-  BPL dls_xpos
-  LDA #0 : SEC : SBC lsSx : STA lsSx    \ -frac, with $FF carried in
-  LDA #&FF : STA lsIx
-.dls_xpos
-  LDA lsDy
-  BPL dls_ypos
-  LDA #0 : SEC : SBC lsSy : STA lsSy
-  LDA #&FF : STA lsIy
-.dls_ypos
+  JSR DrScaleDelta              \ -> (lsSx,lsIx) and (lsSy,lsIy)
 
   LDA #0 : STA lsFx : STA lsFy
   LDA plyCX : STA lsCX
@@ -1336,6 +1306,73 @@ ENDIF
   RTS
 .dls_blocked
   SEC
+  RTS
+
+\ ============================================================
+\ DrScaleDelta — port of CalcDeltaAdd ($25AF), plus the sign restore
+\ ============================================================
+\ In:  lsDx / lsDy, the signed deltas; lsAx / lsAy, their magnitudes.
+\ Out: (lsSx, lsIx) and (lsSy, lsIy) — a 16-bit signed pair each,
+\      scaled together until the LONGER of the two is in [128, 255].
+\
+\ Double while BOTH still fit in a byte, then add the originals while
+\ both still fit. Neither half is ever committed until the other has
+\ been tried, which is what keeps the two in proportion.
+\
+\ THIS IS THE DIRECTION VECTOR, and it is why the sight line and the
+\ enemy bullet share it. The C64 computes it once in LineOfVisibility
+\ and DoEnemyFire then runs AddBullet off whatever it left in
+\ deltaX/deltaY — so the bullet's velocity is a NORMALISED direction and
+\ has nothing to do with how far away the player is. Ours tests one
+\ sight line a pass rather than all six, so the deltas in hand belong to
+\ some other droid; DrAddBullet calls this again for its own.
+\
+\ **X IS NOT PRESERVED** — the loops use it to hold a tentative value,
+\ the way CalcDeltaAdd does. Both callers reload drIdx afterwards.
+\
+\ lsAx and lsAy must not BOTH be zero or the doubling never terminates.
+\ Both callers check: LineOfVisibility returns early when the droid is
+\ standing on the player, and DrAddBullet declines the shot.
+.DrScaleDelta
+  LDA lsAx : STA lsSx
+  LDA lsAy : STA lsSy
+.dsd_dbl
+  LDA lsSx
+  ASL A
+  BCS dsd_add
+  TAX
+  LDA lsSy
+  ASL A
+  BCS dsd_add
+  STA lsSy
+  STX lsSx
+  JMP dsd_dbl
+.dsd_add
+  LDA lsSx
+  CLC
+  ADC lsAx
+  BCS dsd_scaled
+  TAX
+  LDA lsSy
+  ADC lsAy                      \ carry is clear: the BCS above did not take
+  BCS dsd_scaled
+  STA lsSy
+  STX lsSx
+  JMP dsd_add
+.dsd_scaled
+
+\ ---- signs: the integer part of a negative step is $FF ------
+  LDA #0 : STA lsIx : STA lsIy
+  LDA lsDx
+  BPL dsd_xpos
+  LDA #0 : SEC : SBC lsSx : STA lsSx    \ -frac, with $FF carried in
+  LDA #&FF : STA lsIx
+.dsd_xpos
+  LDA lsDy
+  BPL dsd_ypos
+  LDA #0 : SEC : SBC lsSy : STA lsSy
+  LDA #&FF : STA lsIy
+.dsd_ypos
   RTS
 
 \ |A|, flags set from the result.
@@ -1642,48 +1679,86 @@ BUL_COL_H = 10
   RTS
 
 \ ---- DrAddBullet — port of AddBullet ($34B5) ---------------
-\ The bullet flies at where the player IS, not where he is heading, and
-\ its speed is the distance shifted down five — so a shot from across
-\ the deck travels faster than one from close by and the flight time
-\ comes out roughly constant. That is the original's, odd as it looks.
+\ THE SPEED IS A DIRECTION, NOT A DISTANCE, and that is the whole point
+\ of this routine. AddBullet reads deltaX/deltaY, which look like the
+\ raw droid-to-player offset and are not: LineOfVisibility computed them
+\ in CHARACTERS and then ran them through CalcDeltaAdd, which scales the
+\ pair up together until the longer of the two sits in [128, 255]. So
+\ `>> 5` turns a NORMALISED vector into a speed of 4-7 px an iteration
+\ on the dominant axis, whatever the range.
+\
+\ Reading it as a raw distance — which is what this used to do, off the
+\ pixel offset — makes a bullet fired from two characters away move one
+\ pixel a pass, or none at all, and a point-blank shot is exactly when a
+\ droid fires. That is BUGS.md #11: lasers that crawl, and that the
+\ player can walk through because a bullet with speed 0 never arrives.
+\
+\ CHARACTERS, NOT PIXELS, for the same reason: the original aims at
+\ character resolution, so a droid one cell above you fires straight up
+\ rather than at a slight angle. Pixel deltas would make the droids
+\ measurably better shots than they are on the C64.
+\
+\ THE SHIFT IS LOGICAL AND THE RESULT IS NEGATED. $34BE is `LSR A / ROR`
+\ — not the arithmetic shift a signed value wants — and $3560 then takes
+\ the two's complement of both speeds. deltaX is droid MINUS player, so
+\ the negation is what points the bullet at him; the logical shift makes
+\ a negative delta round the other way, so a bullet flying left travels
+\ one pixel a pass faster than the mirror-image one flying right. Both
+\ are the original's and both are kept.
 .DrAddBullet
   LDX drIdx
-  CLC                           \ the player's reference point...
-  LDA plyX   : ADC #PLY_REFX : STA dbdX
-  LDA plyX+1 : ADC #0        : STA dbdX+1
-  SEC                           \ ...less this droid's
-  LDA dbdX   : SBC drPosXlo,X : STA dbdX
-  LDA dbdX+1 : SBC drPosXhi,X : STA dbdX+1
-
-  CLC
-  LDA posY   : ADC #PLY_REFY : STA dbdY
-  LDA posY+1 : ADC #0        : STA dbdY+1
+  SEC                           \ droid - player, in characters: exactly
+  LDA drCX : SBC plyCX : STA lsDx  \ what LineOfVisibility differences
+  JSR DrAbsA
+  STA lsAx
   SEC
-  LDA dbdY   : SBC drPosYlo,X : STA dbdY
-  LDA dbdY+1 : SBC drPosYhi,X : STA dbdY+1
+  LDA drCY : SBC plyCY : STA lsDy
+  JSR DrAbsA
+  STA lsAy
+  ORA lsAx
+  BNE dab_aim                   \ standing on him: no direction to fire in,
+  RTS                           \ and DrScaleDelta would never terminate
+.dab_aim
 
-  LDY #5                        \ >> 5, ARITHMETIC: CMP #$80 puts the sign
-.dab_shift                      \ back into carry for the ROR to pull down
-  LDA dbdX+1 : CMP #&80 : ROR dbdX+1 : ROR dbdX
-  LDA dbdY+1 : CMP #&80 : ROR dbdY+1 : ROR dbdY
+  JSR DrScaleDelta              \ -> (lsSx,lsIx) / (lsSy,lsIy), normalised
+
+  LDY #5                        \ >> 5, LOGICAL, as $34BE-$34EA is
+.dab_shift
+  LSR lsIx : ROR lsSx
+  LSR lsIy : ROR lsSy
   DEY
   BNE dab_shift
-  LDA dbdX : STA dbSpdX
-  LDA dbdY : STA dbSpdY
+  LDA #0 : SEC : SBC lsSx : STA dbSpdX  \ $3560: negate, so it flies at him
+  LDA #0 : SEC : SBC lsSy : STA dbSpdY
 
-\ Which of the four bullet sprites. The C64 works it out with a chain of
-\ subtracts ($353E) that amounts to: one axis wins if it is at least
-\ twice the other, otherwise it is a diagonal chosen by the signs.
+\ Which of the four bullet sprites, from the chain of subtracts at
+\ $353E — and it is NOT the symmetric rule it looks like. Worked
+\ through, it comes to:
+\
+\   |dy| >  |dx|          vertical      (the |dx| < |dy| arm always
+\                                        lands on _6, because the
+\                                        second SBC can never borrow)
+\   |dx| >= 2 * |dy|      horizontal
+\   otherwise             diagonal, by the sign of dx EOR dy
+\
+\ so the vertical case is much wider than the horizontal one. The
+\ previous version used the symmetric "twice the other" test on both
+\ axes and drew a diagonal through most of that band.
+\
+\ Measured on the SPEEDS, not the deltas — $3526 reads droidSpdY/X —
+\ so |dx| and |dy| here are 0-7. The signs are read after the negation
+\ rather than before it, which changes nothing: both flip together.
   LDA dbSpdX : JSR DrAbsA : STA dbAx
   LDA dbSpdY : JSR DrAbsA : STA dbAy
   LDA dbAx
-  LSR A
-  CMP dbAy
-  BCS dab_horiz                 \ |dx|/2 >= |dy|
-  LDA dbAy
-  LSR A
-  CMP dbAx
-  BCS dab_vert
+  SEC
+  SBC dbAy
+  BCC dab_vert                  \ |dx| < |dy|
+  SEC
+  SBC dbAy                      \ |dx| - 2*|dy|
+  BCC dab_diag
+  LDA #3 : BNE dab_frame        \ always: horizontal
+.dab_diag
   LDA dbSpdX
   EOR dbSpdY
   BMI dab_diag2                 \ signs differ: the "/" diagonal
@@ -1691,9 +1766,7 @@ BUL_COL_H = 10
 .dab_diag2
   LDA #2 : BNE dab_frame        \ always
 .dab_vert
-  LDA #1 : BNE dab_frame        \ always
-.dab_horiz
-  LDA #3
+  LDA #1
 .dab_frame
   STA drTmp
   LDX drIdx
@@ -2061,8 +2134,6 @@ ENDIF
 .drDmg       EQUB 0             \ Layer 7e: damage worked out before it lands
 .drBulFrm    SKIP DR_SLOTS      \ 7f: an enemy bullet's effect frame
 .drNewSlot   EQUB 0
-.dbdX        EQUW 0             \ the vector from the firing droid to the
-.dbdY        EQUW 0             \ player, and the speed it becomes
 .dbSpdX      EQUB 0
 .dbSpdY      EQUB 0
 .dbAx        EQUB 0
