@@ -392,8 +392,23 @@ decisions 4 and 5.
 > own: bank 6's *code* cannot read another bank, so the code would have to move with the data.
 > Layer 13's reshuffle is the other way out.
 
-### Layer 10 — Transfer minigame
-`SubGameSelectSide` and the circuit puzzle. Paged from a sideways bank.
+### Layer 10 — Transfer minigame — **researched, not built**
+`SubGameSelectSide` and the circuit puzzle. Research and plan:
+[`docs/layer-10-transfer.md`](docs/layer-10-transfer.md).
+
+The whole rule set is one routine, `xfer_DoColumn` (`$1EB6`): twelve identical wire rows, three
+stages along each at screen columns 6, 10 and 14, and a gate dispatch on the character already in
+the cell — joiner, splitter, terminator, or claim-and-advance. The board is 200 bytes of data at
+`$E613`/`$E68B`/`$E6B3` and fifteen characters out of the `$7800` charset.
+
+**Three things want deciding before code goes in**, and all are in the doc:
+- **ownership is COLOUR RAM**, which MODE 1 does not have. The recommended answer is three copies
+  of each wire character, one per owner, so `xfer_Colorize4` becomes a character write;
+- the board is **16 rows against our 15** — recommended answer, drop one of the twelve identical
+  wire rows;
+- **there is nowhere obvious to put it.** Bank 6 has ~2,040 bytes free and bank 4 ~1,400. The
+  minigame runs with the deck suspended and no sprites, so it could take a sprite bank wholesale as
+  its own disc file — at the cost of a floppy access on every transfer.
 
 ### Layer 11 — Sound, title, polish
 SN76489 driver replacing the SID engine, title screen, attract mode. The chip is written through
