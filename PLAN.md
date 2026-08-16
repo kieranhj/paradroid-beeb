@@ -358,7 +358,7 @@ that makes that safe is in `bufcore.asm`'s header.
 |---|---|---|
 | `main.asm` | main RAM | **Live.** Constants, the zero page map, memory map, main loop and its two windows, IRQ dispatch. Geometry constants live here because beebasm resolves them in file order and the other files need them |
 | `rupture.asm` | main RAM | **Live.** Three-cycle vertical rupture, the T1 state machine, `FillPanel`, `DbgSetBg` |
-| `bufcore.asm` | main RAM | **Live.** The four things the level draw could not take into the bank: `SetupScreen` and `SetCRTCStart`, which run before the bank is loaded, and `WrapBufFwd`, `SetCell` and the `rowMul`/`unitMul` tables, which run with the *sprite* bank paged in |
+| `bufcore.asm` | main RAM | **Live.** The four things the level draw could not take into the bank: `SetupMode`/`SetupRupture` and `SetCRTCStart`, which run before the bank is loaded, and `WrapBufFwd`, `SetCell` and the `rowMul`/`unitMul` tables, which run with the *sprite* bank paged in |
 | `screen.asm` | **bank 4** | **Live.** `DrawHalf`, `HalfPtr`, `BuildCharPtrs`, `BandSetRow`/`BandCharPtr`, `ColSetup`, `MapChar`, `RedrawAll` |
 | `scroll.asm` | **bank 4** | **Live.** `DrawColumn`, `DrawBandRows`, `CopyCell`, `ScrollAddS`, `DoRedraws` |
 | `level.asm` | **bank 4** | **Live.** Deck decode, `BuildCharset`, `BuildLUTs`, `SetPalette` |

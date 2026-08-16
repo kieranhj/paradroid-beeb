@@ -106,7 +106,7 @@ call into it from the main loop needs no paging at all.
 | `&A36B` | 64 | `blankTileRow` |
 | `&A3AB` | 2,437 | **Code**: `screen.asm`, `scroll.asm`, `level.asm` — `DrawHalf`, `HalfPtr`, `BandSetRow`, `BandCharPtr`, `ColSetup`, `MapChar`, `RedrawAll`, `BuildCharPtrs`, `DrawColumn`, `DrawBandRows`, `DoRedraws`, `BuildLevel`, `BuildCharset`, `BuildLUTs`, `SetPalette` |
 
-What could **not** come with it is in `src/bufcore.asm`, 480 bytes in main RAM: `SetupScreen` and
+What could **not** come with it is in `src/bufcore.asm`, 480 bytes in main RAM: `SetupMode`/`SetupRupture` and
 `SetCRTCStart` run before this bank is loaded, and `WrapBufFwd`, `SetCell` and the `rowMul`/`unitMul`
 tables are reached while the *sprite* bank is paged in — `SprScanRow` tail-calls the first and
 `SprCalcAddr` calls the second. A JSR from there into this bank would land in compiled sprite rows,

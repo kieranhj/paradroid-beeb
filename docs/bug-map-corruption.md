@@ -88,9 +88,20 @@ routines that assign `mapHX` outright are `SetPosFromWaypoint` and `LiftPlace`, 
 ## 4. Verification
 
 - **In play, by KC**: the corruption no longer happens.
+- **In jsbeeb**: a forced death (poke `drEnergy[0] = 0`, one pass) respawns correctly and leaves
+  `scrollS/8` and `mapHX` in agreement. `DEBUG_MAPGUARD` stays at `00` throughout.
 - **Still worth doing once**: several deaths on **deck 8** specifically, which is where every report
   came from and therefore the deck whose waypoint 0 is most likely to be the odd-parity one. The
   cheap check afterwards is `(scrollS/8) AND 1 == mapHX AND 1`.
+
+### An unrelated fault found while setting that up
+
+The game could not be booted in jsbeeb at all: the second `*LOAD` hung forever in DFS's 8271 status
+poll at `&ACAE`. Bisecting `SetupScreen` one CRTC write at a time showed the trigger is **R7**. The
+rupture's `TAIL_R7` is deliberately behind the row it should fire on, so VSync never happens — and
+the MOS's disc code needs VSync. `SetupScreen` is therefore split into `SetupMode` and
+`SetupRupture`, with the three `*LOAD`s between them. Same class of rule as "loads before
+`InstallIrq`", one step earlier; both are stated in `bufcore.asm`'s header.
 
 ## 5. Superseded
 

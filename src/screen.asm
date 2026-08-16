@@ -27,7 +27,7 @@
 \ Geometry constants live in main.asm — beebasm resolves constant
 \ assignments in file order, and rupture.asm needs them too.
 
-\ SetupScreen, SetCRTCStart and WrapBufFwd are NOT here: they are in
+\ SetupMode/SetupRupture, SetCRTCStart and WrapBufFwd are NOT here: they are in
 \ bufcore.asm, in main RAM, because they run either before this bank
 \ is loaded or while the sprite bank is paged in. Its header has the
 \ rule. Everything below runs with SWRAM_DATA in, which is the

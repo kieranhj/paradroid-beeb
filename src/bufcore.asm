@@ -5,9 +5,10 @@
 \ next to the tile, deck and waypoint data they read. Four routines and
 \ one pair of tables cannot go with them, for two different reasons.
 \
-\ RUN BEFORE THE BANK EXISTS. SetupScreen is the first thing `start`
+\ RUN BEFORE THE BANK EXISTS. SetupMode is the first thing `start`
 \ calls — before the *LOAD of PARADAT, let alone the copy up into
-\ the bank. SetCRTCStart comes with it, because SetupScreen calls it.
+\ the bank. SetupRupture runs between the loads and InstallIrq, and
+\ SetCRTCStart comes with them, because SetupRupture calls it.
 \
 \ RUN WHILE SWRAM_SPR IS PAGED IN. SprDrawAll and SprRestoreAll page
 \ the sprite bank in around themselves, and inside that window:
@@ -29,9 +30,32 @@
 \ ============================================================
 
 \ ============================================================
-\ SetupScreen — MODE 1 geometry with a 10K wrap at &5800
+\ SetupMode / SetupRupture — MODE 1 geometry with a 10K wrap
+\ at &5800, IN TWO HALVES WITH THE DISC LOADS BETWEEN THEM
 \ ============================================================
-.SetupScreen
+\ THE SPLIT IS NOT COSMETIC. **No filing-system call may happen once
+\ R7 has been given the rupture's tail-cycle value.** R7 = TAIL_R7 is
+\ deliberately behind the row it should fire on, so VSync never
+\ happens and the CRTC free-runs — which is what makes the rupture
+\ lock on the first field. The MOS's disc code needs VSync: with it
+\ stopped, `*LOAD` issues its 8271 command and then spins forever in
+\ the status poll at DFS's `BIT &FE80 / BMI`, command-busy set,
+\ nothing ever completing.
+\
+\ Measured, by bisecting SetupScreen a write at a time under the
+\ emulator with the three loads patched to return afterwards:
+\
+\   through R6 (R1, R8, R4, R5, R6 all set)   all three loads complete
+\   R7 as well                                the SECOND load hangs
+\
+\ The first load survives because the drive is already selected; the
+\ second needs a seek, and that is what never finishes.
+\
+\ So this is the same rule as InstallIrq's, one step earlier, and it
+\ is stated in both places: **the loads sit between these two calls.**
+\ SetupMode leaves an ordinary MODE 1 frame running — R1 and R8 only
+\ change the width and the interlace — so VSync carries on throughout.
+.SetupMode
   LDA #22 : JSR OSWRCH          \ MODE 1 (OS sets 20K / 16K wrap)
   LDA #1  : JSR OSWRCH
 
@@ -62,7 +86,12 @@
 \ line makes the split land in a different place every other field
 \ — an intermittent glitch along the top of the play area.
   CRTC 8,  0
+  RTS
 
+\ ---- the second half: after the loads, before InstallIrq ----
+\ Everything from here stops VSync, so nothing may touch the filing
+\ system again — see the header.
+.SetupRupture
 \ Start in the TAIL cycle's shape. The picture rolls until the IRQ
 \ takes over, but the first VSync then arrives with C4 exactly
 \ where the steady state expects it — 8 rows into a 13-row cycle —

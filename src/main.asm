@@ -667,7 +667,11 @@ ENDMACRO
 ORG &1100
 .start
 
-  JSR SetupScreen
+\ MODE 1 ONLY. The rupture's CRTC shape is set AFTER the loads, in
+\ SetupRupture, because R7 = TAIL_R7 stops VSync and the MOS's disc
+\ code hangs without it — the same rule as InstallIrq's below, one
+\ step earlier. bufcore.asm's header has the measurement.
+  JSR SetupMode
 
   LDX #LO(loadcmd)              \ must follow the mode change: VDU 22
   LDY #HI(loadcmd)              \ clears what the OS thinks is its screen
@@ -691,6 +695,10 @@ ORG &1100
   JSR PageBankIn
 
   PAGEBANK SWRAM_DATA           \ the data bank is the resting state
+
+  JSR SetupRupture              \ NOW the CRTC goes into the rupture's
+                                \ shape: it stops VSync, so it has to be
+                                \ after the last filing-system call
 
   JSR FillPanel                 \ after the staging area is done with: it
                                 \ reaches past &4800, over the panel

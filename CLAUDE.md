@@ -156,7 +156,7 @@ they read. That costs no
 paging, because the data bank is the resting state. The rule it depends on is one-way and undiagnosed
 if broken — bank code may call main RAM freely, but main RAM may call *in* only with `SWRAM_DATA`
 paged, which is false at startup before the bank is loaded and inside `SprDrawAll`/`SprRestoreAll`.
-`bufcore.asm` holds exactly what those two cases need — `SetupScreen`, `SetCRTCStart`, `WrapBufFwd`,
+`bufcore.asm` holds exactly what those two cases need — `SetupMode`/`SetupRupture`, `SetCRTCStart`, `WrapBufFwd`,
 `SetCell` and the `rowMul`/`unitMul` tables — and its header states the rule. **Read it before moving
 anything else across.**
 
