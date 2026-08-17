@@ -78,6 +78,13 @@ C64_NAMES = ['black', 'white', 'red', 'cyan', 'purple', 'green', 'blue',
 BBC_NAMES = ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan',
              'white']
 
+# The four slots carry fixed roles now - see export_bbc.build_logical_map.
+ROLE_NAMES = ['background', 'black', 'highlight', 'white / sprites']
+# Roles whose physical colour the sprite scheme depends on: logical 3 must be
+# white and logical 1 black, or AND &0F / AND &F0 stop meaning anything.
+# None = free choice, judge it by eye.
+ROLE_WANTS = [None, 0, None, 7]
+
 
 def render_deck(mem, deck):
     """One deck as C64 colour indices, cropped to the tiles it actually uses.
@@ -262,7 +269,7 @@ PAGE = r"""<!doctype html>
   .swatch { width: 15px; height: 15px; border-radius: 3px; flex: none;
             border: 1px solid #0006; display: inline-block; vertical-align: -3px; }
   .lrow { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
-  .lrow .lname { width: 84px; font-size: 12px; }
+  .lrow .lname { width: 112px; font-size: 12px; line-height: 1.35; }
   .lrow .lname b { color: var(--hot); }
   .picker { display: flex; gap: 3px; }
   .picker button {
@@ -284,6 +291,16 @@ PAGE = r"""<!doctype html>
   }
   .seg button.on { background: var(--ink); color: #14161a; font-weight: 700; }
   .warn { color: #ff8f6b; font-size: 12px; margin: 8px 0 0; }
+  .ovrow { display: flex; align-items: center; gap: 5px; margin-bottom: 3px;
+           cursor: pointer; padding: 1px 3px; border-radius: 3px; }
+  .ovrow:hover { background: #232833; }
+  .ovrow.on { background: #2c323c; }
+  .ovrow .ovn { width: 20px; font-size: 11px; color: var(--dim);
+                text-align: right; font-variant-numeric: tabular-nums; }
+  .ovrow .sw { width: 26px; height: 13px; border-radius: 2px;
+               outline: 1px solid #0008; }
+  .ovrow .ovsch { font-size: 10px; color: var(--dim); margin-left: 2px; }
+  .ovrow .ovbad { color: #ff8f6b; font-size: 11px; margin-left: 2px; }
   .note { color: var(--dim); font-size: 11px; margin: 6px 0 0; }
   .acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
   hr { border: 0; border-top: 1px solid var(--edge); margin: 16px 0; }
@@ -340,6 +357,13 @@ PAGE = r"""<!doctype html>
   </div>
 
   <aside>
+    <h2>All sixteen decks</h2>
+    <div id="overview"></div>
+    <p class="note">Every deck's four physical colours in slot order. Click to
+      jump; <b>!</b> marks one that breaks the scheme. Watch for neighbouring
+      decks landing on the same combination.</p>
+
+    <hr>
     <h2>Palette &mdash; logical to physical</h2>
     <div id="palette"></div>
     <p class="warn" id="dupwarn" hidden></p>
@@ -372,6 +396,7 @@ PAGE = r"""<!doctype html>
 const DATA = __DATA__;
 const DECKS = DATA.decks, C64 = DATA.c64rgb, BBC = DATA.bbcrgb;
 const C64N = DATA.c64names, BBCN = DATA.bbcnames;
+const ROLES = DATA.roles, WANTS = DATA.wants;
 const KEY = 'paradroid.palettes.v1';
 
 let cur = 0, zoom = 1, imgs = [], idx = [];
@@ -480,7 +505,7 @@ function show(d) {
     'deck ' + d + ' · scheme ' + k.scheme + ' · ' + k.w + '×' + k.h + ' px';
   document.getElementById('bbcinfo').textContent =
     'physical ' + phys(d).join(' ');
-  buildTabs(); buildPalette(); buildMerge();
+  buildTabs(); buildOverview(); buildPalette(); buildMerge();
   drawWindows(lastWin.x, lastWin.y);
 }
 
@@ -534,9 +559,9 @@ function buildPalette() {
     const row = document.createElement('div');
     row.className = 'lrow';
     const src = k.logical[l];
-    row.innerHTML = '<span class="lname"><b>' + l + '</b> ' +
-      '<span class="swatch" style="background:' + rgbcss(C64[src]) + '"></span> ' +
-      C64N[src] + '</span>';
+    row.innerHTML = '<span class="lname"><b>' + l + '</b> ' + ROLES[l] +
+      '<br><span class="swatch" style="background:' + rgbcss(C64[src]) +
+      '"></span> <span style="color:var(--dim)">' + C64N[src] + '</span></span>';
     const pick = document.createElement('div');
     pick.className = 'picker';
     for (let ph = 0; ph < 8; ph++) {
@@ -547,7 +572,7 @@ function buildPalette() {
       b.onclick = () => {
         const np = phys(cur).slice(); np[l] = ph;
         setEdit(cur, 'physical', np);
-        buildPalette(); buildTabs(); redrawBBC();
+        buildPalette(); buildTabs(); buildOverview(); redrawBBC();
         document.getElementById('bbcinfo').textContent = 'physical ' + np.join(' ');
       };
       pick.appendChild(b);
@@ -555,12 +580,41 @@ function buildPalette() {
     row.appendChild(pick);
     el.appendChild(row);
   }
-  const dup = new Set(p).size !== 4;
+  const msgs = [];
+  if (new Set(p).size !== 4)
+    msgs.push('Two logical colours share a physical one: detail drawn in the ' +
+              'second is invisible, and verify_bbc.py asserts all four are ' +
+              'distinct.');
+  WANTS.forEach((want, l) => {
+    if (want !== null && p[l] !== want)
+      msgs.push('Logical ' + l + ' is ' + BBCN[p[l]] + ', not ' + BBCN[want] +
+                '. Sprites are drawn at logical 3 and recoloured to logical 1 ' +
+                'by masking, so both slots carry a meaning beyond this deck.');
+  });
   const w = document.getElementById('dupwarn');
-  w.hidden = !dup;
-  if (dup) w.textContent =
-    'Two logical colours share a physical one - detail drawn in the second is ' +
-    'invisible, and verify_bbc.py asserts all four are distinct.';
+  w.hidden = !msgs.length;
+  w.innerHTML = msgs.join('<br><br>');
+}
+
+function buildOverview() {
+  const el = document.getElementById('overview');
+  el.innerHTML = '';
+  DECKS.forEach((k, d) => {
+    const p = phys(d);
+    const row = document.createElement('div');
+    row.className = 'ovrow' + (d === cur ? ' on' : '');
+    row.onclick = () => show(d);
+    let html = '<span class="ovn">' + d + '</span>';
+    p.forEach(v => { html += '<span class="sw" style="background:' +
+      rgbcss(BBC[v]) + '"></span>'; });
+    html += '<span class="ovsch">s' + k.scheme + '</span>';
+    const bad = WANTS.some((want, l) => want !== null && p[l] !== want) ||
+                new Set(p).size !== 4;
+    if (bad) html += '<span class="ovbad">!</span>';
+    row.innerHTML = html;
+    row.title = 'deck ' + d + ': ' + p.map((v, l) => l + '=' + BBCN[v]).join(', ');
+    el.appendChild(row);
+  });
 }
 
 function buildMerge() {
@@ -585,7 +639,7 @@ function buildMerge() {
       b.onclick = () => {
         const nm = cmap(cur).slice(); nm[c] = l;
         setEdit(cur, 'colourMap', nm);
-        buildMerge(); buildTabs(); redrawBBC();
+        buildMerge(); buildTabs(); buildOverview(); redrawBBC();
       };
       seg.appendChild(b);
     }
@@ -712,6 +766,8 @@ def main():
         'bbcrgb': [list(c) for c in BBC_RGB],
         'c64names': C64_NAMES,
         'bbcnames': BBC_NAMES,
+        'roles': ROLE_NAMES,
+        'wants': ROLE_WANTS,
         'view': [VIEW_W, VIEW_H],
     }
     html = PAGE.replace('__DATA__', json.dumps(data, separators=(',', ':')))
