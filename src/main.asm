@@ -2091,3 +2091,22 @@ PRINT "xfer    ", ~xfer_start, "-", ~xfer_end, " (SWRAM bank", SWRAM_XFER, ",", 
 
 SAVE "PARA",    start,      code_end, start
 \ PARADAT and PARASPR are saved where they are assembled, above.
+
+\ ------------------------------------------------------------------
+\ !BOOT — EXECed at boot (disc option 3, set by build.ps1's -opt 3),
+\ so each line is typed at the BASIC prompt. It prints the
+\ assembly-time build stamp so any disc image can be dated, then
+\ *RUNs the game — the same mechanism beebasm's -boot used before.
+\ Assembled at a scratch address; only the saved bytes matter, and
+\ nothing ever loads here.
+\ ------------------------------------------------------------------
+CLEAR &7E00, &7F00
+ORG &7E00
+.boot_start
+EQUS "*BASIC", 13
+EQUS "CLS", 13
+EQUS "REM PARADROID", 13
+EQUS "REM BUILD ", TIME$("%d %b %Y %H:%M:%S"), 13
+EQUS "*RUN PARA", 13
+.boot_end
+SAVE "!BOOT", boot_start, boot_end

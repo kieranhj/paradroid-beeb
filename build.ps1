@@ -19,7 +19,9 @@ if (-not (Test-Path $build)) { New-Item -ItemType Directory -Path $build | Out-N
 # progress and success messages go to STDERR and are left alone: redirecting
 # those in PowerShell wraps each line in an ErrorRecord and trips
 # $ErrorActionPreference even though the assembly succeeded. See CLAUDE.md.
-& $beebasm -i (Join-Path $root 'src\main.asm') -do $ssd -boot PARA -v |
+# -opt 3 makes the disc *EXEC !BOOT on SHIFT+BREAK; main.asm assembles
+# its own !BOOT (with the build timestamp) rather than using -boot.
+& $beebasm -i (Join-Path $root 'src\main.asm') -do $ssd -opt 3 -title PARADROID -v |
     Out-File -FilePath $listing -Encoding utf8
 if ($LASTEXITCODE -ne 0) { throw "beebasm failed ($LASTEXITCODE)" }
 
