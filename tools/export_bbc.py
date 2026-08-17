@@ -158,6 +158,21 @@ def load_palette_override():
     return out
 
 
+# Which SLOT gets to choose its physical colour first. Slot order and
+# allocation order are different things, and conflating them is what made
+# the C64's black come out green: the assignment is greedy nearest-unused,
+# so whoever picks first wins a contested colour.
+#
+#   3 white     the sprite colour - droids and effects are drawn in it, and
+#               it must read as white, so it picks first
+#   1 black     shadows and outlines; black is unambiguous and nothing else
+#               wants it once PREFERRED's red->black is behind it
+#   0 the floor the deck's own colour, and the largest area on screen
+#   2 highlight last, because it is the one with an alternative: it is
+#               already a compromise for a C64 colour MODE 1 cannot match
+SLOT_PRIORITY = (3, 1, 0, 2)
+
+
 def assign_palette(logical):
     """Pick a distinct BBC physical colour for each of the four logical ones.
 
@@ -165,19 +180,22 @@ def assign_palette(logical):
     BBC match, so two logical colours collapse onto one physical and whatever
     is drawn in the second becomes invisible. Assigning greedily per deck,
     nearest-unused first, guarantees four distinct colours.
+
+    Returned in SLOT order; allocated in SLOT_PRIORITY order.
     """
-    out, taken = [], set()
-    for c64 in logical:
+    out, taken = [None] * 4, set()
+    for slot in SLOT_PRIORITY:
+        c64 = logical[slot]
         want = PREFERRED.get(c64)
         if want is not None and want not in taken:
-            out.append(want)
+            out[slot] = want
             taken.add(want)
             continue
         r, g, b = C64_RGB[c64]
         best = min((p for p in range(8) if p not in taken),
                    key=lambda p: (BBC_RGB[p][0] - r) ** 2
                    + (BBC_RGB[p][1] - g) ** 2 + (BBC_RGB[p][2] - b) ** 2)
-        out.append(best)
+        out[slot] = best
         taken.add(best)
     return out
 
@@ -278,8 +296,29 @@ def deck_background(mem, deck):
 
 
 def build_logical_map(mem, cell_colour, bg):
-    """Pick which C64 colours become MODE 1 logical 0-3, by how much each is
-    used across the tile set. Logical 0 is always the deck's background."""
+    """Pick which C64 colours become MODE 1 logical 0-3, in FIXED ROLES.
+
+        logical 0 = the deck's background      (%00 - also transparent)
+        logical 1 = black, $D023               (%01 - the low plane alone)
+        logical 2 = the deck's highlight       (%10 - the high plane alone)
+        logical 3 = white, $D022               (%11 - both planes)
+
+    The roles used to be filled by frequency, which put black at 2 on eight
+    decks and at 3 on the other eight - the same four colours either way, but
+    in an order that meant nothing. KC's ordering, 2026-08-17, and the reason
+    is the sprites:
+
+      A sprite exported at logical 3 has BOTH bits set on every opaque pixel
+      and neither on a transparent one, so the sprite byte IS its own
+      transparency mask, and `AND &0F` / `AND &F0` recolour it in place to
+      logical 1 (black) or logical 2 (the highlight) from one set of bytes.
+      At logical 1 none of that is possible, which is why the port carries a
+      256-byte SPR_MASKTAB to expand the mask.
+
+    Choosing by frequency cost nothing to give up: on all 16 decks the three
+    most-used non-background colours are exactly {white, black, highlight}, so
+    this reorders the slots without changing which colours a deck gets.
+    """
     from collections import Counter
     freq = Counter()
     for tile in range(32):
@@ -294,9 +333,22 @@ def build_logical_map(mem, cell_colour, bg):
                 freq[colour] += 1
     freq.pop(bg, None)
 
-    chosen = [bg] + [c for c, _ in freq.most_common(3)]
-    while len(chosen) < 4:
-        chosen.append(0)
+    # The highlight is the most-used colour that is not one of the two the
+    # multicolour mode fixes for us.
+    rest = [c for c, _ in freq.most_common() if c not in (D022, D023)]
+    highlight = rest[0] if rest else 0
+
+    chosen = [bg, D023, highlight, D022]
+
+    # No deck's background is black or white, so the four are distinct - but
+    # if one ever were, the duplicate would silently cost a colour. Take the
+    # next unused instead of shipping a slot that can never be selected.
+    seen = set()
+    for i, c in enumerate(chosen):
+        if c in seen:
+            spare = [x for x in rest + list(range(16)) if x not in seen]
+            chosen[i] = spare[0] if spare else c
+        seen.add(chosen[i])
     return chosen, freq
 
 
