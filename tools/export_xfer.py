@@ -21,20 +21,23 @@ unlike the tiles they are NOT deck-coloured - and because extending the
 137-character remap pushes the charset at &0400 into the MOS's NMI area
 at &0D00.
 
-THE MULTICOLOUR PAIRS AND WHY 11 MATTERS
-----------------------------------------
-These are C64 MULTICOLOUR characters: a byte is four 2-bit pairs, each
-drawn two pixels wide. The values map
+THE ROWS ARE RAW C64 CODES, NOT GLYPH INDICES
+---------------------------------------------
+The game logic is a transliteration of xfer_DoColumn and friends, which
+dispatch on the character IN the cell - CMP #$F5, CMP #$F6, CMP #$F7,
+CMP xfer_CpuPulserChar. Keeping the shadow screen in the original's own
+codes keeps every one of those comparisons verbatim, so the rows here are
+the C64 bytes and xbCode is the 16-entry code list the renderer expands
+into a 256-byte code->glyph table at init.
 
-    00 -> background        10 -> $D023
-    01 -> $D022             11 -> COLOUR RAM, per character cell
-
-and 11 is the one the transfer game uses to show ownership -
-xfer_Colorize4 writes colour RAM and does nothing else. So the pixels a
-per-owner variant would have to recolour are exactly the 11 pairs, which
-is what makes "three copies of each character" cheap. This exporter emits
-the NEUTRAL set, with 11 -> logical 3; the owned variants are the same
-bytes with the 3s rewritten and are not emitted yet.
+THREE VARIANTS PER CHARACTER - route A of layer-10-transfer.md section 5
+------------------------------------------------------------------------
+The C64 shows ownership in colour RAM, per cell, which MODE 1 has none
+of. Every pixel the game recolours is a multicolour 11 pair - logical 3
+here - so ownership becomes a character-set choice: the NEUTRAL set keeps
+logical 3, the PLAYER set rewrites every 3 to 1, the CPU set to 2.
+Pixels that are not 3 (the counter frame's 01/10 pairs) are untouched, so
+the three sets differ only where ownership shows.
 
 MODE 1 conversion is export_bbc.py's, unchanged: each C64 pixel becomes
 two MODE 1 pixels, the left byte of a scanline carries C64 pixels 0,0,1,1
@@ -55,9 +58,6 @@ MIDDLE = 0xE68B       # 1 row of 40, repeated
 BOTTOM = 0xE6B3       # 1 row of 40
 COLS = 40
 
-# C64 multicolour pair -> BBC MODE 1 logical colour.
-PAIR_TO_LOGICAL = {0: 0, 1: 1, 2: 2, 3: 3}
-
 
 def load_memory():
     spec = importlib.util.spec_from_file_location('rg', PROJECT / 'tools' / 'rip_graphics.py')
@@ -71,17 +71,27 @@ def load_memory():
     return mem
 
 
-def mode1_char(mem, code):
-    """One C64 multicolour character -> 16 MODE 1 bytes, left half then right."""
+def mode1_char(mem, code, remap3):
+    """One C64 multicolour character -> 16 MODE 1 bytes, left then right.
+
+    Pair 11 is the OWNERSHIP plane (C64 colour RAM) and becomes remap3.
+    Pairs 01 and 10 are STRUCTURE - the C64 draws them in the fixed
+    $D022/$D023 registers, the same whoever owns the cell - so they
+    render neutral (logical 3) in every set. Mapping them onto logical
+    1/2 was tried first and made the buses read as owned."""
     left, right = [], []
     for row in range(8):
         b = mem[CHARSET + code * 8 + row]
         pairs = [(b >> 6) & 3, (b >> 4) & 3, (b >> 2) & 3, b & 3]
-        # each C64 pixel is two MODE 1 pixels: 0,0,1,1 then 2,2,3,3
         for half, src in ((left, pairs[0:2]), (right, pairs[2:4])):
             byte = 0
             for n, p in enumerate((src[0], src[0], src[1], src[1])):
-                c = PAIR_TO_LOGICAL[p]
+                if p == 0:
+                    c = 0
+                elif p == 3:
+                    c = remap3
+                else:
+                    c = 3
                 if c & 2:
                     byte |= 0x80 >> n
                 if c & 1:
@@ -96,9 +106,11 @@ def main():
     mid = [mem[MIDDLE + i] for i in range(COLS)]
     bot = [mem[BOTTOM + i] for i in range(COLS)]
 
-    codes = sorted(set(top + mid + bot))
+    # $F4 never appears in the board data - xfer_PutSwitcher ($E276) writes
+    # it at runtime - so it is added by hand or the renderer would have no
+    # glyph for it.
+    codes = sorted(set(top + mid + bot) | {0xF4})
     assert codes[0] == 0, 'expected blank to be code 0'
-    index = {c: i for i, c in enumerate(codes)}
 
     out = []
     out.append('\\ ============================================================')
@@ -109,41 +121,42 @@ def main():
     out.append('\\ times; SubGameBottomLine_dat ($E6B3), one row. 200 bytes, and the')
     out.append('\\ repeat is why.')
     out.append('\\')
-    out.append('\\ The %d distinct characters come from the $7800 charset the deck tiles' % len(codes))
-    out.append('\\ use, but are exported HERE rather than through BuildCharset: unlike')
-    out.append('\\ the tiles they are not deck-coloured, and extending that remap pushes')
-    out.append('\\ the charset at &0400 into the MOS NMI area at &0D00.')
-    out.append('\\')
-    out.append('\\ NEUTRAL ONLY. The C64 shows ownership in colour RAM, per cell, which')
-    out.append('\\ MODE 1 has none of - see docs/layer-10-transfer.md section 5. The')
-    out.append('\\ pixels that would have to change are exactly the multicolour 11')
-    out.append('\\ pairs, which come out as logical 3 here.')
+    out.append('\\ Rows are RAW C64 CODES - the game logic dispatches on the byte in')
+    out.append('\\ the cell, so the shadow screen keeps the original\'s values and the')
+    out.append('\\ renderer owns the code->glyph mapping. Three glyph sets: neutral')
+    out.append('\\ (logical 3), player (3 rewritten to 1), CPU (3 rewritten to 2) -')
+    out.append('\\ ownership as a character-set choice, route A of')
+    out.append('\\ docs/layer-10-transfer.md section 5.')
     out.append('')
     out.append('XB_CHARS = %d' % len(codes))
     out.append('XB_COLS  = %d' % COLS)
     out.append('')
 
-    out.append('\\ C64 character code -> index into xbChars. Only these %d occur.' % len(codes))
+    out.append('\\ The %d C64 codes that occur, in xbChars order. XfInit expands' % len(codes))
+    out.append('\\ this into the 256-byte code->glyph-index table at xsGlyphOf.')
     out.append('.xbCode')
     out.append('  EQUB ' + ', '.join('&%02X' % c for c in codes))
     out.append('')
 
-    out.append('\\ 16 bytes each: the left half\'s 8 scanlines then the right half\'s.')
-    out.append('.xbChars')
-    for c in codes:
-        data = mode1_char(mem, c)
-        out.append('  \\ code &%02X' % c)
-        out.append('  EQUB ' + ', '.join('&%02X' % b for b in data))
-    out.append('.xbChars_end')
-    out.append('ASSERT xbChars_end - xbChars == XB_CHARS * 16')
-    out.append('')
+    for name, remap3, label in (('xbChars', 3, 'NEUTRAL: multicolour 11 stays logical 3'),
+                                ('xbCharsPly', 1, 'PLAYER: 11 pairs become logical 1'),
+                                ('xbCharsCpu', 2, 'CPU: 11 pairs become logical 2')):
+        out.append('\\ %s. 16 bytes each: left half\'s 8 scanlines then right\'s.' % label)
+        out.append('.%s' % name)
+        for c in codes:
+            data = mode1_char(mem, c, remap3)
+            out.append('  \\ code &%02X' % c)
+            out.append('  EQUB ' + ', '.join('&%02X' % b for b in data))
+        out.append('.%s_end' % name)
+        out.append('ASSERT %s_end - %s == XB_CHARS * 16' % (name, name))
+        out.append('')
 
     def rows(name, data, n):
         out.append('.%s' % name)
         for r in range(n):
-            out.append('  EQUB ' + ', '.join('&%02X' % index[b] for b in data[r*COLS:(r+1)*COLS]))
+            out.append('  EQUB ' + ', '.join('&%02X' % b for b in data[r*COLS:(r+1)*COLS]))
 
-    out.append('\\ Rows as GLYPH INDICES, not C64 codes, so the draw needs no lookup.')
+    out.append('\\ Rows as RAW C64 CODES - see the header.')
     rows('xbTop', top, 3)
     out.append('')
     rows('xbMid', mid, 1)
@@ -153,9 +166,9 @@ def main():
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text('\n'.join(out) + '\n')
-    total = len(codes) * 16 + 5 * COLS + len(codes)
+    total = len(codes) * 16 * 3 + 5 * COLS + len(codes)
     print(f'wrote {OUT}')
-    print(f'  {len(codes)} characters, {len(codes)*16} B; board 5 rows, {5*COLS} B; total {total} B')
+    print(f'  {len(codes)} characters x 3 sets, {len(codes)*48} B; board 5 rows, {5*COLS} B; total {total} B')
     print('  codes: ' + ' '.join('$%02X' % c for c in codes))
 
 

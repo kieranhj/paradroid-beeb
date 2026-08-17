@@ -73,7 +73,7 @@ proves no instruction was added, removed or reordered.
 
 | | |
 |---|---|
-| Machine | BBC Model B / B+ with **3 × 16K sideways RAM banks** (4 = data + level draw, 5 and 6 = the blitter's four compiled shifts) |
+| Machine | BBC Model B / B+ with **4 × 16K sideways RAM banks** (4 = data + level draw, 5 and 6 = the blitter's four compiled shifts, 7 = the transfer minigame) |
 | CPU | Plain 6502 — `CPU 0` in BeebASM, no 65C12 opcodes |
 | Display | MODE 1, 4 colours. **Not a plain frame:** a 5-row static panel at `&4800` above a 320 × 120 scrolled play area, driven by a three-cycle vertical rupture |
 | Play area | 10K circular strip at `&5800`, **10K hardware wrap**, scrolled by the CRTC — 4 px horizontally, 1 scanline vertically |
@@ -108,8 +108,8 @@ code. Redirecting **stdout** alone is safe, which is how `build.ps1` captures th
 `2>&1` that does the damage. From the Bash tool, `./bin/beebasm.exe ... 2>&1` is fine.
 
 **beebasm's `SAVE` writes a loose host file whenever it has no disc image to put it in**, so any
-run without a working `-do` drops `PARA`, `PARADAT`, `PARASPR`, `PARSPR2` and `PARAFNT` in the
-project root. They are gitignored. Two things follow: a `-do` path that cannot be written leaves a
+run without a working `-do` drops `PARA`, `PARADAT`, `PARASPR`, `PARSPR2`, `PARXFER` and `PARAFNT`
+in the project root. They are gitignored. Two things follow: a `-do` path that cannot be written leaves a
 build that *looks* like it worked, and the symbol dump below litters unless you give it one.
 
 Symbol addresses come from
@@ -168,9 +168,10 @@ output rather than from any document.** In outline:
 | `&4800–&547F` | Panel — 5 rows × 640, displayed by rupture cycle 1 |
 | `&5500–&57FF` | Character-address and sprite-mask tables, built at startup |
 | `&5800–&7FFF` | Play buffer: circular strip, 16 rows × 640 |
-| SWRAM bank 4 | `PARADAT` — tiles, levels, palettes, droid game data, **the level-draw code and the droid AI** |
+| SWRAM bank 4 | `PARADAT` — tiles, levels, palettes, droid game data, **the level-draw code, the droid AI and Layer 10's entry/exit** |
 | SWRAM bank 5 | `PARASPR` — the blitter, shifts 0 and 1 px |
-| SWRAM bank 6 | `PARSPR2` — shifts 2 and 3 px, same layout |
+| SWRAM bank 6 | `PARSPR2` — shifts 2 and 3 px, same layout, plus Layer 9's panel/console — **full** |
+| SWRAM bank 7 | `PARXFER` — Layer 10's transfer minigame, ~9.8 K free |
 
 **Only one bank is visible at a time.** `SprRestoreAll` and `SprDrawAll` page their own bank in and
 the data bank back out around themselves, so `SWRAM_DATA` is the resting state. This is safe only

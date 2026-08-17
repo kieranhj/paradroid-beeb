@@ -106,6 +106,11 @@ ENDMACRO
 .palPlay
   EQUB 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 
+\ The transfer game's own palette is written INTO palPlay by XferEnter4
+\ (saved and restored around it), so these three fires need no fourth
+\ case. The tables live in droid.asm — bank 4, where the writer is —
+\ because main RAM below &3000 is full; palPlay itself must stay here.
+
 .SetPalPanel
   LDX #15
 .spp_loop
@@ -133,6 +138,11 @@ ENDMACRO
   STA line
   STA iline
   RTS
+
+\ Fire 2 -> fire 3, as a variable — see the note at the write in fire 1.
+\ Main RAM, read inside the interrupt, so it must never move into a bank.
+.t1i3Lo EQUB LO(T1_I3)
+.t1i3Hi EQUB HI(T1_I3)
 
 \ ============================================================
 \ RuptVSync — IRQ on CA1, at P+272, row 8 of the tail cycle
@@ -228,8 +238,9 @@ ENDIF
   LDA #12 : STA CRTC_ADDR : LDA crtcHi : STA CRTC_DATA
   LDA #13 : STA CRTC_ADDR : LDA crtcLo : STA CRTC_DATA
 
-  LDA #LO(T1_I3) : STA SYS_VIA_T1LL
-  LDA #HI(T1_I3) : STA SYS_VIA_T1LH
+  LDA t1i3Lo : STA SYS_VIA_T1LL \ a variable, not the constant: the
+  LDA t1i3Hi : STA SYS_VIA_T1LH \ transfer game shows the 16th row by
+                                \ moving fire 3 down — see T1_I3X
 
 \ The deck's palette, last of all — see the header. The panel stopped
 \ displaying twelve scanlines ago and the play cycle is at least seven

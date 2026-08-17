@@ -6,14 +6,17 @@ It plays. The deck hardware-scrolls eight ways under a droid you steer, a pool o
 over it, doors open as you walk into them and lifts carry you between decks — so the whole ship is
 traversable. Droids patrol it, shoot at you and can kill you; you shoot back, and score. The status
 line and the console screen are the original's, down to the deck being called `Reactor` rather than
-`5`. **The transfer minigame is what is left** — that, and sound. See [`PLAN.md`](PLAN.md) for the
-layered build plan, the memory map, decisions taken and current status.
+`5`. The transfer minigame plays too: prime with fire, touch a droid, pick a side and fight the
+circuit board for it — win and you *are* that droid, with its weapon and speed. **Sound and the
+title screen are what is left**, plus the pre-game droid info screens the transfer skips for now.
+See [`PLAN.md`](PLAN.md) for the layered build plan, the memory map, decisions taken and current
+status.
 
 ## Target
 
 | | |
 |---|---|
-| Machine | BBC Model B / B+ with 3 × 16K sideways RAM banks |
+| Machine | BBC Model B / B+ with 4 × 16K sideways RAM banks (banks 4–7, the Master's own numbering) |
 | CPU | Plain 6502 (`CPU 0` — no 65C12 opcodes) |
 | Display | MODE 1, 4 colours. A 4-row static panel at `&4A00` above a 320 × 120 play area, driven by a three-cycle vertical rupture. The panel has its own palette, swapped at the cycle boundary |
 | Play area | 10K circular strip at `&5800` with a 10K hardware wrap, scrolled by the CRTC — 4 px horizontally, 1 scanline vertically |
@@ -45,12 +48,12 @@ emulator before the next begins:
 2. **Static deck render** — ✅ done
 3. **Scroll** — ✅ done; *the key design decision*
 4. **Player movement** — ✅ done
-5. **Droid movement** — 🔨 in progress; the compiled sprite blitter half has landed
-6. Droids
-7. Combat
+5. **Droid movement** — ✅ done; a compiled sprite blitter across two banks
+6. **Droids** — ✅ done
+7. **Combat** — ✅ done
 8. **Doors, lifts, decks** — ✅ done, taken ahead of 6 and 7 so droid AI has a ship to route through
-9. HUD and console
-10. Transfer minigame
+9. **HUD and console** — ✅ done
+10. **Transfer minigame** — ✅ done; in a fourth sideways bank, minus the pre-game info screens
 11. Sound, title, polish
 
 Each completed layer keeps its working notes in [`docs/`](docs/) — the measurements, the dead ends
@@ -144,6 +147,7 @@ python tools/export_font.py       # the $7000 text font and the status box -> sr
 python tools/export_strings.py    # the $C000 name table -> src/data/
 python tools/export_icons.py      # the console's menu icons -> src/data/
 python tools/export_droidicon.py  # the console's droid icon -> src/data/
+python tools/export_xfer.py       # the transfer board, three ownership sets -> src/data/
 ```
 
 The tools require Python 3 and Pillow. Regenerate `src/data/` rather than editing it.

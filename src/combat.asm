@@ -818,6 +818,11 @@ CB_FIRE_CY = 10
   LDA drWeapon,Y
   STA weaponType
 
+  LDA #LO(PLY_MAXSPD) : STA plyMaxLo  \ back to the 001's speed — the
+  LDA #HI(PLY_MAXSPD) : STA plyMaxHi  \ clamp is a variable since Layer
+  LDA #LO(PLY_MAXNEG) : STA plyNegLo  \ 10 rewrites it per transfer
+  LDA #HI(PLY_MAXNEG) : STA plyNegHi
+
   LDA #MM_MOBILE : STA moveMode
 
   JSR DrSpawnPoint              \ waypoint 0, the same arrival LoadDeck uses

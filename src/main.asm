@@ -56,6 +56,7 @@ ROMSHAD    = &F4
 SWRAM_DATA = 4                  \ tiles, levels, palettes, droid game data
 SWRAM_SPR  = 5                  \ the blitter, shifts 0 and 1 px
 SWRAM_SPR2 = 6                  \ the same again for shifts 2 and 3 px
+SWRAM_XFER = 7                  \ Layer 10: the transfer minigame
 SWRAM_BASE = &8000
 
 \ ---- two banks, swapped twice a pass ------------------------
@@ -514,6 +515,14 @@ T1_I1 = 84 * SL - 2 + T1_TUNE - T1_PROBE
 T1_I2 = 20 * SL - 2 + T1_PROBE  \ fire 1 -> fire 2, P+44 -> P+64
 T1_I3 = PLAY_VIS_ROWS * 8 * SL - 2   \ fire 2 -> fire 3, the visible height
 
+\ The transfer game's fire 3, one character row later: with the scroll
+\ flat, all 16 buffer rows are real content and the R8 blank at fire 3
+\ is the ONLY thing hiding the 16th — the display window is already 16
+\ rows (PLAY_R6). The rupture reads the interval from t1i3Lo/Hi so
+\ XferEnter can move the bottom edge down a row and XferExit put it
+\ back. Agreed with KC: the board uses all 16 rows.
+T1_I3X = (PLAY_VIS_ROWS + 1) * 8 * SL - 2
+
 SYS_VIA_T1CL = &FE44
 SYS_VIA_T1CH = &FE45
 SYS_VIA_T1LL = &FE46
@@ -774,7 +783,14 @@ ORG &1100
   LDX #SPR2_PAGES
   JSR PageBankIn
 
-  LDX #LO(loadfnt)              \ and a fourth file: Layer 9's text font,
+  LDX #LO(loadxfer)             \ and a fourth bank: the transfer minigame,
+  LDY #HI(loadxfer)             \ staged through &3000 like the others
+  JSR OSCLI
+  LDA #SWRAM_XFER
+  LDX #XFER_PAGES
+  JSR PageBankIn
+
+  LDX #LO(loadfnt)              \ and a fifth file: Layer 9's text font,
   LDY #HI(loadfnt)              \ which loads straight to &3C00 and so has
   JSR OSCLI                     \ to come after every staging copy
 
@@ -898,6 +914,19 @@ ENDIF
   JSR PanelTick
   JMP ml_passend
 .ml_noconsole
+
+\ ============================================================
+\ The transfer game has the machine, or it does not
+\ ============================================================
+\ Layer 10, on the console's pattern: with the game up nothing moves and
+\ nothing else writes the play buffer, because the board IS the play
+\ buffer. NO PanelTick — the game owns the panel's text line for its
+\ counter and its verdicts, and XferExit's PanelSetup repaints.
+  LDA xferActive
+  BEQ ml_noxfer
+  JSR XferTick
+  JMP ml_passend
+.ml_noxfer
 
   \ Z / X left-right, K / M up-down. The keys feed a direction pair
   \ and the direction pair feeds an accelerating speed, so the view
@@ -1118,6 +1147,17 @@ ENDIF
 \     is still standing at it.
   JSR DroidsUpdate
 
+\ ---- did the collision pass start a transfer? ---------------
+\ GameLoop tests xferDroid straight after DoCollision ($13EF) and calls
+\ Capture; ours enters here and the next pass takes the xferActive arm
+\ above. The rest of this pass is skipped — the board draw is about to
+\ overwrite everything the tranches would have repaired.
+  LDA xferDroid
+  BEQ ml_noxstart
+  JSR XferEnter
+  JMP ml_passend
+.ml_noxstart
+
   \ Alongside the AI and for the same reason: it writes no buffer. The
   \ droid the player is riding wears out here.
 IF DEBUG_MAPGUARD
@@ -1181,6 +1221,9 @@ ENDIF
   EQUB 13
 .loadspr2
   EQUS "LOAD PARSPR2"
+  EQUB 13
+.loadxfer
+  EQUS "LOAD PARXFER"
   EQUB 13
 .loadfnt
   EQUS "LOAD PARAFNT"
@@ -1309,6 +1352,44 @@ ENDMACRO
 .pmCount  EQUB 0
 .pmShip   EQUB 0
 .conActive EQUB 0               \ main RAM: the loop and the bridge both read it
+
+\ ============================================================
+\ Layer 10 lives in BANK 7 and cannot see bank 4 — the shim
+\ ============================================================
+\ The game itself is xfer.asm, a transliteration of Capture ($229D) and
+\ everything under it, in the fourth bank. What CANNOT be there is
+\ anything that touches the droid tables, the score or bank 4's code —
+\ XferEnter4 gathers the two droid types into the main-RAM mirrors
+\ below, and XferExit4 applies FinishTransfer1/2's outcome; both live in
+\ droid.asm, IN bank 4, because main RAM below &3000 is full. Only the
+\ paging trampolines are here: code in bank 4 cannot page bank 7 in
+\ under its own feet.
+
+.xferDroid  EQUB 0              \ the droid index dc_player caught
+.xferActive EQUB 0
+.xfmPlyType EQUB 0              \ the player's droid type at entry
+.xfmTgtType EQUB 0              \ and the target's
+.xfmResult  EQUB 0              \ 1 = took the droid, 2 = lost
+.xfmDone    EQUB 0              \ set by XfEndTick when the hold expires
+
+.XferEnter
+  JSR XferEnter4                \ bank 4: gather, flatten, palette, t1i3
+  PAGEBANK SWRAM_XFER
+  JSR XfStart
+  PAGEBANK SWRAM_DATA
+  RTS
+
+.XferTick
+  PAGEBANK SWRAM_XFER
+  JSR XfTick
+  PAGEBANK SWRAM_DATA
+  LDA xfmDone
+  BEQ xt_x
+  JSR XferExit4                 \ bank 4: the outcome, and ReframeView
+  JMP PanelSetup                \ the bank-6 trampoline — NOT callable
+                                \ from inside bank 4, hence here
+.xt_x
+  RTS
 
 \ ============================================================
 \ keydown — is a key held?  X = negative INKEY code, Z set if down
@@ -1821,10 +1902,22 @@ CON_STR_BYTES = 1542            \ 1,541 plus the terminating sentinel
 INCLUDE "src/data/strings.asm"
 INCLUDE "src/data/conicons.asm"
 INCLUDE "src/data/droidicon.asm"
-INCLUDE "src/xfer.asm"
-INCLUDE "src/data/xferboard.asm"
 .spr2_end
 SAVE "PARSPR2", spr2_start, spr2_end, DATA_LOAD, DATA_LOAD
+
+\ ---- the fourth bank: Layer 10, the transfer minigame -------
+\ The minigame does not fit in what bank 4 or bank 6 has left, and it
+\ never runs at the same time as the deck, the sprites or the panel's
+\ per-pass tick — so it takes a bank of its own, loaded at boot like
+\ the others rather than fetched from disc at each transfer. Bank 7
+\ keeps the Master's 4-7 sideways RAM numbering intact.
+CLEAR SWRAM_BASE, SWRAM_BASE + &4000
+ORG SWRAM_BASE
+.xfer_start
+INCLUDE "src/xfer.asm"
+INCLUDE "src/data/xferboard.asm"
+.xfer_end
+SAVE "PARXFER", xfer_start, xfer_end, DATA_LOAD, DATA_LOAD
 
 \ ---- the text font: its own file, straight to &3C00 ---------
 \ It has no bank to belong to. Bank 4 is full, bank 6 now holds the panel
@@ -1882,9 +1975,11 @@ ASSERT xdrBlkSave6 == drBlkSave6
 DATA_PAGES = (data_end - data_start + 255) DIV 256
 SPR_PAGES  = (spr_end - spr_start + 255) DIV 256
 SPR2_PAGES = (spr2_end - spr2_start + 255) DIV 256
+XFER_PAGES = (xfer_end - xfer_start + 255) DIV 256
 ASSERT data_end <= SWRAM_BASE + &4000
 ASSERT spr_end  <= SWRAM_BASE + &4000
 ASSERT spr2_end <= SWRAM_BASE + &4000
+ASSERT xfer_end <= SWRAM_BASE + &4000
 
 \ The staging copy overruns the panel, the mask table and the bottom
 \ of the play buffer, and that is fine: PageDataIn is the FIRST thing
@@ -1901,6 +1996,8 @@ ASSERT SPR_PAGES * 256 <= &4000
 ASSERT DATA_LOAD + SPR_PAGES * 256 <= &8000
 ASSERT SPR2_PAGES * 256 <= &4000
 ASSERT DATA_LOAD + SPR2_PAGES * 256 <= &8000
+ASSERT XFER_PAGES * 256 <= &4000
+ASSERT DATA_LOAD + XFER_PAGES * 256 <= &8000
 
 ASSERT charset_end - charset == NUM_CHARS * CHAR_BYTES
 
@@ -1910,6 +2007,7 @@ PRINT "charset ", ~charset, "-", ~charset_end
 PRINT "data    ", ~data_start, "-", ~data_end, " (SWRAM bank", SWRAM_DATA, ",", DATA_PAGES, "pages )"
 PRINT "sprite  ", ~spr_start, "-", ~spr_end, " (SWRAM bank", SWRAM_SPR, ",", SPR_PAGES, "pages )"
 PRINT "sprite2 ", ~spr2_start, "-", ~spr2_end, " (SWRAM bank", SWRAM_SPR2, ",", SPR2_PAGES, "pages )"
+PRINT "xfer    ", ~xfer_start, "-", ~xfer_end, " (SWRAM bank", SWRAM_XFER, ",", XFER_PAGES, "pages )"
 
 SAVE "PARA",    start,      code_end, start
 \ PARADAT and PARASPR are saved where they are assembled, above.

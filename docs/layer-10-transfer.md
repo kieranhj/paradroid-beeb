@@ -1,164 +1,154 @@
 # Layer 10 — the transfer minigame
 
-**Status: researched and planned 2026-08-16 on branch `layer10-transfer`, off `layer9-hud`.
-Nothing of the game logic is built.** This document is the research, which is the expensive half:
-where the code and data are, what the rules actually are, and the one problem that has no
-straightforward answer on this machine.
+**Status: BUILT 2026-08-17 on branch `layer10-transfer`.** The whole subgame plays: side
+select, the pulser game against the CPU, the verdict, and all three outcomes applied to the
+droid the player is riding. Entered the original's way — touching a droid with `moveMode`
+0 — and verified in jsbeeb end to end: entry from a real collision, a takeover (001 →
+476, speed/weapon/energy/score all moved), a loss as a 001, a tie's short-circuit replay,
+and the return to the deck with palette, panel and view restored.
+
+The research that preceded this (where every routine lives in the C64, the rule set, the
+colour-RAM problem) is in §2–§4 below, kept because the decisions reference it.
 
 ---
 
-## 1. Where it all is
+## 1. What was built, and where it lives
+
+| Piece | File | Bank |
+|---|---|---|
+| The game itself — `SubGameSelectSide`, `doSubGame`, `xfer_DoColumn` and every `xfer_*` routine, transliterated | `src/xfer.asm` | **7** (`PARXFER`, the fourth SWRAM bank) |
+| Board characters ×3 ownership sets + layout, generated | `src/data/xferboard.asm` via `tools/export_xfer.py` | 7 |
+| Entry/exit — Capture's front half, `FinishTransfer1/2`, `xferInitDroid`, the transfer palette | end of `src/droid.asm` (`XferEnter4` / `XferExit4`) | 4 |
+| The paging trampolines and the main-RAM mirrors (`xferDroid`, `xferActive`, `xfm*`) | `main.asm` (`XferEnter` / `XferTick`) | main RAM |
+| The collision arm — `$1A6A`'s `moveMode == 0` gate | `src/droid.asm`, `dc_player` | 4 |
+| The 16th-row switch — fire 3 as a variable interval | `rupture.asm` (`t1i3Lo/Hi`), `T1_I3X` in `main.asm` | main RAM |
+
+### How the C64 code survived verbatim: the shadows
+
+The game logic reads and writes a character screen and colour RAM, neither of which exists
+here. Bank 7 carries a **shadow of both**: `xsScr` is the board's 16 rows of 40 bytes in
+the C64's own character codes, `xsCram` its colour RAM at the fixed page offset `XS_COFF`
+(+3 pages) the way `$D800` sat `$9000` above `$4800`. Every `CMP #$F5`, every `(dest),Y`,
+every `Scr2ColorRAM` in the transliteration is the original instruction against the
+shadow. A small set of write helpers (`XfWScr`/`XfWCol`) route the LIVE stores: write the
+shadow, and repaint the one MODE 1 cell — 16 bytes at `BUF_BASE + row*640 + col*16` —
+**only if the byte changed**, which is what keeps a steady-state half-turn cheap. Board
+setup writes the shadows directly and repaints everything once (`XfRepaintAll`), which is
+why the gate-placement routines (`xfer_PutSplitter` and friends) are byte-shaped like the
+original's.
+
+The `xfPhase` state machine replaces the C64's modal loops, one iteration per pass on the
+console's `conActive` pattern: `doSubGame` spent one 50 Hz frame per half-turn, and a pass
+is two fields, so one full iteration a pass is the same wall-clock rate for free.
+
+## 2. Where it all is in the C64 (the research)
 
 | | | |
 |---|---|---|
 | `Capture` | `$229D` | entered from `GameLoop+6D` when `xferDroid` is set by `DoCollision`'s `_ply_droid` arm at `moveMode == 0` |
 | `SubGameSelectSide` | `$E016` | draws the board and picks the colours |
 | `doSubGame` | `$2166` | the loop: one player half-turn, one CPU half-turn, per iteration |
-| `xfer_GetMove` | `$2109` | reads the stick into `xfer_yWant` |
-| `xfer_DoMove` | `$1D75` | moves the pulser cursor, `xferRemovePulser` / `xferDrawPulser` |
+| `xfer_GetMove` / `xfer_DoMove` | `$2109` / `$1D75` | the cursor, and committing a pulser |
 | `xfer_PlayLeft` / `xfer_PlayRight` | `$1E06` / `$1E5E` | three `xfer_DoColumn` calls each |
 | `xfer_DoColumn` | `$1EB6` | **the whole rule set** — 12 rows of one wire column |
-| `xferDrawCBar` | `$2057` | the central control bar, and who is winning |
-| `xferDoCounter` | `$20DA` | the countdown that ends it |
-| `xferCheckEnd` | `$2153` | |
-| `FinishTransfer1/2` | `$21CF` / `$2260` | you take the droid, or you are burnt out |
+| `xferDrawCBar` | `$2057` | the central control bar, who is winning, and the side swap |
+| `xferDoCounter` / `xferCheckEnd` | `$20DA` / `$2153` | the countdown and the grace period |
+| `FinishTransfer1/2` | `$21CF` / `$2260` | take the droid, or burn out |
+| Board data | `$E613/$E68B/$E6B3` | 3 rows + ONE row ×12 + 1 row, 200 bytes |
 
-Board data, all confirmed present in the listing:
+The twelve middle rows are all the same row: a wire from the player's bus at column 3
+along 4–17 into the central bar at 19–20, mirrored from column 36. `xfer_DoColumn`
+dispatches per row on the pulser count in the stage array and then on the **character in
+the cell** — pulser chars annihilate, `$F5` joins, `$F6` splits, anything else is claimed
+(`xfer_Colorize4`) and advanced. The colours: `$FF` the player's identity, `$FC` the
+CPU's, `$F8` neutral, `$F2` a doused stock cell (red on red — invisible). The `Ply*`/
+`Cpu*` variable sets swap every half-turn, so "Ply" means "the side moving now";
+`xfer_LeftColor` is the HUMAN's colour, fixed at select, and `FinishTransfer1`'s verdict
+is `WinningColor == LeftColor`.
 
-| | | |
-|---|---|---|
-| `SubGameTopLines_dat` | `$E613` | 120 bytes — three rows of 40 |
-| `SubGameLine_dat` | `$E68B` | 40 bytes — **one row, repeated twelve times** |
-| `SubGameBottomLine_dat` | `$E6B3` | 40 bytes |
+## 3. Decisions
 
-## 2. The board
+1. **[DECISION] Ownership is a character set** (route A of the research). MODE 1 has no
+   colour RAM, so the 17 board characters ship in three copies — neutral, player, CPU —
+   drawn in logical 3, 1 and 2, and a cell's colour token picks the set. 816 bytes.
+2. **[DECISION] Structural pixels stay neutral.** The multicolour `01`/`10` pairs are the
+   C64's fixed `$D022/$D023` registers — the same whoever owns the cell — so they render
+   logical 3 in *every* set. The first cut mapped them to logical 1/2 and the buses read
+   as owned; measured in the emulator, fixed in the exporter.
+3. **[DECISION] The board is all 16 rows** (KC, 2026-08-16 — over the research's
+   11-wire option). The play area always *displays* 16 rows; the R8 blank at fire 3 is
+   all that hides the smooth scroll's spare row. The rupture's fire-2→fire-3 interval is
+   now the variable `t1i3Lo/Hi`; `XferEnter4` sets it to `T1_I3X` (16 rows) and exit puts
+   it back. The board maps C64 rows 9–24 onto buffer rows 0–15 exactly, all twelve wires.
+4. **[DECISION] A fourth SWRAM bank** (KC, 2026-08-16): bank 7, `PARXFER`, fifth `*LOAD`
+   at boot staged through `&3000` like the others. Banks 4–7 is the Master's own sideways
+   RAM numbering. ~9.8 K of it is still free.
+5. **[DECISION] The palette** (KC, 2026-08-17): background blue, the board's structure
+   and unclaimed wire BLACK, the left side's pieces yellow, the right side's magenta.
+   "Left" and "right" because the `$FF`/`$FC` identity tokens belong to the *sides* —
+   the human is whichever side the stick chose at select. Lives in `palXfer`
+   (droid.asm), one table to change. (The first cut was red/white/cyan/yellow.)
+6. **[DECISION] Status text on the panel line.** The C64 draws its counter, the two robot
+   numbers and the verdicts into screen rows above the board; ours has no rows above the
+   board, so they go on the panel's text line via a bank-7 copy of `PnGlyph` (bank 6 is
+   unreachable — one bank at a time). PanelTick is skipped while the game runs;
+   `PanelSetup` repaints on exit. Verdicts read "transfer done / transfer failed / short
+   circuit" in lowercase (wide capitals need the two-cell machinery).
+7. **[DECISION] The side-select droids are numbers, not sprites.** The original slides
+   the two droid sprites left and right; there is no sprite engine under the board, so
+   the panel line shows the human's number on the side the stick last chose. The stock
+   columns on the board itself still show the two sides' colours, as the original's do.
+8. **[DECISION] Not ported**: `ShowXferInfo`'s two robot-info screens before the board
+   (Layer 11-adjacent presentation), `AnimateIntoFont`'s background charset animation,
+   `FinishTransfer2`'s sprite-slide sweep (a ~2 s hold stands in), and the sounds (no
+   sound layer exists yet). The pre-game info screens are worth revisiting with Layer 11.
+9. **[DECISION] Per-type player speed is real now.** `CalcAxis`'s clamp was assembly-time
+   constants; it now clamps against `plyMaxLo/Hi`, written by `xferInitDroid`'s port from
+   `PlayerSpeed_t` (`0,5,6,0,7,0,0,0,7`) — with 7 mapped to `CAM_TOPSPD` (8) exactly as
+   the 001's always was. `ccd_reset` restores the 001's on death.
+10. **[DECISION] Code placement bought with a move.** Main RAM hit its `&3000` ceiling;
+    the fix is the established one — move code to bank 4. `XferEnter4`/`XferExit4`/
+    `xferInitDroid` belong there anyway (they touch the droid tables), and `CalcAxis`/
+    `CalcSpeed` moved with them (main-loop-only callers, resting state). Only the paging
+    trampolines and six mirror bytes stay in main RAM: **bank-4 code cannot page bank 7
+    in under its own feet**, and `PanelSetup` (a bank-6 trampoline) is likewise called
+    from main RAM after `XferExit4` returns.
+11. Small timing stand-ins, faithful in rate if not mechanism: the select countdown ticks
+    every other pass (~8 s for 99 BCD, near the original's `DelayScore(80)` pacing); the
+    play counter every other iteration as `$20DA` does; `DoScore` keeps dribbling banked
+    points during the game where the C64's modal loop froze them.
 
-The twelve middle rows are all the same row, which is the thing to understand first:
+## 4. The interfaces, for whoever touches this next
 
-```
- col   0  1  2  3  4 ...17 18 19 20 21 22 ...35 36 37 38 39
-       .  FD .  F6 F1...F1 F9 F8 F8 FA F2...F2 F6 .  F3 .
-             ^^          ^^ ^^^^^ ^^          ^^
-             player      |  the    |          CPU
-             bus         |  centre |          bus
-```
+- `dc_player` (bank 4) sets `xferDroid` and returns — no bounce, no debounce, the
+  original's own arm. The main loop enters `XferEnter` after `DroidsUpdate` and skips the
+  rest of the pass; the next pass takes the `xferActive` arm, one `XfTick` per pass.
+- Bank 7 sees ONLY main RAM: the font at `FONT_ADDR`, the `pnTab*` mirrors, `keydown`/
+  `ReadKeys`, and the `xfm*` mirrors. `XferEnter4` fills `xfmPlyType/xfmTgtType` before
+  the bank is paged; bank 7 answers through `xfmResult` (1 took it, 2 lost) and
+  `xfmDone`. Ties never come out — the replay loops inside.
+- `XferExit4` (bank 4, data paged) applies the outcome: takeover copies the target's type
+  and energy, banks its shoot score and runs `xferInitDroid`; a loss with a droid pays
+  `BumpScore` and falls back to the 001; a loss as a 001 zeroes `drEnergy` and lets
+  `CbCheckDeath` do the rest. The target is consumed in **every** outcome
+  (`FinishTransfer2`): energy 0, sprite slot freed, `DrRemoveShip`.
+- Zero page: the game borrows `bufp/chp/tdp/src/mapptr` for the C64's five pointer pairs
+  and `psrc/svp` for the renderer — all level-draw/startup pointers, idle while the deck
+  is suspended, re-derived by their owners afterwards. The IRQ touches none of them.
 
-so each of the twelve rows is a wire running from the player's vertical bus at column 3, right
-along columns 4-17, into the central result bar at 19-20, and the mirror of that from the CPU's bus
-at column 36. `SubGameSelectSide` colours column 3 and 18 in the player's colour, 21 and 36 in the
-CPU's, and 19-20 alternately, which is the bar's starting even split.
+## 5. Verified in jsbeeb (2026-08-17)
 
-**Fifteen distinct characters**, all from the **`$7800` charset** — the same one the deck tiles use,
-confirmed by rendering them: `$F1`/`$F2` are short horizontal wire stubs, `$F5`/`$F6`/`$F7` the top,
-middle and bottom of a vertical bus, `$F8` a solid block, `$F9`/`$FA` junctions, `$D0`/`$D1`/`$FB`-
-`$FE` the counter and frame pieces around the top.
+- Fifth `*LOAD` boots; bank 7 paged in reads back `XferBoard`'s own bytes; the deck runs.
+- The board renders correct against the original's layout at all 16 rows, gates placed.
+- Select: stick picks the side, fire confirms, countdown auto-confirms.
+- Play: cursor moves and wraps, pulsers commit and drain the stock column, the CPU walks
+  its cursor and fires, claimed wire recolours per side, the bar shifts, gates split and
+  join, the counter runs, the grace period ends it.
+- Outcomes: takeover verified end to end — 001 became a 476, panel and console agree,
+  score banked, target consumed; the 476's larger stock (7 pulsers) showed in the next
+  game. Loss as 001 exits clean. Tie rebuilt the board and replayed, twice.
+- Exit restores palette, `t1i3`, mode word, view and panel; play continues.
 
-`xfer_PlayLeft` calls `xfer_DoColumn` with Y = **6, 10 and 14**, and `xfer_PlayRight` with the
-mirror. Those are the three **stages** along each wire: a pulser advances one stage per turn and
-reaches the centre from stage 14. `dest` starts at `$49E0`, which is screen row 12, and the routine
-walks *down* twelve rows. `src` is a 16-byte array per stage (`$4400`, `$4410`, `$4420`, `$4430`
-for the player; `$4470` and neighbours for the CPU) holding a **pulser count per row**.
-
-## 3. The rules, from `xfer_DoColumn`
-
-The whole game is in one routine. Per row, with `(src),Y` the count at that row:
-
-| | |
-|---|---|
-| count `= 0` | nothing on this row |
-| count `< 0` | `_6`, the other side's |
-| the cell already holds **your** pulser char | `_auto` |
-| otherwise | decrement the count and dispatch on the **character in the cell** |
-
-and the dispatch is the gate set:
-
-| character | |
-|---|---|
-| the other side's pulser char | `_terminator` — the two annihilate |
-| `$F5` vbar top | `_joiner` |
-| `$F6` vbar middle | `_splitter` — `xfer_PutSplitter`, which is what makes one pulser become two |
-| `$F7` vbar bottom | `_joiner`, already handled |
-| anything else | `xfer_Colorize4` then `xfer_put1` — **claim the segment and advance** |
-
-`xfer_Colorize4` is the ownership write, and it is four bytes of **colour RAM**. That is the
-problem in §5.
-
-## 4. What has to be ported, in order
-
-1. **The board data** — 200 bytes, byte-identical, plus the fifteen characters.
-2. **The board render** — the static layout into the play area.
-3. **`xfer_DoColumn`** and the six `xfer_Play*` calls around it. This is the game.
-4. **`xfer_GetMove` / `xfer_DoMove`** — the cursor on your bus.
-5. **`xferDrawCBar`**, **`xferDoCounter`**, **`xferCheckEnd`**.
-6. **`FinishTransfer1/2`** — take the droid, or burn out into a 001.
-7. **The CPU opponent.** `xfer_CpuLevel` against `xfer_PlyLevel`, both set at the end of
-   `SubGameSelectSide` from the droid classes, is the difficulty.
-
-## 5. The problem: ownership is COLOUR RAM, and MODE 1 has none
-
-The C64 shows who owns a wire segment by writing **colour RAM per character cell** — yellow for the
-player, purple for the CPU. `xfer_Colorize4` does exactly that and nothing else. In MODE 1 there are
-four logical colours for the whole screen and no per-cell attribute at all, so this does not port.
-
-Three ways out, and none is free:
-
-| | |
-|---|---|
-| **A. Three copies of each character** | one per owner — neutral, player, CPU — drawn in logical colours 1, 2 and 3. 15 chars × 3 × 16 B = 720 B. Ownership becomes a **character change**, so `xfer_Colorize4` becomes a character write and the rest of the logic is unchanged. **This is the recommended route** |
-| B. Palette split per column | the rupture already reprograms the ULA mid-frame; a fourth cycle could give the two halves different palettes. Does not work — ownership varies per *cell*, not per half |
-| C. Give up the colour and show ownership by shape | a filled versus hollow wire. Cheapest, and loses the instant read that makes the game playable |
-
-Route A also decides where the characters live: they are **not deck-coloured**, unlike the tile
-charset, so they can be a fixed converted set shipped like Layer 9's text font rather than built by
-`BuildCharset`. That keeps `charSlot` and the 137-character remap alone, which matters — extending
-that set pushes the charset at `&0400` from 2,192 bytes to 2,432 and into `&0D00`, which is the
-MOS's NMI area.
-
-## 6. Geometry: the board is 16 rows and the play area is 15
-
-`SubGameSelectSide` clears one row then writes 3 + 12 + 1 = **16 rows**, into screen rows 9-24.
-Our play area is `PLAY_VIS_ROWS = 15`. Options, in preference order:
-
-1. **Drop one of the twelve middle rows** — eleven wires instead of twelve. The rows are identical
-   and the count is not referenced anywhere except `xfer_DoColumn`'s `LDA #12`, so this is a
-   constant change. It makes the board slightly easier for whoever has fewer pulsers.
-2. Use the panel's two text lines for the counter and the top frame, and the play area for the
-   twelve wire rows plus the bottom. The two are not contiguous — there is a three-row gap between
-   them — so the board would be visibly split.
-3. Change `PLAY_VIS_ROWS`. It is fixed by the rupture and the 10K wrap; see `CLAUDE.md`. No.
-
-**Recommendation: option 1**, and say so in the layer's own doc when it is built.
-
-## 7. Where the code goes
-
-Bank 6 has ~2,040 bytes free and already holds Layer 9's text engine, which the transfer game wants
-for its counter and its end-of-game text. Bank 4 has ~1,400. Neither is enough for the whole
-minigame, so this needs the same treatment Layer 9's console got — or, better, a **fourth bank**.
-The target is "3 × 16K sideways RAM banks"; a fourth would be a target change and is KC's call.
-
-**The cheapest answer is probably that the transfer game does not coexist with the blitter.** It
-runs with the deck suspended and no sprites at all, so it could take over bank 5 or 6 wholesale if
-it were a separate disc file `*LOAD`ed on entry and the sprite bank reloaded on exit. That costs a
-disc access at each transfer, which is a real gameplay cost on a floppy, and is the thing to think
-about first.
-
-## 8. What was built on this branch
-
-**The board, and only the board.** `tools/export_xfer.py` converts the fifteen characters and the
-200 bytes of layout, and `src/xfer.asm`'s `XferBoard` draws it into the play area. It renders: two
-vertical buses, eleven horizontal wires, the central result bar and the arrow terminals, checked in
-jsbeeb against the original's layout.
-
-It is reachable as the console's **third page**, which is a scaffold and not a design — the game is
-entered from `Capture` (`$229D`) through `DoCollision`'s transfer arm, and the page goes when the
-game itself is built.
-
-**Nothing of the game logic is here**: no pulsers, no gates, no CPU opponent, no control bar, no
-counter, no `FinishTransfer`. §5, §6 and §7 are decisions that want KC's eye before that code goes
-in, and two of them — the ownership model and where the code lives — are large enough that guessing
-wrong would waste a session.
-
-One thing the conversion settled, and it makes §5's route A cheaper than it looked: **every pixel of
-every wire character is a multicolour `11` pair.** Rendered, the fifteen characters are entirely
-logical 3. So a per-owner variant is the same 16 bytes with all the 3s rewritten to 1 or 2 — a
-mechanical transform in the exporter, not artwork.
+**Not yet verified**: play-balance/difficulty feel against the real C64, the burn-out
+explosion visuals frame by frame, and behaviour when the *last* droid on a deck is
+consumed (deck-clear bonus interaction) — all wanted from KC's play-testing.

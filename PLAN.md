@@ -150,6 +150,8 @@ seconds where a buffer diff would have taken an emulator run.
 | ~~Panel shares the play palette~~ | **Fixed 2026-08-16.** The panel is its own CRTC cycle, so it is its own palette: `SetPalette` builds a `palPlay` table in main RAM and the rupture blasts sixteen ULA writes at each boundary — the panel's at the end of `RuptVSync`, the deck's at the end of fire 1. The status box is white/black/red as the C64's is, on every deck. ~210 cycles twice a frame |
 | `keydown` uses OSBYTE `&81` | The last OS call in the main loop |
 | 8 decks draw ALERT in multicolour | Confirmed faithful to the C64 original, not a bug. Worth a look on real hardware |
+| **Transfer: no droid info screens** | The C64 shows two full-screen robot data pages (`ShowXferInfo`, `$3734`) — yours and the target's — before the board appears. Not ported; the game goes straight to side select. Wants doing alongside Layer 11's presentation work, which is where the token-string machinery it needs gets its second user |
+| Transfer presentation differs for screen room | The C64 keeps status rows *above* its board; our board takes all 16 play rows, so the counter, the two droid numbers and the verdicts moved to the panel's text line, and the side-select droid *sprites* became the two numbers swapping ends. Decisions 6–8 in [`docs/layer-10-transfer.md`](docs/layer-10-transfer.md) |
 
 ## Decisions taken
 
@@ -170,6 +172,8 @@ Full reasoning, and the measurement that settled which Paradroid the listing is,
 | Game loop rate | **Locked to 2 fields a pass**, not free-running — a full sprite pool does not fit in a field, and free-running made the player 20 % slower whenever droids were visible | 2026-08-13 |
 | Sprite blitter | **Compiled**, not interpreted: generated 6502 per rotor row and per digit glyph, in a sideways bank of its own | 2026-08-13 |
 | Player top speed | **8 px a pass, not the C64's 7** (`CAM_TOPSPD`, `main.asm`) — the only movement number not taken from the original. 7 cannot divide the CRTC's 4 px step, so the camera dithers 8,8,8,4 and the scroll stutters; 8 is uniform. 14 % fast, bought deliberately. `PLY_ITER_FRAMES = 3` + `CAM_TOPSPD = 7` is the exact-1985 alternative and lost on feel | 2026-08-14 |
+| Target machine, revised again | **4 × 16K sideways RAM banks** — bank 7 (`PARXFER`) holds Layer 10's transfer game. Banks 4–7 is the Master's own sideways RAM numbering | 2026-08-16 |
+| Transfer board shows all 16 rows | The play area always *displays* 16 rows; only fire 3's R8 blank hides the smooth scroll's spare one. The rupture's fire-2→3 interval became a variable (`t1i3`) so the transfer can move the bottom edge down a row and give the board the C64's full 16 | 2026-08-16 |
 
 ## Memory budget
 
@@ -183,8 +187,8 @@ moves. The outline:
 | ZP `&00–&8F` | 144 B | **all of it used** — the map is in `main.asm`. `&90` up is the OS |
 | `&0400–&0C8F` | 2,192 B | MODE 1 charset, built at deck load — reclaimed OS workspace |
 | `&0C90–&10FF` | **1,136 B free** | rest of the reclaimed OS workspace |
-| `&1100–&2EC4` | 7,621 B | code (`PARA`). DFS random-access buffer space, safe for `*LOAD` |
-| `&2EC5–&2FFF` | **315 B free** | **the binding constraint now.** Layer 7 put its bulk in bank 4 for this reason; anything new in main RAM needs a plan |
+| `&1100–&2F6F` | 7,792 B | code (`PARA`). DFS random-access buffer space, safe for `*LOAD` |
+| `&2F70–&2FFF` | **144 B free** | **the binding constraint.** Layer 10 paid its way in by moving `CalcAxis`/`CalcSpeed` and its own shims into bank 4; anything new in main RAM needs the same treatment |
 | `&3000–&37FF` | 2,048 B | sprite background save areas, one page per slot — **eight now**, ending exactly where the tile map begins. A ninth would overwrite it |
 | `&3800–&3BFF` | 1,024 B | tile map, fixed home — floating it after `code_end` once put it over the save areas |
 | `&3C00–&483F` | 3,136 B | **Layer 9's text font**, `PARAFNT`, `*LOAD`ed straight here — 98 glyphs |
@@ -196,9 +200,10 @@ moves. The outline:
 | `&5500–&56FF` | 512 B | `CHAR_PTR_LO`/`HI` — character code → charset address, built at startup |
 | `&5700–&57FF` | 256 B | data byte → transparency mask table, built at startup |
 | `&5800–&7FFF` | 10,240 B | play buffer: circular strip, 16 rows × 640 |
-| SWRAM bank 4 | 16 K | `PARADAT` — char data, colour schemes, tile defs, deck RLE, waypoints, the combat stat tables, **the level-draw code, the droid AI and Layer 7's combat**. Ends `&BA92`, **1,390 B free** |
+| SWRAM bank 4 | 16 K | `PARADAT` — char data, colour schemes, tile defs, deck RLE, waypoints, the combat stat tables, **the level-draw code, the droid AI, Layer 7's combat, and Layer 10's entry/exit shims plus `CalcAxis`/`CalcSpeed`**. Ends `&BC81`, **895 B free** |
 | SWRAM bank 5 | 16 K | `PARASPR` — the blitter at shifts 0 and 1 px, **plus Layer 7's effect artwork**: 31 bullet and explosion frames, 2,946 B, here rather than in bank 4 because the interpreted path reads them every row. Ends `&BBF7`, **1,033 B free** |
-| SWRAM bank 6 | 16 K | `PARSPR2` — the same at 2 and 3 px, laid out identically, **plus Layer 9's panel engine, HUD and console**, which bank 4 had no room for. Ends `&B808`, **2,040 B free** |
+| SWRAM bank 6 | 16 K | `PARSPR2` — the same at 2 and 3 px, laid out identically, **plus Layer 9's panel engine, HUD, console, strings and icons**. Ends `&BFE9`, **23 B free — full** |
+| SWRAM bank 7 | 16 K | `PARXFER` — **Layer 10's transfer game**: the transliterated subgame, its shadow screen/colour RAM, and the board characters in three ownership sets. Ends `&9989`, **~9.8 K free** — the obvious home for anything new that needs a bank |
 
 **"Main RAM is full" meant the `PARA` image could not grow past `&3000`** — never that there was no
 RAM. Moving code rather than data is what fixed it: `screen.asm`, `scroll.asm` and `level.asm` now
@@ -392,23 +397,22 @@ decisions 4 and 5.
 > own: bank 6's *code* cannot read another bank, so the code would have to move with the data.
 > Layer 13's reshuffle is the other way out.
 
-### Layer 10 — Transfer minigame — **researched, not built**
-`SubGameSelectSide` and the circuit puzzle. Research and plan:
-[`docs/layer-10-transfer.md`](docs/layer-10-transfer.md).
+### Layer 10 — Transfer minigame — **BUILT** (2026-08-17)
+The whole subgame plays, entered the original's way — touching a droid at `moveMode` 0 — and all
+three outcomes land on the droid tables: take the target over (type, energy, weapon, per-type
+speed, shoot score), fall back to a 001 with the bump fine, or burn out as one. The target is
+consumed in every outcome. Verified end to end in jsbeeb, including a real-collision entry, a
+001 → 476 takeover, and a tie's short-circuit replay.
 
-The whole rule set is one routine, `xfer_DoColumn` (`$1EB6`): twelve identical wire rows, three
-stages along each at screen columns 6, 10 and 14, and a gate dispatch on the character already in
-the cell — joiner, splitter, terminator, or claim-and-advance. The board is 200 bytes of data at
-`$E613`/`$E68B`/`$E6B3` and fifteen characters out of the `$7800` charset.
+Everything about how — the shadow screen/colour RAM that keeps `xfer_DoColumn` (`$1EB6`) and the
+rest verbatim, the fourth SWRAM bank, the 16th row, the palette, the eleven numbered decisions —
+is in [`docs/layer-10-transfer.md`](docs/layer-10-transfer.md). Still wanted from play-testing:
+difficulty feel against the C64, and consuming the last droid on a deck.
 
-**Three things want deciding before code goes in**, and all are in the doc:
-- **ownership is COLOUR RAM**, which MODE 1 does not have. The recommended answer is three copies
-  of each wire character, one per owner, so `xfer_Colorize4` becomes a character write;
-- the board is **16 rows against our 15** — recommended answer, drop one of the twelve identical
-  wire rows;
-- **there is nowhere obvious to put it.** Bank 6 has ~2,040 bytes free and bank 4 ~1,400. The
-  minigame runs with the deck suspended and no sprites, so it could take a sprite bank wholesale as
-  its own disc file — at the cost of a floppy access on every transfer.
+**Known gaps, recorded in the open items above**: the C64's two droid info screens before the
+board (`ShowXferInfo`) are not ported, and the presentation differs where the screen has no room
+for the original's — status text on the panel line rather than above the board, numbers standing
+in for the side-select sprites.
 
 ### Layer 11 — Sound, title, polish
 SN76489 driver replacing the SID engine, title screen, attract mode. The chip is written through

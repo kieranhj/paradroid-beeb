@@ -591,6 +591,17 @@ DR_LOS_MAX = 96
   BCS dc_hurt                   \ a bullet or an explosion: no shove, no
                                 \ bounce, and no debounce
 
+\ ---- Transfer mode: touching a droid IS the transfer --------
+\ $1A6A's own gate, BEFORE the debounce: moveMode 0 and a droid means
+\ Capture, so the index goes to main RAM for the main loop to see —
+\ this code is bank 4 and cannot start the bank-7 game itself. No
+\ bounce, no damage: the C64's arm is STY xferDroid, RTS, nothing else.
+  LDA moveMode
+  BNE dc_notransfer
+  STX xferDroid
+  RTS
+.dc_notransfer
+
   LDA drCollWas                 \ once per episode, or he sticks to the droid
   BNE dc_x                      \ shaking — and would be drained in a second
   JSR DrPause16
@@ -2180,3 +2191,289 @@ ENDIF
 .shipNumDroids EQUB 0
 .shipLevel   EQUB 1             \ ship 1; NextLevel raises it, capped at 8
 .shipDroids  SKIP 256
+
+\ ============================================================
+\ Layer 10's bank-4 half: Capture's entry and FinishTransfer
+\ ============================================================
+\ The game itself is xfer.asm in BANK 7; the trampolines that page it in
+\ are in main.asm. These two are everything the transfer needs from THIS
+\ bank — the droid tables, the score tables, ReframeView — and they run
+\ with the data bank paged, which is the resting state at both call
+\ sites. Neither may page another bank: this code would vanish under
+\ its own feet.
+
+\ ---- XferEnter4 — Capture's front half ----------------------
+\ Gather the two types into the main-RAM mirrors, stop the player, and
+\ flatten the strip exactly as ConsoleOpen does and for the same reason:
+\ the board draw wants a flat buffer shown from row 0. Then the deck's
+\ palette makes way for the game's, and fire 3 moves down a row so the
+\ 16th buffer row — normally the smooth scroll's hidden one — shows.
+.XferEnter4
+  LDX xferDroid
+  LDA drType,X
+  STA xfmTgtType
+  LDA drType
+  STA xfmPlyType
+  LDA #0
+  STA xfmResult
+  STA xfmDone
+  STA xSpd : STA xSpd+1
+  STA ySpd : STA ySpd+1
+  STA scrollS : STA scrollS+1
+  STA line
+  STA iline
+  STA bandDo
+  STA colCount
+  JSR SetCRTCStart
+
+  LDX #15
+.xe4_pal
+  LDA palPlay,X
+  STA xfPalSave,X
+  LDA palXfer,X
+  STA palPlay,X
+  DEX
+  BPL xe4_pal
+
+  LDA #LO(T1_I3X)
+  STA t1i3Lo
+  LDA #HI(T1_I3X)
+  STA t1i3Hi
+  LDA #1
+  STA xferActive
+  RTS
+
+\ ---- XferExit4 — FinishTransfer1 ($21CF) and 2 ($2260) ------
+\ Three arms, the original's: take the droid, drop back to a 001 with
+\ the bump fine, or — already a 001 — burn out entirely. The caller
+\ finishes with PanelSetup, which cannot be reached from this bank.
+.XferExit4
+  LDA xfmResult
+  CMP #1
+  BNE xx4_lost
+
+  LDX xferDroid                 \ _ok: BECOME the target, keeping ITS
+  LDA drEnergy,X                \ energy, and bank its shoot score
+  STA drEnergy
+  LDA xfmTgtType
+  STA drType
+  STA sprType+PLY_SLOT          \ the sprite the blitter draws for him
+  TAY
+  LDX drCent,Y
+  LDA drShootScore,X
+  JSR AddScore
+  JSR XferInitDroid
+  JMP xx4_consume
+
+.xx4_lost
+  LDA xfmPlyType
+  BEQ xx4_burnt
+  LDY xfmPlyType                \ had a droid: pay its bump score and
+  LDX drCent,Y                  \ fall back to the 001 underneath
+  LDA drBumpScore,X
+  JSR SubScore
+  LDA #0
+  STA drType
+  STA sprType+PLY_SLOT
+  JSR XferInitDroid
+  JMP xx4_consume
+
+.xx4_burnt
+  LDA #0                        \ a 001 that loses is finished —
+  STA drEnergy                  \ CbCheckDeath takes it from here
+
+\ FinishTransfer2: the target droid is consumed in EVERY outcome. Energy
+\ 0 makes the compaction drop its table entry; the slot goes back to the
+\ pool; DrRemoveShip takes it off the ship's roster for good.
+.xx4_consume
+  LDX xferDroid
+  LDA #0
+  STA drEnergy,X
+  LDY drSprNum,X
+  BEQ xx4_noslot
+  STA sprActive,Y
+.xx4_noslot
+  LDX xferDroid
+  STX drIdx
+  JSR DrRemoveShip
+
+  LDX #15                       \ and the machine goes back
+.xx4_pal
+  LDA xfPalSave,X
+  STA palPlay,X
+  DEX
+  BPL xx4_pal
+  LDA #LO(T1_I3)
+  STA t1i3Lo
+  LDA #HI(T1_I3)
+  STA t1i3Hi
+  LDA #0
+  STA xferActive
+  STA xferDroid
+  STA xfmDone
+  LDA #MM_MOBILE
+  STA moveMode
+  LDA #MM_DELAY
+  STA mmDelay
+  JMP ReframeView               \ and its RTS; PanelSetup is the caller's
+
+\ ---- xferInitDroid ($223E) — the stats of the new ride ------
+\ BuildDroidSprite is the sprType write above; the speed goes through
+\ plyMaxLo/Hi, which is what CalcAxis clamps against — see player.asm.
+.XferInitDroid
+  LDA #&40
+  STA maxEnergy
+  LDY drType
+  LDA drWeapon,Y
+  STA weaponType
+  LDX drSpeed,Y                 \ DSpeed_t, then PlayerSpeed_t — with the
+  LDA plySpdTab,X               \ C64's 7 mapped to CAM_TOPSPD like the
+  STA plyMaxHi                  \ 001's always has been
+  EOR #&FF
+  CLC
+  ADC #1
+  STA plyNegHi
+  LDA #0
+  STA plyMaxLo
+  STA plyNegLo
+  RTS
+
+\ PlayerSpeed_t ($6D97): 0,5,6,0,7,0,0,0,7 — indexed by DSpeed_t values
+\ 1, 2, 4 and 8. The two 7s become CAM_TOPSPD (8) for the reason on that
+\ constant: the camera steps in 4s, and 7 dithers.
+.plySpdTab
+  EQUB 0, 5, 6, 0, CAM_TOPSPD, 0, 0, 0, CAM_TOPSPD
+
+\ ---- the transfer game's palette ---------------------------
+\ Written INTO palPlay around the game, so the rupture needs no fourth
+\ case. KC's choice (2026-08-17): blue background, BLACK for the board's
+\ structure and unclaimed wire, yellow for the left side's pieces and
+\ magenta for the right's. "Left" and "right" because the identity
+\ tokens belong to the SIDES — $FF is always the left bus's colour —
+\ and the human is whichever side the stick chose. [DECISION]
+XF_PHYS_BG   = 4                \ blue
+XF_PHYS_PLY  = 3                \ yellow  — logical 1, the $FF (left) set
+XF_PHYS_CPU  = 5                \ magenta — logical 2, the $FC (right) set
+XF_PHYS_NEUT = 0                \ black   — logical 3, structure/unclaimed
+.palXfer
+  PALENT  0, XF_PHYS_BG   : PALENT  1, XF_PHYS_BG
+  PALENT  4, XF_PHYS_BG   : PALENT  5, XF_PHYS_BG
+  PALENT  2, XF_PHYS_PLY  : PALENT  3, XF_PHYS_PLY
+  PALENT  6, XF_PHYS_PLY  : PALENT  7, XF_PHYS_PLY
+  PALENT  8, XF_PHYS_CPU  : PALENT  9, XF_PHYS_CPU
+  PALENT 12, XF_PHYS_CPU  : PALENT 13, XF_PHYS_CPU
+  PALENT 10, XF_PHYS_NEUT : PALENT 11, XF_PHYS_NEUT
+  PALENT 14, XF_PHYS_NEUT : PALENT 15, XF_PHYS_NEUT
+.xfPalSave
+  EQUB 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+
+\ ============================================================
+\ CalcAxis — one axis of CalcSpeed
+\   spd    = 16-bit signed speed, 8.8
+\   axDir  = -1, 0 or +1
+\ ============================================================
+.CalcAxis
+  LDA axDir
+  BEQ ca_coast
+  BMI ca_neg
+  CLC                           \ accelerate positive
+  LDA spd   : ADC #LO(PLY_ACCEL) : STA spd
+  LDA spd+1 : ADC #HI(PLY_ACCEL) : STA spd+1
+  JMP ca_clamp
+.ca_neg
+  SEC                           \ accelerate negative
+  LDA spd   : SBC #LO(PLY_ACCEL) : STA spd
+  LDA spd+1 : SBC #HI(PLY_ACCEL) : STA spd+1
+  JMP ca_clamp
+
+\ Coasting. Decelerate towards zero and STOP there rather than
+\ overshooting into a crawl the other way — the sign of the high
+\ byte flipping is the test, exactly as the C64 does it.
+.ca_coast
+  LDA spd+1
+  BMI ca_coastneg
+  ORA spd
+  BEQ ca_clamp                  \ already stopped
+  SEC
+  LDA spd   : SBC #LO(PLY_DECEL) : STA spd
+  LDA spd+1 : SBC #HI(PLY_DECEL) : STA spd+1
+  LDA spd+1
+  BPL ca_clamp
+  JMP ca_stop
+.ca_coastneg
+  CLC
+  LDA spd   : ADC #LO(PLY_DECEL) : STA spd
+  LDA spd+1 : ADC #HI(PLY_DECEL) : STA spd+1
+  LDA spd+1
+  BMI ca_clamp
+.ca_stop
+  LDA #0
+  STA spd
+  STA spd+1
+  RTS
+
+\ The clamp is 16-bit. The C64's was a byte compare against the whole
+\ pixel count, which it could afford because its top speed was a
+\ whole number of pixels per iteration; ours is 3.5 per frame, so the
+\ fraction is part of the limit rather than something to throw away.
+\
+\ Both sides of the negative compare are above &8000, so an unsigned
+\ comparison orders them the same way a signed one would.
+\ THE LIMIT IS A VARIABLE SINCE LAYER 10: the C64's MaxSpeed is set per
+\ droid type — xferInitDroid ($223E) rewrites it at every transfer — so
+\ the immediates became plyMaxLo/Hi, with the assembly-time values as
+\ the 001's defaults. XferInitDroid and ccd_reset are the only writers.
+.ca_clamp
+  LDA spd+1
+  BMI ca_clampneg
+  CMP plyMaxHi
+  BCC ca_x
+  BNE ca_setmax
+  LDA spd
+  CMP plyMaxLo
+  BCC ca_x
+  BEQ ca_x
+.ca_setmax
+  LDA plyMaxLo : STA spd
+  LDA plyMaxHi : STA spd+1
+  RTS
+.ca_clampneg
+  CMP plyNegHi
+  BCC ca_setmin
+  BNE ca_x
+  LDA spd
+  CMP plyNegLo
+  BCS ca_x
+.ca_setmin
+  LDA plyNegLo : STA spd
+  LDA plyNegHi : STA spd+1
+.ca_x
+  RTS
+
+.plyMaxLo EQUB LO(PLY_MAXSPD)
+.plyMaxHi EQUB HI(PLY_MAXSPD)
+.plyNegLo EQUB LO(PLY_MAXNEG)
+.plyNegHi EQUB HI(PLY_MAXNEG)
+
+\ ============================================================
+\ CalcSpeed — both axes
+\ ============================================================
+\ CalcAxis works on one pair of zero page bytes, so each axis is
+\ copied in and out. Twice a frame, for about 40 cycles.
+.CalcSpeed
+  LDA xSpd   : STA spd
+  LDA xSpd+1 : STA spd+1
+  LDA joyXDir : STA axDir
+  JSR CalcAxis
+  LDA spd   : STA xSpd
+  LDA spd+1 : STA xSpd+1
+
+  LDA ySpd   : STA spd
+  LDA ySpd+1 : STA spd+1
+  LDA joyYDir : STA axDir
+  JSR CalcAxis
+  LDA spd   : STA ySpd
+  LDA spd+1 : STA ySpd+1
+  RTS
+
+\ ============================================================
