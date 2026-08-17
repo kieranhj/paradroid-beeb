@@ -32,11 +32,11 @@ switch. The stepping half (`LvEnter4`/`LvTick4`/`LvStep`/`LvExit4`) is in **bank
 the stop tables it reads; main RAM carries only the two trampolines in `lift.asm`.
 
 `lift_HighlightDeck` transliterates **verbatim** against the shadow — magic constants,
-the `LDY #-2` row bail-out and all — because the pen is a *rendering rule*, not stored
-state: `LvCellPaint` draws lit characters (`$90–$9D`) from the yellow set, cells the
-shaft mark coloured `$F9` from the magenta set, everything else white. Toggling the
-characters IS the highlight and the colour follows by itself. A step repaints only the
-two deck rectangles, not the screen.
+the `LDY #-2` row bail-out and all — because the colour lives in the ARTWORK (decision
+5): the lit variants carry their own magenta fill, so toggling the characters IS the
+whole highlight. The one rendering rule left is the C64's own: a cell the shaft mark
+coloured `$F9` draws from the forced-multicolour set. A step repaints only the two deck
+rectangles, not the screen.
 
 `liftMode` became a three-state: 0 none; 1 *entering* — set by `LiftEnter` in the fire
 block, consumed the same pass at the hook after `DroidsUpdate` (the transfer's entry
@@ -93,7 +93,7 @@ the ship.
 
 ## 5. For whoever touches this next
 
-The console's deferred ship page (`con_ShipInfo`, `$3062`) draws this same side view with
-the same highlight — when Layer 13 builds it, `LvDrawPacked`/`LvHighlight`/the renderer
-are already in bank 7; it needs only an entry that skips the shaft mark and a way in from
-the console's bank-6 code (a trampoline through main RAM, as everything cross-bank is).
+The console's ship page (`con_ShipInfo`, `$3062`) was built on this drawer the same day:
+`LvShip7` is `LvStart7` minus the shaft mark and the panel text, reached through the console
+menu (`ConMenu4`, droid.asm, bank 4) with `ConsoleTick` doing the paging and the lift palette
+swapped in around it. See layer-9-hud.md section 6e.

@@ -1350,17 +1350,41 @@ ENDMACRO
   PAGEBANK SWRAM_SPR2
   JSR ConsoleOpen
   PAGEBANK SWRAM_DATA
-  RTS
+  JSR ConMenuInit4              \ bank 4: selection to the top, edges
+  JMP ConMarker4                \ armed — and the first marker. Bank 6
+                                \ had no room for any of this: 23 B free
 
-\ ConsoleRun may decide to leave, and leaving means ReframeView, which
-\ calls RedrawAll IN BANK 4. So the console only clears conActive — which
-\ is in main RAM for exactly this reason — and the re-frame happens here,
-\ after the data bank is back.
+\ The console's menu lives in BANK 4 (ConMenu4, droid.asm) — bank 6 is
+\ full — and only the pieces that PAGE live here: ConDraw is bank 6,
+\ LvShip7 bank 7, and neither bank can pull the other in under itself.
+\ The ship page is the C64's con_ShipInfo: drawn once, static, fire
+\ returns to the console main screen.
 .ConsoleTick
-  PNMIRROR
-  PAGEBANK SWRAM_SPR2
-  JSR ConsoleRun
+  LDA conShipReq
+  CMP #2
+  BEQ ct_ship
+  JSR ConMenu4                  \ bank 4: K/M selection, the marker, fire
+  LDA conShipReq
+  CMP #1
+  BNE ct_noship
+  JSR ConShipEnter4             \ bank 4: the side view's palette in
+  PAGEBANK SWRAM_XFER
+  JSR LvShip7                   \ bank 7: the cross-section, deck lit
   PAGEBANK SWRAM_DATA
+  LDA #2
+  STA conShipReq
+  RTS
+.ct_ship
+  JSR ConShipKeys4              \ bank 4: the fire edge; clears conShipReq
+  LDA conShipReq                \ on the press that leaves
+  BNE ct_x
+  JSR ConShipExit4              \ bank 4: the deck's palette back
+  PNMIRROR                      \ and the console main screen again
+  PAGEBANK SWRAM_SPR2
+  JSR ConDraw
+  PAGEBANK SWRAM_DATA
+  JMP ConMarker4                \ selection kept, as the C64 keeps it
+.ct_noship
   LDA conActive
   BNE ct_x
   JSR ReframeView

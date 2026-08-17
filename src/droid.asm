@@ -2641,3 +2641,175 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
   PALENT 12, LV_PHYS_DECK  : PALENT 13, LV_PHYS_DECK
   PALENT 10, LV_PHYS_SHAFT : PALENT 11, LV_PHYS_SHAFT
   PALENT 14, LV_PHYS_SHAFT : PALENT 15, LV_PHYS_SHAFT
+
+\ ============================================================
+\ The console's menu: conWaitInput ($2C63) and conJump_t
+\ ============================================================
+\ In THIS bank rather than bank 6 with the console it drives, because
+\ bank 6 is full — and it can be, since everything it touches is main
+\ RAM: the keys, the play buffer the marker draws into, conActive, and
+\ the conShipReq flag ConsoleTick watches. The C64 walks consoleState
+\ $80-$83 with the stick and dispatches the low nibble through
+\ conJump_t on fire: 0 exit to the game, 1 droid info, 2 the deck
+\ plan, 3 the ship's side view. Ours walks conSel 0-3 the same —
+\ CLAMPED, not wrapped, as $2C6B/$2C8C do — and of the four, 0 and 3
+\ work; 1 and 2 are pages not yet built and the press does nothing.
+\
+\ THE MARKER STANDS IN FOR THE SPRITE RECOLOUR. conWaitInput paints
+\ the selected icon's sprite white and the rest their own colours; our
+\ icons are drawn in logical 1 because 2 and 3 are black on several
+\ deck palettes — so a white bar beside the selected icon is the
+\ indicator that survives every deck.
+
+.ConMenuInit4                   \ from ConsoleEnter: top entry, edges
+  LDA #0                        \ armed — the opening press is still down
+  STA conSel
+  STA conShipReq
+  LDA #1
+  STA conMPrevL
+  STA conPrevU
+  STA conPrevD
+  RTS
+
+.ConMenu4
+  LDX #KEY_K                    \ up the menu
+  JSR keydown
+  BNE cm4_upOff
+  LDA conPrevU
+  BNE cm4_notUp
+  LDA #1
+  STA conPrevU
+  LDA conSel
+  BEQ cm4_notUp                 \ clamped at the top, as $2C8C clamps
+  JSR ConMarkClear
+  DEC conSel
+  JSR ConMarker4
+  JMP cm4_notUp
+.cm4_upOff
+  LDA #0
+  STA conPrevU
+.cm4_notUp
+  LDX #KEY_M                    \ down the menu
+  JSR keydown
+  BNE cm4_dnOff
+  LDA conPrevD
+  BNE cm4_notDn
+  LDA #1
+  STA conPrevD
+  LDA conSel
+  CMP #3
+  BCS cm4_notDn                 \ and at the bottom, as $2C6B does
+  JSR ConMarkClear
+  INC conSel
+  JSR ConMarker4
+  JMP cm4_notDn
+.cm4_dnOff
+  LDA #0
+  STA conPrevD
+.cm4_notDn
+  LDX #KEY_L                    \ fire: the conJump_t dispatch
+  JSR keydown
+  BNE cm4_lUp
+  LDA conMPrevL
+  BNE cm4_x
+  LDA #1
+  STA conMPrevL
+  LDA conSel
+  BNE cm4_notExit
+  STA conActive                 \ entry 0: back to the game — A is 0
+  RTS
+.cm4_notExit
+  CMP #3
+  BNE cm4_x                     \ 1 and 2: pages not built, nothing
+  LDA #1
+  STA conShipReq                \ entry 3: the ship's side view
+  RTS
+.cm4_lUp
+  LDA #0
+  STA conMPrevL
+.cm4_x
+  RTS
+
+\ ---- ConShipKeys4 — the page is up: fire returns ------------
+\ con_ShipInfo's shape: the view is STATIC, up/down do nothing, and
+\ fire goes back to the console main screen. Edge triggered where the
+\ C64 oscillates on a held button.
+.ConShipKeys4
+  LDX #KEY_L
+  JSR keydown
+  BNE csk_lUp
+  LDA conMPrevL
+  BNE csk_x
+  LDA #1
+  STA conMPrevL
+  LDA #0
+  STA conShipReq                \ ConsoleTick sees it and redraws the main
+  RTS
+.csk_lUp
+  LDA #0
+  STA conMPrevL
+.csk_x
+  RTS
+
+\ ---- the marker: a white bar beside the selected icon -------
+\ One 4-px column, eight scanlines, at unit 1 — clear of the icons at
+\ units 4 and 7 — centred a row into each icon's three.
+.ConMarker4
+  LDA #&0F                      \ solid logical 1: white on every deck
+  BNE cmk_put
+.ConMarkClear
+  LDA #0
+.cmk_put
+  LDX conSel
+  STA cmk_val+1
+  LDA conMarkLo,X
+  STA swDst
+  LDA conMarkHi,X
+  STA swDst+1
+  LDY #7
+.cmk_val
+  LDA #0                        \ operand patched above
+.cmk_loop
+  STA (swDst),Y
+  DEY
+  BPL cmk_loop
+  RTS
+
+CON_MARK0 = BUF_BASE +  3 * ROW_BYTES + 1 * UNIT_BYTES
+CON_MARK1 = BUF_BASE +  6 * ROW_BYTES + 1 * UNIT_BYTES
+CON_MARK2 = BUF_BASE +  9 * ROW_BYTES + 1 * UNIT_BYTES
+CON_MARK3 = BUF_BASE + 12 * ROW_BYTES + 1 * UNIT_BYTES
+.conMarkLo
+  EQUB LO(CON_MARK0), LO(CON_MARK1), LO(CON_MARK2), LO(CON_MARK3)
+.conMarkHi
+  EQUB HI(CON_MARK0), HI(CON_MARK1), HI(CON_MARK2), HI(CON_MARK3)
+
+\ ---- the ship page's palette, around LvShip7 ----------------
+\ The side view's own colours in, the deck's back on return. The saved
+\ copy shares xfPalSave with the transfer and the lift — no two of the
+\ three can be up at once.
+.ConShipEnter4
+  LDX #15
+.cse_pal
+  LDA palPlay,X
+  STA xfPalSave,X
+  LDA palLift,X
+  STA palPlay,X
+  DEX
+  BPL cse_pal
+  RTS
+
+.ConShipExit4
+  LDX #15
+.csx_pal
+  LDA xfPalSave,X
+  STA palPlay,X
+  DEX
+  BPL csx_pal
+  RTS
+
+.conSel     EQUB 0              \ the C64's consoleState low nibble, 0-3
+.conShipReq EQUB 0              \ 0 idle / 1 fire on entry 3 / 2 page up
+.conMPrevL  EQUB 0              \ the menu's own key edges — prevRet is
+.conPrevU   EQUB 0              \ the weapon's, prevUp/Dn the debug hop's,
+.conPrevD   EQUB 0              \ prevLU/LD the lift's

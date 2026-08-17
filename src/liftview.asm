@@ -44,25 +44,7 @@
 \ ============================================================
 .LvStart7
   JSR LvBuildGlyphOf
-
-  LDA #0                        \ both shadows clear: chars blank,
-  TAY                           \ colours 0 (no mark)
-.lvs_clr
-  STA xsScr,Y
-  STA xsScr+&100,Y
-  STA xsScr+&200,Y
-  STA xsCram,Y
-  STA xsCram+&100,Y
-  STA xsCram+&200,Y
-  INY
-  BNE lvs_clr
-  LDY #&7F                      \ the last half page of each
-.lvs_clr2
-  STA xsScr+&280,Y
-  STA xsCram+&280,Y
-  DEY
-  BPL lvs_clr2
-
+  JSR LvClearShadows
   JSR LvDrawPacked
   JSR LvShaftMark
   LDA deck                      \ light the deck we are standing on
@@ -82,6 +64,23 @@
   LDA #XF_LC+19                 \ t
   JSR XfGlyphAt
   JMP LvNumText                 \ and its RTS
+
+\ ============================================================
+\ LvShip7 — the CONSOLE's ship page (from ConsoleTick)
+\ ============================================================
+\ con_ShipInfo ($3062): DrawSideview minus the lift — the cross-section
+\ with the CURRENT deck lit and NO shaft mark, drawn once and static.
+\ The console has already flattened the scroll; the panel line stays
+\ the console's. Rows 13-15 of the view are blank, so the console's
+\ 15 visible rows lose nothing and t1i3 is left alone.
+.LvShip7
+  JSR LvBuildGlyphOf
+  JSR LvClearShadows
+  JSR LvDrawPacked
+  LDA deck
+  STA lvShown
+  JSR LvHighlight
+  JMP LvRepaintAll              \ and its RTS
 
 \ ============================================================
 \ LvTick7 — one pass (from LiftViewTick, after LvTick4 stepped)
@@ -105,6 +104,27 @@
   JSR LvPaintRect
   JMP LvNumText                 \ and its RTS
 .lvt7_x
+  RTS
+
+\ ---- both shadows clear: chars blank, colours 0 (no mark) ---
+.LvClearShadows
+  LDA #0
+  TAY
+.lvc_clr
+  STA xsScr,Y
+  STA xsScr+&100,Y
+  STA xsScr+&200,Y
+  STA xsCram,Y
+  STA xsCram+&100,Y
+  STA xsCram+&200,Y
+  INY
+  BNE lvc_clr
+  LDY #&7F                      \ the last half page of each
+.lvc_clr2
+  STA xsScr+&280,Y
+  STA xsCram+&280,Y
+  DEY
+  BPL lvc_clr2
   RTS
 
 \ ============================================================

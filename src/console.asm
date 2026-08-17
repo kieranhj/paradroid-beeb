@@ -223,43 +223,16 @@ CON_DROID_D  = BUF_BASE + 2 * ROW_BYTES + 7 * UNIT_BYTES
   STA ySpd : STA ySpd+1
   STA bandDo                    \ nothing the last move exposed is wanted
   STA colCount
-  LDA #1
-  STA conPrevL                  \ the press that opened it is still down
   JSR SetCRTCStart
   JMP ConDraw
 
-\ ============================================================
-\ ConsoleClose — give it back
-\ ============================================================
-.ConsoleClose
-  LDA #0
-  STA conActive
-  JMP ReframeView
-
-\ ============================================================
-\ ConsoleRun — one pass with the console up
-\ ============================================================
-\ L LEAVES, AND NOTHING ELSE HAPPENS. The original's four menu icons are
-\ selectable — conWaitInput ($2C63) walks consoleState between $80 and
-\ $83 with up/down, recolours the selected sprite and dispatches through
-\ conJump_t on fire — and none of that is built. The icons are drawn and
-\ inert. See docs/layer-9-hud.md.
-\
-\ The key is edge triggered on its own previous state and not on the main
-\ loop's prevRet, which belongs to the lift and the weapon: sharing it
-\ would make leaving the console fire the gun on the way out.
-.ConsoleRun
-  LDX #KEY_L
-  JSR keydown
-  BNE con_r_lup
-  LDA conPrevL
-  BNE con_r_x                   \ still held from opening, or from last pass
-  LDA #1 : STA conPrevL
-  JMP ConsoleClose
-.con_r_lup
-  LDA #0 : STA conPrevL
-.con_r_x
-  RTS
+\ THE MENU IS NOT HERE. conWaitInput's port — the $80-$83 selection,
+\ the marker, the conJump_t dispatch, and closing the console — is
+\ ConMenu4 in droid.asm, BANK 4, because this bank is full (23 bytes
+\ free when it was built) and everything the menu touches is main RAM:
+\ the keys, the play buffer, conActive and the conShipReq flag. The
+\ old ConsoleRun (L leaves, nothing else) went with it — leaving is
+\ the menu's top entry now, as it is the C64's.
 
 \ ============================================================
 \ ConTok — print string A from the $C000 table at pnDst
@@ -747,4 +720,3 @@ CON_ICON_D2 = BUF_BASE + 11 * ROW_BYTES + 4 * UNIT_BYTES
 .conSrcRow EQUB 0, 0, 0
 .conRowY   EQUB 0
 .conWide   EQUB 0
-.conPrevL  EQUB 0

@@ -187,8 +187,8 @@ moves. The outline:
 | ZP `&00–&8F` | 144 B | **all of it used** — the map is in `main.asm`. `&90` up is the OS |
 | `&0400–&0C8F` | 2,192 B | MODE 1 charset, built at deck load — reclaimed OS workspace |
 | `&0C90–&10FF` | **1,136 B free** | rest of the reclaimed OS workspace |
-| `&1100–&2F57` | 7,768 B | code (`PARA`). DFS random-access buffer space, safe for `*LOAD` |
-| `&2F58–&2FFF` | **168 B free** | **the binding constraint.** Layer 10 paid its way in by moving `CalcAxis`/`CalcSpeed` and its own shims into bank 4, and Layer 8b's lift view by deleting the routines it replaced; anything new in main RAM needs the same treatment |
+| `&1100–&2F95` | 7,830 B | code (`PARA`). DFS random-access buffer space, safe for `*LOAD` |
+| `&2F96–&2FFF` | **106 B free** | **the binding constraint.** Layer 10 paid its way in by moving `CalcAxis`/`CalcSpeed` and its own shims into bank 4, and Layer 8b's lift view by deleting the routines it replaced; anything new in main RAM needs the same treatment |
 | `&3000–&37FF` | 2,048 B | sprite background save areas, one page per slot — **eight now**, ending exactly where the tile map begins. A ninth would overwrite it |
 | `&3800–&3BFF` | 1,024 B | tile map, fixed home — floating it after `code_end` once put it over the save areas |
 | `&3C00–&483F` | 3,136 B | **Layer 9's text font**, `PARAFNT`, `*LOAD`ed straight here — 98 glyphs |
@@ -200,10 +200,10 @@ moves. The outline:
 | `&5500–&56FF` | 512 B | `CHAR_PTR_LO`/`HI` — character code → charset address, built at startup |
 | `&5700–&57FF` | 256 B | data byte → transparency mask table, built at startup |
 | `&5800–&7FFF` | 10,240 B | play buffer: circular strip, 16 rows × 640 |
-| SWRAM bank 4 | 16 K | `PARADAT` — char data, colour schemes, tile defs, deck RLE, waypoints, the combat stat tables, **the level-draw code, the droid AI, Layer 7's combat, Layers 10 and 8b's entry/exit shims, and `CalcAxis`/`CalcSpeed`**. Ends `&BD8F`, **625 B free** |
+| SWRAM bank 4 | 16 K | `PARADAT` — char data, colour schemes, tile defs, deck RLE, waypoints, the combat stat tables, **the level-draw code, the droid AI, Layer 7's combat, Layers 10 and 8b's entry/exit shims, and `CalcAxis`/`CalcSpeed`**. Ends `&BE85`, plus the console's menu and ship-page shims — **379 B free** |
 | SWRAM bank 5 | 16 K | `PARASPR` — the blitter at shifts 0 and 1 px, **plus Layer 7's effect artwork**: 31 bullet and explosion frames, 2,946 B, here rather than in bank 4 because the interpreted path reads them every row. Ends `&BBF7`, **1,033 B free** |
-| SWRAM bank 6 | 16 K | `PARSPR2` — the same at 2 and 3 px, laid out identically, **plus Layer 9's panel engine, HUD, console, strings and icons**. Ends `&BFE9`, **23 B free — full** |
-| SWRAM bank 7 | 16 K | `PARXFER` — **Layer 10's transfer game and Layer 8b's lift screen**, sharing the shadow screen/colour RAM, the glyph page and the renderer pattern; plus both glyph sets. Ends `&A508`, **~6.9 K free** — the obvious home for anything new that needs a bank |
+| SWRAM bank 6 | 16 K | `PARSPR2` — the same at 2 and 3 px, laid out identically, **plus Layer 9's panel engine, HUD, console, strings and icons**. Ends `&BFC1`, **62 B free — full** |
+| SWRAM bank 7 | 16 K | `PARXFER` — **Layer 10's transfer game and Layer 8b's lift screen**, sharing the shadow screen/colour RAM, the glyph page and the renderer pattern; plus both glyph sets. plus the console's ship page. Ends `&A2C0`, **~7.5 K free** — the obvious home for anything new that needs a bank |
 
 **"Main RAM is full" meant the `PARA` image could not grow past `&3000`** — never that there was no
 RAM. Moving code rather than data is what fixed it: `screen.asm`, `scroll.asm` and `level.asm` now
@@ -387,21 +387,26 @@ glyphs in the project.
 alert by name rather than number. All four menu icons are drawn, the fourth composed from a rotor
 and the droid's own digits because the C64 builds it at run time and our droid artwork is compiled.
 
-**Outstanding, and written up in [`docs/layer-9-hud.md`](docs/layer-9-hud.md) §6e:**
+**The menu selection and the ship plan LANDED 2026-08-17** — [`docs/layer-9-hud.md`](docs/layer-9-hud.md)
+§6e. `conWaitInput`'s port is `ConMenu4` in droid.asm, BANK 4 (bank 6 was full; everything the
+menu touches is main RAM): K/M walk the marker 0-3 clamped as `consoleState` walks $80-$83, fire
+dispatches as `conJump_t` — entry 0 back to the game, entry 3 the **ship plan**, which is
+`con_ShipInfo` faithfully: Layer 8b's side view drawn once and STATIC, current deck lit, no shaft
+mark, fire back to the console main with the selection kept.
+
+**Still outstanding:**
 
 | | |
 |---|---|
-| the menu selection | `conWaitInput` (`$2C63`) — up/down walk `consoleState` $80-$83, fire dispatches through `conJump_t`. The icons are inert without it, so nothing behind them is reachable |
-| the **droid database** | `con_DroidInfo` (`$2CC6`). Code and tables only; the tables are already mirrored to `PN_TABS` |
+| the **droid database** | `con_DroidInfo` (`$2CC6`). Code and tables only; the tables are already mirrored to `PN_TABS`, and the dispatch and way back now exist — follow the ship page's shape |
 | the **deck plan** | `con_DeckInfo` (`$3061`) — `DrawPacked` over the level RLE, at a different scale from the play area |
-| the **ship plan** | `con_ShipInfo` — the same side view the lift screen now draws: `LvDrawPacked`, `LvHighlight` and the renderer are already in bank 7 (Layer 8b), so this page needs only an entry that skips the shaft mark and a main-RAM trampoline from the console's bank-6 code |
 
 Also deferred: the low-energy sprite flash, which is now the *only* energy cue the port has — see
 decisions 4 and 5.
 
-> **Bank 6 has 23 bytes free** and none of the above fits in it. A fourth bank does not help on its
-> own: bank 6's *code* cannot read another bank, so the code would have to move with the data.
-> Layer 13's reshuffle is the other way out.
+> **Neither page's code can live in bank 6** (62 bytes free): bank 4 for logic that reads main
+> RAM, bank 7 for anything that wants the shadow-screen renderer — the split the menu and the
+> ship page already use.
 
 ### Layer 10 — Transfer minigame — **BUILT** (2026-08-17)
 The whole subgame plays, entered the original's way — touching a droid at `moveMode` 0 — and all

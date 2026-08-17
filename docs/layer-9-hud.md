@@ -334,10 +334,10 @@ described. It is the same glyph as in `Blk-Whte` and the deck name `robo-stores`
 
 ### 6c. What is not built
 
-**[DECISION 15]** The four menu icons are **drawn and inert**. `conWaitInput` (`$2C63`) walks
-`consoleState` between `$80` and `$83` with up/down, recolours the selected sprite and dispatches
-through `conJump_t` on fire; none of that is ported, because KC asked for L-to-exit and nothing
-else. The port's own droid-database page went with it — it was never the C64's.
+**[DECISION 15 — superseded 2026-08-17]** The four menu icons were **drawn and inert** when this
+layer closed; `conWaitInput`'s selection and dispatch are BUILT now (see 6e) — K/M walk the
+marker, fire dispatches, entry 0 exits and entry 3 shows the ship's side view. The port's own
+droid-database page stayed gone — it was never the C64's.
 
 The icons themselves are sprites 1-4 in `conRedraw`'s table at `$6B94`, at Y `$90`, `$AC`, `$C8`,
 `$E0` and image pointers `$4F`, `$50`, `$A1`, `$A2`. **Three are built** — static hires artwork at
@@ -413,31 +413,40 @@ everything else.
 next thing that touches it.
 
 
-## 6e. Outstanding: the three sub-pages, and the selection that reaches them
+## 6e. The menu and the sub-pages — PARTLY BUILT (2026-08-17)
 
-**Nothing behind the icons is built.** The main console screen is complete and faithful; the four
-icons are drawn and inert. What is missing is the menu itself and the three pages it leads to —
-`conJump_t` at `$6BE1` has four entries and the first is `con_Exit`:
+**The selection is built, and one of the three pages.** `conWaitInput`'s port is `ConMenu4` in
+droid.asm — BANK 4, not bank 6, which was full; everything the menu touches (the keys, the play
+buffer, `conActive`, the page-request flag) is main RAM, so it can be. `conSel` walks 0–3 with
+K/M exactly as `consoleState` walks `$80`–`$83` — clamped, not wrapped — and fire dispatches as
+`conJump_t` does: entry 0 exits to the game, entry 3 shows the **ship's side view** (below),
+entries 1 and 2 are still unbuilt and the press does nothing. The C64 recolours the selected
+icon's *sprite*; our icons are logical 1 because 2 and 3 are black on several deck palettes, so
+the indicator is a white marker bar beside the selected icon (`ConMarker4`), drawn from bank 4
+into the buffer directly. The old `ConsoleRun` ("L leaves, nothing else") is deleted — leaving
+is the menu's top entry now — which put bank 6 back to 62 bytes free.
+
+**The ship page is `con_ShipInfo` (`$3062`) faithfully**: the side view drawn once and STATIC —
+the current deck lit, no shaft mark — and fire returns to the console main screen with the
+selection kept (`con_Back2Main`'s `$C0` redraw, as `ConsoleTick`'s redraw path). It is Layer 8b's
+drawer reused whole: `LvShip7` in bank 7 is `LvStart7` minus the shaft mark and the panel text,
+with the lift palette swapped in around it (`ConShipEnter4/Exit4`). The console's 15 visible rows
+lose nothing — the view's rows 13–15 are blank — so the 16th-row `t1i3` trick is not needed.
+`ConsoleTick` (main.asm) is the conductor, since only main RAM can page: bank 4 for the menu,
+bank 7 for the page, bank 6 for `ConDraw` on the way back.
+
+**Still missing** — the two pages that need real work:
 
 | icon | routine | what it draws | what it needs |
 |---|---|---|---|
 | 2, the `?` emblem | `con_DroidInfo` (`$2CC6`) | the **droid database** — one page per type, walked with up/down, `dInfoPage` selecting among five sub-pages through `dInfoPgJump_t` (`$6BE9`) | `PrintDroidInfo` (`$3172`), and the per-type stat tables, which are already in bank 4 and mirrored to `PN_TABS` |
 | 3, the circular badge | `con_DeckInfo` (`$3061`) | the **deck plan** — the current deck's map, drawn by `DrawPacked` over the level RLE | a second decoder over `leveldata`, which is already ported; it draws to a different scale from the play area |
-| 4, the side view | `con_ShipInfo` | the **ship plan** — a cross-section of all sixteen decks | `SideView_dat` (`$F180`), 201 bytes of RLE into a 64 × 16 character grid. `tools/rip_sideview.py` already reads it; nothing is exported yet |
 
-**The selection has to come first**, and it is `conWaitInput` (`$2C63`): `consoleState` walks
-between `$80` and `$83` with up/down, the selected sprite is recoloured through `RdSpriteState` /
-`WrSpriteState`, and fire dispatches through `conJump_t`. `con_Back2Main` (`$2CBB`) sets bits 6 and
-7 to return. None of that is ported — see decision 15 — so the pages have no way in even once they
-exist.
-
-**Two of the three need real data ported**, which is the honest measure of what is left: the deck
-plan needs a second use of the level RLE, and the ship plan needs `SideView_dat`. The droid
-database needs only code and tables that are already here.
-
-> **Bank 6 has 23 bytes free.** None of this fits without either Layer 13's reshuffle or a fourth
-> bank — and a fourth bank does not help by itself, because bank 6's *code* cannot read it. The
-> code would have to move with the data.
+**Both need real data or code ported**, which is the honest measure of what is left: the deck
+plan needs a second use of the level RLE, the droid database only code and tables already here.
+The way in and the way back exist now — follow the ship page's shape in ConsoleTick, and note
+neither page's CODE can go in bank 6 (62 bytes free): bank 4 for logic that reads main RAM,
+bank 7 for anything that wants the shadow-screen renderer.
 
 ## 7. Decisions to revisit
 
@@ -456,6 +465,6 @@ nothing else. Kept below with the outcome, because the reasoning is the record o
 | 7 | Panel palette shared with the deck | **closed.** The panel is a separate CRTC cycle and now has its own four colours — §5a. Sixteen ULA writes at each boundary, ~210 cycles, twice a frame |
 | 8 | Panel, HUD and console in bank 6, with a main-RAM bridge | stands, and is now Layer 13's to unpick. The bridge shrank to two scalars when the droid number and energy bar went |
 | 9 | Energy bar absolute, one cell per 8 | **reversed** with decision 4 |
-| 10 | Console pages are Ship and Droids | stands. The C64 has the **deck map** (`DrawPacked` over the level RLE) and the **ship side view** (`SideView_dat`, `$F180`, 201 B of RLE into a 64 × 16 grid). Both need real data ported and are the honest remainder of this layer |
+| 10 | Console pages are Ship and Droids | half-reversed 2026-08-17: the menu selection and the **ship side view** page are built (see 6e), riding Layer 8b's drawer in bank 7. The **deck map** and the C64's droid database remain |
 | 11 | The surround is **black**, where the C64's is grey | new. The original fills all eight status rows with the surround colour and puts the box in the middle 32 scanlines; we draw the box alone and leave the rest CRTC-blanked. Covering it needs all eight rows displayed — 5,120 bytes against a 7-row panel cycle |
 | 12 | The box sits at the **top** of the display; the C64's is 8 scanlines down | new, and cosmetic given 11: the same 32 scanlines of box, 8 px higher against black. Matching it exactly means displaying 5 rows with the first blank, which costs 640 bytes and a second `PANEL_ADDR` |
