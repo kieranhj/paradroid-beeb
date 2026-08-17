@@ -39,7 +39,7 @@
 \   the $29 -> blank test       NOT PORTED, because it cannot fire: no
 \                               level stream contains $29 (all 16 decks
 \                               checked) — it is svData's blank
-\   char $A0, colour $F1        cd7_mark: a solid cell of logical 1 —
+\   char $A0, colour $F1        cd7_mark: a solid cell of logical 3 —
 \                               white on every deck — at the tile under
 \                               plyMapPos, the same reference cell
 \                               CheckWalls uses (plyX+11, posY+63)
@@ -129,7 +129,7 @@
 \ Tile column = plyMapPos/4 and the C64's plyMapPos is our reference
 \ cell (player.asm): char column (plyX+PLY_REFX)>>3, char row
 \ (posY+PLY_REFY)>>3 — so five shifts of each. Then the map's -3, the
-\ clip, and sixteen bytes of solid logical 1 where the C64 stores an
+\ clip, and sixteen bytes of solid logical 3 where the C64 stores an
 \ inverse space in colour 1.
 .cd7_mark
   CLC
@@ -161,7 +161,7 @@
   CLC
   LDA xgd   : ADC xfRowAdrLo,X : STA xgd
   LDA xgd+1 : ADC xfRowAdrHi,X : STA xgd+1
-  LDA #&0F                      \ solid logical 1: white on every deck
+  LDA #&FF                      \ solid logical 3: white on every deck
   LDY #15
 .cd7_mfill
   STA (xgd),Y

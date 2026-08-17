@@ -97,13 +97,14 @@ PN_W_RIGHT  = 101
 \ white with the logo and the score in red. Grey is not a BBC colour, so
 \ the frame and the text take black. See docs/layer-9-hud.md.
 \
-\ THE CONSOLE IS THE ODD ONE and has to be, because it is drawn into the
-\ PLAY area and takes the deck's palette rather than the panel's. There,
-\ logical 1 is physical 7 on all sixteen decks while 2 and 3 vary and are
-\ black on several — so white is the only reliably light ink it has.
+\\ THE CONSOLE IS THE ODD ONE and has to be, because it is drawn into the
+\ PLAY area and takes the deck's palette rather than the panel's. White
+\ there is LOGICAL 3, both planes, on all sixteen decks - the slots carry
+\ fixed roles now (background, black, highlight, white) and the sprites
+\ depend on it. It was logical 1 until 2026-08-17, when 1 became black.
 PN_INK_TEXT  = &FF
 PN_INK_RED   = &F0
-PN_INK_WHITE = &0F
+PN_INK_WHITE = &FF
 
 \ ---- CAPITALS ARE TWO CELLS WIDE ---------------------------
 \ DrawChar ($0C5F) writes the code, then tests it:

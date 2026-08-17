@@ -36,7 +36,7 @@
 
 DB_TYPES = 24
 DB_STATS = 8
-DB_INK   = PN_INK_WHITE         \ the console's ink: logical 1 on every deck
+DB_INK   = PN_INK_WHITE         \ white: logical 3 on every deck
 
 \ ---- the page's geometry ------------------------------------
 \ A glyph is 8 x 16, so a text line is TWO buffer rows and the console's
@@ -834,7 +834,7 @@ DB_DESC_MAX = &38 - &10         \ sub_0_2DCD's own bound, rebased to 0
 \ ============================================================
 \ A minimal PnGlyph, as XfGlyphAt is: bank 6 owns the real one and only
 \ one bank is visible. The font is main RAM and readable from here.
-\ THE INK IS WHITE and not a variable â€” the console draws in logical 1 on
+\ THE INK IS WHITE (logical 3) and not a variable â€” the console draws in logical 1 on
 \ every deck, and nothing on this page draws in anything else.
 .DbAt
   LDX dbLine
@@ -1077,7 +1077,7 @@ DB_DESC_MAX = &38 - &10         \ sub_0_2DCD's own bound, rebased to 0
 
 \ ---- three C64 bytes to six MODE 1 --------------------------
 \ A hires sprite byte is eight 1-bit pixels and the image is drawn in
-\ logical 1, which is the LOW colour plane alone â€” so four pixels are one
+\ LOGICAL 3, which is BOTH colour planes â€” so four pixels are one
 \ nibble and the conversion is a shift and a mask.
 \
 \ THE SOURCE IS ROW MAJOR AND THE BUFFER IS NOT: a 4-pixel column's eight
@@ -1101,7 +1101,13 @@ DB_DESC_MAX = &38 - &10         \ sub_0_2DCD's own bound, rebased to 0
   CPX #3
   BNE db_ip_byte
   RTS
+.dbNib3                         \ a nibble into BOTH colour planes
+  EQUB &00,&11,&22,&33,&44,&55,&66,&77
+  EQUB &88,&99,&AA,&BB,&CC,&DD,&EE,&FF
+
 .db_ip_nib
+  TAX                           \ the ink is logical 3, not the low plane
+  LDA dbNib3,X                  \ alone as when white was logical 1
   LDY dbDstOfs
   STA (pnDst),Y
   LDA dbDstOfs

@@ -545,9 +545,9 @@ CON_DROID_D  = BUF_BASE + 2 * ROW_BYTES + 7 * UNIT_BYTES
   TAX
   LDA conWide
   BNE csn_wide
-  TXA
-  LDY conDrTmp
-  STA (pnDst),Y
+  LDA conNib3,X                 \ the ink is logical 3, so the four pixels
+  LDY conDrTmp                  \ go into BOTH colour planes, not just the
+  STA (pnDst),Y                 \ low one as when white was logical 1
   JMP ConSprAdv
 .csn_wide
   LDA conDblHi,X
@@ -563,16 +563,32 @@ CON_DROID_D  = BUF_BASE + 2 * ROW_BYTES + 7 * UNIT_BYTES
   STA conDrTmp
   RTS
 
+\ ---- a nibble into both colour planes ----------------------
+\ n -> n in the high nibble and n in the low, i.e. four pixels of logical
+\ 3. Sixteen bytes rather than the shift-and-OR, because ConSprNib runs
+\ per byte of every icon and the console is redrawn whole.
+.conNib3
+  EQUB &00,&11,&22,&33,&44,&55,&66,&77
+  EQUB &88,&99,&AA,&BB,&CC,&DD,&EE,&FF
+
 \ ---- doubling a nibble to a byte ---------------------------
 \ Four pixels to eight, for the two X-expanded icons. Sixteen entries and
-\ not 256, because white is the low plane alone. Bits 3-0 are pixels 0-3,
-\ so entry n of conDblHi is p0 p0 p1 p1 and of conDblLo is p2 p2 p3 p3.
+\ not 256, because a pixel is either the ink or nothing. Bits 3-0 of the
+\ index are pixels 0-3, so entry n of conDblHi is p0 p0 p1 p1 and of
+\ conDblLo is p2 p2 p3 p3.
+\ THE INK IS LOGICAL 3, so each pattern appears in BOTH nibbles: the high
+\ nibble is the high colour plane and the low nibble the low one. It was
+\ the low nibble alone while white was logical 1.
 .conDblHi
-  EQUB %0000, %0000, %0000, %0000, %0011, %0011, %0011, %0011
-  EQUB %1100, %1100, %1100, %1100, %1111, %1111, %1111, %1111
+  EQUB %00000000, %00000000, %00000000, %00000000
+  EQUB %00110011, %00110011, %00110011, %00110011
+  EQUB %11001100, %11001100, %11001100, %11001100
+  EQUB %11111111, %11111111, %11111111, %11111111
 .conDblLo
-  EQUB %0000, %0011, %1100, %1111, %0000, %0011, %1100, %1111
-  EQUB %0000, %0011, %1100, %1111, %0000, %0011, %1100, %1111
+  EQUB %00000000, %00110011, %11001100, %11111111
+  EQUB %00000000, %00110011, %11001100, %11111111
+  EQUB %00000000, %00110011, %11001100, %11111111
+  EQUB %00000000, %00110011, %11001100, %11111111
 
 \ Rows 5, 8 and 11 at units 7, 4 and 4; the droid takes row 2, unit 7.
 \ Held as whole addresses because the row multiply would otherwise be
