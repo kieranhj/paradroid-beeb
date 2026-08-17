@@ -5,6 +5,10 @@
 The decision point, and it is now decided: **CRTC hardware scroll over a circular strip, 4 px
 horizontally and 1 scanline vertically, both axes vsync-locked at one step per frame.**
 
+> **Superseded detail:** the panel described below as 5 rows at `&4800` became **4 rows at
+> `&4A00`** in Layer 9 (the C64's status box is 32 scanlines, not 64 — see
+> [`layer-9-hud.md`](layer-9-hud.md) §2a). The rupture mechanism is unchanged.
+
 ## 3a — Map browser ✅ DONE
 Scroll the viewport by one character with Z/X/K/M; switch decks with UP/DOWN. Full-screen redraw
 per step, no hardware scroll. Proves `DrawScreen` renders correctly from an arbitrary map origin,

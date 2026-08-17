@@ -349,8 +349,9 @@ moved into the data bank to make room:
 
 **Sideways RAM is RAM**, and both are only ever touched with `SWRAM_DATA` paged in, which is the
 resting state — the blitter is the only thing that swaps it out and it touches neither. That leaves
-`&1100–&2FCA` and **54 bytes free**, which is not enough for another layer. `PARADAT` moving out of
-main RAM is now genuinely the next structural move, not a someday one.
+`&1100–&2FCA` and **54 bytes free** at the time of writing (24 as of 2026-08-17 — see
+`docs/memory-map.md`), which is not enough for another layer. Moving code into bank 4 was and
+remains the structural answer.
 
 ---
 

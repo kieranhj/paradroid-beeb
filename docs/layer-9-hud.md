@@ -104,7 +104,7 @@ about 250 bytes. This moved twice while the layer was built, and the final arran
 
 | | | |
 |---|---|---|
-| the font | **its own disc file, `PARAFNT`** | 98 glyphs × 32 B = 3,136 B **+ 192 B of border cells**, catalogue load address `&3C00`, so `*LOAD` puts it exactly where it runs |
+| the font | **its own disc file, `PARAFNT`** | 103 glyphs × 32 B = 3,296 B **+ 192 B of border cells** (`FONT_GLYPHS`; 98 when this was written), catalogue load address `&3C00`, so `*LOAD` puts it exactly where it runs |
 | the font, at run time | **`&3C00-&48FF`**, main RAM | readable with no paging from main RAM, bank 4 and bank 6 alike |
 | the four droid tables | **`&4900-&495F`**, main RAM | `drCent`, `drNum`, `drWeapon`, `drSpeed`, copied out of bank 4 at boot by `PageTabsIn` |
 | the panel | **`&4A00-&53FF`**, 4 rows | moved up from `&4800` when it shrank; the 640 bytes went to the font |
@@ -337,7 +337,8 @@ described. It is the same glyph as in `Blk-Whte` and the deck name `robo-stores`
 **[DECISION 15 — superseded 2026-08-17]** The four menu icons were **drawn and inert** when this
 layer closed; `conWaitInput`'s selection and dispatch are BUILT now (see 6e) — K/M walk the
 marker, fire dispatches, entry 0 exits and entry 3 shows the ship's side view. The port's own
-droid-database page stayed gone — it was never the C64's.
+droid-database page stayed gone — it was never the C64's. (The C64's own database page landed
+later, in §6f.)
 
 The icons themselves are sprites 1-4 in `conRedraw`'s table at `$6B94`, at Y `$90`, `$AC`, `$C8`,
 `$E0` and image pointers `$4F`, `$50`, `$A1`, `$A2`. **Three are built** — static hires artwork at
@@ -413,15 +414,18 @@ everything else.
 next thing that touches it.
 
 
-## 6e. The menu and the sub-pages — PARTLY BUILT (2026-08-17)
+## 6e. The menu and the sub-pages — BUILT (2026-08-17)
+
+**All of it is built now** — the selection, the ship plan, the deck plan, and (later the same
+day) the droid database, which has its own section, §6f. The text below is as written when the
+database was still open.
 
 **The selection is built, and two of the three pages.** `conWaitInput`'s port is `ConMenu4` in
 droid.asm — BANK 4, not bank 6, which was full; everything the menu touches (the keys, the play
 buffer, `conActive`, the page-request flags) is main RAM, so it can be. `conSel` walks 0–3 with
 K/M exactly as `consoleState` walks `$80`–`$83` — clamped, not wrapped — and fire dispatches as
 `conJump_t` does: entry 0 exits to the game, entry 2 shows the **deck plan** and entry 3 the
-**ship's side view** (both below); entry 1, the droid database, is still unbuilt and the press
-does nothing. The C64 recolours the selected
+**ship's side view** (both below); entry 1, the droid database, followed later the same day (§6f). The C64 recolours the selected
 icon's *sprite*; our icons are logical 1 because 2 and 3 are black on several deck palettes, so
 the indicator is a white marker bar beside the selected icon (`ConMarker4`), drawn from bank 4
 into the buffer directly. The old `ConsoleRun` ("L leaves, nothing else") is deleted — leaving

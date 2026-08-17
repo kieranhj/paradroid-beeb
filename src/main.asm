@@ -388,8 +388,8 @@ PN_FRAME_BYTES = PN_FRAME_CELLS * 16
 \ ---- the four droid tables, mirrored out of bank 4 ----------
 \ panel.asm and console.asm are in bank 6 and cannot read bank 4, so
 \ PageTabsIn copies these here at boot. 96 bytes in the tail of the same
-\ hole the font sits in — the font ends at &4780 and the panel starts at
-\ &4800, and this is what fills the gap.
+\ hole the font sits in — the font and border cells end at &49A0 and the
+\ panel starts at &4A00, and this is what fills the gap exactly.
 PN_TABS     = PN_FRAME_ADDR + PN_FRAME_BYTES
 pnTabCent   = PN_TABS + 0
 pnTabNum    = PN_TABS + 24

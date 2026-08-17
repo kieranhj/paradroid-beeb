@@ -4,7 +4,7 @@
 
 Things the port could do on a Master 128 that a Model B cannot host, kept together so the Model B
 path stays readable. **None of these are on the critical path.** `PLAN.md`'s target is a Model B
-with two sideways RAM banks; anything here either forks the rendering path or makes the port
+with four sideways RAM banks; anything here either forks the rendering path or makes the port
 Master-only, and that is a decision not yet taken.
 
 ## ⏸ 2 px horizontal scrolling, via shadow RAM

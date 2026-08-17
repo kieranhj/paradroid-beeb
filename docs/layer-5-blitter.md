@@ -3,7 +3,7 @@
 *Part of the Paradroid BBC Micro port. Start at [`../PLAN.md`](../PLAN.md).*
 
 Done before the droids went in: seven slots at the Layer 4 cost did not fit in a frame.
-The droid movement half of Layer 5 is still open — see [`../PLAN.md`](../PLAN.md).
+The droid movement half of Layer 5 has since landed too — [`layer-5-droids.md`](layer-5-droids.md).
 
 Seven slots at the Layer 4 cost do not fit in a frame, so the blitter is being cut down first. Four
 steps, in dependency order:

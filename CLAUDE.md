@@ -7,7 +7,7 @@ Guidance for Claude Code when working in this repository.
 A port of the C64 game *Paradroid* (Andrew Braybrook, 1985) to the **BBC Micro Model B**, in
 6502 assembly for the **BeebASM** assembler. A C64 disassembly has been reverse-engineered and
 annotated, and the port plays: a deck scrolls eight ways under a droid you steer, with a pool of
-seven sprites and a static panel above.
+eight sprite slots and a static panel above.
 
 **Source material:** `paradroid_ce.lst` is a disassembly of the **1985 Hewson original / 1986
 Competition Edition** lineage — verified by unpacking all four C64 releases and diffing them
@@ -73,9 +73,9 @@ proves no instruction was added, removed or reordered.
 
 | | |
 |---|---|
-| Machine | BBC Model B / B+ with **4 × 16K sideways RAM banks** (4 = data + level draw, 5 and 6 = the blitter's four compiled shifts, 7 = the transfer minigame) |
+| Machine | BBC Model B / B+ with **4 × 16K sideways RAM banks** (4 = data + level draw + droid AI + combat, 5 and 6 = the blitter's four compiled shifts plus Layer 9's panel/console in 6, 7 = the transfer minigame, lift screen and console pages) |
 | CPU | Plain 6502 — `CPU 0` in BeebASM, no 65C12 opcodes |
-| Display | MODE 1, 4 colours. **Not a plain frame:** a 5-row static panel at `&4800` above a 320 × 120 scrolled play area, driven by a three-cycle vertical rupture |
+| Display | MODE 1, 4 colours. **Not a plain frame:** a 4-row static panel at `&4A00` above a 320 × 120 scrolled play area, driven by a three-cycle vertical rupture |
 | Play area | 10K circular strip at `&5800`, **10K hardware wrap**, scrolled by the CRTC — 4 px horizontally, 1 scanline vertically |
 | Game loop | `FRAME_LOCK` = 2 fields a pass, 25 Hz — a floor, not a fixed length: a pass that overruns carries on rather than waiting out another field |
 
@@ -119,7 +119,7 @@ Symbol addresses come from
 ```
 
 which dumps every global label as one long line of `'name':decimal` — the quick way to find a
-variable's runtime address for an emulator poke. `-do` is there only to stop the five loose files.
+variable's runtime address for an emulator poke. `-do` is there only to stop the six loose files.
 
 ## Confirmed hardware facts (measured, not assumed)
 
@@ -155,17 +155,18 @@ variable's runtime address for an emulator poke. `-do` is there only to stop the
 
 ## Memory budget
 
-**`PLAN.md` holds the authoritative map — read it there, and take the addresses from the `beebasm`
-output rather than from any document.** In outline:
+**`docs/memory-map.md` is the detailed map and `PLAN.md` keeps the outline — and take the
+addresses from the `beebasm` output rather than from any document.** In outline:
 
 | Region | Contents |
 |---|---|
 | ZP `&00–&8F` | All used. The map is in `main.asm`. `&90` up belongs to the OS |
 | `&0400–&0C90` | MODE 1 charset, built at deck load — reclaimed OS workspace |
-| `&1100–…` | Code (`PARA`), starting below DFS's `PAGE`. Ends `&27DA`; `&27DA–&3000` is free |
-| `&3000–&36FF` | Sprite background save areas, one page per slot |
-| `&3800–&3C00` | Tile map |
-| `&4800–&547F` | Panel — 5 rows × 640, displayed by rupture cycle 1 |
+| `&1100–…` | Code (`PARA`), starting below DFS's `PAGE`. Ends just short of `&3000` — 24 B free, the binding constraint |
+| `&3000–&37FF` | Sprite background save areas, one page per each of the eight slots |
+| `&3800–&3BFF` | Tile map |
+| `&3C00–&49FF` | Layer 9's text font (`PARAFNT`), border cells and mirrored droid tables |
+| `&4A00–&53FF` | Panel — 4 rows × 640, displayed by rupture cycle 1 |
 | `&5500–&57FF` | Character-address and sprite-mask tables, built at startup |
 | `&5800–&7FFF` | Play buffer: circular strip, 16 rows × 640 |
 | SWRAM bank 4 | `PARADAT` — tiles, levels, palettes, droid game data, **the level-draw code, the droid AI and Layer 10's entry/exit** |
@@ -178,7 +179,7 @@ the data bank back out around themselves, so `SWRAM_DATA` is the resting state. 
 because the two halves are never wanted at once and **the IRQ reads neither** — check that again
 before putting anything else in a bank.
 
-Both banks are staged through `&3000` by `*LOAD` and copied up, because the MOS has the DFS ROM
+All four bank files are staged through `&3000` by `*LOAD` and copied up, because the MOS has the DFS ROM
 paged in at `&8000` during a filing-system call. `*LOAD` must also happen **before** `InstallIrq` —
 taking over IRQ1V stops the MOS servicing the filing system.
 

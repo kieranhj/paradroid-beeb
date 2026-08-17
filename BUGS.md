@@ -1,8 +1,11 @@
 # Known defects
 
-Open defects found by measurement, with the evidence for each. Entries stay here until
-fixed, and record what has been *ruled out* as well as what is suspected — the ruled-out
-list is usually the expensive part to reproduce.
+Defects found by measurement, with the evidence for each. Fixed entries stay too, marked
+**FIXED** in the heading, because they record what was *ruled out* as well as what was wrong —
+and the ruled-out list is usually the expensive part to reproduce.
+
+Open as of 2026-08-17: **#12, #9, #7** (polish), and **#1/#2/#3**, which all want retesting
+against fixes that landed after they were filed.
 
 Defects 1–4 were found on 2026-08-10 while verifying the Layer 5 sprite save-geometry change
 (`3f69b4d`); all of them predate that commit and reproduce identically on the build before it.

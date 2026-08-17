@@ -1,6 +1,7 @@
 # Layer 7 — Combat
 
-**Status: planned, nothing built.** This is the layer that makes the port a game rather than a
+**Status: DONE — 7a–7f all landed, 2026-08-15/16.** Each stage's section below carries its own
+completion note; the plan text is kept as written. This is the layer that makes the port a game rather than a
 walkthrough: the player shoots, droids shoot back, things die, the score moves, the Alert level
 rises, and standing on a recharge pad puts energy back.
 

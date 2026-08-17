@@ -220,7 +220,9 @@ listing (the empty sprite at `$4000`); the game sets them dynamically.
 > wrong direction and assumed a format never used.
 > See [`layer-4-player.md`](layer-4-player.md) and [`layer-5-blitter.md`](layer-5-blitter.md).
 >
-> The 20 effect sprites and the 80 main definitions are **not yet ported** — Layer 7.
+> The effect sprites **were ported in Layer 7c** (2026-08-15) — 31 bullet and explosion frames
+> exported with bounding boxes into bank 5, 0/31 round-trip mismatches. The 80 main definitions
+> remain unported.
 >
 > **The droid database's portrait is in that unported block.** `BuildIntroSprites` (`$3629`) builds
 > a 48 × 84 multicolour picture per type from four images the type's `DroidInfo_dat` record names
@@ -394,7 +396,8 @@ Colours are set at runtime by `FillCRAM`, since `CharColor` is `$00` for `$D0-$F
 `$F8`, player side `$FF` (white), CPU side `$FC` (light grey), with the vertical bars at columns 3,
 18, 21 and 36 taking alternating player/CPU colours.
 
-> **Status.** Not ported. Layer 10, paged from a sideways bank. The layout data is
+> **Status.** Ported — Layer 10, built 2026-08-17: `src/data/xferboard.asm` in bank 7, drawn by
+> `xfer.asm` (see `layer-10-transfer.md`). As predicted below, the layout data is
 > platform-independent and the circuit characters come with the `$7800` conversion; the four wire
 > animation characters do too. The two-tone player/CPU scheme needs two of MODE 1's four colours,
 > which is affordable on a screen with no deck art on it.

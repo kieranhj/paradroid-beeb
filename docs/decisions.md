@@ -4,16 +4,23 @@
 
 ## Decisions taken
 
-| Decision | Choice | Date |
-|---|---|---|
-| Target machine | BBC Model B / B+ with **2 × 16K sideways RAM banks** | 2026-08-04 |
-| Screen mode | MODE 1, 4 colours, **10K wrap at `&5800–&7FFF`** | 2026-08-04 |
-| Screen layout | 3-cycle vertical rupture: 5-row panel at `&4800`, 3-row gap, scrolled play area | 2026-08-05 |
-| Play area | **320 × 120** — 10 tiles wide, 15 character rows. See Layer 3d for why not 128. | 2026-08-05 |
-| Scrolling | CRTC hardware scroll over a circular strip. **4 px horizontal, 1 scanline vertical.** | 2026-08-05 |
-| Interrupts | We own IRQ1V outright, System VIA T1 continuous. No MOS chaining, no MOS sound. | 2026-08-04 |
-| Architecture | No HAL. Build one working layer at a time, verified in the emulator before moving on. | 2026-08-04 |
-| Source version | **1985 original / 1986 Competition Edition** lineage — which is what `paradroid_ce.lst` already is. Redux's bug list adopted as a spec, not as code. Heavy Metal parked as a possible later tile set. | 2026-08-06 |
+**The table of record is in [`../PLAN.md`](../PLAN.md) — "Decisions taken"** — and is not
+duplicated here, because a copy of it in this file fell out of date (it still said two sideways
+banks and a five-row panel). This file keeps the *reasoning*: why MODE 1, the no-HAL rule and the
+files it deleted, and the evidence for which Paradroid the listing is. Per-layer decisions are
+numbered in each layer's own doc.
+
+### The no-HAL rule, and the five deleted files
+
+An earlier iteration of this project designed a hardware abstraction layer up front, targeting a
+Master 128 in MODE 2 with shadow-RAM double buffering. That was explicitly rejected in favour of
+building one verified layer at a time. Five inherited files from that era survived in `src/`
+without being in the build — `zeropage.asm`, `hardware.asm`, `macros.asm`, `hal_video.asm` and
+`hal_irq.asm` — and were deleted rather than left to be mistaken for live code; `hal_video.asm` in
+particular carried unverified CRTC arithmetic with `TODO: verify in emulator` still in it. They
+are in git history if ever wanted (`git show <rev>:src/hardware.asm`). The only content with a
+future was `hardware.asm`'s SN76489 encoding, now recorded — still unverified — in
+[`layer-11-sound-title.md`](layer-11-sound-title.md).
 
 ### Why MODE 1
 

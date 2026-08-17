@@ -82,7 +82,8 @@ is `WinningColor == LeftColor`.
    it back. The board maps C64 rows 9–24 onto buffer rows 0–15 exactly, all twelve wires.
 4. **[DECISION] A fourth SWRAM bank** (KC, 2026-08-16): bank 7, `PARXFER`, fifth `*LOAD`
    at boot staged through `&3000` like the others. Banks 4–7 is the Master's own sideways
-   RAM numbering. ~9.8 K of it is still free.
+   RAM numbering. ~9.8 K of it was free at the time; the lift screen and the console's three
+   pages have since taken it to ~2.0 K (see `layer-9-hud.md` §6e–6f).
 5. **[DECISION] The palette** (KC, 2026-08-17): background blue, the board's structure
    and unclaimed wire BLACK, the left side's pieces yellow, the right side's magenta.
    "Left" and "right" because the `$FF`/`$FC` identity tokens belong to the *sides* —

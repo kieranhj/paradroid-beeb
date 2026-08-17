@@ -3,7 +3,7 @@
 *Part of the Paradroid BBC Micro port. Start at [`../PLAN.md`](../PLAN.md).*
 
 The other half of Layer 5. The blitter half — compiling the sprite pool from 14,000 cycles a
-sprite to 5,814, and then giving it four 1 px shifts across three sideways banks — is in
+sprite to 5,814, and then giving it four 1 px shifts across two sideways banks — is in
 [`layer-5-blitter.md`](layer-5-blitter.md) and is worth reading first if the question is about
 cost rather than behaviour.
 
@@ -195,9 +195,11 @@ The oracle procedure is the one in `PLAN.md`: poke the `JSR SprDrawAll` in the m
 SPACE, dump again, compare. Droids moving during the comparison is fine and is the point — the
 restore has to put back exactly what the draw took, wherever the droid has since walked to.
 
-## Still open here
+## Still open here — all since landed
 
-- **Droids walk through each other and through the player.** Collision is Layer 6.
-- **No line of sight and no firing.** Layer 7, at the point in `DroidRun` the comment marks.
+- **Droids walk through each other and through the player.** Collision is Layer 6 — landed, see
+  [`layer-6-droids-live.md`](layer-6-droids-live.md).
+- **No line of sight and no firing.** Line of sight landed with Layer 6, firing with Layer 7
+  ([`layer-7-combat.md`](layer-7-combat.md)).
 - **`sprType` is set every pass** rather than only when it changes, because a 999 blowing into a
   001 changes type mid-life. Cheap; noted so it does not look like an oversight.

@@ -168,9 +168,10 @@ written would have cost 4,700.
 | A droid walking into the player | paused 16 iterations, player nudged clear, droid reversed |
 | Frame lock, all measured cases | 128 passes in 128 × 79,872 cycles exactly |
 
-## Still open
+## Still open — as of Layer 6; the first three have since landed
 
-- **Main RAM has 116 bytes left.** `&1100–&2F8C` against a ceiling of `&3000`, and Layer 7 needs
+- **Main RAM has 116 bytes left.** *(Relieved 2026-08-15 exactly as below — `droid.asm` moved into
+  bank 4 — and since refilled by Layers 7–10; see `docs/memory-map.md`.)* `&1100–&2F8C` against a ceiling of `&3000`, and Layer 7 needs
   bullets, explosions, damage and scoring. The remedy is the one Layer 4 already used: move
   `droid.asm` into **bank 4** beside the tile and deck data it reads. It calls `MapChar` (already
   in that bank) and `DoorProbe` (main RAM, which bank code may call freely), and it runs from the
@@ -178,10 +179,10 @@ written would have cost 4,700.
   `bufcore.asm`'s header is satisfied. **Read that header before doing it.**
   Building with `DEBUG_TIME` already overruns and needs `DEBUG_VSYNC` turned off to fit, which is
   how this was noticed.
-- **No firing, no damage, no `Alert`.** Layer 7, at the point `DroidRun`'s comment marks.
+- **No firing, no damage, no `Alert`.** Layer 7 — landed ([`layer-7-combat.md`](layer-7-combat.md)).
 - **The transfer game arm.** `DoCollision`'s `_ply_droid` checks `moveMode` first: with the player
-  in transfer mode a collision sets `xferDroid` instead of bouncing. That is Layer 10, and the test
-  is not there yet.
+  in transfer mode a collision sets `xferDroid` instead of bouncing. Layer 10 — landed
+  ([`layer-10-transfer.md`](layer-10-transfer.md)).
 - **`DR_COL_W`/`DR_COL_H` have not been played with**, only measured. They are the first thing to
   adjust if droids feel sticky or pass through each other.
 - **Three things from KC's first play of this build**, all in `BUGS.md`: droids that lock together

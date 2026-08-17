@@ -9,13 +9,11 @@ Regenerate it after any change that moves a region:
 
 `PLAN.md` keeps the one-line summary; this file is the detail behind it.
 
-> **STALE IN PLACES.** The per-region addresses below predate `droid.asm` moving into bank 4 and
-> everything after it — Layers 9, 10, 8b and the console pages all grew the images. The current
-> figures (2026-08-17, after the droid database) are: main RAM `&1100–&2FE7` with **24 B free**
-> below `&3000`; bank 4 ending `&BED9` with **294 B free**; bank 5 ending `&BBF6` with 1,033 B
-> free; bank 6 ending `&BFC5` with **58 B free — full**; bank 7 (`PARXFER`, absent below entirely)
-> ending `&B7E5` with **~2.0 K free**. `PLAN.md`'s outline table is current; regenerate with the command above rather than
-> trusting a row here until this notice goes.
+> Headline figures below were re-verified against the build on **2026-08-17** (after the droid
+> database landed). The **internal** layout tables for bank 4 and the sprite banks are older
+> snapshots — the data blocks at the front of bank 4 have not moved, but its code tail has grown
+> through Layers 7–10 and the shims; regenerate with the command above before trusting a
+> mid-bank address.
 
 ## Main RAM
 
@@ -27,38 +25,37 @@ Regenerate it after any change that moves a region:
 | `&0200–&03FF` | 512 B | OS vectors and workspace. We own `IRQ1V` at `&0204` outright |
 | `&0400–&0C8F` | 2,192 B | MODE 1 charset, rebuilt at every deck load — reclaimed OS workspace |
 | `&0C90–&10FF` | **1,136 B free** | The rest of the reclaimed workspace |
-| `&1100–&2654` | 5,461 B | Code (`PARA`), starting below DFS's `PAGE` of `&1900`. The level draw is no longer here — see bank 4 |
-| `&2655–&2FFF` | **2,475 B free** | |
-| `&3000–&36FF` | 1,792 B | Sprite background save areas, 7 slots × 256 |
-| `&3700–&37FF` | **256 B free** | |
+| `&1100–&2FE7` | 7,912 B | Code (`PARA`), starting below DFS's `PAGE` of `&1900`. The level draw and droid AI are in bank 4; Layers 7–10's main-RAM halves refilled the room they made |
+| `&2FE8–&2FFF` | **24 B free** | The binding constraint — anything new in main RAM must displace code into a bank |
+| `&3000–&37FF` | 2,048 B | Sprite background save areas, 8 slots × 256 — slot 7 (`&3700`) is the player's bullet. Ends exactly at the tile map |
 | `&3800–&3BFF` | 1,024 B | Tile map, 64 × 16, page-aligned, fixed home |
-| `&3C00–&47FF` | **3,072 B free** | Usable, with the staging rule below |
-| `&4800–&547F` | 3,200 B | Panel — 5 rows × 640, displayed by rupture cycle 1 |
-| `&5480–&54FF` | **128 B free** | |
+| `&3C00–&48DF` | 3,296 B | Layer 9's text font, `PARAFNT` — 103 glyphs × 32 B, `*LOAD`ed here after the bank copies |
+| `&48E0–&499F` | 192 B | The status box's twelve border cells, same file |
+| `&49A0–&49FF` | 96 B | The four droid tables, mirrored out of bank 4 for the panel in bank 6 — ends exactly at the panel |
+| `&4A00–&53FF` | 2,560 B | Panel — 4 rows × 640, displayed by rupture cycle 1 |
+| `&5400–&54FF` | **256 B free** | |
 | `&5500–&55FF` | 256 B | `CHAR_PTR_LO` — character code → charset address, built at startup |
 | `&5600–&56FF` | 256 B | `CHAR_PTR_HI` |
 | `&5700–&57FF` | 256 B | `SPR_MASKTAB` — data byte → transparency mask, built at startup |
 | `&5800–&7FFF` | 10,240 B | Play buffer: circular strip, 16 rows × 640, inside a 10K hardware wrap |
-| `&8000–&BFFF` | 16 K | Sideways bank window — one of the THREE banks below, never more |
+| `&8000–&BFFF` | 16 K | Sideways bank window — one of the FOUR banks below, never more |
 | `&C000–&FFFF` | 16 K | MOS |
 
-Free main RAM totals **7,067 bytes**, of which 2,475 are below `&3000` — the level draw moved
-into bank 4 on 2026-08-14 and took 2,437 bytes of code with it. `droid.asm` followed on 2026-08-15,
-which is what made room for the raster work; see the notice at the top.
+Free main RAM totals **1,416 bytes**: 1,136 in the reclaimed OS workspace, 24 below `&3000`, and
+256 above the panel. The room the level draw and `droid.asm` made when they moved into bank 4
+(2026-08-14/15) has since been spent by Layers 7–10's main-RAM halves.
 
 ### The boot-time staging overlay
 
 `*LOAD` stages both banks at `DATA_LOAD` = `&3000` and the copy-up runs from there, because the MOS
 has the DFS ROM paged in at `&8000` during a filing-system call. So:
 
-| File | Staged over |
-|---|---|
-| `PARADAT` | `&3000–&5D2F` |
-| `PARASPR` | `&3000–&68B5` |
+All four bank files stage there in turn — `PARADAT` (to `&6ED9`), `PARASPR` (`&6BF6`),
+`PARSPR2` (`&6FC5`) and `PARXFER` (`&67E5`), at their 2026-08-17 sizes.
 
-Everything from `&3000` to `&68B5` is written through during boot — the save areas, the tile map,
-the free 3K, the panel and the bottom 4K of the play buffer. That is why boot shows a moment of
-garbage in the play area.
+Everything from `&3000` to about `&6FC5` is written through during boot — the save areas, the tile
+map, the font region, the panel and the bottom of the play buffer. That is why boot shows a moment
+of garbage in the play area.
 
 **The rule this imposes:** anything living in that span must be *built at runtime after*
 `PageDataIn`, never loaded with the code. The tile map, the panel, `CHAR_PTR` and `SPR_MASKTAB` all
@@ -82,9 +79,14 @@ already satisfy it.
 
 ## SWRAM bank 4 — `PARADAT`
 
-`&8000–&AD30`, 11,568 bytes used, **4,816 free**. Tiles, decks, palettes, droid game data — and, since
-2026-08-14, the level-draw code that reads them. This bank is the resting state of the latch, so a
-call into it from the main loop needs no paging at all.
+`&8000–&BED9`, 16,090 bytes used, **294 free** (2026-08-17). Tiles, decks, palettes, droid game
+data — and the code that reads them: the level draw (2026-08-14), the droid AI (2026-08-15),
+Layer 7's combat and kill chain, Layers 10 and 8b's entry/exit shims, `CalcAxis`/`CalcSpeed`, and
+the console menu and page shims. This bank is the resting state of the latch, so a call into it
+from the main loop needs no paging at all.
+
+The data blocks below are still where the table says; the code tail from `&A3AB` has grown well
+past the 2,437 bytes recorded — regenerate before trusting a code address.
 
 | Address | Size | Contents |
 |---|---|---|
@@ -116,11 +118,14 @@ and nothing would diagnose it.
 
 ## SWRAM bank 5 — `PARASPR` (shifts 0 and 1 px)
 
-`&8000–&B056`, 12,374 bytes used, **4,010 free**. Two of the four compiled shifts.
+`&8000–&BBF6`, 15,351 bytes used, **1,033 free** (2026-08-17). Two of the four compiled shifts,
+plus Layer 7's effect artwork — 31 bullet and explosion frames, 2,946 B, here because the
+interpreted effect path reads them every row.
 
 ## SWRAM bank 6 — `PARSPR2` (shifts 2 and 3 px)
 
-`&8000–&B199`, 12,697 bytes used, **3,687 free**. The other two, laid out identically.
+`&8000–&BFC5`, 16,326 bytes used, **58 free — full** (2026-08-17). The other two shifts, laid out
+identically, plus Layer 9's panel engine, HUD, console, strings and icons.
 
 **Both sprite banks share one layout**: a fixed section of tables at the same addresses in each,
 then that bank's own code. That is what lets the blitter name one set of labels and read whichever
@@ -146,21 +151,25 @@ Then the code, whose sizes differ between the banks — in bank 5, `drD0_*` at `
 bank, block by block" — including the division that explains the shape: the compiled fast path
 reads none of the artwork, and the wrap fallback is the only thing that does.
 
+## SWRAM bank 7 — `PARXFER`
+
+`&8000–&B7E5`, 14,310 bytes used, **2,074 free** (2026-08-17). Layer 10's transfer game and
+Layer 8b's lift screen, sharing the shadow screen/colour RAM, the glyph page and the renderer
+pattern; plus both glyph sets, the console's ship page, the deck plan (`condeck.asm`,
+`plandata.asm`), and the droid database (`condb.asm`, `droidinfo.asm`) with its second copies of
+the string table and the droid icon — second copies because the first ones live in bank 6 and only
+one bank is visible at a time. The internal layout is in
+[`layer-10-transfer.md`](layer-10-transfer.md) and [`layer-9-hud.md`](layer-9-hud.md) §6e–6f.
+
 ## Two things this map says that the summaries do not
 
-**The constraint was code space, and moving code fixed it.** "Main RAM is full" always meant "the
-`PARA` image cannot grow past `&3000`" — there was 4.6 K free, just none of it where code could go.
-Since a bank can hold code as easily as data, the level draw went to live beside the tile and deck
-data it reads, and `droid.asm` after it — beside the waypoints and speeds *it* reads, and next to
-the `MapChar` it calls on every wall probe. `&3000` is now 2,086 bytes away rather than 39, having
-twice been the thing blocking the next layer.
+**The constraint was code space, and moving code fixed it — repeatedly.** "Main RAM is full"
+always meant "the `PARA` image cannot grow past `&3000`" — never that there was no RAM. Since a
+bank can hold code as easily as data, the level draw went to live beside the tile and deck data it
+reads, and `droid.asm` after it. Layers 7–10 then spent the room again, each paying its way in by
+moving something else across; `&3000` is 24 bytes away, and displacing code into a bank remains
+the standing answer.
 
-The other free regions still cannot hold anything *loaded*: `&3700–&37FF` and `&3C00–&47FF` are
-under the staging overlay, so they take only what is built at runtime — which is what `CHAR_PTR` and
-`SPR_MASKTAB` already are.
-
-**1 px sprite positioning is bank-5-bound, not main-RAM-bound.** Since the blitter was compiled a
-shift is *code*, ~4,632 bytes of it, so two more shifts want ~9.3 K against the 1,866 free here. The
-9.3 K going spare in bank 4 is no help: only one bank is visible at a time, and the blitter needs its
-own. The costing is in [`layer-5-blitter.md`](layer-5-blitter.md); why it matters is in
-[`layer-4-player.md`](layer-4-player.md).
+The free regions under the staging overlay cannot hold anything loaded *with the code*: they take
+only what is built at runtime (`CHAR_PTR`, `SPR_MASKTAB`, the tile map, the panel) or `*LOAD`ed
+after the bank copies, which is what `PARAFNT` is.
