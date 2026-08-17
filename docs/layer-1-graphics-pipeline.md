@@ -115,10 +115,29 @@ bytes and it indexes 14 — so the original's behaviour is incidental; both side
 `+$C`, which are the *sprite* multicolour registers. Having `$D023` wrong corrupted every
 multicolour cell on every deck.
 
-**`$D021` is still an assumption.** It comes from `bgColor`, which `SetIntroColors` loads from slot
-3 of the deck record — but slot 3 does not match the lavender floor in `ref/start screen.png`, so
-gameplay sets it somewhere not yet found. 14 (light blue) is taken from the screenshot. Marked
-`[assumed]` in `export_bbc.py`; **re-derive before trusting deck colours.**
+**`$D021` is SOLVED, 2026-08-17: it is slot 0 of the deck's colour record, and it differs per
+deck.** It was a hard-coded 14 (light blue) taken from a screenshot, which is right for decks 2 and
+7 and wrong for the other fourteen — KC spotted that the backgrounds should include oranges and
+greys.
+
+The chain, traced through the listing:
+
+| | |
+|---|---|
+| `InitColors` (`$27E5`) | picks the deck's record via `deckColorScheme[deckNum]` and copies its 12 slots to `clr0_top_d020` with `LDY #11 … DEY / BPL`. The loop ends with **Y = 0**, so the accumulator still holds **slot 0**, and `$2821` stores that in `Irq1bgColor` |
+| `Irq_118` (`$6F4C`) | the gameplay raster chain's third stage: writes `Irq1bgColor` to `$D021` and sets `$D018 = $2F`, selecting the **`$7800` tile charset** — i.e. the play area, 128 scanlines of it |
+
+Two near-misses that had confused this before. `SetIntroColors` (`$27A1`) does the same copy but
+picks a **random** record (`$D41B AND 3` + 2), because it dresses the intro — hence "slot 3" looking
+arbitrary. And `bgColor` really is slot 3, but it belongs to `Irq_91`, the band *above* the play
+area; the status box itself is a fixed white (`Irq_254` writes `#$F1`).
+
+Confirmed against `ref/c64_deck0.png`, a screenshot of the real game: deck 0 uses scheme 0, whose
+slot 0 is light grey — and the floor in that screenshot is light grey, not light blue. The per-deck
+values are emitted as **`.deckBg`** and `BuildCharset` indexes `colourMap` with them.
+
+Only decks **2 and 7** are light blue. The rest: light grey (0, 5, 9), light red (1, 8, 10, 15),
+yellow (3, 6, 12), light green (4, 11), cyan (13, 14).
 
 **Multicolour ALERT lettering is faithful, not a bug.** Row 0 of tile 22 (`$63`–`$66`) is the
 lettering and sits on slot 7, which is multicolour under 8 of the 16 deck schemes — 4 pixels wide,
@@ -136,6 +155,14 @@ shadow → black).
 
 This is the second time a bug hid in the stage *after* conversion. The conversion was correct in
 both cases; the damage happened in colour assignment.
+
+**Both assignments are now editable by eye — `tools/palette_lab.py`.** The greedy rule above is a
+starting point, and Layer 14 is where the answer is actually chosen. The lab renders every deck in
+C64 colours beside the MODE 1 version and lets both stages be changed live: the **palette**
+(logical 0-3 → BBC physical, i.e. `deckPalette`) and the **merge** (each C64 colour → a logical
+slot, i.e. `colourMap`) — the second being where a deck wanting five colours loses one, which no
+palette can undo. Saving writes `tools/deck_palettes.json`; `export_bbc.py` reads it as an override
+and says so, and rejects a malformed one outright rather than quietly falling back.
 
 **Verified:**
 - `verify_bbc.py --charset <dump> <deck>` diffs the charset the BBC built against a Python

@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from rip_levels import parse_listing, C64_PAL  # noqa: E402
 from export_bbc import (deck_colours, build_logical_map, convert_charset,  # noqa: E402
                         assign_palette, CHARSET_ADDR, TILEDEF_ADDR,
-                        TILEDEF_SIZE, D021, D022, D023)
+                        TILEDEF_SIZE, D022, D023, deck_background)
 
 PROJECT = Path(__file__).resolve().parent.parent
 OUT_DIR = PROJECT / 'tools' / 'output'
@@ -37,7 +37,8 @@ def main():
     mem, _ = parse_listing(PROJECT / 'paradroid_ce.lst')
 
     _, _, cell_colour = deck_colours(mem, deck)
-    logical, _ = build_logical_map(mem, cell_colour)
+    D021 = deck_background(mem, deck)      # per deck: slot 0 of its record
+    logical, _ = build_logical_map(mem, cell_colour, D021)
     palette = assign_palette(logical)
     full, _ = convert_charset(mem, cell_colour, logical)
 

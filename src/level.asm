@@ -137,8 +137,10 @@
   ASL A : ASL A : ASL A : ASL A
   STA bcCmapBase
 
-  CLC : LDA bcCmapBase : ADC #D021_COLOUR : TAX
-  LDA colourMap,X : STA bcBg
+  LDY bcDeck                    \ $D021 is PER DECK — slot 0 of its colour
+  LDA deckBg,Y                  \ record, not a constant. Only decks 2 and 7
+  CLC : ADC bcCmapBase : TAX    \ are the light blue this used to assume for
+  LDA colourMap,X : STA bcBg    \ all sixteen. See tools/export_bbc.py.
   CLC : LDA bcCmapBase : ADC #D022_COLOUR : TAX
   LDA colourMap,X : STA bcD022L
   CLC : LDA bcCmapBase : ADC #D023_COLOUR : TAX

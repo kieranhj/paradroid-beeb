@@ -598,7 +598,12 @@ NUM_DECKS  = 16
 
 \ Shared C64 play-area colours; only the low nibble of each $D02x
 \ is used. These index the per-deck colourMap.
-D021_COLOUR = 14                \ background — the floor       [assumed]
+\
+\ $D021 is NOT here, because it is not shared: the play area's
+\ background is slot 0 of each deck's colour record, and the
+\ sixteen values are in the deckBg table in colours.asm. It was a
+\ constant 14 until 2026-08-17, which is right for decks 2 and 7
+\ only — see tools/export_bbc.py's deck_background().
 D022_COLOUR = 1                 \ multicolour 01 — white
 D023_COLOUR = 0                 \ multicolour 10 — black
 REC_LEN     = 12                \ colour slots per scheme record

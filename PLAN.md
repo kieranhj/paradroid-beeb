@@ -98,7 +98,8 @@ the draw call sites — zeroing `sprActive` alone is not enough (BUGS.md #9's no
 | 2 px world scrolling | Parked, Master-only via shadow RAM. Costs +60–80% on all drawing — see [`docs/master-extensions.md`](docs/master-extensions.md) |
 | Play area is 320 × 120, not 128 | Consequence of the single hardware wrap — see Layer 3d. Getting the row back needs the 20K wrap or per-cycle wrap bits. **KC's call** |
 | Vertical granularity | 1 scanline against 4 px horizontal is lopsided. 2 or 4 scanlines costs nothing extra. There are droids to move now, so this is decidable |
-| `$D021` is an assumption | Marked `[assumed]` in `export_bbc.py`. First suspect if deck colours look wrong on hardware |
+| ~~`$D021` is an assumption~~ | **Solved 2026-08-17.** It is **slot 0 of the deck's colour record**, per deck — `InitColors` leaves it in A and `Irq_118` writes it to `$D021` for the play area. Only decks 2 and 7 are the light blue the port assumed for all sixteen; the rest are greys, light red, yellow, light green and cyan. Emitted as `.deckBg`, confirmed against `ref/c64_deck0.png`. See [`docs/layer-1-graphics-pipeline.md`](docs/layer-1-graphics-pipeline.md) |
+| **ALERT lamp is dead** | `BUGS.md` #13 — character `$16`, the lamp in the ALERT sign, is coloured by **alert level** on the C64 (green/yellow/orange/red, `AlertColors` at `$6D45`) and is always black here |
 | `keydown` uses OSBYTE `&81` | The last OS call in the main loop |
 | 8 decks draw ALERT in multicolour | Confirmed faithful to the C64 original, not a bug. Worth a look on real hardware |
 | Transfer: no droid info screens | The C64 shows two full-screen robot data pages (`ShowXferInfo`, `$3734`) before the board. Not ported; the game goes straight to side select. Wants doing alongside Layer 11's presentation work, where the token-string machinery gets its second user |
@@ -404,6 +405,14 @@ the pass that settles how it **looks**, as one deliberate sitting. Two strands:
    read as one game. The original's own per-deck colours are the starting point, not the answer.
    **Include the deck plan page (KC, 2026-08-17)**: re-judge `planInk` (built by `export_bbc.py`
    with two legibility overrides) and layer-9 §6e decision 1 alongside the deck palettes.
+
+   **The tool for it is `tools/palette_lab.py`** (2026-08-17): every deck rendered in the C64's own
+   colours beside the port's MODE 1 render, with both the palette and the colour *merge* editable
+   live, and a 320 × 120 window showing what actually fits on screen. It writes
+   `tools/deck_palettes.json`, which `export_bbc.py` reads as an override when it regenerates
+   `colours.asm` — so a decision made by eye lands in the build without hand-editing generated
+   data. Verified: its BBC render is byte-identical to `convert_charset` (what `BuildCharset`
+   reproduces) over all 2,192 characters of all 16 decks.
 2. **Redrawing graphics characters that fight the palette.** Where a tile or glyph only works
    because of a colour MODE 1 cannot give it, the honest fix is to change the artwork — a
    **deviation from the original's graphics, agreed case by case** under the usual rule.

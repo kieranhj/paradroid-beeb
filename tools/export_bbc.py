@@ -45,6 +45,7 @@ should cover it.
 Requires: Python 3. No third-party dependencies.
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -67,13 +68,13 @@ DECKSCHEME = 0xF160     # deck -> scheme index
 # D022/D023 are set by DrawSideview ($308A/$308F) as $F1/$F0 and persist into
 # gameplay; the other writes to that area are +3/+4/+$C, which are the sprite
 # multicolour registers rather than the character ones.
-# D021 is NOT confirmed: it comes from bgColor, which SetIntroColors loads
-# from slot 3 of the deck record - but slot 3 does not match the lavender
-# floor in ref/start screen.png, so gameplay evidently sets it elsewhere.
-# 14 (light blue) is taken from the screenshot and should be re-derived.
-D021 = 14               # background - light blue, the lavender floor  [assumed]
 D022 = 1                # multicolour 01 - white
 D023 = 0                # multicolour 10 - black
+
+# $D021, the play-area background, is PER DECK - it is slot 0 of the deck's
+# colour record. See deck_background() below. It was a hard-coded 14 here
+# until 2026-08-17, which was right for decks 2 and 7 and wrong for the
+# other fourteen.
 
 DECK = 1                # deck whose colour scheme the charset is built for
 
@@ -105,6 +106,56 @@ C64_RGB = [
 # goes to blue rather than a glaring cyan, the grid lines to magenta, and
 # shadows to black rather than a glaring BBC red.
 PREFERRED = {14: 4, 7: 5, 2: 0}
+
+
+PALETTE_FILE = Path(__file__).resolve().parent / 'deck_palettes.json'
+
+
+def load_palette_override():
+    """Hand-chosen palettes from tools/palette_lab.py, if they exist.
+
+    The automatic assignment below is a starting point, not the answer: MODE 1
+    gives four colours where the C64 gives sixteen, so which four a deck ends
+    up with is a judgement made by eye. palette_lab.py is where that judgement
+    is made and this is where it enters the build.
+
+    A malformed file is fatal rather than ignored. A palette silently reverting
+    to the automatic one would look exactly like a build that worked.
+    """
+    if not PALETTE_FILE.exists():
+        return {}
+    try:
+        decks = json.loads(PALETTE_FILE.read_text()).get('decks', {})
+    except (ValueError, OSError) as e:
+        sys.exit('ERROR: %s: %s' % (PALETTE_FILE.name, e))
+
+    out = {}
+    for key, rec in decks.items():
+        try:
+            d = int(key)
+        except ValueError:
+            sys.exit('ERROR: %s: deck key %r is not a number'
+                     % (PALETTE_FILE.name, key))
+        if not 0 <= d < 16:
+            sys.exit('ERROR: %s: deck %d out of range' % (PALETTE_FILE.name, d))
+        clean = {}
+        phys = rec.get('physical')
+        if phys is not None:
+            if len(phys) != 4 or not all(
+                    isinstance(v, int) and 0 <= v < 8 for v in phys):
+                sys.exit('ERROR: %s: deck %d physical must be 4 values 0-7, '
+                         'got %r' % (PALETTE_FILE.name, d, phys))
+            clean['physical'] = list(phys)
+        cmap = rec.get('colourMap')
+        if cmap is not None:
+            if len(cmap) != 16 or not all(
+                    isinstance(v, int) and 0 <= v < 4 for v in cmap):
+                sys.exit('ERROR: %s: deck %d colourMap must be 16 values 0-3, '
+                         'got %r' % (PALETTE_FILE.name, d, cmap))
+            clean['colourMap'] = list(cmap)
+        if clean:
+            out[d] = clean
+    return out
 
 
 def assign_palette(logical):
@@ -206,9 +257,29 @@ def deck_colours(mem, deck):
     return scheme, rec, cell_colour
 
 
-def build_logical_map(mem, cell_colour):
+def deck_background(mem, deck):
+    """The play area's $D021 for a deck: SLOT 0 of its colour record.
+
+    Traced 2026-08-17. InitColors ($27E5) copies the deck's 12-slot record to
+    clr0_top_d020 with Y counting 11 down to 0, so the accumulator is left
+    holding slot 0, and $2821 stores that in Irq1bgColor. The gameplay raster
+    chain's third stage, Irq_118 ($6F4C), writes Irq1bgColor to $D021 and
+    switches $D018 to $2F - the $7800 tile charset - for the 128 lines of play
+    area. So slot 0 is the floor colour, and it differs per deck: only decks 2
+    and 7 are the light blue this was once hard-coded to. Confirmed against
+    ref/c64_deck0.png, whose floor is light grey (scheme 0, slot 0 = 15).
+
+    Not to be confused with bgColor, which InitColors sets from slot 3 and
+    Irq_91 uses for the band ABOVE the play area, nor with the status area,
+    which Irq_254 draws on a fixed white ($F1) background.
+    """
+    scheme = mem[DECKSCHEME + deck]
+    return mem[RECORDS + scheme * REC_LEN]
+
+
+def build_logical_map(mem, cell_colour, bg):
     """Pick which C64 colours become MODE 1 logical 0-3, by how much each is
-    used across the tile set. Logical 0 is always the background."""
+    used across the tile set. Logical 0 is always the deck's background."""
     from collections import Counter
     freq = Counter()
     for tile in range(32):
@@ -221,12 +292,32 @@ def build_logical_map(mem, cell_colour):
                 freq[colour & 7] += 1
             else:                                # hires cell
                 freq[colour] += 1
-    freq.pop(D021, None)
+    freq.pop(bg, None)
 
-    chosen = [D021] + [c for c, _ in freq.most_common(3)]
+    chosen = [bg] + [c for c, _ in freq.most_common(3)]
     while len(chosen) < 4:
         chosen.append(0)
     return chosen, freq
+
+
+def build_colour_map(logical):
+    """C64 colour 0-15 -> MODE 1 logical 0-3, for one deck.
+
+    Precomputed here so the 6502 needs no search, and emitted as .colourMap.
+    A colour that is not one of the four keeps the nearest by luminance - which
+    is the merge, and the place a deck wanting five colours loses one.
+
+    tools/palette_lab.py imports this: the rule must have ONE definition, or a
+    preview drifts from what the build actually draws.
+    """
+    out = []
+    for c64 in range(16):
+        if c64 in logical:
+            out.append(logical.index(c64))
+        else:
+            out.append(min(range(4),
+                           key=lambda i: abs(LUMA[logical[i]] - LUMA[c64])))
+    return out
 
 
 def convert_charset(mem, cell_colour, logical):
@@ -241,6 +332,8 @@ def convert_charset(mem, cell_colour, logical):
             return logical.index(c64)
         return min(range(4), key=lambda i: abs(LUMA[logical[i]] - LUMA[c64]))
 
+    bg = logical[0]              # logical 0 IS the deck background, by
+                                 # construction in build_logical_map
     out = bytearray()
     stats = {'hires': 0, 'multi': 0}
     for c in range(CHARSET_CHARS):
@@ -248,7 +341,7 @@ def convert_charset(mem, cell_colour, logical):
         colour = cell_colour(c)
         if colour & 8:
             stats['multi'] += 1
-            pal = [logical_of(D021), logical_of(D022),
+            pal = [logical_of(bg), logical_of(D022),
                    logical_of(D023), logical_of(colour & 7)]
             px = [[pal[(b >> (6 - p * 2)) & 3] for p in range(4)] for b in rows]
             # each C64 pixel occupies two MODE 1 pixels
@@ -256,8 +349,8 @@ def convert_charset(mem, cell_colour, logical):
             right = [mode1_byte([p[2], p[2], p[3], p[3]]) for p in px]
         else:
             stats['hires'] += 1
-            fg, bg = logical_of(colour), logical_of(D021)
-            px = [[fg if (b >> (7 - p)) & 1 else bg for p in range(8)] for b in rows]
+            fg, bgl = logical_of(colour), logical_of(bg)
+            px = [[fg if (b >> (7 - p)) & 1 else bgl for p in range(8)] for b in rows]
             left = [mode1_byte(p[0:4]) for p in px]
             right = [mode1_byte(p[4:8]) for p in px]
         out.extend(left)
@@ -310,20 +403,24 @@ def main():
     names = ['black', 'white', 'red', 'cyan', 'purple', 'green', 'blue',
              'yellow', 'orange', 'brown', 'lt red', 'dk grey', 'grey',
              'lt green', 'lt blue', 'lt grey']
+    override = load_palette_override()
     colour_map = bytearray()
     deck_pal = bytearray()
+    deck_bg = bytearray()
     deck_logicals = []
     for d in range(16):
         scheme, rec, cell_colour = deck_colours(mem, d)
-        logical, freq = build_logical_map(mem, cell_colour)
+        bg = deck_background(mem, d)
+        deck_bg.append(bg)
+        logical, freq = build_logical_map(mem, cell_colour, bg)
         deck_logicals.append(logical)
-        for c64 in range(16):
-            if c64 in logical:
-                colour_map.append(logical.index(c64))
-            else:
-                colour_map.append(min(range(4),
-                                      key=lambda i: abs(LUMA[logical[i]] - LUMA[c64])))
-        deck_pal.extend(assign_palette(logical))
+        dmap = build_colour_map(logical)
+        dpal = assign_palette(logical)
+        chosen = override.get(d, {})
+        dmap = chosen.get('colourMap', dmap)
+        dpal = chosen.get('physical', dpal)
+        colour_map.extend(dmap)
+        deck_pal.extend(dpal)
         if d == DECK:
             print('  deck %d -> scheme %d -> logical %s'
                   % (d, scheme, ', '.join('%d=%s' % (i, names[c])
@@ -395,11 +492,20 @@ def main():
         emit_bytes(f, schemes)
         f.write('\n.deckScheme\n')
         emit_bytes(f, mem[DECKSCHEME:DECKSCHEME + 16])
+        f.write('\n.deckBg\n')
+        f.write('\\ $D021 per deck - slot 0 of the deck\'s colour record.\n'
+                '\\ BuildCharset indexes colourMap with this rather than a\n'
+                '\\ constant: only decks 2 and 7 are the light blue the port\n'
+                '\\ used to assume for all sixteen.\n')
+        emit_bytes(f, deck_bg)
         f.write('\n.deckPalette\n')
         emit_bytes(f, deck_pal)
         f.write('\nALIGN &100\n.colourMap\n')
         emit_bytes(f, colour_map)
-    print('  colours.asm   %5d bytes' % (len(schemes) + 16 + len(deck_pal) + 256))
+    print('  colours.asm   %5d bytes%s'
+          % (len(schemes) + 16 + len(deck_pal) + 256,
+             '' if not override else
+             '  [%s: %d deck(s) hand-set]' % (PALETTE_FILE.name, len(override))))
 
     # ---- tile definitions ----------------------------------------------
     tiles = mem[TILEDEF_ADDR:TILEDEF_ADDR + TILEDEF_COUNT * TILEDEF_SIZE]

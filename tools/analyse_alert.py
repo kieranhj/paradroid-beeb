@@ -20,8 +20,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from rip_levels import parse_listing  # noqa: E402
-from export_bbc import (deck_colours, build_logical_map, D021,  # noqa: E402
-                        CHARCOLOR, TILEDEF_ADDR, REC_LEN)
+from export_bbc import (deck_colours, build_logical_map,       # noqa: E402
+                        deck_background, CHARCOLOR, TILEDEF_ADDR, REC_LEN)
 
 PROJECT = Path(__file__).resolve().parent.parent
 ALERT_TILE = 22
@@ -47,7 +47,8 @@ def main():
     bad = []
     for d in range(16):
         scheme, rec, cell_colour = deck_colours(mem, d)
-        logical, _ = build_logical_map(mem, cell_colour)
+        D021 = deck_background(mem, d)
+        logical, _ = build_logical_map(mem, cell_colour, D021)
 
         def log_of(c64):
             if c64 in logical:
@@ -73,9 +74,14 @@ def main():
         if verdict != 'crisp':
             bad.append((d, verdict, why))
 
+        # In a multicolour cell the VIC takes the "11" colour from bits 0-2
+        # only, bit 3 being the mode selector - so report colour & 7 there,
+        # not the whole nibble. This line used to print the nibble and named
+        # e.g. brown where the cell actually draws white.
         print('%3d %6d   %-11s  %-9s  %5d  %9d   %s %s'
               % (d, scheme, 'multicolour' if multi else 'hires',
-                 NAMES[colour & 15], lg, bg, verdict, why))
+                 NAMES[colour & 7 if multi else colour & 15],
+                 lg, bg, verdict, why))
 
     print()
     joined = [b for b in bad if b[1] == 'joined']

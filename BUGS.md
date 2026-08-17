@@ -4,7 +4,7 @@ Defects found by measurement, with the evidence for each. Fixed entries stay too
 **FIXED** in the heading, because they record what was *ruled out* as well as what was wrong —
 and the ruled-out list is usually the expensive part to reproduce.
 
-Open as of 2026-08-17: **#12, #9, #7** (polish), and **#1/#2/#3**, which all want retesting
+Open as of 2026-08-17: **#13, #12, #9, #7** (polish), and **#1/#2/#3**, which all want retesting
 against fixes that landed after they were filed.
 
 Defects 1–4 were found on 2026-08-10 while verifying the Layer 5 sprite save-geometry change
@@ -12,6 +12,48 @@ Defects 1–4 were found on 2026-08-10 while verifying the Layer 5 sprite save-g
 Later entries carry their own date.
 
 Numbering is historical, not an order — 3 sits after 4 because it was added later.
+
+---
+
+## 13. The ALERT sign's lamp is dead — it should track the alert level — **2026-08-17**
+
+Found while checking the deck colours against the listing, on KC's prompt that the ALERT text
+should be legible. The lettering turned out to be faithful (see below); **the lamp is not.**
+
+Character `$16` is the indicator inside the ALERT sign — it appears twice, in row 2 of tile 22,
+as the two dots between the letters and the panel. On the C64 its colour is **not** taken from the
+deck's colour scheme at all:
+
+```
+    InitColors      $2835  LDA Alert / ROL A x3 / AND #3 / TAY
+                    $283D  LDA AlertColors,Y
+                    $2840  STA CharColor+$16
+    DoAlertAndAging $3E38  the same, live, as the alert level changes
+```
+
+`AlertColors` (`$6D45`) is `E5 E7 E8 E2` — low nibbles **5 green, 7 yellow, 8 orange, 2 red** — so
+the lamp runs green → yellow → orange → red as the ship's alert rises, and `$E8` has bit 3 set, so
+at level 2 the lamp is a *multicolour* cell where the others are hires.
+
+**Ours is always black.** `charSlot[$16]` is 14, past the end of the 12-byte record, and both the
+exporter and `BuildCharset` clamp an out-of-range slot to colour 0. The clamp is right — the C64
+reads past the record there too — but it never applies on the original, because `InitColors`
+**overwrites** `CharColor[$16]` immediately afterwards. We reproduce the incidental behaviour and
+miss the deliberate one.
+
+**Not fixed, because it is a behaviour and not a table.** The port builds its charset once per deck
+load, so a lamp that changes with the alert level needs character `$16` rebuilt when `Alert`
+crosses a threshold — a small entry point into `BuildCharset` for one character, plus a call from
+the alert code. That is a Layer 7/9 change and wants agreeing first. The interim alternative,
+baking the level-0 green, is itself a deviation: it would show "all clear" during a red alert.
+
+**The lettering, for the record, is faithful and was checked at the same time.** Characters
+`$63`-`$66` sit on slot 7, which carries bit 3 in schemes 0, 2, 5 and 6 — so on decks
+0, 3, 5, 6, 9, 12, 13 and 14 the C64 itself draws the hires letterforms through the multicolour
+path, at 4 double-width pixels, and the letters thicken and join. All 16 decks contain the sign.
+`tools/output/alert_check.png` renders the tile C64-against-BBC for every deck. Making those eight
+decks legible means forcing those characters to hires, which is a deliberate deviation from the
+original's appearance — **KC's call**, not a bug fix.
 
 ---
 

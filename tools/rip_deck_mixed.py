@@ -45,9 +45,14 @@ REC_LEN = 12
 DECKSCHEME = 0xF160
 
 # Play-area shared colours. Only the low nibble of $D02x is used.
-D021 = 14      # background - light blue, the lavender floor
+D021 = 14      # DEFAULT ONLY - overridden per deck below from slot 0
 D022 = 1       # multicolour 01 - white
-D023 = 6       # multicolour 10 - blue
+D023 = 0       # multicolour 10 - black
+# D023 was 6 (blue) here until 2026-08-17. It is 0: the only character-mode
+# writes to $D022/$D023 are DrawSideview's ($308A/$308F), setting $F1/$F0 --
+# the other writes to that area are the SPRITE multicolour registers. Getting
+# this wrong recolours every multicolour cell on every deck. export_bbc.py and
+# palette_lab.py have always used 0; this file had been left behind.
 
 VIEW_TILES_X, VIEW_TILES_Y = 10, 7
 SCALE = 3
@@ -59,6 +64,9 @@ def main():
 
     scheme = mem[DECKSCHEME + deck]
     rec = list(mem[RECORDS + scheme * REC_LEN:RECORDS + (scheme + 1) * REC_LEN])
+    global D021
+    D021 = rec[0]           # $D021 is slot 0 of the deck's record - see
+                            # export_bbc.deck_background()
     print('deck %d -> colour scheme %d -> slots %s'
           % (deck, scheme, ' '.join('%X' % c for c in rec)))
 

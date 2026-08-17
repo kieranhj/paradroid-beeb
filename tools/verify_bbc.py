@@ -75,11 +75,12 @@ def check_charset(mem, dump_path, deck):
     independent implementations match.
     """
     from export_bbc import (deck_colours, build_logical_map, convert_charset,
+                            deck_background,
                             CHARSET_ADDR, TILEDEF_ADDR, TILEDEF_SIZE)
 
     used = sorted({mem[TILEDEF_ADDR + i] for i in range(32 * TILEDEF_SIZE)})
     _, _, cell_colour = deck_colours(mem, deck)
-    logical, _ = build_logical_map(mem, cell_colour)
+    logical, _ = build_logical_map(mem, cell_colour, deck_background(mem, deck))
     full, _ = convert_charset(mem, cell_colour, logical)
 
     expected = bytearray()
