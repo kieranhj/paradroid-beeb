@@ -187,8 +187,8 @@ moves. The outline:
 | ZP `&00–&8F` | 144 B | **all of it used** — the map is in `main.asm`. `&90` up is the OS |
 | `&0400–&0C8F` | 2,192 B | MODE 1 charset, built at deck load — reclaimed OS workspace |
 | `&0C90–&10FF` | **1,136 B free** | rest of the reclaimed OS workspace |
-| `&1100–&2F95` | 7,830 B | code (`PARA`). DFS random-access buffer space, safe for `*LOAD` |
-| `&2F96–&2FFF` | **106 B free** | **the binding constraint.** Layer 10 paid its way in by moving `CalcAxis`/`CalcSpeed` and its own shims into bank 4, and Layer 8b's lift view by deleting the routines it replaced; anything new in main RAM needs the same treatment |
+| `&1100–&2FCA` | 7,883 B | code (`PARA`). DFS random-access buffer space, safe for `*LOAD` |
+| `&2FCB–&2FFF` | **53 B free** | **the binding constraint.** Layer 10 paid its way in by moving `CalcAxis`/`CalcSpeed` and its own shims into bank 4, and Layer 8b's lift view by deleting the routines it replaced; the deck plan's `ConsoleTick` arm took most of what was left. Anything new in main RAM needs the same treatment |
 | `&3000–&37FF` | 2,048 B | sprite background save areas, one page per slot — **eight now**, ending exactly where the tile map begins. A ninth would overwrite it |
 | `&3800–&3BFF` | 1,024 B | tile map, fixed home — floating it after `code_end` once put it over the save areas |
 | `&3C00–&483F` | 3,136 B | **Layer 9's text font**, `PARAFNT`, `*LOAD`ed straight here — 98 glyphs |
@@ -200,10 +200,10 @@ moves. The outline:
 | `&5500–&56FF` | 512 B | `CHAR_PTR_LO`/`HI` — character code → charset address, built at startup |
 | `&5700–&57FF` | 256 B | data byte → transparency mask table, built at startup |
 | `&5800–&7FFF` | 10,240 B | play buffer: circular strip, 16 rows × 640 |
-| SWRAM bank 4 | 16 K | `PARADAT` — char data, colour schemes, tile defs, deck RLE, waypoints, the combat stat tables, **the level-draw code, the droid AI, Layer 7's combat, Layers 10 and 8b's entry/exit shims, and `CalcAxis`/`CalcSpeed`**. Ends `&BE85`, plus the console's menu and ship-page shims — **379 B free** |
+| SWRAM bank 4 | 16 K | `PARADAT` — char data, colour schemes, tile defs, deck RLE, waypoints, the combat stat tables, **the level-draw code, the droid AI, Layer 7's combat, Layers 10 and 8b's entry/exit shims, and `CalcAxis`/`CalcSpeed`**. Ends `&BED0`, plus the console's menu and page shims — **303 B free** |
 | SWRAM bank 5 | 16 K | `PARASPR` — the blitter at shifts 0 and 1 px, **plus Layer 7's effect artwork**: 31 bullet and explosion frames, 2,946 B, here rather than in bank 4 because the interpreted path reads them every row. Ends `&BBF7`, **1,033 B free** |
 | SWRAM bank 6 | 16 K | `PARSPR2` — the same at 2 and 3 px, laid out identically, **plus Layer 9's panel engine, HUD, console, strings and icons**. Ends `&BFC1`, **62 B free — full** |
-| SWRAM bank 7 | 16 K | `PARXFER` — **Layer 10's transfer game and Layer 8b's lift screen**, sharing the shadow screen/colour RAM, the glyph page and the renderer pattern; plus both glyph sets. plus the console's ship page. Ends `&A2C0`, **~7.5 K free** — the obvious home for anything new that needs a bank |
+| SWRAM bank 7 | 16 K | `PARXFER` — **Layer 10's transfer game and Layer 8b's lift screen**, sharing the shadow screen/colour RAM, the glyph page and the renderer pattern; plus both glyph sets, the console's ship page, and **the deck plan's drawer and data** (`condeck.asm`, `plandata.asm`). Ends `&A7E5`, **~6.0 K free** — the obvious home for anything new that needs a bank |
 
 **"Main RAM is full" meant the `PARA` image could not grow past `&3000`** — never that there was no
 RAM. Moving code rather than data is what fixed it: `screen.asm`, `scroll.asm` and `level.asm` now

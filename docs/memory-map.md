@@ -9,11 +9,13 @@ Regenerate it after any change that moves a region:
 
 `PLAN.md` keeps the one-line summary; this file is the detail behind it.
 
-> **STALE IN PLACES, 2026-08-15.** The per-region addresses below predate `droid.asm` moving into
-> bank 4 and the raster work that followed, so main-RAM `code_end` and bank 4's contents have both
-> moved. The current figures are main RAM `&1100–&27D9` with 2,086 B free below `&3000`, and bank 4
-> ending `&B5C3` with 2,621 B free. Regenerate with the command above rather than trusting a row
-> here until this notice goes.
+> **STALE IN PLACES.** The per-region addresses below predate `droid.asm` moving into bank 4 and
+> everything after it — Layers 9, 10, 8b and the console pages all grew the images. The current
+> figures (2026-08-17) are: main RAM `&1100–&2FCA` with **53 B free** below `&3000`; bank 4 ending
+> `&BED0` with **303 B free**; bank 5 ending `&BBF6` with 1,033 B free; bank 6 ending `&BFC0` with
+> **62 B free — full**; bank 7 (`PARXFER`, absent below entirely) ending `&A7E5` with **~6.0 K
+> free**. `PLAN.md`'s outline table is current; regenerate with the command above rather than
+> trusting a row here until this notice goes.
 
 ## Main RAM
 

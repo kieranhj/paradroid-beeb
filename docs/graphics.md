@@ -34,6 +34,7 @@ These emit BeebASM sources into `src/data/` (gitignored — converted game artwo
 | | `colours.asm` | 8 scheme records, deck→scheme, per-deck colour maps |
 | | `tiledefs.asm` | 32 tile definitions, byte-identical |
 | | `levels.asm` | 16 deck maps RLE + pointers + metadata, byte-identical |
+| | `plandata.asm` | the deck plan's 31 char bitmaps plus the per-deck ink table, bank 7 |
 | `export_droids.py` | `droids.asm` | 24 droid types × 8 rotor phases, as compiled 6502 plus stored rows |
 | | `droidgame.asm` | The game-data half: speeds, waypoints, per-deck type base |
 | `verify_bbc.py` | — | Round-trips the generated sources back to C64 form and diffs against the listing |
@@ -131,6 +132,10 @@ The primary charset:
 | `$FB-$FC` | Corner/junction pieces |
 | `$FD` | Player pulser entry |
 | `$FE` | Decorative diagonal border |
+
+> Codes `$00-$1E` double as the **console deck plan's** map glyphs — `con_DeckInfo` places level
+> RLE codes directly as characters, in hires. `export_bbc.py` ships them a second time for that,
+> as raw bitmaps plus a per-deck ink table in `plandata.asm` (bank 7) — see layer-9 §6e.
 
 ### Charset at `$7000` — text font, 256 characters, 2048 bytes
 

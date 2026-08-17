@@ -171,7 +171,7 @@ output rather than from any document.** In outline:
 | SWRAM bank 4 | `PARADAT` — tiles, levels, palettes, droid game data, **the level-draw code, the droid AI and Layer 10's entry/exit** |
 | SWRAM bank 5 | `PARASPR` — the blitter, shifts 0 and 1 px |
 | SWRAM bank 6 | `PARSPR2` — shifts 2 and 3 px, same layout, plus Layer 9's panel/console — **full** |
-| SWRAM bank 7 | `PARXFER` — Layer 10's transfer minigame and Layer 8b's lift screen, ~6.9 K free |
+| SWRAM bank 7 | `PARXFER` — Layer 10's transfer minigame, Layer 8b's lift screen, and the console's ship and deck-plan pages, ~6.0 K free |
 
 **Only one bank is visible at a time.** `SprRestoreAll` and `SprDrawAll` page their own bank in and
 the data bank back out around themselves, so `SWRAM_DATA` is the resting state. This is safe only
