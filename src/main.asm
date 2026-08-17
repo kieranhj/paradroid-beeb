@@ -1356,17 +1356,23 @@ ENDMACRO
 
 \ The console's menu lives in BANK 4 (ConMenu4, droid.asm) — bank 6 is
 \ full — and only the pieces that PAGE live here: ConDraw is bank 6,
-\ LvShip7 bank 7, and neither bank can pull the other in under itself.
-\ The ship page is the C64's con_ShipInfo: drawn once, static, fire
-\ returns to the console main screen.
+\ LvShip7 and ConDeck7 bank 7, and no bank can pull another in under
+\ itself. Both pages are their C64 selves: drawn once, static, fire
+\ returns to the console main screen. The ship page swaps the palette
+\ around itself; the deck plan keeps the deck's own, as con_DeckInfo
+\ does, and instead moves the display's bottom edge down a row (t1i3)
+\ because its map is 16 rows where the console shows 15.
 .ConsoleTick
   LDA conShipReq
   CMP #2
   BEQ ct_ship
+  LDA conDeckReq
+  CMP #2
+  BEQ ct_deck
   JSR ConMenu4                  \ bank 4: K/M selection, the marker, fire
   LDA conShipReq
   CMP #1
-  BNE ct_noship
+  BNE ct_trydeck
   JSR ConShipEnter4             \ bank 4: the side view's palette in
   PAGEBANK SWRAM_XFER
   JSR LvShip7                   \ bank 7: the cross-section, deck lit
@@ -1374,11 +1380,29 @@ ENDMACRO
   LDA #2
   STA conShipReq
   RTS
+.ct_trydeck
+  LDA conDeckReq
+  CMP #1
+  BNE ct_noship
+  JSR ConDeckEnter4             \ bank 4: stage the RLE, 16th row shown
+  PAGEBANK SWRAM_XFER
+  JSR ConDeck7                  \ bank 7: the plan, and the white marker
+  PAGEBANK SWRAM_DATA
+  LDA #2
+  STA conDeckReq
+  RTS
 .ct_ship
-  JSR ConShipKeys4              \ bank 4: the fire edge; clears conShipReq
+  JSR ConPageKeys4              \ bank 4: the fire edge; clears the flag
   LDA conShipReq                \ on the press that leaves
   BNE ct_x
   JSR ConShipExit4              \ bank 4: the deck's palette back
+  JMP ct_back
+.ct_deck
+  JSR ConPageKeys4
+  LDA conDeckReq
+  BNE ct_x
+  JSR ConDeckExit4              \ bank 4: the 16th row hidden again
+.ct_back
   PNMIRROR                      \ and the console main screen again
   PAGEBANK SWRAM_SPR2
   JSR ConDraw
@@ -1780,6 +1804,11 @@ ENDIF
 \
 \ The alternative was moving PARADAT into sideways RAM, which is the
 \ right answer eventually but not the one that unblocks this layer.
+\
+\ The deck plan does NOT draw from here, though its codes overlap the
+\ tiles': its page is hires where this charset is built for the play
+\ area's per-cell modes, so it converts its own 31 characters at plot
+\ time in bank 7 — see condeck.asm and src/data/plandata.asm.
 ORG &0400
 .charset
   SKIP 137 * CHAR_BYTES         \ NUM_CHARS, defined in chardata.asm
@@ -1964,6 +1993,8 @@ INCLUDE "src/data/xferboard.asm"
 \ screens, the glyph page, the row tables and the panel-line text are
 \ all xfer.asm's, safe because the two can never be up at once.
 INCLUDE "src/liftview.asm"
+INCLUDE "src/condeck.asm"
+INCLUDE "src/data/plandata.asm"
 INCLUDE "src/data/sideview.asm"
 .xfer_end
 SAVE "PARXFER", xfer_start, xfer_end, DATA_LOAD, DATA_LOAD

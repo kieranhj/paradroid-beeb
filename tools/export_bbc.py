@@ -312,9 +312,11 @@ def main():
              'lt green', 'lt blue', 'lt grey']
     colour_map = bytearray()
     deck_pal = bytearray()
+    deck_logicals = []
     for d in range(16):
         scheme, rec, cell_colour = deck_colours(mem, d)
         logical, freq = build_logical_map(mem, cell_colour)
+        deck_logicals.append(logical)
         for c64 in range(16):
             if c64 in logical:
                 colour_map.append(logical.index(c64))
@@ -330,6 +332,58 @@ def main():
     schemes = bytearray()
     for s in range(8):
         schemes.extend(mem[RECORDS + s * REC_LEN:RECORDS + (s + 1) * REC_LEN])
+
+    # ---- the console's deck plan (con_DeckInfo, $3001) ------------------
+    # DrawPacked places each level-RLE code AND $7F as a CHARACTER on the
+    # console screen, which conRedraw put in HIRES mode (GotoHires, $C0
+    # into _d016Mode) -- so every cell renders hires with colour RAM's
+    # full 4-bit value as foreground, the multicolour flag included as a
+    # colour bit, over the deck's background. The codes run $00-$1E (all
+    # sixteen streams verified) and 28 of them the tiles never touch, so
+    # the plan gets its own bank-7 data: the raw bitmaps, and a per-deck
+    # ink table baking the whole C64 colour chain -- CharColor slot ->
+    # deck record (slots 12-15 read the zeroed block after the record on
+    # the C64, so >= 12 is genuinely colour 0) -> the deck's logical.
+    # ONE DEVIATION, KC's ruling 2026-08-17: the console characters
+    # $10-$13 draw in C64 red (colour 2), not their slot's colour, which
+    # is black or brown on most decks and illegible.
+    PLAN_CODES = 0x1F
+    plan_chars = mem[CHARSET_ADDR:CHARSET_ADDR + PLAN_CODES * 8]
+    plan_ink = bytearray()
+    for d in range(16):
+        scheme = mem[DECKSCHEME + d]
+        for code in range(32):
+            if code >= PLAN_CODES:
+                plan_ink.append(0)
+                continue
+            slot = mem[CHARCOLOR + code] >> 4
+            colour = mem[RECORDS + scheme * REC_LEN + slot] if slot < REC_LEN else 0
+            if 0x10 <= code <= 0x13:
+                colour = 2
+            ink = colour_map[d * 16 + colour]
+            # Legibility guard for the 4-colour compromise: a glyph whose
+            # C64 colour is NOT the background must not map onto logical 0
+            # (our plan background) just because that was nearest by luma
+            # -- the C64 shows it low-contrast, we would show nothing.
+            # Take the nearest of logicals 1-3 instead.
+            logical = deck_logicals[d]
+            if ink == 0 and colour != logical[0]:
+                ink = min(range(1, 4),
+                          key=lambda i: abs(LUMA[logical[i]] - LUMA[colour]))
+            plan_ink.append(ink)
+
+    path = OUT_DIR / 'plandata.asm'
+    with open(path, 'w') as f:
+        f.write(BANNER.format(
+            name='plandata.asm',
+            desc='the deck plan: C64 bitmaps for codes $00-$1E and the '
+                 'per-deck ink table, deck*32 + code -> logical 0-3'))
+        f.write('\n.planChars\n')
+        emit_bytes(f, plan_chars)
+        f.write('\nALIGN &100\n.planInk\n')
+        emit_bytes(f, plan_ink)
+    print('  plandata.asm  %5d bytes (%d plan chars + 16 deck ink rows)'
+          % (len(plan_chars) + len(plan_ink), PLAN_CODES))
 
     path = OUT_DIR / 'colours.asm'
     with open(path, 'w') as f:

@@ -2652,8 +2652,9 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
 \ $80-$83 with the stick and dispatches the low nibble through
 \ conJump_t on fire: 0 exit to the game, 1 droid info, 2 the deck
 \ plan, 3 the ship's side view. Ours walks conSel 0-3 the same —
-\ CLAMPED, not wrapped, as $2C6B/$2C8C do — and of the four, 0 and 3
-\ work; 1 and 2 are pages not yet built and the press does nothing.
+\ CLAMPED, not wrapped, as $2C6B/$2C8C do — and of the four, 0, 2
+\ and 3 work; 1 is the droid database, not yet built, and the press
+\ does nothing.
 \
 \ THE MARKER STANDS IN FOR THE SPRITE RECOLOUR. conWaitInput paints
 \ the selected icon's sprite white and the rest their own colours; our
@@ -2665,6 +2666,7 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
   LDA #0                        \ armed — the opening press is still down
   STA conSel
   STA conShipReq
+  STA conDeckReq
   LDA #1
   STA conMPrevL
   STA conPrevU
@@ -2720,7 +2722,13 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
   RTS
 .cm4_notExit
   CMP #3
-  BNE cm4_x                     \ 1 and 2: pages not built, nothing
+  BEQ cm4_ship
+  CMP #2
+  BNE cm4_x                     \ 1: the droid database, not built, nothing
+  LDA #1
+  STA conDeckReq                \ entry 2: the deck plan
+  RTS
+.cm4_ship
   LDA #1
   STA conShipReq                \ entry 3: the ship's side view
   RTS
@@ -2730,11 +2738,13 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
 .cm4_x
   RTS
 
-\ ---- ConShipKeys4 — the page is up: fire returns ------------
-\ con_ShipInfo's shape: the view is STATIC, up/down do nothing, and
-\ fire goes back to the console main screen. Edge triggered where the
-\ C64 oscillates on a held button.
-.ConShipKeys4
+\ ---- ConPageKeys4 — a page is up: fire returns --------------
+\ con_ShipInfo's and con_DeckInfo's shared shape: the page is STATIC,
+\ up/down do nothing, and fire goes back to the console main screen.
+\ Edge triggered where the C64 oscillates on a held button. One
+\ routine for both pages: only one flag is ever set, so clearing the
+\ pair is which-page-agnostic and ConsoleTick keeps the distinction.
+.ConPageKeys4
   LDX #KEY_L
   JSR keydown
   BNE csk_lUp
@@ -2744,11 +2754,56 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
   STA conMPrevL
   LDA #0
   STA conShipReq                \ ConsoleTick sees it and redraws the main
+  STA conDeckReq
   RTS
 .csk_lUp
   LDA #0
   STA conMPrevL
 .csk_x
+  RTS
+
+\ ---- the deck plan's way in and out -------------------------
+\ con_DeckInfo ($3001) reads the level RLE straight from lvPtr — data
+\ that lives in THIS bank, which the bank-7 drawer cannot see. The
+\ shim stages a copy of the deck's stream at SPR_SAVE: the sprite
+\ background saves are scratch while the console is up, because
+\ ReframeView throws them away on the way out (rv_unsave). 512 bytes
+\ covers the longest deck stream (~333) with room; the copy running
+\ past the stream's own end is harmless, the decoder stops at 1,024
+\ cells and never reads the excess.
+\
+\ THE PLAN IS 16 ROWS and the console displays 15 — so the page
+\ borrows the transfer game's t1i3 trick: with the scroll flat the
+\ 16th buffer row is real content and only the fire-3 interval hides
+\ it. Decks 2, 10, 11 and 12 have map in row 15; the C64 shows it.
+.ConDeckEnter4
+  LDY deck
+  CLC
+  LDA deckOffsetLo,Y : ADC #LO(leveldata) : STA src
+  LDA deckOffsetHi,Y : ADC #HI(leveldata) : STA src+1
+  LDY #0
+.cdk_copy
+  LDA (src),Y
+  STA SPR_SAVE,Y
+  INY
+  BNE cdk_copy
+  INC src+1
+.cdk_copy2
+  LDA (src),Y
+  STA SPR_SAVE+&100,Y
+  INY
+  BNE cdk_copy2
+  LDA #LO(T1_I3X)
+  STA t1i3Lo
+  LDA #HI(T1_I3X)
+  STA t1i3Hi
+  RTS
+
+.ConDeckExit4                   \ the 16th row back under the blank
+  LDA #LO(T1_I3)
+  STA t1i3Lo
+  LDA #HI(T1_I3)
+  STA t1i3Hi
   RTS
 
 \ ---- the marker: a white bar beside the selected icon -------
@@ -2810,6 +2865,7 @@ CON_MARK3 = BUF_BASE + 12 * ROW_BYTES + 1 * UNIT_BYTES
 
 .conSel     EQUB 0              \ the C64's consoleState low nibble, 0-3
 .conShipReq EQUB 0              \ 0 idle / 1 fire on entry 3 / 2 page up
+.conDeckReq EQUB 0              \ the same for entry 2, the deck plan
 .conMPrevL  EQUB 0              \ the menu's own key edges — prevRet is
 .conPrevU   EQUB 0              \ the weapon's, prevUp/Dn the debug hop's,
 .conPrevD   EQUB 0              \ prevLU/LD the lift's

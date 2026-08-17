@@ -415,12 +415,13 @@ next thing that touches it.
 
 ## 6e. The menu and the sub-pages — PARTLY BUILT (2026-08-17)
 
-**The selection is built, and one of the three pages.** `conWaitInput`'s port is `ConMenu4` in
+**The selection is built, and two of the three pages.** `conWaitInput`'s port is `ConMenu4` in
 droid.asm — BANK 4, not bank 6, which was full; everything the menu touches (the keys, the play
-buffer, `conActive`, the page-request flag) is main RAM, so it can be. `conSel` walks 0–3 with
+buffer, `conActive`, the page-request flags) is main RAM, so it can be. `conSel` walks 0–3 with
 K/M exactly as `consoleState` walks `$80`–`$83` — clamped, not wrapped — and fire dispatches as
-`conJump_t` does: entry 0 exits to the game, entry 3 shows the **ship's side view** (below),
-entries 1 and 2 are still unbuilt and the press does nothing. The C64 recolours the selected
+`conJump_t` does: entry 0 exits to the game, entry 2 shows the **deck plan** and entry 3 the
+**ship's side view** (both below); entry 1, the droid database, is still unbuilt and the press
+does nothing. The C64 recolours the selected
 icon's *sprite*; our icons are logical 1 because 2 and 3 are black on several deck palettes, so
 the indicator is a white marker bar beside the selected icon (`ConMarker4`), drawn from bank 4
 into the buffer directly. The old `ConsoleRun` ("L leaves, nothing else") is deleted — leaving
@@ -435,18 +436,83 @@ lose nothing — the view's rows 13–15 are blank — so the 16th-row `t1i3` tr
 `ConsoleTick` (main.asm) is the conductor, since only main RAM can page: bank 4 for the menu,
 bank 7 for the page, bank 6 for `ConDraw` on the way back.
 
-**Still missing** — the two pages that need real work:
+**The deck plan is BUILT (2026-08-17)** — `con_DeckInfo` (`$3001`), the circular-badge entry.
+It is `DrawPacked` again, the decoder the ship page runs over `svData`, but over the **level
+RLE** — the same stream `BuildLevel` decodes into the tile map, read at full 7-bit width where
+the game masks it to 5. That difference is the whole page: the plan reaches 28 characters the
+tiles never touch (all sixteen streams were scanned: codes run `$00`-`$1E`, and `$29` never
+appears — the `$29`→blank test is `svData`'s and cannot fire here, so it is not ported). Each
+code is placed as ONE CHARACTER, the 64-wide grid clipped to columns 3-41, and the player's
+tile is overwritten with a solid cell — char `$A0` in colour 1 there, sixteen bytes of logical
+1 here, white on every deck.
+
+**THE PAGE IS HIRES, and the CharColor trap bit a second time.** The first build drew from the
+`&0400` play-area charset, where `BuildCharset` honours each character's per-deck multicolour
+flag — and the flagged characters came out with multicolour fringes: red left edges on plain
+floor tiles, garbled recharge pads (KC caught both). The console screen is `conRedraw`'s, which
+calls `GotoHires` (`$31A4`, `$C0` into `_d016Mode`) — so on the C64 EVERY plan cell renders
+hires, with colour RAM's full 4-bit value as its foreground and the multicolour flag as nothing
+but a colour bit. `con_ShipInfo` pointedly puts `$D0` BACK for the side view, which is why the
+ship page's multicolour handling is right and the plan must not share it. So the plan now has
+its own rendering: `src/data/plandata.asm` in bank 7 carries the 31 raw C64 bitmaps plus a
+per-deck ink table (`planInk`, deck×32 + code → logical 0-3) built at export time from the
+C64's whole chain — `CharColor` slot → deck record → the deck's logical, with slots 12-15
+giving colour 0, which is what the C64's own zeroed block at `$0221` gives THEM — and
+`ConDeck7` expands each cell hires at plot time over background 0. The play-area charset is
+untouched and the export's `used` set stays at 137.
+
+The split follows the menu's rule about who may page:
+
+| piece | where | why |
+|---|---|---|
+| `ConDeckEnter4` / `ConDeckExit4` | bank 4, droid.asm | the RLE lives in bank 4; the enter shim stages 512 bytes of the deck's stream (longest is ~333) at `SPR_SAVE` — the sprite saves are scratch while the console is up, since `ReframeView` discards them on exit — and moves `t1i3` to `T1_I3X`; the exit shim moves it back |
+| `ConDeck7` + `plandata.asm` | bank 7, **condeck.asm** | the decode, the hires cell conversion and the marker, reading only main RAM and its own bank: the staged stream, `planChars`/`planInk`, the play buffer, `plyX`/`posY` |
+| the `ConsoleTick` arm | main RAM | the only place allowed to page; the ship and deck return paths share one tail (`ct_back`), and `ConShipKeys4` became `ConPageKeys4`, clearing both request flags — only one is ever set |
+
+The decisions, numbered in the ship page's pattern:
+
+1. **[DECISION] The palette is the deck's own, unswapped.** That is the original's: con_DeckInfo
+   takes its background from the deck record where con_ShipInfo installs fixed colours — so the
+   deck plan keeps `palPlay` and the ship page keeps its `palLift` swap. **[REVISIT, KC
+   2026-08-17]: look at the plan's palette again when the deck palettes get their all-up
+   revisit** — the ink table (`planInk`, rebuilt by `tools/export_bbc.py`) and this choice
+   should be re-judged together then.
+2. **[DECISION] All 16 rows are shown**, by the transfer game's `t1i3` trick. Decks 2, 10, 11
+   and 12 have map in row 15 and the C64 displays it; the console main screen goes back to 15
+   rows before `ConDraw` repaints.
+3. **[DECISION] The marker is CLIPPED where the C64's is not.** Decks 2, 14 and 15 have map
+   beyond column 41; a player standing there would send the C64's unclipped store past the row's
+   end. We skip the marker rather than reproduce the overwrite.
+4. **[DECISION] Column 39 is drawn as code 0** — the map is 39 columns wide and the C64's 40th
+   column keeps its cleared screen; ours gets the blank character, once per row, saving the run
+   in flight because runs cross row boundaries.
+5. **[DECISION, KC 2026-08-17] The console characters `$10-$13` draw in C64 red** (colour 2
+   through the deck's `colourMap`), not their slot's colour — black on decks 0/4/9/11 and brown
+   elsewhere, illegible either way. Baked into `planInk` at export.
+6. **[DECISION, KC implied 2026-08-17] A legibility guard on the 4-colour compromise**: a glyph
+   whose C64 colour is not the background but whose nearest logical is 0 — our background —
+   takes the nearest of logicals 1-3 instead. The C64 shows those cells low-contrast; four
+   colours would show nothing at all (deck 2's light-grey lift and door glyphs, for instance).
+7. **Recharge pads render dark** — their char `$16` reads record slot 14, which is the zeroed
+   `$0221` block on the C64 too, so this is the original's own look. KC: to be made legible by
+   ANIMATION later, as the C64 game screen does, not by a colour override now.
+
+Verified in jsbeeb on three decks (different maps, palettes and tile styles): menu → plan →
+fire → console main with the selection kept and `t1i3` restored → ship page still good → exit to
+the game with the deck repainted; no multicolour fringes, consoles red, marker white. The marker
+was checked against the buffer, not the screenshot: solid `&0F` × 16 at exactly
+`BUF_BASE + row*640 + col*16` for the cell `(plyX+11)>>5 − 3, (posY+63)>>5` — the same reference
+cell CheckWalls uses, which is the C64's `plyMapPos`.
+
+**Still missing** — one page:
 
 | icon | routine | what it draws | what it needs |
 |---|---|---|---|
 | 2, the `?` emblem | `con_DroidInfo` (`$2CC6`) | the **droid database** — one page per type, walked with up/down, `dInfoPage` selecting among five sub-pages through `dInfoPgJump_t` (`$6BE9`) | `PrintDroidInfo` (`$3172`), and the per-type stat tables, which are already in bank 4 and mirrored to `PN_TABS` |
-| 3, the circular badge | `con_DeckInfo` (`$3061`) | the **deck plan** — the current deck's map, drawn by `DrawPacked` over the level RLE | a second decoder over `leveldata`, which is already ported; it draws to a different scale from the play area |
 
-**Both need real data or code ported**, which is the honest measure of what is left: the deck
-plan needs a second use of the level RLE, the droid database only code and tables already here.
-The way in and the way back exist now — follow the ship page's shape in ConsoleTick, and note
-neither page's CODE can go in bank 6 (62 bytes free): bank 4 for logic that reads main RAM,
-bank 7 for anything that wants the shadow-screen renderer.
+The way in and the way back exist — follow the pages' shape in ConsoleTick. Its CODE cannot go
+in bank 6 (62 bytes free) and bank 4 has ~300 bytes; bank 7 (~6K free) is where it
+lives, on the pattern condeck.asm set.
 
 ## 7. Decisions to revisit
 
@@ -465,6 +531,6 @@ nothing else. Kept below with the outcome, because the reasoning is the record o
 | 7 | Panel palette shared with the deck | **closed.** The panel is a separate CRTC cycle and now has its own four colours — §5a. Sixteen ULA writes at each boundary, ~210 cycles, twice a frame |
 | 8 | Panel, HUD and console in bank 6, with a main-RAM bridge | stands, and is now Layer 13's to unpick. The bridge shrank to two scalars when the droid number and energy bar went |
 | 9 | Energy bar absolute, one cell per 8 | **reversed** with decision 4 |
-| 10 | Console pages are Ship and Droids | half-reversed 2026-08-17: the menu selection and the **ship side view** page are built (see 6e), riding Layer 8b's drawer in bank 7. The **deck map** and the C64's droid database remain |
+| 10 | Console pages are Ship and Droids | mostly reversed 2026-08-17: the menu selection, the **ship side view** and the **deck plan** are built (see 6e). Only the C64's droid database remains |
 | 11 | The surround is **black**, where the C64's is grey | new. The original fills all eight status rows with the surround colour and puts the box in the middle 32 scanlines; we draw the box alone and leave the rest CRTC-blanked. Covering it needs all eight rows displayed — 5,120 bytes against a 7-row panel cycle |
 | 12 | The box sits at the **top** of the display; the C64's is 8 scanlines down | new, and cosmetic given 11: the same 32 scanlines of box, 8 px higher against black. Matching it exactly means displaying 5 rows with the first blank, which costs 640 bytes and a second `PANEL_ADDR` |

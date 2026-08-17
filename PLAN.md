@@ -394,19 +394,28 @@ dispatches as `conJump_t` — entry 0 back to the game, entry 3 the **ship plan*
 `con_ShipInfo` faithfully: Layer 8b's side view drawn once and STATIC, current deck lit, no shaft
 mark, fire back to the console main with the selection kept.
 
+**The deck plan LANDED 2026-08-17** — §6e again. `con_DeckInfo` faithfully: `DrawPacked` over the
+level RLE with no ORA offset, one character per tile, the player's cell solid white, drawn once
+and static, fire back with the selection kept. The page is **hires** — the console screen is
+`GotoHires`'s, and `con_ShipInfo` flips multicolour back on only for the side view — so the plan
+does not draw from the play-area charset at all: bank 7 carries the 31 raw bitmaps and a per-deck
+ink table built at export time (`plandata.asm`), and converts each cell as it plots it. The RLE
+is staged through the sprite save pages — scratch while the console is up — because bank 7 cannot
+see bank 4, and the page shows all 16 map rows by the transfer game's `t1i3` trick. Consoles draw
+in red by KC's ruling; the other deviations are §6e's decisions 1-7.
+
 **Still outstanding:**
 
 | | |
 |---|---|
 | the **droid database** | `con_DroidInfo` (`$2CC6`). Code and tables only; the tables are already mirrored to `PN_TABS`, and the dispatch and way back now exist — follow the ship page's shape |
-| the **deck plan** | `con_DeckInfo` (`$3061`) — `DrawPacked` over the level RLE, at a different scale from the play area |
 
 Also deferred: the low-energy sprite flash, which is now the *only* energy cue the port has — see
 decisions 4 and 5.
 
-> **Neither page's code can live in bank 6** (62 bytes free): bank 4 for logic that reads main
-> RAM, bank 7 for anything that wants the shadow-screen renderer — the split the menu and the
-> ship page already use.
+> **The page's code cannot live in bank 6** (62 bytes free): bank 4 for logic that reads main
+> RAM, bank 7 for anything bigger — the split the menu, the ship page and the deck plan already
+> use. Bank 4 has ~300 bytes after the deck plan; anything sizeable wants bank 7 (~6K free).
 
 ### Layer 10 — Transfer minigame — **BUILT** (2026-08-17)
 The whole subgame plays, entered the original's way — touching a droid at `moveMode` 0 — and all
@@ -575,6 +584,9 @@ Two strands:
    pass sets all sixteen decks together, plus the panel, the console, the transfer board and the
    title, so they read as one game and so no two adjacent decks land on the same scheme by
    accident. The original's own per-deck colours are the starting point, not the answer.
+   **Include the deck plan page (KC, 2026-08-17)**: its per-deck inks are `planInk`, built by
+   `tools/export_bbc.py` from the C64 chain plus two legibility overrides — re-judge that table
+   and §6e decision 1 (the plan keeps the deck's palette) alongside the deck palettes themselves.
 2. **Redrawing graphics characters that fight the palette.** Where a tile or a glyph only works
    because of a colour MODE 1 cannot give it, the honest fix is to change the artwork rather than
    spend a palette entry on it. That is a **deviation from the original's graphics and needs
