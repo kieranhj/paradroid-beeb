@@ -304,6 +304,15 @@ CON_DROID_D  = BUF_BASE + 2 * ROW_BYTES + 7 * UNIT_BYTES
   JSR PnWide
   JMP ctk_more
 .ctk_x
+\ ToUpper CLEARS byte_0_248 on the way out ($2E75), whether it
+\ capitalised anything or not, so ONE word is capitalised per INC and no
+\ more. This was missing, and it showed: the name line drew "Influence
+\ Device" where the C64 draws "Influence device" — $316F sets the flag
+\ once and the class word that follows the class NAME is lowercase.
+\ Found while porting the droid database, which prints the same two
+\ tokens from bank 7.
+  LDA #0
+  STA conCap
   RTS
 
 .ConTokGet

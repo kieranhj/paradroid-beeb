@@ -504,15 +504,109 @@ was checked against the buffer, not the screenshot: solid `&0F` × 16 at exactly
 `BUF_BASE + row*640 + col*16` for the cell `(plyX+11)>>5 − 3, (posY+63)>>5` — the same reference
 cell CheckWalls uses, which is the C64's `plyMapPos`.
 
-**Still missing** — one page:
+## 6f. The droid database — BUILT (2026-08-17), and the console is complete
 
-| icon | routine | what it draws | what it needs |
-|---|---|---|---|
-| 2, the `?` emblem | `con_DroidInfo` (`$2CC6`) | the **droid database** — one page per type, walked with up/down, `dInfoPage` selecting among five sub-pages through `dInfoPgJump_t` (`$6BE9`) | `PrintDroidInfo` (`$3172`), and the per-type stat tables, which are already in bank 4 and mirrored to `PN_TABS` |
+`con_DroidInfo` (`$2CC6`), the `?` emblem, entry 1. It is the **fourth** page and the only
+interactive one: the ship view and the deck plan are drawn once and wait for fire, and this is a
+browser, so `ConsoleTick` calls `DbTick` (`src/condb.asm`, bank 7) every pass and the page decides
+what to do — which is exactly how `GameLoop` calls `con_DroidInfo`. The five sub-pages are
+`dInfoPgJump_t`'s (`$6BE9`), ported one for one:
 
-The way in and the way back exist — follow the pages' shape in ConsoleTick. Its CODE cannot go
-in bank 6 (62 bytes free) and bank 4 has ~300 bytes; bank 7 (~6K free) is where it
-lives, on the pattern condeck.asm set.
+| C64 | ours | what it does |
+|---|---|---|
+| `DrInfo0` `$2D79` | `DbPage0` | clear, reset the print position, go to 1 |
+| `DrInfo1` `$2CF0` | `DbPage1` | the browser: up/down walk the type, image and name redraw every pass, left/right start the pages |
+| `DrInfo2` `$2D34` | `DbPage2` | stat lines until the screen is full, then 3 |
+| `DrInfo3` `$2D40` | `DbPage3` | `More...` in the status line; left/right resumes |
+| `DrInfo4` `$2D6A` | `DbPage4` | the end: any direction goes back to 0 |
+
+**The clamp is the rule of the page and is ported exactly.** `$2CFC`-`$2D1A` walks `dType` between
+0 and `droidType` — the player's own class — and **wraps at both ends**: up past your own class
+drops to 001, down from 001 jumps to your own. You cannot read up on a droid better than the one
+you are wearing. `pmType` is `drType`'s main-RAM mirror and stands in for `droidType`.
+
+**The layout is the original's line for line, which was luck and worth recording.** The C64 puts
+the name at screen row 10 and steps its content lines 12, 14 … 22 — six of them, because `$2DC4`
+stops at 24. A glyph is 8 × 16 here, so a text line is two buffer rows and the console's fifteen
+hold **seven**: the name on line 0 and **six** content lines. Nothing had to be dropped, moved or
+rescaled, and the columns are the original's too — labels at 9 (`$2D94`), the wrap margin at 12
+(`byte_0_45`), a continued description at 11 (`$2DDF`), all against the same 40-column screen.
+
+**Word wrap is `sub_0_BE9`'s, including the two things about it that look like bugs.** The routine
+draws its leading space *before* measuring, so a word that wraps leaves that space at the end of
+the old line; and it measures **cells, not letters**, with a capital counting two — which is why
+`ToUpper` runs *before* the measure and why our `DbTok` decides capitalisation before it measures
+rather than while it draws. A word that will not fit on the last line is **not drawn and not
+consumed**: the index still points at it, which is what lets `More...` resume mid-sentence.
+
+The stat lines are `sub_0_2DA0`'s self-modifying counter, which is the one piece of the original
+that has to be read twice to believe: `sub_0_2DA0+1` runs 13 to 23 and is **both** the label's
+token number **and**, less seven, the record byte the value comes from. So the ten labels are
+tokens 13-22 (`entry `, `class `, `height`, `weight`, `drive `, `brain `, `armament`,
+`sensors  1`, `2`, `3`), each followed by token 24 (`: `), and `PrintDroidInfo` (`$2F57`) computes
+four of the values and reads the other six as token numbers.
+
+The decisions, in the pages' pattern:
+
+1. **[DECISION] The page lives in BANK 7 and the string table is emitted TWICE.** It needs the
+   `$C000` table (1,542 B) and a glyph printer; both are in bank 6, which had 63 bytes free, and
+   only one bank is visible at a time. Main RAM had 53 bytes and bank 4 about 300, so neither
+   could take the page either. The alternatives were costed: *staging* the table into `SPR_SAVE`
+   through a bank-6 copier would save 1.5 K of bank 7 but spend ~30 bytes of main RAM and ~30 of
+   bank 6 — the two scarce resources — and *moving* the whole console out of bank 6 would avoid
+   the duplication but is a refactor of working code that still needs its own bank-7 printer.
+   **Duplicating spends the resource there is most of.** `tools/export_strings.py` and
+   `tools/export_droidicon.py` now emit `strings7.asm` and `droidicon7.asm` alongside their
+   originals, from the same byte lists, so the copies cannot drift — the plandata.asm precedent.
+   Cost: bank 7 goes from 6,170 bytes free to **2,074**; bank 6 and bank 4 are untouched, and
+   main RAM pays 33 bytes for the conductor's arm and one flag.
+2. **[DECISION] The image is the port's droid, not the C64's portrait.** `BuildIntroSprites`
+   (`$3629`) draws a **48 × 84 multicolour portrait** built from four sprite images the record
+   names (bytes 0-7) plus their mirrors. The port has no portrait: that artwork is in the C64's
+   `$5400-$67FF` block, which is not ported, and 24 types of it is ~6 K — the whole of bank 7's
+   free space. So the page draws the same runtime-composed rotor-and-digits image the console's
+   own menu icon draws, for the type being read about. **This is decision 16 again**, and the
+   same reasoning: the C64's console icon is itself a runtime-built droid sprite. Record bytes
+   0-7 are therefore not exported, which is what takes the data from 1,536 bytes to 711.
+3. **[DECISION] `More...` goes in the STATUS LINE, as `More_txt` (`$6C08`) says.** Its own
+   `prntY`/`prntX` are 2 and 2 — the mode word's field, where `Console` is — and `$2D4F` puts
+   `Console_txt` back when the stick continues. Bank 7 already writes that field (the transfer
+   game's `XfGlyphAt`), and `PanelUpdate` will not fight for it because it rewrites the field
+   only when the mode *changes*. **Leaving the page while the prompt is up leaves `More...`
+   standing**, which is the original's behaviour too — `ConsoleMain` does not repaint the field
+   either, and `PanelSetup` puts it right on the way out of the console.
+4. **[DECISION] Fire is EDGE triggered, as the other two pages are.** `$2CC6` tests `joyFire`
+   *first* and returns to the console the moment it is **released** — the C64 expects you to hold
+   the button down while you browse. That cannot share a keyboard with the four browse keys, and
+   the ship page and the deck plan already made this deviation (`ConPageKeys4`). Keys are the
+   console's own: K/M up and down, **Z/X left and right** — the game's own `joyXDir` keys, which
+   is the axis `$2D27` reads — and L to leave.
+5. **[DECISION] Heights really are "1.xx m".** `Height_txt` (`$6C15`) is `1`, `.`, two patched
+   digits, ` `, `m`, and only `+2`/`+3` are ever written — so the record byte is the two decimal
+   places and every droid in the game is one point something metres tall. Weights print with
+   **leading zeros** (`027 kg`), which is `$2FC0`'s own doing: it writes digit glyphs, and unlike
+   `DoScore` it never blanks them.
+6. **No sound.** `sndFx1` is written at five points in these routines (`$2CF4`, `$2D2F`, `$2D4B`,
+   `$2D76` and the entry). Sound is not ported at all yet, so they are dropped — **Layer 12**,
+   with the low-energy flash.
+7. **A bug fixed in the console main screen, found by building this.** `ConTok` never cleared
+   `conCap`, where `ToUpper` (`$2E75`) clears `byte_0_248` on *every* call so that exactly one
+   word is capitalised per `INC`. The name line therefore drew `Influence Device` where the C64
+   draws `Influence device` — `$316F` sets the flag once and the class word after the class NAME
+   is lowercase. Five bytes in bank 6 (63 free → 58), and the two screens now agree.
+
+Verified in jsbeeb through the whole page: menu → database → the browser on the player's own type
+→ sideways through both stat screens (entry, class, height, weight, drive, brain; then armament
+and the three sensors) → the description, wrapping and paging with `More...` in the status line →
+the closing full stop → fire back to the console main with the selection kept → exit to the game.
+The clamp was checked at its boundary by poking the player's own type: with `drType` = 1, up from
+002 wraps to 001 rather than reaching 003.
+
+> **The debug console hook leaves a stray sprite.** Entering the console from `ml_debugdeck`
+> instead of `DoCharUnder` runs it mid-pass, so the sprite code that follows saves a background
+> from the console screen and draws the player over it; a later restore blanks a cell-sized block.
+> One console glyph disappeared this way and was chased with a write watchpoint before the cause
+> was found. It is an artefact of the hook, not of any page — but it will waste an hour again.
 
 ## 7. Decisions to revisit
 

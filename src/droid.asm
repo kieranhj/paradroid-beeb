@@ -2667,6 +2667,7 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
   STA conSel
   STA conShipReq
   STA conDeckReq
+  STA conDbReq
   LDA #1
   STA conMPrevL
   STA conPrevU
@@ -2724,7 +2725,11 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
   CMP #3
   BEQ cm4_ship
   CMP #2
-  BNE cm4_x                     \ 1: the droid database, not built, nothing
+  BEQ cm4_deck
+  LDA #1
+  STA conDbReq                  \ entry 1: the droid database, in bank 7
+  RTS
+.cm4_deck
   LDA #1
   STA conDeckReq                \ entry 2: the deck plan
   RTS

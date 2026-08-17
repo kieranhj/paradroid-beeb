@@ -24,7 +24,7 @@ detail has stopped being needed to make the next decision, it belongs in `docs/`
 | [`docs/layer-7-combat.md`](docs/layer-7-combat.md) | **Combat — 7a-7f all landed** — bullets, explosions, damage, score, Alert, the recharge pads, and what is deliberately deferred |
 | [`docs/bug-map-corruption.md`](docs/bug-map-corruption.md) | **OPEN BUG, read before resuming** — something writes the tile map in play. The instrument is built and verified; it needs a play session to fire |
 | [`docs/layer-8-doors-lifts.md`](docs/layer-8-doors-lifts.md) | Doors (built) and lifts (planned), and the character-map problem they raise |
-| [`docs/layer-9-hud.md`](docs/layer-9-hud.md) | **The status line and the console** — what the C64's status area actually is, the $7000 font's three out-of-line codes, the $C000 string table, and what is still outstanding behind the menu icons |
+| [`docs/layer-9-hud.md`](docs/layer-9-hud.md) | **The status line and the console** — what the C64's status area actually is, the $7000 font's three out-of-line codes, the $C000 string table, and all four pages behind the menu icons |
 | [`docs/master-extensions.md`](docs/master-extensions.md) | Things only a Master 128 could host. Not on the critical path |
 
 ## Where we are — read this first
@@ -188,7 +188,7 @@ moves. The outline:
 | `&0400–&0C8F` | 2,192 B | MODE 1 charset, built at deck load — reclaimed OS workspace |
 | `&0C90–&10FF` | **1,136 B free** | rest of the reclaimed OS workspace |
 | `&1100–&2FCA` | 7,883 B | code (`PARA`). DFS random-access buffer space, safe for `*LOAD` |
-| `&2FCB–&2FFF` | **53 B free** | **the binding constraint.** Layer 10 paid its way in by moving `CalcAxis`/`CalcSpeed` and its own shims into bank 4, and Layer 8b's lift view by deleting the routines it replaced; the deck plan's `ConsoleTick` arm took most of what was left. Anything new in main RAM needs the same treatment |
+| `&2FE8–&2FFF` | **24 B free** | **the binding constraint.** Layer 10 paid its way in by moving `CalcAxis`/`CalcSpeed` and its own shims into bank 4, and Layer 8b's lift view by deleting the routines it replaced; the deck plan's `ConsoleTick` arm took most of what was left, and the droid database's arm 33 bytes of the rest. Anything new in main RAM needs the same treatment |
 | `&3000–&37FF` | 2,048 B | sprite background save areas, one page per slot — **eight now**, ending exactly where the tile map begins. A ninth would overwrite it |
 | `&3800–&3BFF` | 1,024 B | tile map, fixed home — floating it after `code_end` once put it over the save areas |
 | `&3C00–&483F` | 3,136 B | **Layer 9's text font**, `PARAFNT`, `*LOAD`ed straight here — 98 glyphs |
@@ -202,8 +202,8 @@ moves. The outline:
 | `&5800–&7FFF` | 10,240 B | play buffer: circular strip, 16 rows × 640 |
 | SWRAM bank 4 | 16 K | `PARADAT` — char data, colour schemes, tile defs, deck RLE, waypoints, the combat stat tables, **the level-draw code, the droid AI, Layer 7's combat, Layers 10 and 8b's entry/exit shims, and `CalcAxis`/`CalcSpeed`**. Ends `&BED0`, plus the console's menu and page shims — **303 B free** |
 | SWRAM bank 5 | 16 K | `PARASPR` — the blitter at shifts 0 and 1 px, **plus Layer 7's effect artwork**: 31 bullet and explosion frames, 2,946 B, here rather than in bank 4 because the interpreted path reads them every row. Ends `&BBF7`, **1,033 B free** |
-| SWRAM bank 6 | 16 K | `PARSPR2` — the same at 2 and 3 px, laid out identically, **plus Layer 9's panel engine, HUD, console, strings and icons**. Ends `&BFC1`, **62 B free — full** |
-| SWRAM bank 7 | 16 K | `PARXFER` — **Layer 10's transfer game and Layer 8b's lift screen**, sharing the shadow screen/colour RAM, the glyph page and the renderer pattern; plus both glyph sets, the console's ship page, and **the deck plan's drawer and data** (`condeck.asm`, `plandata.asm`). Ends `&A7E5`, **~6.0 K free** — the obvious home for anything new that needs a bank |
+| SWRAM bank 6 | 16 K | `PARSPR2` — the same at 2 and 3 px, laid out identically, **plus Layer 9's panel engine, HUD, console, strings and icons**. Ends `&BFC6`, **58 B free — full** |
+| SWRAM bank 7 | 16 K | `PARXFER` — **Layer 10's transfer game and Layer 8b's lift screen**, sharing the shadow screen/colour RAM, the glyph page and the renderer pattern; plus both glyph sets, the console's ship page, **the deck plan** (`condeck.asm`, `plandata.asm`) and **the droid database** (`condb.asm`, `droidinfo.asm`) with its second copies of the string table and the droid icon. Ends `&B7E5`, **~2.0 K free** |
 
 **"Main RAM is full" meant the `PARA` image could not grow past `&3000`** — never that there was no
 RAM. Moving code rather than data is what fixed it: `screen.asm`, `scroll.asm` and `level.asm` now
@@ -404,18 +404,27 @@ is staged through the sprite save pages — scratch while the console is up — 
 see bank 4, and the page shows all 16 map rows by the transfer game's `t1i3` trick. Consoles draw
 in red by KC's ruling; the other deviations are §6e's decisions 1-7.
 
-**Still outstanding:**
+**The droid database LANDED 2026-08-17, and the console is COMPLETE** — §6f. `con_DroidInfo`
+(`$2CC6`) and all five of `dInfoPgJump_t`'s sub-pages: the browser walks `dType` between 0 and the
+player's own class and **wraps at both ends** — you cannot read up on a droid better than the one
+you are wearing — and left/right pages through the stat lines and then the description, with
+`More...` in the **status line** where `More_txt` puts it. Unlike the other two pages it is
+interactive, so its tick runs every pass and reads the keys itself (`src/condb.asm`, bank 7);
+`keydown` is main RAM, so no bank-4 key shim was needed and main RAM pays 33 bytes for the arm.
+The layout is the original's line for line — its six content lines are exactly what our seven text
+lines leave under the name — and the word wrap is `sub_0_BE9`'s, measuring cells and leaving an
+unfitting word unconsumed so `More...` can resume mid-sentence.
 
-| | |
-|---|---|
-| the **droid database** | `con_DroidInfo` (`$2CC6`). Code and tables only; the tables are already mirrored to `PN_TABS`, and the dispatch and way back now exist — follow the ship page's shape |
+Two things are ours and both are §6f decisions: the **image is the port's rotor-and-digits droid**,
+not the C64's 48 × 84 portrait, which is unported artwork ~6 K of bank 7 wide (decision 16 again);
+and the **string table is emitted a second time into bank 7** (`strings7.asm`, with
+`droidicon7.asm`), because the console that owns the first copy is in bank 6 and only one bank is
+visible at a time. Bank 7 is now **~2.0 K free**; bank 6 and bank 4 are untouched. Building it also
+found a real bug in the console main screen: `ConTok` never cleared `conCap`, so the name line drew
+`Influence Device` where the C64 draws `Influence device`.
 
-Also deferred: the low-energy sprite flash, which is now the *only* energy cue the port has — see
-decisions 4 and 5.
-
-> **The page's code cannot live in bank 6** (62 bytes free): bank 4 for logic that reads main
-> RAM, bank 7 for anything bigger — the split the menu, the ship page and the deck plan already
-> use. Bank 4 has ~300 bytes after the deck plan; anything sizeable wants bank 7 (~6K free).
+Still deferred: the low-energy sprite flash, which is now the *only* energy cue the port lacks —
+see decisions 4 and 5 — and every `sndFx1` write in the console, for Layer 12.
 
 ### Layer 10 — Transfer minigame — **BUILT** (2026-08-17)
 The whole subgame plays, entered the original's way — touching a droid at `moveMode` 0 — and all

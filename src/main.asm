@@ -1369,6 +1369,8 @@ ENDMACRO
   LDA conDeckReq
   CMP #2
   BEQ ct_deck
+  LDA conDbReq
+  BNE ct_db
   JSR ConMenu4                  \ bank 4: K/M selection, the marker, fire
   LDA conShipReq
   CMP #1
@@ -1390,6 +1392,18 @@ ENDMACRO
   PAGEBANK SWRAM_DATA
   LDA #2
   STA conDeckReq
+  RTS
+\ The database is NOT one of the static pages: it is a browser, so its
+\ tick runs every pass and the page itself reads the keys — which it can,
+\ because keydown is main RAM. There is no bank-4 shim and no enter
+\ shim; DbTick's own conDbReq = 1 arm does the initialising, and 0 means
+\ it has left, which lands on the pages' shared return tail.
+.ct_db
+  PAGEBANK SWRAM_XFER
+  JSR DbTick                    \ bank 7: keys, state and draw together
+  PAGEBANK SWRAM_DATA
+  LDA conDbReq
+  BEQ ct_back
   RTS
 .ct_ship
   JSR ConPageKeys4              \ bank 4: the fire edge; clears the flag
@@ -1420,6 +1434,10 @@ ENDMACRO
 .pmCount  EQUB 0
 .pmShip   EQUB 0
 .conActive EQUB 0               \ main RAM: the loop and the bridge both read it
+.conDbReq  EQUB 0               \ 0 idle / 1 fire on entry 1 / 2 page up.
+                                \ MAIN RAM because bank 4 sets it, bank 7
+                                \ clears it and ConsoleTick reads it with
+                                \ neither of them paged in
 
 \ ============================================================
 \ Layer 10 lives in BANK 7 and cannot see bank 4 — the shim
@@ -1994,6 +2012,14 @@ INCLUDE "src/data/xferboard.asm"
 \ all xfer.asm's, safe because the two can never be up at once.
 INCLUDE "src/liftview.asm"
 INCLUDE "src/condeck.asm"
+\ The droid database, and the two tables it needs a second copy of: the
+\ string table and the console's droid icon both live in bank 6 with the
+\ console, and only one bank is visible at a time. Both copies come out
+\ of the same generator, so they cannot drift.
+INCLUDE "src/condb.asm"
+INCLUDE "src/data/droidinfo.asm"
+INCLUDE "src/data/strings7.asm"
+INCLUDE "src/data/droidicon7.asm"
 INCLUDE "src/data/plandata.asm"
 INCLUDE "src/data/sideview.asm"
 .xfer_end

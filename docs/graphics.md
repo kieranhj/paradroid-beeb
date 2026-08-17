@@ -37,7 +37,16 @@ These emit BeebASM sources into `src/data/` (gitignored — converted game artwo
 | | `plandata.asm` | the deck plan's 31 char bitmaps plus the per-deck ink table, bank 7 |
 | `export_droids.py` | `droids.asm` | 24 droid types × 8 rotor phases, as compiled 6502 plus stored rows |
 | | `droidgame.asm` | The game-data half: speeds, waypoints, per-deck type base |
+| `export_strings.py` | `strings.asm` | The `$C000` string table, translated to port glyph indices, bank 6 |
+| | `strings7.asm` | The same bytes again under a second label, for the droid database in bank 7 |
+| `export_droidicon.py` | `droidicon.asm` | The console's composed droid icon: one rotor phase and ten digits, bank 6 |
+| | `droidicon7.asm` | The same bytes again, for bank 7 |
+| `export_droidinfo.py` | `droidinfo.asm` | `DroidInfo_dat` (`$EB00`) less its portrait sprite images: per-type stats and the packed descriptions, bank 7 |
 | `verify_bbc.py` | — | Round-trips the generated sources back to C64 form and diffs against the listing |
+
+**Two tables exist twice on purpose.** The console is in bank 6 and the droid database in bank 7,
+only one bank is visible at a time, and both print from the string table and draw the same droid
+icon. Each pair is written by one tool from one list of bytes, so the copies cannot drift.
 
 ### Visualising the C64 original
 
@@ -212,6 +221,13 @@ listing (the empty sprite at `$4000`); the game sets them dynamically.
 > See [`layer-4-player.md`](layer-4-player.md) and [`layer-5-blitter.md`](layer-5-blitter.md).
 >
 > The 20 effect sprites and the 80 main definitions are **not yet ported** — Layer 7.
+>
+> **The droid database's portrait is in that unported block.** `BuildIntroSprites` (`$3629`) builds
+> a 48 × 84 multicolour picture per type from four images the type's `DroidInfo_dat` record names
+> (bytes 0-7) plus their mirrors — image *N* meaning `$4000 + N*64`, so `$66`-`$90` land in
+> `$5400-$67FF`. Twenty-four types of it is ~6 K raw, which is the whole of bank 7's free space, so
+> the console's database draws the runtime-composed rotor-and-digits droid instead and
+> `export_droidinfo.py` does not export bytes 0-7 at all. See `docs/layer-9-hud.md` §6f, decision 2.
 
 ---
 
