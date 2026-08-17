@@ -22,10 +22,12 @@ and ExplodeSprite ($1BE8) writes $FF, so the two halves are read differently:
 a bullet is 24 one-bit pixels, an explosion 12 two-bit pixels each two wide.
 Same 24-pixel width either way, so both become 6 MODE 1 bytes a row.
 
-EVERYTHING OPAQUE BECOMES LOGICAL COLOUR 1, and that is a deliberate loss on
-the explosion, which has three colours on the C64. MODE 1's four logicals are
-the deck's own: logical 1 is white on all 16 decks, logical 2 is black on
-fourteen of them, and logical 3 is BLACK ON DECKS 4 AND 11. An explosion drawn
+EVERYTHING OPAQUE BECOMES LOGICAL COLOUR 3, and that is still a deliberate
+loss on the explosion, which has three colours on the C64. Logical 3 is %11,
+both colour planes, so the sprite byte doubles as its own transparency mask
+and AND &0F / AND &F0 recolour it to logical 1 or 2 in place. Logical 3 is
+white on all 16 decks. (The slots carried no fixed roles when this was first
+written, which is why it used to say logical 1.) An explosion drawn
 in 3 would be invisible on two decks. This is the same argument that put the
 droids on logical 1 - see export_droids.py - and the sprite MC colours cannot
 be recovered from the listing anyway: $D025/$D026 are never written by the game
@@ -51,7 +53,7 @@ OUT_DIR = PROJECT / 'src' / 'data'
 
 VIC_BANK = 0x4000           # sprite pointer N addresses VIC_BANK + N*64
 SPRITE_ROWS = 21
-EFFECT_COLOUR = 1           # MODE 1 logical; see the header
+EFFECT_COLOUR = 3           # MODE 1 logical; see the header
 
 BULLET_SPRITE_T = 0x6E4C    # 12 entries: weaponType*4 + direction
 BULLET_ANIM_MIN = 0x56      # MovePlyFire ($333E) only animates images >= this

@@ -53,12 +53,22 @@ become 24 MODE 1 pixels. Reading the bytes as multicolour bit pairs instead
 produced 12 fat pixels doubled to 24, which is the same WIDTH and the same
 byte count, so it built and ran and looked plausible while being wrong.
 
-The single colour maps to DROID_COLOUR below. The C64 gives enemy droids
-$F0 - colour 0, black ($1906) - but MODE 1's four logical colours are the
-deck's own, and logical 1 is white on all 16 decks whereas logical 2 is black
-on fourteen of them and green on the other two. Logical 1 is therefore the
-one that reads consistently. Per-type colour from DColorTheme_t ($EA60) is a
-question for the combat layer, not this one.
+The single colour maps to DROID_COLOUR below, which is LOGICAL 3.
+
+Logical 3 is %11 - both MODE 1 colour planes set. Three things follow, and
+together they are why the slot roles were fixed (see export_bbc.py's
+build_logical_map):
+
+  * an opaque pixel has both bits set and a transparent one has neither, so
+    a sprite byte IS its own transparency mask;
+  * AND &0F leaves the low plane alone, recolouring the sprite to logical 1
+    in place; AND &F0 leaves the high plane, giving logical 2;
+  * logical 3 is white on all 16 decks, logical 1 is black on all 16, so
+    both the drawn colour and the recoloured one are the same everywhere.
+
+The C64 gives enemy droids $F0 - colour 0, black ($1906) - so the faithful
+colour is reachable from this artwork with a single AND. Per-type colour
+from DColorTheme_t ($EA60) is a question for the combat layer, not this one.
 
 NO MASKS ARE STORED. Every opaque pixel maps to logical 1, 2 or 3 and never 0,
 so a pixel is transparent exactly when both of its bits are clear, and a
@@ -156,7 +166,7 @@ PLAYER_SPEED_T = 0x6D97
 ITER_FRAMES = 2
 FRAME_LOCK = 2
 
-DROID_COLOUR = 1            # MODE 1 logical colour of a set bit; see above
+DROID_COLOUR = 3            # MODE 1 logical colour of a set bit; see above
 
 BANNER = """\\ ============================================================
 \\ droids.asm
