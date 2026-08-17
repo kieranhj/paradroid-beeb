@@ -156,6 +156,49 @@ shadow → black).
 This is the second time a bug hid in the stage *after* conversion. The conversion was correct in
 both cases; the damage happened in colour assignment.
 
+### The four slots have fixed ROLES, 2026-08-17
+
+They used to be filled by frequency — background, then the three most-used colours in whatever
+order their counts fell — which put black at logical 2 on eight decks and at logical 3 on the other
+eight. Same four colours either way, in an order that meant nothing. KC's ordering:
+
+| logical | role | bits | why |
+|---|---|---|---|
+| 0 | the deck's background | `%00` | also the transparent value |
+| 1 | black (`$D023`) | `%01` | the low colour plane alone |
+| 2 | the deck's highlight | `%10` | the high plane alone |
+| 3 | white (`$D022`) | `%11` | **both planes** |
+
+**The reason is the sprites.** Artwork exported at logical 3 has both bits set on every opaque pixel
+and neither on a transparent one, so a sprite byte **is its own transparency mask**, and `AND &0F` /
+`AND &F0` recolour it in place to logical 1 (black) or logical 2 (the highlight) from one set of
+bytes. At logical 1 none of that is possible, which is why the port carries a 256-byte `SPR_MASKTAB`
+to expand the mask — now derivable from the data itself, and removable whenever the blitter is
+next opened. `DROID_COLOUR` and `EFFECT_COLOUR` are both 3.
+
+The panel had been using the same trick all along: its glyphs are stored at `&FF` and `pnMask`
+picks a plane, which is how it gets red text out of white artwork.
+
+Giving up the frequency order cost nothing. On all 16 decks the three most-used non-background
+colours are exactly {white, black, highlight}, so this reorders slots without changing which
+colours a deck gets.
+
+**Slot order and ALLOCATION order are different things**, and conflating them is what made the
+C64's black come out green. `assign_palette` is greedy nearest-unused, so whoever picks first wins
+a contested colour; picking in slot order let `PREFERRED`'s red→black take BBC black before the
+C64's actual black asked for it. `SLOT_PRIORITY = (3, 1, 0, 2)` — the sprite colour, then black,
+then the floor, then the highlight, which is the one already living with a compromise. Result:
+white on 16/16 and black on 16/16, where black was previously green on decks 1, 8, 10, 15 and red
+on 2 and 7.
+
+The cost lands on the pale floors: light grey and light green no longer take BBC white and fall to
+yellow. That is a judgement for the lab, not for a rule — and it is the first thing to look at.
+
+**Anything drawing on the deck's palette must follow the roles.** The console does, and it broke
+when this landed: it drew in logical 1 *because* that used to be white. Its ink, its two icon
+expansions and the deck plan's player cell all moved to logical 3. `liftview` and the transfer game
+install their own palettes and are unaffected.
+
 **Both assignments are now editable by eye — `tools/palette_lab.py`.** The greedy rule above is a
 starting point, and Layer 14 is where the answer is actually chosen. The lab renders every deck in
 C64 colours beside the MODE 1 version and lets both stages be changed live: the **palette**

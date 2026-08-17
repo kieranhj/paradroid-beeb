@@ -406,6 +406,13 @@ the pass that settles how it **looks**, as one deliberate sitting. Two strands:
    **Include the deck plan page (KC, 2026-08-17)**: re-judge `planInk` (built by `export_bbc.py`
    with two legibility overrides) and layer-9 §6e decision 1 alongside the deck palettes.
 
+   **The four logical colours now carry fixed roles** (KC, 2026-08-17): 0 = the deck's background,
+   1 = black, 2 = the deck's highlight, 3 = white. Chosen for the sprites — logical 3 is `%11`, so
+   a sprite byte is its own mask and `AND &0F` / `AND &F0` recolour it to black or the highlight
+   in place. Allocation runs in priority order 3, 1, 0, 2, which puts white on all 16 decks and
+   black on all 16. Anything drawing on the deck's palette must follow the roles; the console
+   already had to be moved. See [`docs/layer-1-graphics-pipeline.md`](docs/layer-1-graphics-pipeline.md).
+
    **The tool for it is `tools/palette_lab.py`** (2026-08-17): every deck rendered in the C64's own
    colours beside the port's MODE 1 render, with both the palette and the colour *merge* editable
    live, and a 320 × 120 window showing what actually fits on screen. It writes
