@@ -423,6 +423,13 @@ visible at a time. Bank 7 is now **~2.0 K free**; bank 6 and bank 4 are untouche
 found a real bug in the console main screen: `ConTok` never cleared `conCap`, so the name line drew
 `Influence Device` where the C64 draws `Influence device`.
 
+**Still missing: the droid PORTRAIT.** The database page is complete except for its artwork — it
+shows the small composed droid where the C64 shows `BuildIntroSprites`' 48 × 84 multicolour
+picture of the type being read about. That artwork is in the unported `$5400-$67FF` sprite block
+and 24 types of it is ~6 K raw, three times what bank 7 has left, so it needs its own space and a
+palette decision as well as an exporter. **Deferred by KC 2026-08-17**; §6f decision 2 says what
+it would take.
+
 Still deferred: the low-energy sprite flash, which is now the *only* energy cue the port lacks —
 see decisions 4 and 5 — and every `sndFx1` write in the console, for Layer 12.
 

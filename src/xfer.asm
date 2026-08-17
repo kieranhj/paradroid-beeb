@@ -242,6 +242,20 @@ XF_PH_REPLAY  = 4
   JSR XfDoCounter
 .xpl_3
   JSR XfCheckEnd
+IF DEBUG_XFERWIN
+\ W hands the player the board — see main.asm. AFTER XfCheckEnd, so this
+\ writes the same two things a won game leaves behind and the verdict
+\ below cannot tell the difference: the human's colour won, and the game
+\ is over. xfLeftColor is the human's, which is $21CF's own test.
+  LDX #KEY_W
+  JSR keydown
+  BNE xpl_nowin
+  LDA xfLeftColor
+  STA xfWinColor
+  LDA #1
+  STA xfNotInDeck
+.xpl_nowin
+ENDIF
   LDA xfNotInDeck
   BNE xpl_over
   LDA #0

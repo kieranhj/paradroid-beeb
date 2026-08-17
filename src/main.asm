@@ -302,6 +302,23 @@ DEBUG_ENERGY = FALSE
 \ fixed.
 DEBUG_MAPGUARD = FALSE
 
+\ DEBUG_XFERWIN gives the player the transfer minigame: hold W during the
+\ play phase and the game ends as a WIN on the next pass. It is there so
+\ droid behaviour and everything else downstream of a capture — the new
+\ type's speed and weapon, the AI, the alert level, the score — can be
+\ reached without playing the subgame properly first.
+\
+\ IT WINS THROUGH THE REAL VERDICT PATH and does not shortcut it. All it
+\ does is what a won board does: put the human's own colour in xfWinColor
+\ and set xfNotInDeck, both AFTER XfCheckEnd has had its say. Everything
+\ after that — the "transfer done" message, xfmResult, the end-phase
+\ hold, and XferExit4's FinishTransfer1/2 applying the outcome to the
+\ droid tables — runs exactly as it does on a genuine win, which is the
+\ point: the code under test is the code that ships.
+\
+\ Losing on purpose needs no key: stop steering.
+DEBUG_XFERWIN = TRUE
+
 \ TEST_DROIDS and src/droidtest.asm are gone: six static droids, put
 \ there so the sprite pool could be measured before there was anything
 \ to put in it. src/droid.asm is what they were standing in for.
@@ -595,6 +612,7 @@ KEY_UP     = &C6                \ -58
 KEY_DOWN   = &D6                \ -42
 KEY_SPACE  = &9D                \ -99
 KEY_L      = &A9                \ -87, the fire button
+KEY_W      = &DE                \ -34, DEBUG_XFERWIN only
 
 \ ---- zero page ---------------------------------------------
 \ &70-&8F was the original allocation and is full. With BASIC not
@@ -2125,7 +2143,19 @@ SAVE "PARA",    start,      code_end, start
 \ *RUNs the game — the same mechanism beebasm's -boot used before.
 \ Assembled at a scratch address; only the saved bytes matter, and
 \ nothing ever loads here.
+\
+\ IT ALSO NAMES THE DEBUG FLAGS THAT ARE ON, because a debug build looks
+\ like a normal one until the thing you are testing behaves oddly. The
+\ names are emitted by consecutive EQUS directives inside IFs, which
+\ concatenate into one line — so a clean build says nothing at all and
+\ a debug build says exactly what is different about it. Add a flag
+\ above and add it here; DEBUG_ANY is what keeps the line off an
+\ ordinary build.
 \ ------------------------------------------------------------------
+DEBUG_ANY1 = DEBUG_RASTER OR DEBUG_DRAW OR DEBUG_POS OR DEBUG_VSYNC
+DEBUG_ANY2 = DEBUG_TIME OR DEBUG_ENERGY OR DEBUG_MAPGUARD OR DEBUG_XFERWIN
+DEBUG_ANY  = DEBUG_ANY1 OR DEBUG_ANY2
+
 CLEAR &7E00, &7F00
 ORG &7E00
 .boot_start
@@ -2133,6 +2163,34 @@ EQUS "*BASIC", 13
 EQUS "CLS", 13
 EQUS "REM PARADROID", 13
 EQUS "REM BUILD ", TIME$("%d %b %Y %H:%M:%S"), 13
+IF DEBUG_ANY
+EQUS "REM DEBUG:"
+IF DEBUG_RASTER
+EQUS " RASTER"
+ENDIF
+IF DEBUG_DRAW
+EQUS " DRAW"
+ENDIF
+IF DEBUG_POS
+EQUS " POS"
+ENDIF
+IF DEBUG_VSYNC
+EQUS " VSYNC"
+ENDIF
+IF DEBUG_TIME
+EQUS " TIME"
+ENDIF
+IF DEBUG_ENERGY
+EQUS " ENERGY"
+ENDIF
+IF DEBUG_MAPGUARD
+EQUS " MAPGUARD"
+ENDIF
+IF DEBUG_XFERWIN
+EQUS " XFERWIN"
+ENDIF
+EQUB 13
+ENDIF
 EQUS "*RUN PARA", 13
 .boot_end
 SAVE "!BOOT", boot_start, boot_end

@@ -560,7 +560,9 @@ The decisions, in the pages' pattern:
    originals, from the same byte lists, so the copies cannot drift — the plandata.asm precedent.
    Cost: bank 7 goes from 6,170 bytes free to **2,074**; bank 6 and bank 4 are untouched, and
    main RAM pays 33 bytes for the conductor's arm and one flag.
-2. **[DECISION] The image is the port's droid, not the C64's portrait.** `BuildIntroSprites`
+2. **[DECISION — REVISIT: the portrait is still to come, KC 2026-08-17]** The image is the
+   port's droid, **not the C64's portrait**, and that is a gap rather than a settled answer: the
+   database is complete except for its artwork. `BuildIntroSprites`
    (`$3629`) draws a **48 × 84 multicolour portrait** built from four sprite images the record
    names (bytes 0-7) plus their mirrors. The port has no portrait: that artwork is in the C64's
    `$5400-$67FF` block, which is not ported, and 24 types of it is ~6 K — the whole of bank 7's
@@ -568,6 +570,16 @@ The decisions, in the pages' pattern:
    own menu icon draws, for the type being read about. **This is decision 16 again**, and the
    same reasoning: the C64's console icon is itself a runtime-built droid sprite. Record bytes
    0-7 are therefore not exported, which is what takes the data from 1,536 bytes to 711.
+
+   > **What it would take, when the portrait is done.** The record's four image numbers index
+   > `$4000 + N*64`, so the pixels are `rip_graphics.py`'s to extract and a new exporter's to
+   > convert; the mirrored right half is `MirrorSprite`'s, and the band heights are bit 5-0 of
+   > each sprite's 64th byte with bit 7 the multicolour flag (`$3670`-`$367C`). It is
+   > **multicolour**, so it needs the deck-independent palette question answered as well as the
+   > space: 24 types at 4 × 63 bytes is 6,048 raw, which is three times what bank 7 has left, so
+   > it wants either its own bank or a per-type load. Record bytes 0-7 would come back into
+   > `export_droidinfo.py` at that point. Until then the page is right in every respect except
+   > what the droid looks like.
 3. **[DECISION] `More...` goes in the STATUS LINE, as `More_txt` (`$6C08`) says.** Its own
    `prntY`/`prntX` are 2 and 2 — the mode word's field, where `Console` is — and `$2D4F` puts
    `Console_txt` back when the stick continues. Bank 7 already writes that field (the transfer
