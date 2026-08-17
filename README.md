@@ -33,8 +33,8 @@ converts mechanically from the ripped data with nothing redrawn.
 | | |
 |---|---|
 | Z / X | left / right |
-| K / M | up / down — and, in a lift, choose the deck |
-| L | fire; also steps into and out of a lift |
+| K / M | up / down — and, on the lift screen, move along the shaft |
+| L | fire; on a lift platform it opens the ship's deck-selection screen, and fire again commits |
 | Cursor up/down | debug deck hop |
 | SPACE | force a full redraw (also the verification oracle) |
 
@@ -148,6 +148,7 @@ python tools/export_strings.py    # the $C000 name table -> src/data/
 python tools/export_icons.py      # the console's menu icons -> src/data/
 python tools/export_droidicon.py  # the console's droid icon -> src/data/
 python tools/export_xfer.py       # the transfer board, three ownership sets -> src/data/
+python tools/export_sideview.py   # the lift screen's ship cross-section -> src/data/
 ```
 
 The tools require Python 3 and Pillow. Regenerate `src/data/` rather than editing it.

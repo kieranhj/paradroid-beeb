@@ -928,6 +928,20 @@ ENDIF
   JMP ml_passend
 .ml_noxfer
 
+\ ============================================================
+\ ...or the lift's deck-selection screen has it
+\ ============================================================
+\ Layer 8b, on the same pattern: liftMode 2 means the side view owns
+\ the play buffer and the panel line, and one tick a pass is all that
+\ runs. State 1 — the entering pass — falls through: it is consumed at
+\ the hook after DroidsUpdate below.
+  LDA liftMode
+  CMP #2
+  BNE ml_nolview
+  JSR LiftViewTick
+  JMP ml_passend
+.ml_nolview
+
   \ Z / X left-right, K / M up-down. The keys feed a direction pair
   \ and the direction pair feeds an accelerating speed, so the view
   \ position moves by 0-7 pixels a frame rather than a fixed step.
@@ -967,12 +981,9 @@ ENDIF
   LDA prevRet
   BNE ml_lHeld
   LDA #1 : STA prevRet          \ the press edge
-  LDA liftMode
-  BEQ ml_lTryEnter
-  JSR LiftExit
-  LDA #1 : STA fireEaten
-  JMP ml_lDone
-.ml_lTryEnter
+\ liftMode can only be 0 here: with the view up the pass short-circuits
+\ at the lift arm long before this block, so the old exit-on-fire arm is
+\ gone — leaving the lift is LiftViewTick's commit now.
   JSR LiftEnter
   LDA liftMode                  \ did it take? if not, the press is the gun's
   BEQ ml_lHeld
@@ -1054,10 +1065,8 @@ ENDIF
 \ UP and DOWN belong to the lift while it has the controls. Outside one
 \ they stay the debug free hop, which is worth keeping until every deck
 \ is reachable by lift and can be tested that way instead.
-  LDA liftMode
-  BEQ ml_debugdeck
-  JSR LiftControl
-  JMP ml_notDn
+  LDA liftMode                  \ entering the lift: the debug hop keeps
+  BNE ml_notDn                  \ its hands off the deck this pass
 
 .ml_debugdeck
   LDX #KEY_UP
@@ -1157,6 +1166,17 @@ ENDIF
   JSR XferEnter
   JMP ml_passend
 .ml_noxstart
+
+\ ---- or did fire on a lift platform stage the side view? ----
+\ LiftEnter set liftMode 1 in the fire block earlier this pass; the
+\ sprites have drawn, so the board can take the buffer over now, the
+\ way the transfer does. Next pass takes the liftMode 2 arm above.
+  LDA liftMode
+  CMP #1
+  BNE ml_nolstart
+  JSR LiftViewEnter
+  JMP ml_passend
+.ml_nolstart
 
   \ Alongside the AI and for the same reason: it writes no buffer. The
   \ droid the player is riding wears out here.
@@ -1916,6 +1936,11 @@ ORG SWRAM_BASE
 .xfer_start
 INCLUDE "src/xfer.asm"
 INCLUDE "src/data/xferboard.asm"
+\ Layer 8b's lift screen shares the bank AND the machinery — the shadow
+\ screens, the glyph page, the row tables and the panel-line text are
+\ all xfer.asm's, safe because the two can never be up at once.
+INCLUDE "src/liftview.asm"
+INCLUDE "src/data/sideview.asm"
 .xfer_end
 SAVE "PARXFER", xfer_start, xfer_end, DATA_LOAD, DATA_LOAD
 

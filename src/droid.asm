@@ -2477,3 +2477,167 @@ XF_PHYS_NEUT = 0                \ black   — logical 3, structure/unclaimed
   RTS
 
 \ ============================================================
+
+\ ============================================================
+\ The lift screen's bank-4 half: DoLift's mechanics
+\ ============================================================
+\ The display is liftview.asm in BANK 7; the trampolines are in
+\ main.asm. What lives HERE is everything that reads the stop tables —
+\ liftDeck/liftShaft are this bank's — plus the machine-state swap the
+\ transfer established: palette, t1i3, the flatten. Same rule as
+\ Layer 10's shims: this code must not page banks.
+
+\ ---- LvEnter4 — from LiftViewEnter, the pass after fire -----
+\ LiftFind already ran (LiftEnter set liftMode=1), so liftPos and
+\ liftNum are set. ConsoleOpen's flatten, the lift palette in, fire 3
+\ down a row for the 16th, and the selection mirrors seeded.
+.LvEnter4
+  LDA deck
+  STA lvSelDeck
+  LDA liftPos
+  STA lvEntryPos
+  LDA #1
+  STA lvPrevFire                \ the entering press is still down
+  STA prevLU                    \ and so may the step keys be: require
+  STA prevLD                    \ a release before the first step
+  LDA #0
+  STA lvCommit
+  STA lvLoad
+  STA xSpd : STA xSpd+1
+  STA ySpd : STA ySpd+1
+  STA scrollS : STA scrollS+1
+  STA line
+  STA iline
+  STA bandDo
+  STA colCount
+  JSR SetCRTCStart
+
+  LDX #15
+.lve_pal
+  LDA palPlay,X
+  STA xfPalSave,X               \ shared with the transfer: the two
+  LDA palLift,X                 \ screens can never be up at once
+  STA palPlay,X
+  DEX
+  BPL lve_pal
+
+  LDA #LO(T1_I3X)
+  STA t1i3Lo
+  LDA #HI(T1_I3X)
+  STA t1i3Hi
+  LDA #2                        \ liftMode 2: the view has the machine
+  STA liftMode
+  RTS
+
+\ ---- LvTick4 — keys and stepping, before the bank-7 redraw --
+\ LiftControl's edge pairs, driving LvStep instead of a deck load; and
+\ the fire edge that commits. ChangeDeck ($2705) is the model: step the
+\ index, and the shaft-sentinel mismatch is the whole bounds test.
+.LvTick4
+  LDX #KEY_K
+  JSR keydown
+  BNE lvt4_upOff
+  LDA prevLU
+  BNE lvt4_notUp
+  LDA #1
+  STA prevLU
+  LDA #&FF                      \ up the shaft: one index back
+  JSR LvStep
+  JMP lvt4_notUp
+.lvt4_upOff
+  LDA #0
+  STA prevLU
+.lvt4_notUp
+  LDX #KEY_M
+  JSR keydown
+  BNE lvt4_dnOff
+  LDA prevLD
+  BNE lvt4_notDn
+  LDA #1
+  STA prevLD
+  LDA #1
+  JSR LvStep
+  JMP lvt4_notDn
+.lvt4_dnOff
+  LDA #0
+  STA prevLD
+.lvt4_notDn
+  LDX #KEY_L                    \ fire commits — an unmoved selection is
+  JSR keydown                   \ the cancel, exactly the C64's shape
+  BNE lvt4_fireOff
+  LDA lvPrevFire
+  BNE lvt4_x
+  LDA #1
+  STA lvPrevFire
+  STA lvCommit
+  RTS
+.lvt4_fireOff
+  LDA #0
+  STA lvPrevFire
+.lvt4_x
+  RTS
+
+\ ---- LvStep — LiftStep minus the load: selection only -------
+.LvStep
+  CLC
+  ADC liftPos
+  TAX
+  LDA liftShaft,X
+  CMP liftNum
+  BNE lvst_x                    \ a sentinel: the end of the shaft
+  STX liftPos
+  LDA liftDeck,X
+  STA lvSelDeck
+.lvst_x
+  RTS
+
+\ ---- LvExit4 — commit: the machine back, and maybe a deck ---
+\ LoadDeck cannot be called from this bank (it reaches PanelSetup, the
+\ bank-6 trampoline), so lvLoad tells the main-RAM tail which ending
+\ this is: a changed selection loads the chosen deck with liftPlace
+\ set, an unchanged one just reframes what was always there.
+.LvExit4
+  LDX #15
+.lvx_pal
+  LDA xfPalSave,X
+  STA palPlay,X
+  DEX
+  BPL lvx_pal
+  LDA #LO(T1_I3)
+  STA t1i3Lo
+  LDA #HI(T1_I3)
+  STA t1i3Hi
+  LDA #0
+  STA liftMode
+  LDA #MM_MOBILE
+  STA moveMode
+  LDA #MM_DELAY
+  STA mmDelay
+  LDX liftPos
+  CPX lvEntryPos
+  BEQ lvx_stay
+  LDA liftDeck,X
+  STA deck
+  LDA #1
+  STA liftPlace
+  STA lvLoad
+.lvx_stay
+  RTS
+
+\ The lift screen's palette: KC's choice — blue field, the emboss in
+\ white and black, the lit deck's fill magenta (dark purple on the
+\ C64). The art itself carries the colours — see export_sideview.py —
+\ so these four are the whole look. [DECISION]
+LV_PHYS_BG    = 4               \ blue
+LV_PHYS_SHIP  = 7               \ white   — logical 1, the emboss's light side
+LV_PHYS_DECK  = 0               \ black   — logical 2, its shadow side
+LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
+.palLift
+  PALENT  0, LV_PHYS_BG    : PALENT  1, LV_PHYS_BG
+  PALENT  4, LV_PHYS_BG    : PALENT  5, LV_PHYS_BG
+  PALENT  2, LV_PHYS_SHIP  : PALENT  3, LV_PHYS_SHIP
+  PALENT  6, LV_PHYS_SHIP  : PALENT  7, LV_PHYS_SHIP
+  PALENT  8, LV_PHYS_DECK  : PALENT  9, LV_PHYS_DECK
+  PALENT 12, LV_PHYS_DECK  : PALENT 13, LV_PHYS_DECK
+  PALENT 10, LV_PHYS_SHAFT : PALENT 11, LV_PHYS_SHAFT
+  PALENT 14, LV_PHYS_SHAFT : PALENT 15, LV_PHYS_SHAFT

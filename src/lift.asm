@@ -21,22 +21,25 @@
 \ run. ChangeDeck ($2705) does exactly this and the sentinels are why
 \ it needs no bounds test.
 \
-\ ---- why lift mode is a flag and not a loop -----------------
-\ DoLift ($267A) spins its own loop: it saves the VIC state, switches to
-\ hires, draws the side view, polls the joystick, and restores. That
-\ works there because nothing else has to keep running.
+\ ---- the side view, and how the mode flag stages it ---------
+\ DoLift ($267A) spins a modal loop over the ship cross-section. Ours
+\ rides the pass structure the way the console and the transfer do,
+\ with liftMode as a three-state:
 \
-\ Here the rupture, the sprite pool and the edge redraws all have to
-\ keep going, so a modal loop would have to call WaitField, both sprite
-\ passes and DoRedraws itself — i.e. reimplement the main loop. A flag
-\ that suppresses movement and re-points UP/DOWN costs three tests in
-\ the main loop and leaves everything else untouched.
+\   0  no lift
+\   1  ENTERING — set by LiftEnter in the fire block, consumed later
+\      the same pass at the hook after DroidsUpdate, which runs the
+\      full entry (LiftViewEnter below) and short-circuits the pass
+\   2  THE VIEW IS UP — the main loop's lift arm runs one
+\      LiftViewTick a pass and nothing else moves
 \
-\ THE SIDE VIEW BELONGS TO LAYER 9, and until it exists a lift has no
-\ display of its own — you press fire, the whole deck changes under you,
-\ and you press fire again. That is the only feedback there is, which is
-\ why binding up/down to the wrong keys read as the lift being frozen
-\ rather than as a missing key.
+\ The display is liftview.asm in bank 7 on Layer 10's machinery; the
+\ stepping and the machine-state swap are LvEnter4/LvTick4/LvExit4 in
+\ droid.asm, bank 4, where the stop tables live. K/M walk the selection
+\ along the shaft — the deck does NOT load per step, unlike the C64's
+\ per-step BuildLevel, because our LoadDeck draws into the play buffer
+\ the side view is occupying. Fire commits: one load if the selection
+\ moved, a plain reframe if it did not. [DECISION — layer-8b doc]
 \ ============================================================
 
 LIFT_FIRST = 1                  \ index 0 is a sentinel
@@ -89,44 +92,49 @@ LIFT_LAST  = 30                 \ and so is 31
   RTS
 
 \ ============================================================
-\ LiftEnter / LiftExit — fire, edge triggered
+\ LiftEnter — fire, edge triggered: stage the view for this pass
 \ ============================================================
 .LiftEnter
   JSR LiftFind
   BCS le_x                      \ not standing on one
   LDA #1
-  STA liftMode
+  STA liftMode                  \ ENTERING: the hook after DroidsUpdate
+                                \ finishes the job this same pass
   LDA #0                        \ stop dead, so ApplyMove has nothing to
-  STA xSpd : STA xSpd+1         \ apply while the lift has the controls
+  STA xSpd : STA xSpd+1         \ apply while the lift has the machine
   STA ySpd : STA ySpd+1
 .le_x
   RTS
 
-.LiftExit
-  LDA #0
-  STA liftMode
+\ ============================================================
+\ LiftViewEnter / LiftViewTick — the bank trampolines
+\ ============================================================
+\ The pattern is XferEnter/XferTick's, for XferEnter's reason: bank-4
+\ code cannot page bank 7 in under its own feet, and LoadDeck and
+\ PanelSetup reach bank 6, so both belong to main RAM.
+.LiftViewEnter
+  JSR LvEnter4                  \ bank 4: flatten, palette, t1i3, mirrors
+  PAGEBANK SWRAM_XFER
+  JSR LvStart7
+  PAGEBANK SWRAM_DATA
   RTS
 
-\ ============================================================
-\ LiftStep — A = +1 or -1: move one stop along this shaft
-\ ============================================================
-\ The shaft test is the whole bounds check. Walking off either end lands
-\ on a sentinel whose shaft is 8, which cannot match liftNum, so the
-\ lift simply does not move.
-.LiftStep
-  CLC
-  ADC liftPos
-  TAX
-  LDA liftShaft,X
-  CMP liftNum
-  BNE ls_x                      \ end of the shaft
-  STX liftPos
-  LDA liftDeck,X
-  STA deck
-  LDA #1                        \ LoadDeck places us on the platform
-  STA liftPlace                 \ instead of calling CentreOnDeck
-  JSR LoadDeck
-.ls_x
+.LiftViewTick
+  JSR LvTick4                   \ bank 4: keys, step, the fire edge
+  PAGEBANK SWRAM_XFER
+  JSR LvTick7                   \ bank 7: move the light, if it moved
+  PAGEBANK SWRAM_DATA
+  LDA lvCommit
+  BEQ lvt_x
+  JSR LvExit4                   \ bank 4: palette and t1i3 back, deck set
+  LDA lvLoad
+  BNE lvt_load
+  JSR ReframeView               \ same deck: the world was always there
+  JMP PanelSetup
+.lvt_load
+  JMP LoadDeck                  \ new deck: liftPlace is set, and LoadDeck
+                                \ ends with PanelSetup itself
+.lvt_x
   RTS
 
 \ ============================================================
@@ -205,51 +213,13 @@ LIFT_LAST  = 30                 \ and so is 31
 
   JMP SetMapFromPos             \ mapHX / mapYr / line, and its RTS
 
-\ ============================================================
-\ LiftControl — the controls, while the lift has them
-\ ============================================================
-\ THE MOVEMENT KEYS DRIVE THE LIFT, not the cursor keys. ChangeDeck
-\ ($2705) steps on `joyYDir`, which is the joystick — the same control
-\ that walks the droid — so in a lift, up and down are the up and down
-\ you already have your fingers on. Binding this to the cursor keys was
-\ simply wrong, and reads as the lift being broken.
-\ Edge triggered on a pair of its own rather than prevUp/prevDn: those
-\ belong to the debug cursor hop, and sharing them means a cursor key
-\ held on the way in swallows the first press in here.
-.LiftControl
-  LDX #KEY_K
-  JSR keydown
-  BNE lc_upOff
-  LDA prevLU
-  BNE lc_notUp
-  LDA #1
-  STA prevLU
-  LDA #&FF                      \ up the shaft: one index back
-  JSR LiftStep
-  JMP lc_notUp
-.lc_upOff
-  LDA #0
-  STA prevLU
-.lc_notUp
-
-  LDX #KEY_M
-  JSR keydown
-  BNE lc_dnOff
-  LDA prevLD
-  BNE lc_notDn
-  LDA #1
-  STA prevLD
-  LDA #1
-  JSR LiftStep
-  JMP lc_notDn
-.lc_dnOff
-  LDA #0
-  STA prevLD
-.lc_notDn
-  RTS
-
 \ ---- state --------------------------------------------------
-.liftMode   EQUB 0              \ non-zero: the lift has the controls
+\ THE MOVEMENT KEYS DRIVE THE LIFT, not the cursor keys: ChangeDeck
+\ ($2705) steps on joyYDir, the same control that walks the droid. The
+\ edge pairs are the lift's own rather than prevUp/prevDn — those
+\ belong to the debug hop, and sharing them means a key held on the
+\ way in swallows the first press. LvTick4 (droid.asm) reads them now.
+.liftMode   EQUB 0              \ 0 none / 1 entering / 2 view up
 .liftPos    EQUB 0              \ index of the stop we are at, 1-30
 .liftNum    EQUB 0              \ its shaft, so stepping cannot leave it
 .liftPlace  EQUB 0              \ LoadDeck: place at liftPos, not centre
@@ -259,3 +229,9 @@ LIFT_LAST  = 30                 \ and so is 31
 .lfCol      EQUB 0
 .lfRow      EQUB 0
 .lpTmp      EQUW 0
+.lvSelDeck  EQUB 0              \ the deck the selection is on — bank 7
+                                \ shows it, LvStep (bank 4) moves it
+.lvEntryPos EQUB 0              \ liftPos on the way in: unmoved = no load
+.lvPrevFire EQUB 0              \ the view's own fire edge
+.lvCommit   EQUB 0              \ LvTick4 -> the trampoline: fire fell
+.lvLoad     EQUB 0              \ LvExit4 -> the trampoline: load, or not

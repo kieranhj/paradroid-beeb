@@ -187,8 +187,8 @@ moves. The outline:
 | ZP `&00–&8F` | 144 B | **all of it used** — the map is in `main.asm`. `&90` up is the OS |
 | `&0400–&0C8F` | 2,192 B | MODE 1 charset, built at deck load — reclaimed OS workspace |
 | `&0C90–&10FF` | **1,136 B free** | rest of the reclaimed OS workspace |
-| `&1100–&2F6F` | 7,792 B | code (`PARA`). DFS random-access buffer space, safe for `*LOAD` |
-| `&2F70–&2FFF` | **144 B free** | **the binding constraint.** Layer 10 paid its way in by moving `CalcAxis`/`CalcSpeed` and its own shims into bank 4; anything new in main RAM needs the same treatment |
+| `&1100–&2F57` | 7,768 B | code (`PARA`). DFS random-access buffer space, safe for `*LOAD` |
+| `&2F58–&2FFF` | **168 B free** | **the binding constraint.** Layer 10 paid its way in by moving `CalcAxis`/`CalcSpeed` and its own shims into bank 4, and Layer 8b's lift view by deleting the routines it replaced; anything new in main RAM needs the same treatment |
 | `&3000–&37FF` | 2,048 B | sprite background save areas, one page per slot — **eight now**, ending exactly where the tile map begins. A ninth would overwrite it |
 | `&3800–&3BFF` | 1,024 B | tile map, fixed home — floating it after `code_end` once put it over the save areas |
 | `&3C00–&483F` | 3,136 B | **Layer 9's text font**, `PARAFNT`, `*LOAD`ed straight here — 98 glyphs |
@@ -200,10 +200,10 @@ moves. The outline:
 | `&5500–&56FF` | 512 B | `CHAR_PTR_LO`/`HI` — character code → charset address, built at startup |
 | `&5700–&57FF` | 256 B | data byte → transparency mask table, built at startup |
 | `&5800–&7FFF` | 10,240 B | play buffer: circular strip, 16 rows × 640 |
-| SWRAM bank 4 | 16 K | `PARADAT` — char data, colour schemes, tile defs, deck RLE, waypoints, the combat stat tables, **the level-draw code, the droid AI, Layer 7's combat, and Layer 10's entry/exit shims plus `CalcAxis`/`CalcSpeed`**. Ends `&BC81`, **895 B free** |
+| SWRAM bank 4 | 16 K | `PARADAT` — char data, colour schemes, tile defs, deck RLE, waypoints, the combat stat tables, **the level-draw code, the droid AI, Layer 7's combat, Layers 10 and 8b's entry/exit shims, and `CalcAxis`/`CalcSpeed`**. Ends `&BD8F`, **625 B free** |
 | SWRAM bank 5 | 16 K | `PARASPR` — the blitter at shifts 0 and 1 px, **plus Layer 7's effect artwork**: 31 bullet and explosion frames, 2,946 B, here rather than in bank 4 because the interpreted path reads them every row. Ends `&BBF7`, **1,033 B free** |
 | SWRAM bank 6 | 16 K | `PARSPR2` — the same at 2 and 3 px, laid out identically, **plus Layer 9's panel engine, HUD, console, strings and icons**. Ends `&BFE9`, **23 B free — full** |
-| SWRAM bank 7 | 16 K | `PARXFER` — **Layer 10's transfer game**: the transliterated subgame, its shadow screen/colour RAM, and the board characters in three ownership sets. Ends `&9989`, **~9.8 K free** — the obvious home for anything new that needs a bank |
+| SWRAM bank 7 | 16 K | `PARXFER` — **Layer 10's transfer game and Layer 8b's lift screen**, sharing the shadow screen/colour RAM, the glyph page and the renderer pattern; plus both glyph sets. Ends `&A508`, **~6.9 K free** — the obvious home for anything new that needs a bank |
 
 **"Main RAM is full" meant the `PARA` image could not grow past `&3000`** — never that there was no
 RAM. Moving code rather than data is what fixed it: `screen.asm`, `scroll.asm` and `level.asm` now
@@ -335,8 +335,14 @@ probes.
 through the decks that shaft serves — which are *not* adjacent, so stepping walks a table. The
 platform turned out to be tile 3 at the C64 view origin + (5, 2), found by searching for the offset
 that gives a consistent tile across all 30 stops (30/30 against a next-best of 21/30) — it is not
-written down anywhere in the listing. The side view is still Layer 9's; until then a lift has no
-display of its own.
+written down anywhere in the listing.
+
+**The deck-selection screen landed 2026-08-17** (`src/liftview.asm`, bank 7, on Layer 10's shadow
+machinery): fire on a lift pauses the game and shows the C64's ship cross-section — your shaft
+marked magenta, the selected deck lit yellow, "lift" and the deck number on the panel line — K/M
+walk the selection, fire commits with ONE deck load (the C64 rebuilds per step; ours cannot, the
+buffer is the view — decision 1 in the doc). An unmoved fire returns without a load.
+→ [`docs/layer-8b-lift-view.md`](docs/layer-8b-lift-view.md)
 
 **Arrival now comes from the lift table where there is one**, and from **waypoint 0** everywhere
 else — the first deck and the debug deck hop included. `CentreOnDeck` is gone, and `BUGS.md` #4,
@@ -388,7 +394,7 @@ and the droid's own digits because the C64 builds it at run time and our droid a
 | the menu selection | `conWaitInput` (`$2C63`) — up/down walk `consoleState` $80-$83, fire dispatches through `conJump_t`. The icons are inert without it, so nothing behind them is reachable |
 | the **droid database** | `con_DroidInfo` (`$2CC6`). Code and tables only; the tables are already mirrored to `PN_TABS` |
 | the **deck plan** | `con_DeckInfo` (`$3061`) — `DrawPacked` over the level RLE, at a different scale from the play area |
-| the **ship plan** | `con_ShipInfo` — `SideView_dat` (`$F180`), 201 B of RLE into a 64 × 16 grid. `tools/rip_sideview.py` reads it; nothing is exported yet |
+| the **ship plan** | `con_ShipInfo` — the same side view the lift screen now draws: `LvDrawPacked`, `LvHighlight` and the renderer are already in bank 7 (Layer 8b), so this page needs only an entry that skips the shaft mark and a main-RAM trampoline from the console's bank-6 code |
 
 Also deferred: the low-energy sprite flash, which is now the *only* energy cue the port has — see
 decisions 4 and 5.

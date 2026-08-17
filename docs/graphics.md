@@ -316,9 +316,12 @@ overlays coloured rectangles from the deck metadata at `$F120-$F150`.
 15 unique codes (before the `$80` offset): 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 13, 37, 38, 39, 40 —
 hull outline, lift shaft ladders, deck floor lines, engine-room hatching, corners and junctions.
 
-> **Status.** Not ported. Layer 9. The data is platform-independent; the 15 characters come free
-> with the `$7800` conversion. The deck highlight is C64 colour RAM writes, which in MODE 1 has to
-> become either a palette change or a redraw.
+> **Status.** Ported 2026-08-17 as Layer 8b, the lift's deck-selection screen —
+> `tools/export_sideview.py` emits the RLE verbatim plus the characters in three pen sets, and
+> `src/liftview.asm` (bank 7) transliterates `DrawPacked` and `lift_HighlightDeck` against Layer
+> 10's shadow screen. The deck highlight is the C64's own ±$10 character swap; only the *colour*
+> became a per-character pen rule. See [`layer-8b-lift-view.md`](layer-8b-lift-view.md).
+> The console's ship page (`con_ShipInfo`) can now reuse all of it.
 
 ---
 
