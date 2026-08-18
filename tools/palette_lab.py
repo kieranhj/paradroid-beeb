@@ -55,6 +55,8 @@ except ImportError:
 
 sys.path.insert(0, str(Path(__file__).parent))
 from rip_levels import parse_listing, decode_deck_rle          # noqa: E402
+from export_droids import (build_rotor, build_digits,               # noqa: E402
+                           droid_number, FRAMES)
 from export_bbc import (C64_RGB, BBC_RGB, D022, D023,              # noqa: E402
                         CHARSET_ADDR, TILEDEF_ADDR,
                         deck_colours, deck_background, build_logical_map,
@@ -136,6 +138,46 @@ def render_deck(mem, deck):
                                 buf[off + p] = colour if (b >> (7 - p)) & 1 \
                                     else D021
     return w, h, x0, y0, bytes(buf)
+
+
+SPR_W, SPR_H = 24, 21
+
+
+def build_player_sprite(mem):
+    """The player's droid, all 8 rotor phases, as rows of 24 booleans.
+
+    Composed the way export_droids' row_index does it, because the picture is
+    not stored anywhere as a picture: rows 0-4 are the rotor's top, 6-13 the
+    droid's number, 15-17 the top rows again in REVERSE order, and 18-19 the
+    two end rows taken from the OTHER entry of the two-entry tables - which is
+    what makes the two ends of the rotor alternate as it spins.
+
+    The player is type 0, and droid_number confirms it: 001, the influence
+    device. Rows 5, 14 and 20 are blank.
+    """
+    frames, bottoms = build_rotor(mem)
+    digits, _ = build_digits(mem, 0)
+
+    phases = []
+    for phase in range(FRAMES):
+        rows = []
+        for r in range(SPR_H):
+            if r < 5:
+                b = frames[phase][r]
+            elif r in (5, 14, 20):
+                b = [0, 0, 0]
+            elif r < 14:
+                b = digits[r - 6]
+            elif r < 18:
+                b = frames[phase][19 - r]
+            elif r == 18:
+                b = [0, bottoms[phase][1], 0]
+            else:
+                b = [0, bottoms[phase][0], 0]
+            rows.append(''.join('1' if (byte >> (7 - i)) & 1 else '0'
+                                for byte in b for i in range(8)))
+        phases.append(rows)
+    return phases
 
 
 def png_b64(w, h, buf):
@@ -310,8 +352,9 @@ PAGE = r"""<!doctype html>
                         text-transform: uppercase; letter-spacing: .08em; }
   #windows canvas {
     image-rendering: pixelated; border: 1px solid var(--edge); border-radius: 3px;
-    background: #0c0e11; width: 320px; height: 120px;
+    background: #0c0e11; width: 640px; height: 240px;
   }
+  #windows select, #windows label { vertical-align: middle; }
   code { background: #0c0e11; padding: 1px 5px; border-radius: 3px;
          color: var(--hot); font-size: 11px; }
 </style>
@@ -348,12 +391,26 @@ PAGE = r"""<!doctype html>
         <span id="bbcinfo"></span></div>
       <div class="scroller" id="scrbb"><canvas id="cvbb"></canvas></div>
     </div>
-    <h2 style="margin-top:18px">What fits on screen (320 &times; 120)</h2>
+    <h2 style="margin-top:18px">What fits on screen (320 &times; 120)
+      <label style="text-transform:none;letter-spacing:0;font-weight:400;margin-left:10px">
+        <input type="checkbox" id="sprOn" checked> droid</label>
+      <select id="sprCol" style="text-transform:none;letter-spacing:0">
+        <option value="3">white &mdash; logical 3, as drawn</option>
+        <option value="1">black &mdash; logical 1, AND &amp;0F</option>
+        <option value="2">highlight &mdash; logical 2, AND &amp;F0</option>
+      </select>
+    </h2>
     <div id="windows">
       <figure><figcaption>C64</figcaption><canvas id="w64" width="320" height="120"></canvas></figure>
       <figure><figcaption>BBC</figcaption><canvas id="wbb" width="320" height="120"></canvas></figure>
     </div>
-    <p class="note" id="hint">Move the pointer over a deck above to aim this window.</p>
+    <p class="note" id="hint">Move the pointer over a deck above to aim this
+      window; the droid follows it. Shown at 2&times;.</p>
+    <p class="note">The C64 draws every droid, the player included, in BLACK
+      &mdash; <code>SpriteColor</code> takes <code>$F0</code> at
+      <code>$1906</code> &mdash; so the C64 pane shows it black whatever the
+      port is doing. Ours is logical 3, and logical 1 is one
+      <code>AND &amp;0F</code> away.</p>
   </div>
 
   <aside>
@@ -511,6 +568,22 @@ function show(d) {
 
 /* ---- the 320x120 window, which is what the player actually sees --------- */
 let lastWin = { x: 0, y: 0 };
+const SPR = DATA.sprite;
+let sprOn = true, sprLogical = 3, sprPhase = 0;
+
+/* The droid over the window, at the pointer. Both panes draw the same
+   pixels; only the colour differs - the C64's is black by SpriteColor, ours
+   is whichever logical slot is selected, which is the decision being made. */
+function drawDroid(ctx, px, py, css) {
+  if (!sprOn) return;
+  const rows = SPR.phases[sprPhase & 7];
+  ctx.fillStyle = css;
+  for (let y = 0; y < SPR.h; y++) {
+    const row = rows[y];
+    for (let x = 0; x < SPR.w; x++)
+      if (row[x] === '1') ctx.fillRect(px + x, py + y, 1, 1);
+  }
+}
 function drawWindows(x, y) {
   const k = deck(cur);
   x = Math.max(0, Math.min(k.w - 1, x | 0));
@@ -524,6 +597,9 @@ function drawWindows(x, y) {
     c.fillStyle = '#000'; c.fillRect(0, 0, 320, 120);
     c.drawImage(src, sx, sy, Math.min(320, k.w), Math.min(120, k.h),
                 0, 0, Math.min(320, k.w), Math.min(120, k.h));
+    drawDroid(c, x - sx - (SPR.w >> 1), y - sy - (SPR.h >> 1),
+              dst === w64 ? rgbcss(C64[0])            /* the C64's black */
+                          : rgbcss(BBC[phys(cur)[sprLogical]]));
   }
 }
 for (const c of [cv64, cvbb]) {
@@ -702,6 +778,16 @@ document.getElementById('rstall').onclick = () => {
   show(cur);
 };
 
+document.getElementById('sprOn').onchange = e => {
+  sprOn = e.target.checked; drawWindows(lastWin.x, lastWin.y);
+};
+document.getElementById('sprCol').onchange = e => {
+  sprLogical = +e.target.value; drawWindows(lastWin.x, lastWin.y);
+};
+/* the rotor spins in the game, so it spins here - a still rotor hides how
+   much of the droid is actually its thin blades */
+setInterval(() => { if (sprOn) { sprPhase++; drawWindows(lastWin.x, lastWin.y); } }, 120);
+
 document.getElementById('zoom').onchange = e => {
   zoom = e.target.value === 'fit' ? 'fit' : +e.target.value;
   applyZoom();
@@ -759,6 +845,9 @@ def main():
     mem, _ = parse_listing(LST_FILE)
 
     decks = collect(mem)
+    sprite = build_player_sprite(mem)
+    print('  player   %s, %d phases, %d x %d'
+          % (droid_number(mem, 0), FRAMES, SPR_W, SPR_H))
 
     data = {
         'decks': decks,
@@ -768,6 +857,7 @@ def main():
         'bbcnames': BBC_NAMES,
         'roles': ROLE_NAMES,
         'wants': ROLE_WANTS,
+        'sprite': {'w': SPR_W, 'h': SPR_H, 'phases': sprite},
         'view': [VIEW_W, VIEW_H],
     }
     html = PAGE.replace('__DATA__', json.dumps(data, separators=(',', ':')))
