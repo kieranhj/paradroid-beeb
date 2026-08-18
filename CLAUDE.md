@@ -234,11 +234,14 @@ it is converted game artwork. Regenerate it rather than editing it.
 - Where practical, keep variable names matching `ANNOTATION.md` for cross-referencing against
   the C64 original
 - Debug builds are switched by constants at the top of `main.asm` — `DEBUG_RASTER`, `DEBUG_DRAW`,
-  `DEBUG_VSYNC`, `DEBUG_TIME`, `DEBUG_POS`, `DEBUG_ENERGY`, `DEBUG_MAPGUARD`, `DEBUG_XFERWIN`. Each carries a header explaining what it shows and
+  `DEBUG_VSYNC`, `DEBUG_TIME`, `DEBUG_POS`, `DEBUG_ENERGY`, `DEBUG_MAPGUARD`, `DEBUG_XFERWIN`,
+  `DEBUG_RESTART`. Each carries a header explaining what it shows and
   how to read it; `DEBUG_TIME` in particular documents how to take a cycle measurement that means
-  something, including why only one call site may be instrumented at a time. `DEBUG_XFERWIN` is
-  the odd one — it changes what the GAME does rather than what it draws: W wins the transfer
-  minigame outright, so droid behaviour after a capture can be reached without playing it.
+  something, including why only one call site may be instrumented at a time. **Two change what the
+  GAME does rather than what it draws**: `DEBUG_XFERWIN` — W wins the transfer minigame outright,
+  so droid behaviour after a capture can be reached without playing it — and `DEBUG_RESTART`, where
+  R throws the game away and starts another through `GameStart`, which is how Layer 11's boot split
+  is exercised before the title screen exists to exercise it.
 - **A debug build says so at boot.** `!BOOT` names every flag that is on (`REM DEBUG: XFERWIN`),
   built from conditional `EQUS` directives beside the build stamp, and a clean build prints no
   such line. Adding a flag means adding it to that block and to `DEBUG_ANY` as well as defining

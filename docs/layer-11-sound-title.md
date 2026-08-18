@@ -1,6 +1,6 @@
 # Layer 11 — Title, the 001 screen, game over, and sound
 
-**Status: planned, nothing built.** Scoped with KC 2026-08-18. Decisions KC might want to revisit
+**Status: 11a built 2026-08-18; 11b-11e planned.** Scoped with KC 2026-08-18. Decisions KC might want to revisit
 are marked **[DECISION]** and collected in §7; things deliberately left out are in §8.
 
 The layer's shape came out of reading the listing rather than the plan: the flow this builds is the
@@ -135,13 +135,35 @@ A title palette is Layer 14's to settle.
 Not KC's listed order — the loop cannot close until the pieces exist, and one precondition comes
 first. Each step ends with something visible.
 
-### 11a — Split boot into "once" and "per game"
+### 11a — Split boot into "once" and "per game" — DONE 2026-08-18
 
-`main.asm` runs one linear boot into the game loop. `StartGame` (`$1242`) is the C64's per-game
-reset: `shipLevel`, `weaponType`, `Score`, `droidType` = 0, then `_entership` — `NextLevel`, the
-random deck 4-7, `BuildLevel`. Factor ours the same way, and with it the **main-RAM asset rebuild**:
-the banks survive a restart but `PARAFNT`, `BuildCharPtrs`, `SprBuildMask` and `FillPanel` do not.
-Invisible; nothing else can happen twice until it exists.
+`GameStart` in `droid.asm`, bank 4, beside `NewShipDroids` and the droid tables it seeds: the C64's
+`StartGame` (`$1242`) and `_entership` (`$1289`) in one routine, ending on the random deck 4-7 and
+`LoadDeck`. `main.asm`'s boot keeps the cold half — mode, disc, banks, `BuildCharPtrs`,
+`SprBuildMask`, `SetupRupture`, `InstallIrq`, the seed — and then just calls it. Main RAM shrank 20
+bytes to `&2FD3` in the process, and bank 4 paid the 147.
+
+**The work is the defaults, not the plumbing.** Boot used to lean on beebasm's assembled initial
+values for everything, so a second game inherits whatever the first left: a console still up, a
+lift half-entered, a transfer holding its verdict, a half-pressed key's edge latch, the top speed of
+whatever droid you were riding. `GameStart` writes all of it out loud, in five groups the source
+names. Two ordering traps are recorded there: `CombatInit`'s `$40` energy (`$1345`, what the entry
+animation *ends* on) must not be overwritten by `BlowInto001`'s 7, which is why `ccd_reset`'s
+identical speed-clamp block is deliberately *not* shared; and `SprInit` moved out of boot to here,
+because it resets state where `SprBuildMask` beside it builds a table.
+
+**`DEBUG_RESTART` exists so this is testable at all** — R restarts the game — and it sits **above**
+the console / transfer / lift-view blocks in the main loop, each of which ends its pass with
+`JMP ml_passend`. Below them it could not be reached from exactly the states worth testing from,
+which are exactly the states a game can end in.
+
+**Verified in jsbeeb.** Every field poked dirty — `conActive` 1, `liftMode` 2, `moveMode` 0,
+`plyDying` 1, `maxEnergy` 5, `weaponType` 3, `alertLvl` `$C0`, score `12345678`, `shipLevel` 5,
+`drType` 17, `drEnergy` 1, `losTurn` 0, and the speed clamp at `$07FF` — then R. All of it came back
+clean: energy `$40` (ageing to `$3F`), `moveMode` `$80`, `mmDelay` 8, score zero, `shipLevel` 1,
+`drType` 0, clamp `$0800`/`$F800`, `losTurn` walking again, `drCount` 9. Fifteen restarts in
+succession with the key held did not disturb it, the deck re-rolls, and the play buffer and panel
+still hold their content 800 frames later.
 
 ### 11b — Death is a game over
 

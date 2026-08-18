@@ -319,6 +319,18 @@ DEBUG_MAPGUARD = FALSE
 \ Losing on purpose needs no key: stop steering.
 DEBUG_XFERWIN = TRUE
 
+\ DEBUG_RESTART is the second key that changes what the GAME does rather
+\ than what it draws: R throws the current game away and starts a new one
+\ through GameStart, exactly as Layer 11's game over will.
+\
+\ It exists because 11a is otherwise untestable. Splitting boot into a
+\ cold half and a per-game half is invisible until something calls the
+\ per-game half twice, and the failure mode if a default was missed is
+\ not a crash but a second game that quietly inherits the first's console
+\ state, top speed or half-pressed keys. R is how that gets found before
+\ 11b and 11c depend on it.
+DEBUG_RESTART = TRUE
+
 \ TEST_DROIDS and src/droidtest.asm are gone: six static droids, put
 \ there so the sprite pool could be measured before there was anything
 \ to put in it. src/droid.asm is what they were standing in for.
@@ -619,6 +631,7 @@ KEY_DOWN   = &D6                \ -42
 KEY_SPACE  = &9D                \ -99
 KEY_L      = &A9                \ -87, the fire button
 KEY_W      = &DE                \ -34, DEBUG_XFERWIN only
+KEY_R      = &CC                \ -52, DEBUG_RESTART only
 
 \ ---- zero page ---------------------------------------------
 \ &70-&8F was the original allocation and is full. With BASIC not
@@ -832,7 +845,10 @@ ORG &1100
   JSR BuildCharPtrs             \ needs the data bank in, and the staging
                                 \ copy finished — it reaches past &5500
   JSR SprBuildMask              \ AFTER the mode change: VDU 22 clears
-  JSR SprInit                   \ &3000-&7FFF, mask table included
+                                \ &3000-&7FFF, mask table included.
+                                \ SprInit is NOT here: it resets state
+                                \ rather than building a table, so it
+                                \ belongs to GameStart
 
   JSR InstallIrq                \ after the load: taking over the IRQ stops
                                 \ the MOS servicing the filing system
@@ -858,36 +874,14 @@ ORG &1100
   STA drSeed
 .ml_keepseed
 
-  JSR NewShipDroids             \ the ship's droid complement, generated
-                                \ once and then owned by the decks
-  JSR CombatInit                \ entry 0 of that table is the PLAYER, and
-                                \ this seeds it — before LoadDeck, because
-                                \ DroidsInit places droids around it
-
-\ ---- the deck the game starts on ---------------------------
-\ $12B6, verbatim: `LDA $D41B : AND #3 : CLC : ADC #4 : STA deckNum`.
-\ FOUR decks, 4 to 7 — the middle of the ship, so there is somewhere to
-\ go in both directions and the deck you start on is not the one holding
-\ the Influence Device's own class of droid.
-\
-\ The C64's next two instructions, `EOR #$FF : STA prevDeck`, are not
-\ ported. prevDeck exists so that GameLoop's enter-deck block at $1359
-\ can skip the per-deck setup when the lift did not actually move you,
-\ and seeding it to the complement of deckNum guarantees the first deck
-\ always sets up. Our LoadDeck does that work unconditionally, so there
-\ is nothing to gate.
-  JSR DrRandom
-  AND #3
-  CLC
-  ADC #DECK_START_LO
-  STA deck
-
-  LDA #0
-  STA prevUp
-  STA prevDn
-  STA rowOfs
-  STA rowOfs+1
-  JSR LoadDeck
+\ ---- everything above happens ONCE -------------------------
+\ Restart0 ($1078) against the StartGame ($1242) that TitleLoop reaches:
+\ the hardware, the disc, the banks and the tables above are the
+\ cold-boot half and survive a restart. Everything a game writes belongs
+\ to GameStart, which is in bank 4 beside the droid tables it seeds.
+\ Layer 11 needs the game startable more than once — 11a in
+\ docs/layer-11-sound-title.md.
+  JSR GameStart
 
 \ ============================================================
 \ Main loop
@@ -922,6 +916,22 @@ ENDIF
 \ so it runs whether the console is up or not and this is here for the
 \ same reason. AddScore only banks points; DoScore is what moves them.
   JSR DoScore
+
+IF DEBUG_RESTART
+\ DEBUG: throw this game away and start another, the way Layer 11's game
+\ over will. ABOVE the three modal blocks below, not down with the other
+\ debug keys: each of those ends the pass with a JMP ml_passend, so a
+\ restart placed after them could not be reached from the console, the
+\ lift view or the transfer game — which are exactly the states worth
+\ testing it from, and exactly the states a game can end in.
+\ No edge latch of its own. GameStart clears every latch in the game, so
+\ a held R restarts once a pass and a released one settles.
+  LDX #KEY_R
+  JSR keydown
+  BNE ml_notR
+  JSR GameStart
+.ml_notR
+ENDIF
 
 \ ============================================================
 \ The console has the machine, or it does not
@@ -1133,6 +1143,7 @@ ENDIF
   BNE ml_notSpc
   JSR RedrawAll
 .ml_notSpc
+
 
 IF DEBUG_DRAW
   LDA #DBG_SPR : JSR DbgSetBg   \ magenta over the sprite draw
@@ -2160,7 +2171,7 @@ SAVE "PARA",    start,      code_end, start
 \ ------------------------------------------------------------------
 DEBUG_ANY1 = DEBUG_RASTER OR DEBUG_DRAW OR DEBUG_POS OR DEBUG_VSYNC
 DEBUG_ANY2 = DEBUG_TIME OR DEBUG_ENERGY OR DEBUG_MAPGUARD OR DEBUG_XFERWIN
-DEBUG_ANY  = DEBUG_ANY1 OR DEBUG_ANY2
+DEBUG_ANY  = DEBUG_ANY1 OR DEBUG_ANY2 OR DEBUG_RESTART
 
 CLEAR &7E00, &7F00
 ORG &7E00
@@ -2194,6 +2205,9 @@ EQUS " MAPGUARD"
 ENDIF
 IF DEBUG_XFERWIN
 EQUS " XFERWIN"
+ENDIF
+IF DEBUG_RESTART
+EQUS " RESTART"
 ENDIF
 EQUB 13
 ENDIF

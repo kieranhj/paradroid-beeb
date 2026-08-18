@@ -132,6 +132,128 @@ DR_LOS_MAX = 96
 \ A deck gets deckDroids-1 of them. Deck 1 index 13 is then set to type
 \ 23, droid 999, the influence device: the one fixed entry in the
 \ table.
+\ ============================================================
+\ GameStart — StartGame ($1242) and _entership ($1289)
+\ ============================================================
+\ EVERYTHING A NEW GAME NEEDS, and nothing a cold boot needs. main.asm's
+\ boot used to run straight through this into the main loop, so all of
+\ it could lean on beebasm's assembled initial values; from Layer 11 on
+\ the game is startable more than once and every one of those defaults
+\ has to be written out loud. That is the whole of this routine: the
+\ C64's two entry points, plus the state the port keeps that they have
+\ no equivalent for.
+\
+\ IN BANK 4, next to NewShipDroids and the droid tables it seeds, and
+\ called from main RAM with SWRAM_DATA paged — the resting state, and
+\ true at boot from the PAGEBANK before the seed. See bufcore.asm.
+\
+\ It does NOT reload the banks, rebuild the charset pointers or the
+\ sprite mask table, or touch the CRTC: those are the cold-boot half and
+\ they survive a restart. What does not survive is anything the game
+\ writes, which is what follows.
+.GameStart
+  LDA #1
+  STA shipLevel                 \ $1255 zeroes it and NextLevel's INC at
+                                \ $129E makes it 1. NewShipDroids is that
+                                \ routine's roster half only, so the count
+                                \ is set here instead of incremented
+
+  JSR NewShipDroids             \ $129E: the ship's complement, generated
+                                \ once and then owned by the decks — it
+                                \ reads shipLevel, so it follows it
+
+  JSR CombatInit                \ $1345, the energy the entry animation
+                                \ ends on, and $1259-$1263's weapon, score
+                                \ and type. Entry 0 of the droid table is
+                                \ the PLAYER, and this seeds it — before
+                                \ LoadDeck, because DroidsInit places
+                                \ droids around it
+
+\ ---- nothing modal owns the machine ------------------------
+\ None of this matters on the first game, when the assembled defaults are
+\ already zero. On the second it is the point: a game that ended with the
+\ console up, a lift half-entered or a transfer still holding its verdict
+\ would otherwise start the next one there.
+  LDA #0
+  STA conActive
+  STA conDbReq
+  STA xferActive
+  STA xferDroid
+  STA xfmDone
+  STA xfmResult
+  STA liftMode
+  STA liftPlace
+  STA lvCommit
+  STA lvLoad
+
+\ ---- and no key is half-pressed ----------------------------
+\ Every edge latch in the game, because the restart itself is a keypress
+\ and the key that caused it may still be down.
+  STA prevRet
+  STA prevLU
+  STA prevLD
+  STA lvPrevFire
+  STA fireDown
+  STA fireEaten
+  STA lDown
+  STA prevUp
+  STA prevDn
+  STA joyXDir
+  STA joyYDir
+
+\ ---- the player, standing still ----------------------------
+  STA plyDying                  \ $15A5, and the explosion that set it
+  STA xSpd : STA xSpd+1         \ $1289
+  STA ySpd : STA ySpd+1
+  STA posXf                     \ the sub-pixel remainders with them
+  STA posYf
+
+\ ---- per-pass bookkeeping ----------------------------------
+  STA sprSplit
+  STA rowOfs
+  STA rowOfs+1
+  STA drCollHit                 \ byte_0_6C: no collision episode is open
+  LDA #1
+  STA losTurn                   \ the sight line's turn, and it is 1-based
+
+\ ---- back to the 001's speed and mode ----------------------
+\ The clamp is a variable because Layer 10 rewrites it per transfer, so a
+\ game that ended riding a fast droid would hand its top speed to the
+\ next one. Same four stores as CbCheckDeath's ccd_reset, deliberately
+\ not shared with it: that routine also drops energy to BlowInto001's 7,
+\ which must not land on top of CombatInit's $40.
+  LDA #MM_MOBILE : STA moveMode \ $12A1
+  LDA #MM_DELAY  : STA mmDelay
+  LDA #LO(PLY_MAXSPD) : STA plyMaxLo
+  LDA #HI(PLY_MAXSPD) : STA plyMaxHi
+  LDA #LO(PLY_MAXNEG) : STA plyNegLo
+  LDA #HI(PLY_MAXNEG) : STA plyNegHi
+
+  JSR SprInit                   \ the pool, and the player back in slot 0.
+                                \ BEFORE LoadDeck, whose DroidsInit hands
+                                \ slots out. SprBuildMask stays at boot:
+                                \ it builds a table, this resets state
+
+\ ---- the deck the game starts on ---------------------------
+\ $12B6, verbatim: `LDA $D41B : AND #3 : CLC : ADC #4 : STA deckNum`.
+\ FOUR decks, 4 to 7 — the middle of the ship, so there is somewhere to
+\ go in both directions and the deck you start on is not the one holding
+\ the Influence Device's own class of droid.
+\
+\ The C64's next two instructions, `EOR #$FF : STA prevDeck`, are not
+\ ported. prevDeck exists so that GameLoop's enter-deck block at $1359
+\ can skip the per-deck setup when the lift did not actually move you,
+\ and seeding it to the complement of deckNum guarantees the first deck
+\ always sets up. Our LoadDeck does that work unconditionally, so there
+\ is nothing to gate.
+  JSR DrRandom
+  AND #3
+  CLC
+  ADC #DECK_START_LO
+  STA deck
+
+  JMP LoadDeck                  \ and its RTS
+
 .NewShipDroids
   LDA #0
   TAY
