@@ -1,3 +1,8 @@
+> **The play area is HIRES, corrected 2026-08-18.** Anything below describing the deck charset as
+> multicolour, or selecting the mode per cell on bit 3 of the colour nibble, is wrong: bit 3 is
+> part of the colour. Multicolour applies only to the transfer board and the ship sideview. See
+> `layer-1-graphics-pipeline.md`.
+
 # Graphics extraction reference — the C64 side
 
 *Part of the Paradroid BBC Micro port. Start at [`../PLAN.md`](../PLAN.md).*
@@ -54,7 +59,7 @@ icon. Each pair is written by one tool from one list of bytes, so the copies can
 |---|---|
 | `rip_graphics.py` | Sprites and charsets from the VIC-II bank, hires and multicolour renders, plus `vic_bank_raw.bin` and `memory_map.txt` |
 | `rip_levels.py` | `deck_00.png`–`deck_15.png`, `all_decks.png`, `tiles.png`, `level_stats.txt` |
-| `rip_deck_mixed.py` | A deck rendered as the C64 *actually* displays it, hires and multicolour cells mixed — the only faithful deck render |
+| `rip_deck_mixed.py` | Built on the retired multicolour model; **not** a faithful deck render. `palette_lab.py` is |
 | `rip_tiles_mc.py` | The `$7800` tile set as multicolour characters |
 | `rip_sideview.py` | Ship cross-section, with and without deck overlays |
 | `rip_screens.py` | Title screen (three charsets), transfer board, the 15 circuit-piece characters |
@@ -63,8 +68,8 @@ icon. Each pair is written by one tool from one list of bytes, so the copies can
 
 | Tool | Question |
 |---|---|
-| `analyse_charmode.py` | Which characters are hires, which multicolour, and is that stable across decks? |
-| `analyse_alert.py` | Per deck, does the ALERT lettering stay legible in MODE 1? |
+| `analyse_charmode.py` | Retired with the multicolour model — every deck cell is hires |
+| `analyse_alert.py` | Per deck, does the ALERT lettering stay legible? Hires everywhere now, so it does |
 | `compare_tile.py` | One tile, C64 beside port — is a difference a bug or faithful? |
 | `unpack_prg.ps1` | Unpacks the four C64 releases under VICE, for diffing against the listing |
 
@@ -75,50 +80,43 @@ icon. Each pair is written by one tool from one list of bytes, so the copies can
 Three custom charsets in VIC-II bank 1 (`$4000-$7FFF`), 8 bytes per character. `$D018` switches
 between them at different scanlines via the raster IRQ chain.
 
-### The play area is MIXED hires and multicolour, per cell
+### The play area is HIRES
 
-This is the single most important fact in the document, and getting it wrong cost two rewrites of
-the conversion.
+This is the single most important fact in the document, and getting it wrong cost three rewrites of
+the conversion — the third of which survived from Layer 1 to 2026-08-18.
 
-`$D016` bit 4 enables multicolour text mode globally — via the self-modifying `_d016Mode` routine
-at `$6F1B`, which patches its own `LDA` operand between `$D0` (multicolour) and `$C0` (hires, for
-text screens). But **in that mode the choice is made per cell**, by bit 3 of the colour RAM nibble:
+`$D016` bit 4 enables multicolour text mode, and the self-modifying `_d016Mode` routine at `$6F1B`
+patches its own `LDA` operand. **Gameplay writes `$C0` — bit 4 CLEAR.** `_reenter_game` (`$1532`)
+sets it along with `$D018 = $2F`, the `$7800` tile charset, and jumps to `EnterGame`. The two
+places that write `$D0` are `$22AD`, after `ShowXferInfo`, for the transfer board, and `$3092` in
+`DrawSideview` for the ship cross-section.
 
-| colour RAM | cell renders as |
-|---|---|
-| `0`–`7` | hires — 8 pixels, background + that colour |
-| `8`–`15` | multicolour — 4 double-width pixels, 4 colours |
+So every deck cell is hires: **eight 1-bit pixels, the cell's colour against `$D021`**, and the
+colour is the **full four-bit** colour-RAM nibble, 0–15. Bit 3 is part of the colour.
 
-**For deck 1 the split is 930 hires cells to 190 multicolour** — mostly hires, multicolour used for
-shading. That is why the ALERT lettering keeps single-pixel letter spacing, which a 4-pixel-wide
-multicolour character could not produce.
+`CharColor` (`$0800`) holds a palette slot in its upper nibble; `NewCharColors` (`$3577`) rewrites
+the lower nibble per deck from a 12-slot record at `$6A44`, selected by `deckColorScheme`
+(`$F160`); `BuildLevel` writes the byte to colour RAM. So a character's **colour** changes between
+decks — its mode does not, because there is only one.
 
-A multicolour character byte is four 2-bit pixel pairs, each two screen pixels wide:
+> **The bit-3 theory was wrong and three screenshots disprove it.** `ref/c64_deck5.png` shows the
+> deck-5 floor in light grey with **orange** crosshairs — colour 8, bit 3 set — drawn solid, and
+> `ALERT.` crisp at single-pixel spacing. Under the old reading that cell was multicolour: the
+> crosshairs would be four fat pixels of the wrong colours and the letters would join.
+> `c64_deck0a.png` (blue grid, dark grey ALERT plaque) and `c64_deck4.png` (grey grid on light
+> green) agree. `rip_deck_mixed.py` and `analyse_charmode.py` were built on the wrong model and
+> their output is only meaningful for the transfer board and the sideview.
 
-| bits | source | in the artwork |
-|---|---|---|
-| `00` | `$D021` background | floor |
-| `01` | `$D022` | grid lines |
-| `10` | `$D023` | shadow |
-| `11` | colour RAM, per cell | highlight |
+**`$D022`/`$D023` do not apply to the deck.** `DrawSideview` (`$308A`/`$308F`) sets them to `$F1`
+and `$F0` for its own multicolour screen and they persist, which is what made them look like
+play-area state.
 
-The mode is driven per character code by `CharColor` (`$0800`), whose upper nibble is a palette
-slot; `NewCharColors` (`$3577`) rewrites the lower nibble per deck from a 12-slot record at `$6A44`
-selected by `deckColorScheme` (`$F160`). So **a character's mode changes between decks** — only slot
-5 is multicolour in every scheme, only slot 11 is hires in every scheme.
-
-> The plain 1bpp renders from `rip_graphics.py` and `rip_levels.py` show roughly the right
-> silhouettes, which is why the error survived so long. They are not what the game displays. Use
-> `rip_deck_mixed.py` and compare against `ref/start screen.png`.
-
-**`$D023` is 0 (black), not 6.** The only character-mode writes to `$D022`/`$D023` are in
-`DrawSideview` (`$308A`/`$308F`); the other writes nearby are `+3`/`+4`/`+$C`, which are the
-*sprite* multicolour registers. Having this wrong corrupted every multicolour cell on every deck.
-
-**`$D021` is still an assumption.** It comes from `bgColor`, which `SetIntroColors` loads from slot
-3 of the deck record — but slot 3 does not match the lavender floor in `ref/start screen.png`, so
-gameplay sets it somewhere not yet found. 14 (light blue) is taken from the screenshot and marked
-`[assumed]` in `export_bbc.py`. **Re-derive before trusting deck colours on hardware.**
+**`$D021` is solved: it is slot 0 of the deck's colour record**, and it differs per deck.
+`InitColors` (`$27E5`) copies the record with `Y` counting down to zero, leaving slot 0 in the
+accumulator, and `$2821` stores it in `Irq1bgColor`; `Irq_118` (`$6F4C`) writes that to `$D021`
+for the 128 lines of play area. `SetIntroColors` does the same copy from a **random** record, which
+is what made "slot 3" look plausible for years. Only decks 2 and 7 are light blue; the rest are
+greys, light red, yellow, light green and cyan.
 
 ### Charset at `$7800` — main game tiles, 256 characters, 2048 bytes
 

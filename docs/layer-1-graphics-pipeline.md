@@ -12,68 +12,59 @@ artwork). `tools/verify_bbc.py` round-trips them back and diffs against the list
 | `tiledefs.asm` | 512 B | 32 tiles × 4×4 char codes, byte-identical |
 | `levels.asm` | 3335 B | 16 deck maps RLE + offsets + metadata, byte-identical |
 
-> **Corrected twice.** First version: treated the charset as 1bpp hires, converted with a nibble
-> split — wrong, `ref/start screen.png` shows four colours per cell. Second version: called the
-> whole charset multicolour — also wrong, because ALERT keeps single-pixel letter spacing, which
-> a 4-pixel-wide multicolour character cannot produce. The truth is that both modes are in use.
+> **Corrected three times, and the third correction is the one that matters.** The first version
+> read the charset as 1bpp hires with a nibble split — wrong in its mechanics. The second called
+> the whole charset multicolour — also wrong. The third decided both modes were in use, selected
+> per cell by bit 3 of the colour nibble, and **that is wrong too**. It stood from Layer 1 until
+> 2026-08-18.
 
-**The C64 mixes hires and multicolour cells on the same screen.** `$D016` bit 4 enables
-multicolour text mode globally (the `_d016Mode` routine at `$6F1B` is self-modifying, patching its
-own `LDA` operand between `$D0` and `$C0`), but in that mode the choice is made **per cell** by
-bit 3 of the colour RAM nibble:
+## The play area is HIRES
 
-| colour RAM | cell renders as |
-|---|---|
-| `0`–`7` | hires — 8 pixels, background + that colour |
-| `8`–`15` | multicolour — 4 double-width pixels, 4 colours |
+`$D016` bit 4 is the multicolour flag, and the self-modifying `_d016Mode` routine at `$6F1B`
+patches its own `LDA` operand. Entering the game goes through `_reenter_game` (`$1532`), which
+writes **`$C0`** — bit 4 clear — along with `$D018 = $2F`, the `$7800` tile charset, and jumps to
+`EnterGame`. `$D0` is written in exactly two places and neither is gameplay: `$22AD`, after
+`ShowXferInfo`, for the transfer board, and `$3092` in `DrawSideview` for the ship cross-section.
 
-**For deck 1 the split is 930 hires cells to 190 multicolour** — the play area is mostly hires,
-with multicolour used for shading. That is why the ALERT lettering stays crisp while the floor
-and walls carry four colours.
+So **bit 3 of the colour nibble is part of the colour, not a mode selector.** A cell is eight
+1-bit pixels: a set bit takes the cell's colour from colour RAM using the full four-bit value
+(0–15), a clear bit takes `$D021`. `$D022`/`$D023` never apply to the deck at all — `DrawSideview`
+sets them for its own screen and they simply persist.
 
-The mode is driven per character code, and it is **deck dependent**:
+**`ref/c64_deck5.png` is the evidence**, and it is unambiguous in three ways at once: the floor is
+light grey (slot 0), the crosshairs are **orange** — colour 8, bit 3 set, drawn as a solid
+single-pixel pattern — and **`ALERT.` is crisp**. Under the bit-3 theory that cell was multicolour,
+the crosshairs would be four fat pixels of the wrong colours, and the lettering would join.
+`c64_deck0a.png` and `c64_deck4.png` say the same on their decks.
 
-```
-CharColor[code]  upper nibble = palette slot (0-11)
-NewCharColors    rewrites the lower nibble per deck from a 12-slot record
-                 at $6A44, chosen by deckColorScheme ($F160)
-BuildLevel       writes that byte to colour RAM; the VIC uses the low nibble
-```
+**What the old model cost.** Every cell whose colour was 8–15 — orange, dark grey, light grey,
+light green, light blue, which is most of the ship's structure — was drawn as four doubled pixels
+in `$D021`/`$D022`/`$D023`. The ALERT lettering was mangled on eight decks, and that was written
+up *as faithful*, twice, on the strength of the theory rather than a screenshot. The lesson is the
+project's own rule: the C64 is the specification, and a screenshot of it beats a model of it.
 
-Only slot 5 is multicolour in every scheme and only slot 11 is hires in every scheme; the rest
-vary, so **a character's mode genuinely changes between decks**. `tools/analyse_charmode.py`
-dumps this; `tools/rip_deck_mixed.py` renders a deck the way the C64 displays it.
-
-A multicolour character byte is four 2-bit pixel pairs, each two screen pixels wide:
-
-| bits | source | in the artwork |
-|---|---|---|
-| `00` | `$D021` background | floor |
-| `01` | `$D022` | |
-| `10` | `$D023` | |
-| `11` | colour RAM, per cell | |
-
-**MODE 1 handles both modes**, because it has no attribute constraints: 4 colours freely per pixel
-at 320 across. A hires cell converts to 8 MODE 1 pixels of background + one colour; a multicolour
-cell converts to 4 doubled pixels using all four. Either way a character is **16 bytes**, so
-`plot_char` is unchanged.
-
-MODE 1 pixel *n* takes bit `7-n` as its high colour bit and bit `3-n` as its low.
+**What it bought back.** `BuildCharset` loses its mode branch and `BuildLUTs` its multicolour half
+— 305 bytes of bank 4 — and the conversion is one path instead of two.
 
 **Logical colour assignment.** MODE 1's four colours are global, but the C64 draws on a 12-slot
-per-deck palette. `export_bbc.py` counts how often each C64 colour is actually used across the
-tile set and assigns logical 0 = background plus the three most-used; anything left over maps to
-the nearest by luminance. For deck 1 that gives:
+per-deck palette with a colour per cell. `export_bbc.py` counts how often each colour appears and
+fills four slots that now have **fixed roles**:
 
-| logical | C64 | role | uses |
-|---|---|---|---|
-| 0 | light blue | floor | background |
-| 1 | white | highlight | 272 |
-| 2 | red | shadow | 220 |
-| 3 | yellow | grid lines | 78 |
+| logical | role | bits |
+|---|---|---|
+| 0 | the deck's background (`$D021`, slot 0 of its record) | `%00`, also transparent |
+| 1 | its darker foreground | `%01`, the low plane |
+| 2 | its lighter foreground | `%10`, the high plane |
+| 3 | **white**, and the sprites | `%11`, both planes |
 
-Three foregrounds is enough for deck 1. **This needs checking per deck** — a deck needing four or
-more distinct foregrounds would lose one to the nearest-luminance fallback.
+Counted honestly, **every deck wants exactly the background plus three colours.** Deck 5 is light
+grey, white, orange, dark grey; deck 0 light grey, white, dark grey, blue; deck 4 light green,
+light grey, white, green. The fourth-most-used colour is used 2 to 40 times against the third's
+hundreds or thousands, so **nothing is merged** — the old model's worry about decks needing more
+than four foregrounds was an artefact of counting `$D022` and `$D023` as if they were on screen.
+
+Black is not a deck colour at all: 2 to 42 pixels a deck. It was a role in the first version of
+this scheme only because the multicolour reading made `$D023` look ubiquitous.
 
 Two consequences worth carrying forward:
 - **Per-deck recolour is free.** Colour is not baked into the tiles; a deck's scheme is a palette
