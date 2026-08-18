@@ -27,7 +27,7 @@ layer's detail has stopped being needed to make the next decision, it belongs in
 | [`docs/layer-8b-lift-view.md`](docs/layer-8b-lift-view.md) | The lift deck-selection screen, on Layer 10's shadow machinery |
 | [`docs/layer-9-hud.md`](docs/layer-9-hud.md) | **The status line and the console** — the $7000 font, the $C000 string table, and all four pages behind the menu icons |
 | [`docs/layer-10-transfer.md`](docs/layer-10-transfer.md) | The transfer minigame — the shadow screen/colour RAM that keeps the C64 code verbatim, and the eleven numbered decisions |
-| [`docs/layer-11-sound-title.md`](docs/layer-11-sound-title.md) | Planned — the SN76489 encoding (unverified) and the randomness debt the title screen owes the game |
+| [`docs/layer-11-sound-title.md`](docs/layer-11-sound-title.md) | **Planned in full, 2026-08-18** — the title, the 001 screen, game over instead of a respawn, and back to the title. Six numbered decisions, the title's 25-row memory map, and the SN76489 encoding (still unverified) |
 | [`docs/master-extensions.md`](docs/master-extensions.md) | Things only a Master 128 could host. Not on the critical path |
 
 **Open defects live in [`BUGS.md`](BUGS.md)**, with the evidence and what has been ruled out.
@@ -286,11 +286,21 @@ SWRAM bank, the 16th row, the palette and the eleven numbered decisions are in
 difficulty feel against the C64, and consuming the last droid on a deck. Known gaps are in the
 open items above: `ShowXferInfo`'s two droid info screens, and the presentation moved for screen room.
 
-### Layer 11 — Sound, title, polish — planned
-SN76489 driver replacing the SID engine, title screen, attract mode. The chip encoding recovered
-from the deleted `hardware.asm` — **never verified on hardware** — and the randomness debt (the
-starting deck is deterministic under an emulator until the title screen stirs `drSeed` while it
-waits) are both written up in [`docs/layer-11-sound-title.md`](docs/layer-11-sound-title.md).
+### Layer 11 — Title, the 001 screen, game over, sound — planned in full 2026-08-18
+The original's own flow: `TitleLoop` → `StartGame` → the game → `EndGame` → `TitleLoop`. Three
+findings shaped it. **Death is only a game over when you are already a 001** — `$144D` is the whole
+test, and the other branch is `BlowInto001`, which `CbCheckDeath` already is. **`BlowInto001` does
+not move the player**, so the port's waypoint-0 respawn is dropped, taking BUGS.md #10's cause with
+it. And **`NewShipInfo` (`$36B9`) *is* the 001 screen** — it draws the play-area rows only, the shape
+Layer 10's shadow screen already has, as do `EndGame` and `ShowXferInfo`.
+
+Only the title needs a display of its own: 25 rows × 640 = 16,000 contiguous bytes, which fit
+because the title's buffers and the game's never coexist — `PARAFNT` is `*LOAD`ed to `&3000` for the
+title and `&3C00` for the game, and **no address in the game's map moves**. Staged 11a boot split,
+11b game over, 11c title and the loop, 11d the 001 screen, 11e sound. Deferred with KC's agreement:
+the 48 × 84 portrait (24 K in MODE 1 — the console's rotor-and-digits droid stands in), the 5-page
+intro manual, and `DoHighScore`. Six numbered decisions in
+[`docs/layer-11-sound-title.md`](docs/layer-11-sound-title.md).
 
 ### Layer 12 — Balance, fidelity and feel — planned
 
