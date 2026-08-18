@@ -1,6 +1,6 @@
 # Layer 11 — Title, the 001 screen, game over, and sound
 
-**Status: 11a and 11b-1 built 2026-08-18; 11b-2 and 11c-11e planned.** Scoped with KC 2026-08-18. Decisions KC might want to revisit
+**Status: 11a and 11b built 2026-08-18; 11c-11e in progress.** Scoped with KC 2026-08-18. Decisions KC might want to revisit
 are marked **[DECISION]** and collected in §7; things deliberately left out are in §8.
 
 The layer's shape came out of reading the listing rather than the plan: the flow this builds is the
@@ -203,14 +203,44 @@ Game-over arm: `overPhase` 1, the pool filling with effects at staggered frames
 (`8,2,3,4,5,6,7,8` mid-cloud), **droid positions byte-identical over eight passes** — the ship
 really does stop — and then a fresh game with the score cleared and `shipLevel` back to 1.
 
-### 11b-2 — `EndGame`'s screen — planned
+### 11b-2 — `EndGame`'s screen — DONE 2026-08-18
 
-`EndGame` (`$378B`): the wash of random characters `$7A`-`$7D` over the play rows, the
-`AnimAllInsideFont` dissolve for 128 frames with `vScroll` running, then the banner. Bank 7 has
-~1.8 K for it. Until it exists, the cloud burning out goes straight to `GameStart`.
+`overPhase` 2, and it is **modal**: it owns the play buffer the way the console and the transfer
+game do, so the main loop gives it a block of its own that ends the pass — which is also what keeps
+`PanelTick` off the line the message is on. Phase 1 could not do that, because the cloud needs the
+sprite pool erased and drawn like any other frame.
 
-`DEBUG_INVULN` belongs here too, and must be added to `DEBUG_ANY` and to `!BOOT`'s stamp as well as
-defined, or the build can lie about itself. **[DECISION 5]**
+The view is flattened first — `scrollS` and `line` to zero, the CRTC re-parked — exactly as
+`XferEnter4` does before the board, so the buffer addresses as a plain 16 × 640 array and bank 7's
+`xfRowAdrLo/Hi` apply. All 640 cells are painted in one pass at entry, as `XfRepaintAll`'s are; the
+frame lock is a floor.
+
+**[DECISION 7] — three departures, all recorded in `xfer.asm`.**
+
+1. **The four wash characters are ours, and not by choice.** `$379F` picks `(rnd AND 3) + $7A` out
+   of the deck charset, and **`$7A`-`$7D` are not in the ported set**: `export_bbc.py` converts only
+   the characters some tile references, and those four are used by `EndGame` and nothing else, so
+   `CHAR_PTR_LO/HI` clamp all four to entry 0 and the first build of the wash came out blank. Four
+   16-byte patterns in bank 7 stand in — solid, half, quarter and sparse **black**, because `$37A6`
+   writes colour `$F0`, low nibble 0, so the C64's wash is a dissolve into darkness rather than
+   white noise, and logical 1 is black under the port's fixed slot roles. **TODO: export the real
+   four.**
+2. **No charset animation.** `AnimAllInsideFont` (`$38C4`) is the same self-modifying machinery as
+   `AnimateIntoFont`, which Layer 10 already declined; this follows it. The wash boils by being
+   repainted one row a pass instead, so the screen churns every sixteen.
+3. **The message is on the panel line**, not on a hires screen — decisions 6-8 of Layer 10 again,
+   and [DECISION 3] had already taken the 999 portrait the C64 draws behind those two strings.
+
+**A trap worth remembering:** `XfRand`'s seed is `XfStart`'s to set and the game over never goes
+through `XfStart`. A zero seed locks the LFSR, so every cell of the wash came out the same pattern
+until `GoWashStart` seeded it from the pass's own random.
+
+**Verified in jsbeeb** end to end: death as a 001 → cloud → `overPhase` 2 with a mixed-pattern wash
+in the buffer and "game over" rendered on the panel text line → 88 passes later a new game, with
+the deck redrawn and `overPhase` back to 0.
+
+`DEBUG_INVULN` landed with it: energy pinned at full at the top of `CbCheckDeath`, in `DEBUG_ANY`
+and in `!BOOT`'s stamp. **[DECISION 5]**
 
 ### 11c — The title screen, and the loop
 

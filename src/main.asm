@@ -331,6 +331,19 @@ DEBUG_XFERWIN = TRUE
 \ 11b and 11c depend on it.
 DEBUG_RESTART = TRUE
 
+\ DEBUG_INVULN pins the player's energy at full, so a run can be taken
+\ deep into the ship without a 001's death ending it. Asked for by KC
+\ alongside 11b, which is what took the free respawn away: the port used
+\ to put you back on waypoint 0 for ever and testing leaned on that.
+\
+\ IT IS A PIN, NOT A SHIELD. Damage, ageing and the transfer's costs all
+\ land as they normally do and are then overwritten at the top of the
+\ next CbCheckDeath, so everything downstream of taking a hit still runs
+\ -- only the consequence is removed. The panel therefore reads full
+\ energy always, which is how you can tell the build from a clean one
+\ without reading !BOOT.
+DEBUG_INVULN = FALSE
+
 \ TEST_DROIDS and src/droidtest.asm are gone: six static droids, put
 \ there so the sprite pool could be measured before there was anything
 \ to put in it. src/droid.asm is what they were standing in for.
@@ -932,6 +945,22 @@ IF DEBUG_RESTART
   JSR GameStart
 .ml_notR
 ENDIF
+
+\ ============================================================
+\ ...or the game is over
+\ ============================================================
+\ Phase 2 only. Phase 1 is the explosion cloud and rides the ordinary
+\ pass — it needs the sprite pool erased and drawn like any other frame,
+\ and it is driven from CbCheckDeath near the end. Phase 2 is EndGame's
+\ wash, which OWNS the play buffer the way the console and the transfer
+\ do, so it takes their shape: one tick, then straight to the end of the
+\ pass. That also keeps PanelTick off the line the message is on.
+  LDA overPhase
+  CMP #2
+  BNE ml_noover
+  JSR GoTick7
+  JMP ml_passend
+.ml_noover
 
 \ ============================================================
 \ The console has the machine, or it does not
@@ -2216,7 +2245,8 @@ SAVE "PARA",    start,      code_end, start
 \ ------------------------------------------------------------------
 DEBUG_ANY1 = DEBUG_RASTER OR DEBUG_DRAW OR DEBUG_POS OR DEBUG_VSYNC
 DEBUG_ANY2 = DEBUG_TIME OR DEBUG_ENERGY OR DEBUG_MAPGUARD OR DEBUG_XFERWIN
-DEBUG_ANY  = DEBUG_ANY1 OR DEBUG_ANY2 OR DEBUG_RESTART
+DEBUG_ANY3 = DEBUG_RESTART OR DEBUG_INVULN
+DEBUG_ANY  = DEBUG_ANY1 OR DEBUG_ANY2 OR DEBUG_ANY3
 
 CLEAR &7E00, &7F00
 ORG &7E00
@@ -2253,6 +2283,9 @@ EQUS " XFERWIN"
 ENDIF
 IF DEBUG_RESTART
 EQUS " RESTART"
+ENDIF
+IF DEBUG_INVULN
+EQUS " INVULN"
 ENDIF
 EQUB 13
 ENDIF

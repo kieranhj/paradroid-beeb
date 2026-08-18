@@ -2009,6 +2009,12 @@ GO_TICK_END = &F0               \ $14CA
 \ One pass of the cloud. Returns with overPhase still set until the
 \ last frame has burnt out.
 .GoTick
+  LDA overPhase                 \ phase 2 is the wash, and the main loop
+  CMP #2                        \ reaches it through its own modal block
+  BNE go_cloud
+  JMP GoWashTick
+.go_cloud
+
   LDA overTick                  \ $1478: one more alight, while any left
   BMI go_anim
   CLC
@@ -2041,12 +2047,166 @@ GO_TICK_END = &F0               \ $14CA
   CMP #GO_TICK_END
   BNE go_x
 
-\ ---- the cloud has burnt out -------------------------------
-\ $14D0 JSR EndGame / $14D3 JMP TitleLoop. Neither exists yet: 11b-2
-\ builds EndGame's screen and 11c the title, and until they do the game
-\ simply starts again. GameStart is bank 4's and this is bank 7, so the
-\ shim is told rather than called: overDone, read once this bank is out.
-  LDA #1
-  STA overDone
+\ ---- the cloud has burnt out: $14D0 JSR EndGame ------------
+  JMP GoWashStart
 .go_x
   RTS
+
+\ ============================================================
+\ GoWashStart / GoWashTick — EndGame's wash ($3797-$37D9)
+\ ============================================================
+\ The C64 fills its play rows with `(rnd AND 3) + $7A` — four characters
+\ of the deck's own charset, which read as static — and then boils them
+\ for 128 frames by ANIMATING THE CHARSET: AnimAllInsideFont ($38C4)
+\ walks a table of self-modifying pointers over the font while vScroll
+\ shakes the screen. Then it goes hires and draws GAME OVER over the 999.
+\
+\ WHAT IS DIFFERENT HERE, and why. [DECISION 7]
+\
+\ 1. NO CHARSET ANIMATION. AnimAllInsideFont is the same machinery as
+\    AnimateIntoFont, which Layer 10 already declined to port; this
+\    follows that. The wash boils by being REPAINTED instead — one row a
+\    pass, so the whole screen churns every sixteen — which is the same
+\    class of effect for a fraction of the cost and no new data.
+\ 2. THE MESSAGE IS ON THE PANEL LINE, not a hires screen. That is
+\    decisions 6-8 of Layer 10 again: this bank's text engine writes the
+\    panel line and nothing else, and [DECISION 3] already took the 999
+\    portrait the C64 draws behind those two strings.
+\ 3. The whole 640-cell paint runs in one pass at entry, as
+\    XfRepaintAll's does at the transfer's; the frame lock is a floor.
+\
+\ THE VIEW IS FLATTENED FIRST, exactly as XferEnter4 does before the
+\ board: scrollS and line to zero and the CRTC re-parked, so the buffer
+\ addresses as a plain 16 x 640 array and xfRowAdrLo/Hi apply.
+GO_HOLD      = 88               \ $3802: xfer_plySpriteX counts 88 down
+
+.GoWashStart
+  LDA overRnd0                  \ XfRand's seed is XfStart's to set and the
+  BNE gw_seed                   \ game over never goes through XfStart; a
+  LDA #&A5                      \ ZERO SEED LOCKS THE LFSR, and every cell
+.gw_seed                        \ of the wash came out the same pattern
+  STA xfSeed
+
+  LDX #SPR_SLOTS-1
+  LDA #0
+.gw_clr
+  STA sprActive,X
+  STA sprSaved,X                \ or the next SprRestoreAll puts the deck
+  STA sprKind,X                 \ back over the wash
+  DEX
+  BPL gw_clr
+
+  STA scrollS : STA scrollS+1   \ the flatten, XferEnter4's own
+  STA line
+  STA iline
+  STA bandDo
+  STA colCount
+  JSR SetCRTCStart
+
+  LDX #15
+.gw_all
+  STX goBoil
+  JSR GoWashRow
+  LDX goBoil
+  DEX
+  BPL gw_all
+  STX goBoil                    \ leaves it $FF; the first tick wraps to 0
+
+  JSR XfTextClear
+  LDA #LO(goTxtOver)
+  LDY #HI(goTxtOver)
+  JSR XfMessage
+
+  LDA #2
+  STA overPhase
+  LDA #GO_HOLD
+  STA overTick
+  RTS
+
+\ One pass of the hold: boil one row, and count down to the restart.
+.GoWashTick
+  LDA xfSeed                    \ stirred from the pass's own random, so a
+  EOR overRnd1                  \ short cycle cannot make the boil repeat
+  BEQ gwt_noseed
+  STA xfSeed
+.gwt_noseed
+  INC goBoil
+  LDA goBoil
+  CMP #16
+  BNE gwt_row
+  LDA #0
+  STA goBoil
+.gwt_row
+  TAX
+  JSR GoWashRow
+
+  DEC overTick
+  BNE gwt_x
+  LDA #1
+  STA overDone                  \ $14D3 JMP TitleLoop, until 11c exists
+.gwt_x
+  RTS
+
+\ X = row 0-15. Forty cells of static, straight into the flat buffer.
+\
+\ THE FOUR CHARACTERS ARE OURS, NOT THE C64'S — and not by choice.
+\ $379F picks `(rnd AND 3) + $7A` out of the deck charset, and $7A-$7D
+\ ARE NOT IN THE PORTED SET: export_bbc.py converts only the characters
+\ some tile references, and those four are used by EndGame and nothing
+\ else, so CHAR_PTR_LO/HI clamp all four to entry 0 and the wash came out
+\ blank. Exporting them is a tools change and a data regeneration, so it
+\ is a TODO rather than something done here.
+\
+\ What replaces them keeps the part that matters. $37A6 writes colour
+\ $F0 — low nibble 0, BLACK — so the C64's wash is four black shapes
+\ dissolving the deck into darkness, not white noise. Logical 1 is black
+\ under the port's fixed slot roles, so these are four densities of it:
+\ solid, half, quarter and sparse. A cell picks one at random and the
+\ boil re-picks a row a pass, so it shimmers the way the animated font
+\ does. [DECISION 7]
+.GoWashRow
+  LDA xfRowAdrLo,X : STA xgd
+  LDA xfRowAdrHi,X : STA xgd+1
+  LDA #40
+  STA goCol
+.gwr_cell
+  JSR XfRand
+  AND #3
+  ASL A : ASL A : ASL A : ASL A \ pattern * 16
+  TAX
+  LDY #0
+.gwr_copy
+  LDA goWashPat,X
+  STA (xgd),Y
+  INX
+  INY
+  CPY #16
+  BNE gwr_copy
+  CLC
+  LDA xgd : ADC #16 : STA xgd
+  BCC gwr_nc
+  INC xgd+1
+.gwr_nc
+  DEC goCol
+  BNE gwr_cell
+  RTS
+
+\ Four 16-byte MODE 1 cells: left half's eight scanlines then the right
+\ half's, as CLAUDE.md's layout note has it. &0F is four pixels of
+\ logical 1 and &00 is four of the deck's background.
+.goWashPat
+  EQUB &0F,&0F,&0F,&0F,&0F,&0F,&0F,&0F   \ solid
+  EQUB &0F,&0F,&0F,&0F,&0F,&0F,&0F,&0F
+  EQUB &0F,&00,&0F,&00,&0F,&00,&0F,&00   \ half
+  EQUB &00,&0F,&00,&0F,&00,&0F,&00,&0F
+  EQUB &0F,&00,&00,&00,&0F,&00,&00,&00   \ quarter
+  EQUB &00,&00,&0F,&00,&00,&00,&0F,&00
+  EQUB &00,&00,&00,&0F,&00,&00,&00,&00   \ sparse
+  EQUB &00,&0F,&00,&00,&00,&00,&00,&00
+
+.goTxtOver                      \ "game over"
+  EQUB XF_LC+6, XF_LC+0, XF_LC+12, XF_LC+4
+  EQUB PN_SPACE
+  EQUB XF_LC+14, XF_LC+21, XF_LC+4, XF_LC+17, &FF
+.goCol       EQUB 0
+.goBoil      EQUB 0             \ which row the boil repaints next

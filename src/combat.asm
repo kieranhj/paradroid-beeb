@@ -762,6 +762,10 @@ CB_FIRE_CY = 10
 \ use; the C64 gives the player "explosion2" ($39-$43) and the droids
 \ their own, and only one set has been exported.
 .CbCheckDeath
+IF DEBUG_INVULN
+  LDA #CB_ENERGY_FULL           \ pinned before the test below ever sees it
+  STA drEnergy
+ENDIF
   LDA overPhase                 \ the game is ending: bank 4 has the whole
   BNE ccd_over                  \ sequence, and nothing here applies
 
