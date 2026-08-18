@@ -356,8 +356,19 @@ Just 36 unique characters compose it: large block letters spelling "PARADROID", 
 wall and room tile characters used for the deck maps; two bordered info panels reading "BY ANDREW"
 and "BRAYBROOK" in the text font; and the Hewson Consultants branding.
 
-> **Status.** Not ported. Layer 11. The layout is platform-independent and the block letters come
-> free with the `$7800` conversion, but the info panels need the `$7000` font, which does not.
+> **Status. Ported 2026-08-18** by `tools/export_title.py` → `src/data/title.asm`, in bank 7, and
+> verified against `tools/output/title_screen_7800.png` cell for cell.
+>
+> **The block letters did NOT come free with the `$7800` conversion.** Twelve of the title's
+> thirty-six characters — `$52` `$53` `$DF` `$E0`-`$E7` `$FF` — are not in `chardata.asm` at all,
+> because `export_bbc.py` converts only the characters some TILE DEFINITION references and those
+> twelve are used by the title and nothing else. The title therefore carries its own 36 glyphs
+> (576 B) beside its RLE map (564 B). Extending the shared charset instead would be more faithful
+> and would also give `EndGame`'s wash its four missing characters back, but it moves `NUM_CHARS`
+> and the code→index remap every deck depends on. See `layer-11-sound-title.md` [DECISION 8].
+>
+> Colour is logical 3 on logical 0 — white on black under MODE 1's default palette, against the
+> C64's two-tone outlines and purple panel text. Layer 14's.
 
 ---
 

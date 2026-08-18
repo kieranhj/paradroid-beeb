@@ -93,6 +93,8 @@ the draw call sites — zeroing `sprActive` alone is not enough (BUGS.md #9's no
 
 | | |
 |---|---|
+| **RAM is the binding constraint now** | Layer 11 filled it: main RAM 30 B, bank 4 15 B, bank 6 40 B, bank 7 282 B. Only bank 5's 1,033 B are left and they are behind the sprite paging. **Layer 13's RAM pass has stopped being optional** — it is what unblocks the rest of Layer 11. See [`docs/layer-11-sound-title.md`](docs/layer-11-sound-title.md) §9 |
+| Twelve title characters, four wash characters | `export_bbc.py` converts only what a tile references, so the title ships its own 36 glyphs and `EndGame`'s wash uses substitute patterns. Extending the shared charset is the better fix and needs KC — [DECISION 8] and [DECISION 7] |
 | Console vs live lasers | **BUGS.md #12, open.** Lasers on screen when a console activates stay drawn over the console text. Likely a missing pool teardown on console entry — compare `ReframeView`'s |
 | Edge column off-by-one | **BUGS.md #9, open.** After horizontal scrolling, CRTC unit 0 holds the right content one character row too low — ~60 bytes of 10240, nearly invisible on screen, fails the oracle. In the incremental column draw; sprites all ruled out |
 | Collision box shape | **Agreed 2026-08-18, not built.** `DR_COL_W`/`DR_COL_H` become a generated minimum-`|dx|`-per-`|dy|` profile — the silhouette instead of a rectangle, at box-test cost, built from our own sprite masks by `tools/export_droids.py`. [DECISION 1] in [`docs/layer-6-droids-live.md`](docs/layer-6-droids-live.md) |
@@ -285,7 +287,7 @@ SWRAM bank, the 16th row, the palette and the eleven numbered decisions are in
 difficulty feel against the C64, and consuming the last droid on a deck. Known gaps are in the
 open items above: `ShowXferInfo`'s two droid info screens, and the presentation moved for screen room.
 
-### Layer 11 — Title, the 001 screen, game over, sound — planned in full 2026-08-18
+### Layer 11 — Title, the 001 screen, game over, sound — 11a, 11b and the title BUILT 2026-08-18
 The original's own flow: `TitleLoop` → `StartGame` → the game → `EndGame` → `TitleLoop`. Three
 findings shaped it. **Death is only a game over when you are already a 001** — `$144D` is the whole
 test, and the other branch is `BlowInto001`, which `CbCheckDeath` already is. **`BlowInto001` does
@@ -294,12 +296,21 @@ it. And **`NewShipInfo` (`$36B9`) *is* the 001 screen** — it draws the play-ar
 Layer 10's shadow screen already has, as do `EndGame` and `ShowXferInfo`.
 
 Only the title needs a display of its own: 25 rows × 640 = 16,000 contiguous bytes, which fit
-because the title's buffers and the game's never coexist — `PARAFNT` is `*LOAD`ed to `&3000` for the
-title and `&3C00` for the game, and **no address in the game's map moves**. Staged 11a boot split,
-11b game over, 11c title and the loop, 11d the 001 screen, 11e sound. Deferred with KC's agreement:
-the 48 × 84 portrait (24 K in MODE 1 — the console's rotor-and-digits droid stands in), the 5-page
-intro manual, and `DoHighScore`. Six numbered decisions in
-[`docs/layer-11-sound-title.md`](docs/layer-11-sound-title.md).
+because the title's buffers and the game's never coexist. `PARAFNT` moved permanently to `&3000`,
+the sprite save areas to `&3E00` and the tile map to `&4600` — the three pack exactly onto
+`PANEL_ADDR` and the framebuffer takes `&4000`-`&7E7F` with the font below it.
+
+**Built:** 11a, the boot split — `GameStart` in bank 4 is the C64's `StartGame` + `_entership`, and
+boot keeps only the cold half. 11b, the game over — the `$144D` branch, the explosion cloud with the
+ship frozen, `EndGame`'s wash and "game over" on the panel line. And **the title screen**, matching
+the C64 cell for cell, with fire or a timeout into the game — which is also where `drSeed` finally
+gets its entropy, so the starting deck is no longer the same on every cold boot.
+
+**Not built:** the loop back to the title after a game over (**blocked on main RAM** — it needs an
+IRQ teardown and ~39 bytes against 30 free), the 001 screen, and sound. Deferred with KC's
+agreement: the 48 × 84 portrait (24 K in MODE 1 — the console's rotor-and-digits droid stands in),
+the 5-page intro manual, and `DoHighScore`. Nine numbered decisions, the RAM position and what
+unblocks the rest in [`docs/layer-11-sound-title.md`](docs/layer-11-sound-title.md).
 
 ### Layer 12 — Balance, fidelity and feel — planned
 

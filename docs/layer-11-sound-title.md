@@ -1,6 +1,7 @@
 # Layer 11 — Title, the 001 screen, game over, and sound
 
-**Status: 11a and 11b built 2026-08-18; 11c-11e in progress.** Scoped with KC 2026-08-18. Decisions KC might want to revisit
+**Status: 11a, 11b and the title half of 11c built 2026-08-18. The game-over → title
+loop, 11d and 11e are not built, and the loop is BLOCKED — see §5.** Scoped with KC 2026-08-18. Decisions KC might want to revisit
 are marked **[DECISION]** and collected in §7; things deliberately left out are in §8.
 
 The layer's shape came out of reading the listing rather than the plan: the flow this builds is the
@@ -242,25 +243,81 @@ the deck redrawn and `overPhase` back to 0.
 `DEBUG_INVULN` landed with it: energy pinned at full at the top of `CbCheckDeath`, in `DEBUG_ANY`
 and in `!BOOT`'s stamp. **[DECISION 5]**
 
-### 11c — The title screen, and the loop
+### 11c — The title screen — DONE 2026-08-18. The loop back to it is NOT
 
-Rupture down, IRQ1V back to the MOS, plain MODE 1 as §4 describes, `*LOAD PARAFNT 3000`, build the
-charset, draw `Title_dat`, wait for fire — **stirring `drSeed` once a frame while it waits**, which
-is the original's own entropy mechanism (`$12B6` samples `$D41B` after however long the player left
-the title up) and what kills the deterministic starting deck under emulation. Fire re-runs the boot
-loads, `SetupMode`, `SetupRupture`, the table rebuild and `InstallIrq`, then 11a's per-game init.
-Game over returns here.
+**The title itself is built and verified.** `src/title.asm` in bank 7, `TiShow` called from a
+four-instruction shim between the disc loads and `SetupRupture` — after the loads because it needs
+bank 7, before the rupture because a 25-row picture wants the plain single-cycle display and because
+`R7 = TAIL_R7` would stop the VSync that OSBYTE and the disc both rely on. No IRQ is installed yet
+at that point, which is what makes the boot half easy and the loop hard.
 
-### 11d — The 001 screen
+R6 alone cuts the height to 25 rows; R4, R5 and R7 keep `SetupMode`'s 39-row, 312-line, 50 Hz frame,
+so the picture sits at the **top** of the frame rather than centred. Centring is R7's and is left to
+Layer 14 with the rest of the look.
+
+**The wait is `$2907`-`$291F`: fire, or a timeout.** The timeout is the original's own behaviour and
+it is also the escape hatch — a title that could only be left by a keypress is a title that a
+mis-read key turns into a hang. Ours counts loop iterations rather than fields, because there is no
+IRQ yet to count fields with; a 16-bit wrap comes out at a few seconds.
+
+**And it is where the randomness finally arrives.** `TiWait` leaves its dwell in `overRnd0` and
+`GameStart` stirs `drSeed` with it, in bank 4 where the LFSR lives. The starting deck is no longer
+the same on every cold boot, which is what `docs/layer-8-doors-lifts.md` said the title owed the
+game.
+
+**[DECISION 8] — the title carries its own glyphs.** Twelve of its thirty-six characters — `$52`
+`$53` `$DF` `$E0`-`$E7` `$FF` — are **not in the ported charset**, because `export_bbc.py` converts
+only what a tile definition references and those twelve are used by the title screen and nothing
+else. `tools/export_title.py` converts the thirty-six it needs into 576 bytes of glyphs plus 564 of
+RLE and touches nothing else. **Adding them to the shared charset is the better fix** and would also
+give `EndGame` its four wash characters back — but it changes `NUM_CHARS` and the code→index remap
+that every deck's rendering depends on, so it wants KC and a careful regeneration, not a passing
+edit.
+
+**[DECISION 9] — white on black, for now.** Every glyph is rendered in logical 3 on logical 0. The
+title runs before any deck is loaded, so MODE 1's default palette makes that white on black, which
+is close to what the C64's title is. The C64's own is two-tone yellow/brown outlines with purple
+panel text; matching it is Layer 14's job along with every other palette.
+
+**Verified in jsbeeb**: the rendered title matches `tools/output/title_screen_7800.png` cell for
+cell, fire skips it into the game, and the timeout falls through into the game on its own.
+
+#### The loop back to the title is BLOCKED on main RAM
+
+`GoTick7` still ends a game with `JMP GameStart`. Sending it to the title instead needs, in main RAM
+and nowhere else:
+
+| | |
+|---|---|
+| `UninstallIrq` | ~15 B. The rupture IRQ rewrites R6/R12/R13 every field, so it must stop or it overwrites the title's display the moment it is set |
+| the sequence itself | `UninstallIrq`, `SetupMode`, `TitleScreen`, `SetupRupture`, `BuildCharPtrs`, `SprBuildMask`, `FillPanel`, `InstallIrq`, `GameStart` — ~24 B of `JSR`s |
+
+`BuildCharPtrs` and `SprBuildMask` are not optional: `CHAR_PTR_LO/HI` and `SPR_MASKTAB` live at
+`&5500`-`&57FF`, **inside the title's framebuffer**, and the title destroys them. `FillPanel` for the
+same reason.
+
+That is about **39 bytes against the 30 free**, and it cannot go in a bank: it pages banks and calls
+main-RAM setup, so it has to be resident. Turning `DEBUG_RESTART` off would return ~12 B and make it
+fit — which is the natural trade once the title provides a real route back — but the change also
+tears down and rebuilds the IRQ, and doing that unverified is precisely what `CLAUDE.md`'s warning
+about `hal_video.asm` is about. **Left for KC.**
+
+### 11d — The 001 screen — NOT BUILT
 
 `NewShipInfo` (`$36B9`) on bank 7's shadow screen: `PrintTokenString` (`$36DB`, the machinery Layer
 10 deferred), `ShowRobotType`, and the runtime-composed rotor-and-digits droid where the C64 draws
 the portrait. **[DECISION 3]**
 
-### 11e — Sound
+**Not started, and it needs room first.** Bank 7 has 282 bytes and bank 4 has 15. The token-string
+printer alone is bigger than either. See §9.
+
+### 11e — Sound — NOT BUILT
 
 The SN76489 driver replacing the SID engine, and the `sndFx1`/`sndState` writes stubbed out of the
-console, transfer and this layer's code. See §6.
+console, transfer and this layer's code. See §6 — **and note that the encoding there is still
+unverified**. It was not verified in this session either: checking it means driving the System VIA
+by hand from a test harness, and a driver built on a recalled encoding is exactly what `CLAUDE.md`
+forbids. Verify first, build second.
 
 ## 6. The SN76489 encoding — recovered, NOT verified
 
@@ -314,3 +371,26 @@ by the first deck load, and re-loaded on the way back from a game over. No fifth
 - **`DoHighScore` (`$E4E5`).** HIGH and LOW score, three-initial entry, and it sits between
   `EndGame` and `TitleLoop` in the original's flow, so the seam for it is built even though the
   screen is not.
+
+
+## 9. Where the RAM went — read this before starting anything
+
+Layer 11 has taken the port from comfortable to full. As of 2026-08-18:
+
+| | | |
+|---|---|---|
+| main RAM | ends `&2FE2` | **30 bytes** |
+| bank 4 (`PARADAT`) | ends `&BFF1` | **15 bytes** |
+| bank 5 (`PARASPR`) | ends `&BBF7` | 1,033 bytes |
+| bank 6 (`PARSPR2`) | ends `&BFD8` | 40 bytes |
+| bank 7 (`PARXFER`) | ends `&BEE6` | 282 bytes |
+
+Three of the five are effectively full, and bank 5's 1,033 are hard to reach: it is the sprite bank,
+paged only inside `SprDrawAll`/`SprRestoreAll`, so anything put there needs a main-RAM shim that
+costs more than it saves unless what moves is large.
+
+Two moves already paid for this layer — `ccd_reset`'s body into bank 4 as `CbReset001`, and
+`LoadDeck` into bank 4 — and there is no third of that size waiting. **Layer 13's RAM pass has
+stopped being optional and become the thing that unblocks 11c's loop, 11d and 11e.** Its own notes
+already list the candidates: the bank-4/bank-6 split that exists only because bank 4 was 224 bytes
+short at the time, and the 3 K font hole in main RAM.
