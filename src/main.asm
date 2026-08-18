@@ -983,6 +983,9 @@ IF DEBUG_TIME
   JSR DbgSpeedOverride          \ a poked speed takes the controls over
   BNE ml_poked                  \ and skips the walls; zero gives them back
 ENDIF
+  LDA overPhase                 \ the game is ending: $14A8 calls RunGame
+  BNE ml_nomove                 \ and nothing else, so he stops where he
+                                \ fell and the cloud burns over him
   LDA liftMode                  \ the lift has the controls: no movement,
   BNE ml_nomove                 \ and UP/DOWN mean something else below
   JSR ReadKeys
@@ -1006,6 +1009,12 @@ ENDIF
 \ that changes slot state must happen before the erase — the same reason
 \ the movement is up here. Nothing in LiftEnter/LiftExit draws; the
 \ deck-hop keys, which do, stay where they were.
+  LDA overPhase                 \ the game is ending: the C64's loop calls
+  BNE ml_lDone                  \ RunGame and nothing else, so no fire, no
+                                \ moveMode and no bullet. SLOT 7 IS THE
+                                \ BULLET'S and the cloud lights it — leave
+                                \ MovePlyFire running here and it puts the
+                                \ slot out again on the next pass
   LDA #0
   STA fireDown
   LDX #KEY_L
@@ -1037,8 +1046,11 @@ ENDIF
   STA lDown
 .ml_lDone
 
+  LDA overPhase
+  BNE ml_nofire
   JSR DoMoveMode                \ and DoFire, when it decides to
   JSR MovePlyFire
+.ml_nofire
 
 \ ============================================================
 \ Erase, and decide first whether the pool can be split
@@ -1189,7 +1201,10 @@ ENDIF
 \   - a door probed here is held open by the NEXT pass's DoorsUpdate,
 \     one pass later than before but never closing under a droid that
 \     is still standing at it.
-  JSR DroidsUpdate
+  LDA overPhase                 \ $14A8/$14C5 call RunGame and NOT
+  BNE ml_nodroids               \ RunDroids: the ship stops while the
+  JSR DroidsUpdate              \ player burns
+.ml_nodroids
 
 \ ---- did the collision pass start a transfer? ---------------
 \ GameLoop tests xferDroid straight after DoCollision ($13EF) and calls
@@ -1498,6 +1513,36 @@ ENDMACRO
   PAGEBANK SWRAM_XFER
   JSR XfStart
   PAGEBANK SWRAM_DATA
+  RTS
+
+\ ============================================================
+\ GoStart7 / GoTick7 — the game-over shims
+\ ============================================================
+\ _gameover ($1455) lives in bank 7 with the transfer game and the lift
+\ view; these are what CbCheckDeath, in main RAM, can reach. The pattern
+\ is XferTick's below: page the bank in, run its tick, page the data
+\ bank back, and act on what it left in main RAM.
+\
+\ THE RANDOMS ARE DRAWN FIRST, on this side of the swap. DrRandom is
+\ bank 4's and its LFSR must stay one sequence — see GoTick's header.
+.GoStart7
+  PAGEBANK SWRAM_XFER
+  JSR GoStart
+  PAGEBANK SWRAM_DATA
+  RTS
+
+.GoTick7
+  JSR DrRandom : STA overRnd0
+  JSR DrRandom : STA overRnd1
+  PAGEBANK SWRAM_XFER
+  JSR GoTick
+  PAGEBANK SWRAM_DATA
+  LDA overDone
+  BEQ gt_x
+  LDA #0
+  STA overDone
+  JMP GameStart                 \ bank 4, and it clears overPhase
+.gt_x
   RTS
 
 .XferTick

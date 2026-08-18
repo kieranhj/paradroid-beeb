@@ -1,6 +1,6 @@
 # Layer 11 — Title, the 001 screen, game over, and sound
 
-**Status: 11a built 2026-08-18; 11b-11e planned.** Scoped with KC 2026-08-18. Decisions KC might want to revisit
+**Status: 11a and 11b-1 built 2026-08-18; 11b-2 and 11c-11e planned.** Scoped with KC 2026-08-18. Decisions KC might want to revisit
 are marked **[DECISION]** and collected in §7; things deliberately left out are in §8.
 
 The layer's shape came out of reading the listing rather than the plan: the flow this builds is the
@@ -165,17 +165,52 @@ clean: energy `$40` (ageing to `$3F`), `moveMode` `$80`, `mmDelay` 8, score zero
 succession with the key held did not disturb it, the deck re-rolls, and the play buffer and panel
 still hold their content 800 frames later.
 
-### 11b — Death is a game over
+### 11b-1 — Death is a game over, and the cloud — DONE 2026-08-18
 
-The `$144D` branch in `CbCheckDeath`: `drType != 0` keeps the existing `BlowInto001` path,
-`drType == 0` goes to the game over. Drop `DrSpawnPoint` / `SetPosFromWaypoint` / `ReframeView`
-from the fall-back path, as the original does. **[DECISION 4]**
+**One test was the whole of it.** `$144D`: `drType != 0` keeps the existing `BlowInto001` path,
+`drType == 0` ends the game. `CbCheckDeath` now branches there, and `overPhase` gates the rest.
 
-Then the C64's own sequence: the explosion burst (`$1478`, seven extra effect sprites scattered
-±4 px around the player, all eight animated to the end of the set), then `EndGame`'s character
-wash and dissolve, then a banner on bank 7's shadow screen. `DEBUG_INVULN` arrives here for testing,
-and must be added to `DEBUG_ANY` and to `!BOOT`'s stamp as well as defined, or the build can lie
-about itself. **[DECISION 5]**
+**The waypoint-0 respawn is gone** — `DECISION 4`. `BlowInto001` (`$1573`) does not move the player,
+so neither do we; falling back to a 001 leaves you where you died. That also takes BUGS.md #10's
+cause, a teleport breaking `COPYCHAR`'s parity rule, out of this path for good.
+
+**The cloud is `$1465`-`$14CA`.** `GoTick` lights one more slot a pass at a jittered copy of the
+player's position, `overTick` running 6 down to `$F0`, and advances every effect slot one frame,
+switching off any that runs past the end of the set — so the last sprites are still burning when the
+first have gone out. Slot 7 is the bullet's, and the C64 reuses its sprite 0 the same way.
+
+**The ship stops while it plays.** `$14A8` and `$14C5` call `RunGame` and *not* `RunDroids`, so the
+main loop gates `ReadKeys`/`CalcSpeed`/`CheckWalls`, the fire block, `DoMoveMode`/`MovePlyFire` and
+`DroidsUpdate` on `overPhase`. The fire gate is not optional: leave `MovePlyFire` running and it
+puts slot 7 out again the pass after the cloud lights it.
+
+**Two deviations, both recorded in the source.** The jitter is `(rnd AND 7) - 4` pixels vertically,
+as `$1498` has it, but horizontally it moves whole 4-pixel CRTC units — our sprite X is a unit plus
+a shift, and a pixel-exact offset needs 16-bit arithmetic and a re-split. And a sprite whose jitter
+would put it off the view is dropped rather than clamped.
+
+**Where it went.** `GoStart`/`GoSeed`/`GoTick` are in **bank 7**, with the transfer game and the lift
+view — the other two screens that take the play area over, and where 11b-2's wash and banner will
+want the shadow screen and glyph renderer. Bank 4 had 147 bytes free and the block was 147, so it
+had to move anyway. Main RAM paid for the shims (`GoStart7`/`GoTick7`, the `XferTick` pattern) by
+sending `ccd_reset`'s body the other way, to bank 4 as `CbReset001` — every field it writes but the
+three sprite ones already lives there. **The randoms are drawn on the main-RAM side** and passed in:
+`DrRandom` is bank 4's and its LFSR must stay one sequence.
+
+**Verified in jsbeeb.** Fall-back arm: `drType` 5 with energy 0 came back as type 0, energy 7, no
+game over, and **the play buffer byte-identical before and after** — no teleport, no re-frame.
+Game-over arm: `overPhase` 1, the pool filling with effects at staggered frames
+(`8,2,3,4,5,6,7,8` mid-cloud), **droid positions byte-identical over eight passes** — the ship
+really does stop — and then a fresh game with the score cleared and `shipLevel` back to 1.
+
+### 11b-2 — `EndGame`'s screen — planned
+
+`EndGame` (`$378B`): the wash of random characters `$7A`-`$7D` over the play rows, the
+`AnimAllInsideFont` dissolve for 128 frames with `vScroll` running, then the banner. Bank 7 has
+~1.8 K for it. Until it exists, the cloud burning out goes straight to `GameStart`.
+
+`DEBUG_INVULN` belongs here too, and must be added to `DEBUG_ANY` and to `!BOOT`'s stamp as well as
+defined, or the build can lie about itself. **[DECISION 5]**
 
 ### 11c — The title screen, and the loop
 

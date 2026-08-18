@@ -133,6 +133,45 @@ DR_LOS_MAX = 96
 \ 23, droid 999, the influence device: the one fixed entry in the
 \ table.
 \ ============================================================
+\ CbReset001 — BlowInto001's reset half ($158D-$15E3)
+\ ============================================================
+\ IN BANK 4 because every field it writes but the three sprite ones is
+\ here: drType, drEnergy and drFireDelay are entry 0 of the droid table,
+\ maxEnergy and weaponType are combat.asm's but reachable, and the speed
+\ clamps are this file's own. Called from ccd_reset in main RAM, mid-pass,
+\ with SWRAM_DATA paged.
+\
+\ THE ENERGY IS SEVEN and that is not CombatInit's $40. $12A5 and $158D
+\ both load 7; the $40 at $1345 is what the entry animation ENDS on and
+\ belongs to the start of a ship, not to coming back from a death. So
+\ GameStart does not share this routine — see its own note.
+.CbReset001
+  LDA #0
+  STA drType                    \ back to droid 001
+  STA drFireDelay
+  STA xSpd : STA xSpd+1         \ stop dead, as $15A5 does
+  STA ySpd : STA ySpd+1
+  LDA #7                        \ $158D
+  STA drEnergy
+  LDA maxEnergy                 \ $1594: the ceiling only ever falls, so
+  CMP #7                        \ this is a floor and not an assignment
+  BCS cb1_ceiling
+  LDA #7
+  STA maxEnergy
+.cb1_ceiling
+  LDY drType                    \ $15E0: the weapon comes with the droid
+  LDA drWeapon,Y
+  STA weaponType
+
+  LDA #LO(PLY_MAXSPD) : STA plyMaxLo  \ $15D2, and the clamp is a variable
+  LDA #HI(PLY_MAXSPD) : STA plyMaxHi  \ because Layer 10 rewrites it per
+  LDA #LO(PLY_MAXNEG) : STA plyNegLo  \ transfer
+  LDA #HI(PLY_MAXNEG) : STA plyNegHi
+
+  LDA #MM_MOBILE : STA moveMode
+  RTS
+
+\ ============================================================
 \ GameStart — StartGame ($1242) and _entership ($1289)
 \ ============================================================
 \ EVERYTHING A NEW GAME NEEDS, and nothing a cold boot needs. main.asm's
@@ -185,6 +224,7 @@ DR_LOS_MAX = 96
   STA liftPlace
   STA lvCommit
   STA lvLoad
+  STA overPhase                 \ and the game over that brought us here
 
 \ ---- and no key is half-pressed ----------------------------
 \ Every edge latch in the game, because the restart itself is a keypress

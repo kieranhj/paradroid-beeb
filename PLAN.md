@@ -47,7 +47,8 @@ pass) are planned below.** The port boots to a playable game: the C64's own stat
 lock (2 fields a pass, a floor not a fixed length). Sixteen decks, per-deck palette and charset
 built at load, starting on a random deck 4–7 as `$12B6` does. The ship is traversable — doors,
 lifts, and the C64's deck-selection screen — and populated: droids patrol their waypoints, keep
-line of sight, collide, shoot back and can kill you; you explode and respawn as a 001. L fires,
+line of sight, collide, shoot back and can kill you; die riding a captured droid and you fall
+back to a 001 where you stood, die as a 001 and the game is over. L fires,
 and through the original's own `moveMode` machine it is also the lift, console and transfer
 trigger. Walk onto a console and the play area becomes `ConsoleMain`'s screen, names and all,
 with **all four menu pages** working; touch a droid at `moveMode` 0 and the transfer minigame

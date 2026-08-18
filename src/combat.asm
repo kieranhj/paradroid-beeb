@@ -762,12 +762,17 @@ CB_FIRE_CY = 10
 \ use; the C64 gives the player "explosion2" ($39-$43) and the droids
 \ their own, and only one set has been exported.
 .CbCheckDeath
+  LDA overPhase                 \ the game is ending: bank 4 has the whole
+  BNE ccd_over                  \ sequence, and nothing here applies
+
   LDA plyDying
   BNE ccd_burn                  \ already going up: step the animation
 
   LDA drEnergy                  \ entry 0 is the player
   BEQ ccd_start
   RTS
+.ccd_over
+  JMP GoTick7
 
 \ ---- first pass: light him up and stop him dead -------------
 .ccd_start
@@ -779,7 +784,17 @@ CB_FIRE_CY = 10
   LDA #1          : STA plyDying
   LDA #1          : STA sprKind+PLY_SLOT
   LDA #EF_EXPLODE : STA sprType+PLY_SLOT
+
+\ ---- $144D: WHICH death is this? --------------------------
+\ The one test the port did not have. A player riding a captured droid
+\ falls back to a 001 and plays on, which is everything below; a player
+\ who IS a 001 has nothing left to fall back to, and the game is over.
+\ Layer 11's 11b — docs/layer-11-sound-title.md.
+  LDA drType
+  BEQ ccd_gameover
   RTS
+.ccd_gameover
+  JMP GoStart7                  \ bank 7, and it owns the rest
 
 \ ---- and one frame a pass until the set runs out ------------
 .ccd_burn
@@ -791,48 +806,22 @@ CB_FIRE_CY = 10
   STA sprType+PLY_SLOT
   RTS
 
-\ ---- the set is finished: put him back on a waypoint --------
+\ ---- the set is finished: he is a 001 again -----------------
 \ Slot 0 goes back to being a droid. sprType is the DROID TYPE again
-\ and 0 is a 001, which is what he respawns as — SprInit sets exactly
+\ and 0 is a 001, which is what he comes back as — SprInit sets exactly
 \ these two and nothing else has written them since.
+\ HE DOES NOT MOVE. The port used to teleport him to waypoint 0 and
+\ re-frame; BlowInto001 ($1573) does no such thing, and now that a 001's
+\ death ends the game there is no reason to invent one. Dropping it also
+\ takes BUGS.md #10's cause — a teleport breaking COPYCHAR's parity rule
+\ — out of this path for good. [DECISION 4], 11b.
 .ccd_reset
   LDA #0
   STA plyDying
   STA sprKind+PLY_SLOT
   STA sprType+PLY_SLOT
-
-  LDA #0
-  STA drType                    \ back to droid 001
-  STA drFireDelay
-  STA xSpd : STA xSpd+1         \ stop dead, as $15A5 does
-  STA ySpd : STA ySpd+1
-  LDA #7
-  STA drEnergy
-  LDA maxEnergy
-  CMP #7
-  BCS ccd_ceiling
-  LDA #7
-  STA maxEnergy
-.ccd_ceiling
-  LDY drType
-  LDA drWeapon,Y
-  STA weaponType
-
-  LDA #LO(PLY_MAXSPD) : STA plyMaxLo  \ back to the 001's speed — the
-  LDA #HI(PLY_MAXSPD) : STA plyMaxHi  \ clamp is a variable since Layer
-  LDA #LO(PLY_MAXNEG) : STA plyNegLo  \ 10 rewrites it per transfer
-  LDA #HI(PLY_MAXNEG) : STA plyNegHi
-
-  LDA #MM_MOBILE : STA moveMode
-
-  JSR DrSpawnPoint              \ waypoint 0, the same arrival LoadDeck uses
-  JSR SetPosFromWaypoint
-  JMP ReframeView               \ ...and the same re-frame, which is NOT
-                                \ optional: SetPosFromWaypoint assigns mapHX
-                                \ outright and scrollS does not follow it.
-                                \ Half of all respawns then break COPYCHAR's
-                                \ parity invariant and the level draw writes
-                                \ into sideways RAM. See ReframeView.
+  JMP CbReset001                \ bank 4, where every field it writes but
+                                \ these three already lives
 
 \ ============================================================
 \ state
@@ -850,6 +839,14 @@ CB_FIRE_CY = 10
 \ ---- Layer 7d: the fire button and the player's bullet -----
 .plyDying   EQUB 0              \ non-zero while the death explosion runs on
                                 \ the bullet's slot — see CbCheckDeath
+.overPhase  EQUB 0              \ non-zero once the game is ending: the
+                                \ $1455 arm, not the $1452 one. Main RAM
+                                \ because the main loop gates on it and
+                                \ bank 4 drives it
+.overTick   EQUB 0              \ $1465's counter: 6 down to GO_TICK_END
+.overDone   EQUB 0              \ bank 7 -> the shim: the cloud has gone out
+.overRnd0   EQUB 0              \ the pass's two random bytes, drawn from
+.overRnd1   EQUB 0              \ DrRandom before bank 7 is paged in
 .moveMode   EQUB MM_MOBILE
 .mmDelay    EQUB MM_DELAY
 .fireDown   EQUB 0              \ TRUE means pressed — see DoMoveMode

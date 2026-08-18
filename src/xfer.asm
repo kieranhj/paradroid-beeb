@@ -1921,3 +1921,132 @@ ALIGN &100
   SKIP &100
 .xsGlyphOf
   SKIP &100
+
+\ ============================================================
+\ GoStart / GoTick — _gameover ($1455) and its explosion cloud
+\ ============================================================
+\ THE C64 HAS NO RESPAWN. EnterGame tests droidEnergy at $143B and
+\ splits at $144D: riding something, you blow back into a 001 and play
+\ on; already a 001, the game ends here. The port only ever had the
+\ first arm, so this is the second.
+\
+\ WHAT IT LOOKS LIKE, from $1465 down. Seven more sprites are lit one a
+\ pass at jittered copies of the player's own position, each carrying
+\ explosion frame $39; every pass after that advances EVERY sprite's
+\ image by one and switches off any that runs past $44. The counter
+\ starts at 6 and runs to $F0, so the cloud takes 22 iterations and the
+\ last sprites are still burning when the first have gone out.
+\
+\ DROIDS ARE FROZEN while it plays. $14A8 and $14C5 call RunGame and
+\ NOT RunDroids — the display keeps running and the ship stops. The main
+\ loop gates its movement and DroidsUpdate on overPhase for that reason.
+\
+\ THE JITTER IS COARSER THAN THE ORIGINAL'S. $1487 and $1498 offset the
+\ VIC's sprite X and Y by (rnd AND 7) - 4 pixels. Our sprite X is a
+\ 4-pixel CRTC unit plus a shift within it, so a pixel-exact offset
+\ needs 16-bit arithmetic and a re-split; the unit is jittered instead,
+\ which quantises the horizontal scatter to 4 px. Y is the original's,
+\ pixel for pixel, and both are dropped rather than clamped when they
+\ would leave the view — a sprite of eight going missing at the edge of
+\ the screen is cheaper than the clamp and reads the same.
+\
+\ THE RANDOMS COME IN, they are not drawn here. DrRandom is bank 4's and
+\ its LFSR must stay one sequence, so GoTick's shim draws the pass's two
+\ bytes before it pages this bank in and leaves them in overRnd0/1. A
+\ second generator here would fork the sequence and be a second thing to
+\ keep in step.
+\n\ IN BANK 7, with the transfer game and the lift view — the two other
+\ screens that take the play area over, and where 11b-2's wash and
+\ banner will want their shadow screen and glyph renderer. It reaches
+\ the sprite pool, which is main RAM, and nothing in bank 4; the shims
+\ in main.asm page it in and the data bank back out, as XferTick does.
+GO_TICK_END = &F0               \ $14CA
+
+.GoStart
+  LDA #1
+  STA overPhase                 \ from here the loop stops moving anything
+  LDA #6                        \ $1465
+  STA overTick
+  RTS
+
+\ Slot X becomes explosion frame 0 at a jittered copy of the player's.
+.GoSeed
+  LDA #1          : STA sprActive,X
+  LDA #1          : STA sprKind,X
+  LDA #EF_EXPLODE : STA sprType,X
+  LDA #0          : STA sprSaved,X   \ nothing of ITS background is held:
+                                     \ the slot may have been free, and a
+                                     \ stale save would be restored over
+                                     \ the deck at the wrong address
+  LDA sprShift+PLY_SLOT
+  STA sprShift,X
+
+  LDA overRnd0                  \ $1487, in units rather than pixels
+  AND #3
+  CLC
+  ADC sprUnit+PLY_SLOT
+  SEC
+  SBC #1
+  CMP #PLAY_UNITS               \ off the view either way: unsigned, so
+  BCS go_seed_off               \ the wrap catches a negative too
+  STA sprUnit,X
+
+  LDA overRnd1                  \ $1498, pixel for pixel
+  AND #7
+  CLC
+  ADC sprScrY+PLY_SLOT
+  SEC
+  SBC #4
+  CMP #PLAY_VIS_ROWS * 8
+  BCS go_seed_off
+  STA sprScrY,X
+  RTS
+.go_seed_off
+  LDA #0
+  STA sprActive,X               \ it would have been off the view
+  RTS
+
+\ One pass of the cloud. Returns with overPhase still set until the
+\ last frame has burnt out.
+.GoTick
+  LDA overTick                  \ $1478: one more alight, while any left
+  BMI go_anim
+  CLC
+  ADC #1                        \ 6..0 -> slots 7..1; slot 0 is the player
+  TAX                           \ and was lit by ccd_start
+  JSR GoSeed
+.go_anim
+  LDX #SPR_SLOTS-1              \ $14AF: every sprite, one image on
+.go_a1
+  LDA sprActive,X
+  BEQ go_a2
+  LDA sprKind,X
+  BEQ go_a2                     \ a frozen droid, not part of the cloud
+  LDA sprType,X
+  CLC
+  ADC #1
+  CMP #EF_EXPLODE + EF_EXPLODE_N
+  BCC go_a3
+  LDA #0
+  STA sprActive,X               \ $14BA: past the last frame, switch it off
+  BEQ go_a2                     \ always
+.go_a3
+  STA sprType,X
+.go_a2
+  DEX
+  BPL go_a1
+
+  DEC overTick                  \ $14C8
+  LDA overTick
+  CMP #GO_TICK_END
+  BNE go_x
+
+\ ---- the cloud has burnt out -------------------------------
+\ $14D0 JSR EndGame / $14D3 JMP TitleLoop. Neither exists yet: 11b-2
+\ builds EndGame's screen and 11c the title, and until they do the game
+\ simply starts again. GameStart is bank 4's and this is bank 7, so the
+\ shim is told rather than called: overDone, read once this bank is out.
+  LDA #1
+  STA overDone
+.go_x
+  RTS
