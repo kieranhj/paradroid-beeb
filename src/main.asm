@@ -604,8 +604,9 @@ NUM_DECKS  = 16
 \ sixteen values are in the deckBg table in colours.asm. It was a
 \ constant 14 until 2026-08-17, which is right for decks 2 and 7
 \ only — see tools/export_bbc.py's deck_background().
-D022_COLOUR = 1                 \ multicolour 01 — white
-D023_COLOUR = 0                 \ multicolour 10 — black
+\ $D022/$D023 are NOT here either: the play area is hires, so the
+\ multicolour pair never applies to it. DrawSideview sets them for
+\ its own screen. Removed 2026-08-18 with the multicolour path.
 REC_LEN     = 12                \ colour slots per scheme record
 
 \ ---- negative INKEY codes, as unsigned bytes ---------------

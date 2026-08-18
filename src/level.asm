@@ -141,11 +141,6 @@
   LDA deckBg,Y                  \ record, not a constant. Only decks 2 and 7
   CLC : ADC bcCmapBase : TAX    \ are the light blue this used to assume for
   LDA colourMap,X : STA bcBg    \ all sixteen. See tools/export_bbc.py.
-  CLC : LDA bcCmapBase : ADC #D022_COLOUR : TAX
-  LDA colourMap,X : STA bcD022L
-  CLC : LDA bcCmapBase : ADC #D023_COLOUR : TAX
-  LDA colourMap,X : STA bcD023L
-
   JSR BuildLUTs
 
   LDA #LO(charSrc) : STA bcSrc
@@ -169,28 +164,14 @@
 .bc_slot_oob
   LDA #0
 .bc_got_colour
-  STA bcColour
-  AND #8
-  BEQ bc_hires
-
-  LDA bcColour                  \ multicolour: LUT from the 11 colour
-  AND #7
-  CLC : ADC bcCmapBase
-  TAX
-  LDA colourMap,X
-  ASL A : ASL A : ASL A : ASL A
-  CLC : ADC #64                 \ multicolour LUTs follow the hires ones
-  STA bcLutOfs
-  JMP bc_rows
-
-.bc_hires
-  LDA bcColour                  \ hires: LUT from the cell colour
-  CLC : ADC bcCmapBase
-  TAX
-  LDA colourMap,X
-  ASL A : ASL A : ASL A : ASL A
-  STA bcLutOfs
-
+  STA bcColour                  \ EVERY CELL IS HIRES. Bit 3 of the colour
+  CLC : ADC bcCmapBase          \ nibble is part of the COLOUR, not a mode
+  TAX                           \ flag: the play area runs with $D016 bit 4
+  LDA colourMap,X               \ CLEAR ($C0, written by _reenter_game at
+  ASL A : ASL A : ASL A : ASL A \ $1532). This branched on AND #8 until
+  STA bcLutOfs                  \ 2026-08-18 and drew every orange, grey or
+                                \ light-grey cell as four fat pixels of the
+                                \ wrong colours. See ref/c64_deck5.png.
 .bc_rows
   LDY #7
 .bc_row
@@ -231,8 +212,9 @@
 \ ============================================================
 \ BuildLUTs — nibble -> MODE 1 byte tables for this deck
 \
-\ LUTs+0..63   hires,       4 tables of 16, indexed by cell colour
-\ LUTs+64..127 multicolour, 4 tables of 16, indexed by the 11 colour
+\ LUTs+0..63   4 tables of 16, indexed by the cell colour's logical
+\ Every cell is hires, so there is one table per foreground logical
+\ colour and the old multicolour half of this table is gone.
 \
 \ A MODE 1 byte is a nibble of high colour bits then a nibble of
 \ low bits, so each entry is built as H<<4 | L.
@@ -297,69 +279,20 @@
   LDA bcF : CMP #4
   BNE bl_f
 
-  LDA #0                        \ ---- multicolour tables ----
-  STA bcP3
-.bl_p
-  LDA bcBg    : STA bcPal
-  LDA bcD022L : STA bcPal+1
-  LDA bcD023L : STA bcPal+2
-  LDA bcP3    : STA bcPal+3
-
-  LDY #0
-.bl_mn
-  TYA : LSR A : LSR A : TAX     \ first C64 pixel
-  LDA bcPal,X : STA bcA
-  TYA : AND #3 : TAX            \ second C64 pixel
-  LDA bcPal,X : STA bcB
-
-  LDA #0 : STA bcTmp2           \ H: each pixel doubled
-  LDA bcA : AND #2 : BEQ bl_h1
-  LDA #%1100 : ORA bcTmp2 : STA bcTmp2
-.bl_h1
-  LDA bcB : AND #2 : BEQ bl_h2
-  LDA #%0011 : ORA bcTmp2 : STA bcTmp2
-.bl_h2
-  LDA bcTmp2 : ASL A : ASL A : ASL A : ASL A : STA bcTmp2
-
-  LDA #0 : STA bcTmp            \ L
-  LDA bcA : AND #1 : BEQ bl_l1
-  LDA #%1100 : ORA bcTmp : STA bcTmp
-.bl_l1
-  LDA bcB : AND #1 : BEQ bl_l2
-  LDA #%0011 : ORA bcTmp : STA bcTmp
-.bl_l2
-  LDA bcTmp2 : ORA bcTmp
-  STA bcTmp
-  TYA : CLC : ADC bcLutOfs : TAX
-  LDA bcTmp
-  STA LUTs,X
-  INY
-  CPY #16
-  BNE bl_mn
-
-  LDA bcLutOfs : CLC : ADC #16 : STA bcLutOfs
-  INC bcP3
-  LDA bcP3 : CMP #4
-  BEQ bl_mcdone
-  JMP bl_p
-.bl_mcdone
   RTS
 
 \ ---- working storage ---------------------------------------
 \ Zero page is full. These are touched once per deck change, so
 \ absolute addressing costs nothing that matters.
-.LUTs      SKIP 128             \ 4 hires + 4 multicolour nibble tables
+.LUTs      SKIP 64              \ 4 hires nibble tables, one per logical
 .bcDeck    EQUB 0
 .bcRecOfs  EQUB 0
 .bcCmapBase EQUB 0
 .bcBg      EQUB 0
-.bcD022L   EQUB 0
-.bcD023L   EQUB 0
 .bcColour  EQUB 0
 .bcLutOfs  EQUB 0
 .bcIndex   EQUB 0
 .bcF       EQUB 0
-.bcP3      EQUB 0
 .bcFH      EQUB 0
 .bcFL      EQUB 0
 .bcGH      EQUB 0

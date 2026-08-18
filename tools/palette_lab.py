@@ -57,7 +57,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from rip_levels import parse_listing, decode_deck_rle          # noqa: E402
 from export_droids import (build_rotor, build_digits,               # noqa: E402
                            droid_number, FRAMES)
-from export_bbc import (C64_RGB, BBC_RGB, D022, D023,              # noqa: E402
+from export_bbc import (C64_RGB, BBC_RGB,                          # noqa: E402
                         CHARSET_ADDR, TILEDEF_ADDR,
                         deck_colours, deck_background, build_logical_map,
                         build_colour_map, assign_palette)
@@ -81,11 +81,11 @@ BBC_NAMES = ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan',
              'white']
 
 # The four slots carry fixed roles now - see export_bbc.build_logical_map.
-ROLE_NAMES = ['background', 'black', 'highlight', 'white / sprites']
-# Roles whose physical colour the sprite scheme depends on: logical 3 must be
-# white and logical 1 black, or AND &0F / AND &F0 stop meaning anything.
-# None = free choice, judge it by eye.
-ROLE_WANTS = [None, 0, None, 7]
+ROLE_NAMES = ['background', 'darker', 'lighter', 'white / sprites']
+# Only logical 3 has a physical colour the scheme depends on: the sprites are
+# drawn in it and it has to read as white. 1 and 2 are the deck's own two
+# foregrounds, darker then lighter - free choices, judge them by eye.
+ROLE_WANTS = [None, None, None, 7]
 
 
 def render_deck(mem, deck):
@@ -119,24 +119,18 @@ def render_deck(mem, deck):
                 for cx in range(4):
                     code = mem[TILEDEF_ADDR + tile * 16 + cy * 4 + cx]
                     colour = cell_colour(code)
-                    multi = bool(colour & 8)
-                    pal = (D021, D022, D023, colour & 7)
                     base = CHARSET_ADDR + code * 8
                     px0 = (tx - x0) * TILE_PX + cx * 8
                     py0 = (ty - y0) * TILE_PX + cy * 8
+                    # EVERY CELL IS HIRES: eight 1-bit pixels, the cell's
+                    # full colour nibble against the deck background. Bit 3
+                    # is part of the colour and not a mode flag - see
+                    # export_bbc.py's header and ref/c64_deck5.png.
                     for row in range(8):
                         b = mem[base + row]
                         off = (py0 + row) * w + px0
-                        if multi:
-                            # four 2-bit pairs, each two screen pixels wide
-                            for p in range(4):
-                                c = pal[(b >> (6 - p * 2)) & 3]
-                                buf[off + p * 2] = c
-                                buf[off + p * 2 + 1] = c
-                        else:
-                            for p in range(8):
-                                buf[off + p] = colour if (b >> (7 - p)) & 1 \
-                                    else D021
+                        for p in range(8):
+                            buf[off + p] = colour if (b >> (7 - p)) & 1                                 else D021
     return w, h, x0, y0, bytes(buf)
 
 
@@ -664,8 +658,8 @@ function buildPalette() {
   WANTS.forEach((want, l) => {
     if (want !== null && p[l] !== want)
       msgs.push('Logical ' + l + ' is ' + BBCN[p[l]] + ', not ' + BBCN[want] +
-                '. Sprites are drawn at logical 3 and recoloured to logical 1 ' +
-                'by masking, so both slots carry a meaning beyond this deck.');
+                '. The droids are drawn in logical 3, so it has to read as ' +
+                'white on every deck.');
   });
   const w = document.getElementById('dupwarn');
   w.hidden = !msgs.length;

@@ -9,38 +9,44 @@ Emits into src/data/:
 
 MODE 1 conversion
 -----------------
-The play area runs in C64 MULTICOLOUR character mode - $D016 bit 4 set, via
-the self-modifying _d016Mode routine at $6F1B, which patches its own LDA
-operand between $D0 (multicolour, play area) and $C0 (hires, text screens).
+The play area runs in C64 HIRES character mode. $D016 bit 4 is the
+multicolour flag and the self-modifying _d016Mode routine at $6F1B patches
+its own LDA operand: $C0 (hires) for the play area and the text screens,
+$D0 (multicolour) only for the transfer board ($22AD) and the ship
+sideview ($3092). Entering the game goes through _reenter_game ($1532),
+which writes $C0 and $D018 = $2F - the $7800 tile charset - and jumps to
+EnterGame. So the deck is hires and nothing in it is multicolour.
 
-In multicolour mode a character byte is four 2-bit pixel pairs, each drawn
-two screen pixels wide:
+A hires cell is eight 1-bit pixels: a set bit takes the cell's colour from
+colour RAM, using the FULL four-bit nibble (0-15), and a clear bit takes
+$D021, the shared background. $D022/$D023 are not involved; DrawSideview
+sets them for its own multicolour screen and they simply persist.
 
-    00 -> $D021 background      10 -> $D023
-    01 -> $D022                 11 -> colour RAM (per cell)
+That is a straight 1:1 to BBC MODE 1, which is also 320 pixels across: 8
+C64 pixels become 8 MODE 1 pixels, 4 to a byte. MODE 1 packs pixel n with
+bit (7-n) as its high colour bit and bit (3-n) as its low bit.
 
-So a character is 4 logical pixels wide carrying 4 colours, not 8 pixels of
-1bpp. This maps onto BBC MODE 1 exactly: MODE 1 is also 4 colours, also 320
-pixels across, and one C64 multicolour pixel becomes two MODE 1 pixels.
-
-MODE 1 packs 4 pixels per byte; pixel n takes bit (7-n) as its high colour
-bit and bit (3-n) as its low bit. Each C64 pixel is emitted twice:
-
-    left  byte of a scanline = C64 pixels 0,0,1,1
-    right byte of a scanline = C64 pixels 2,2,3,3
-
-Logical colours 0-3 are preserved as-is, so a deck's colour scheme is a
-palette change at runtime, mirroring how the C64 varied $D021/$D022/$D023.
+    left  byte of a scanline = C64 pixels 0-3
+    right byte of a scanline = C64 pixels 4-7
 
 BBC screen memory groups 4 pixels x 8 scanlines into 8 consecutive bytes, so
 a character occupies 16 contiguous bytes: the left half's 8 scanlines then
 the right half's 8. Characters are stored in that order, making a plot a
 straight 16-byte copy to the screen.
 
-Caveat: on the C64 the 11 pixel value comes from colour RAM and so can vary
-per cell. MODE 1's four logical colours are global, so per-cell variation of
-that one colour is lost. The play area looks uniform, so a per-deck palette
-should cover it.
+THIS FILE READ THE SCREEN AS MULTICOLOUR UNTIL 2026-08-18, selecting the
+mode per cell on bit 3 of the colour nibble. That theory was invented to
+explain four colours in a cell and it is wrong: bit 3 is part of the
+colour. It made every cell whose colour was 8-15 - orange, dark grey,
+light grey - render as four fat pixels of the wrong colours, and mangled
+the ALERT lettering on eight decks. ref/c64_deck5.png settles it: light
+grey floor, ORANGE crosshairs (colour 8, bit 3 set) drawn solid, and
+"ALERT." crisp at single-pixel spacing.
+
+The real loss is smaller than the old model claimed: the C64 gives each
+CELL its own colour from sixteen, and MODE 1 has four logical colours for
+the whole screen. Per deck that turns out to be enough - the tiles a deck
+places use the background plus three colours and little else.
 
 Requires: Python 3. No third-party dependencies.
 """
@@ -102,10 +108,11 @@ C64_RGB = [
     (0x78, 0x78, 0x78), (0x94, 0xE0, 0x89), (0x78, 0x69, 0xC4), (0x9F, 0x9F, 0x9F),
 ]
 
-# Aesthetic preferences, honoured when the colour is still free: the floor
-# goes to blue rather than a glaring cyan, the grid lines to magenta, and
-# shadows to black rather than a glaring BBC red.
-PREFERRED = {14: 4, 7: 5, 2: 0}
+# Aesthetic preferences, honoured when the colour is still free. These were
+# chosen against the old multicolour reading and want re-judging in the lab
+# now the decks look like the C64's: light blue floors to blue rather than a
+# glaring cyan, and yellow floors to magenta rather than BBC yellow.
+PREFERRED = {14: 4, 7: 5}
 
 
 PALETTE_FILE = Path(__file__).resolve().parent / 'deck_palettes.json'
@@ -159,18 +166,16 @@ def load_palette_override():
 
 
 # Which SLOT gets to choose its physical colour first. Slot order and
-# allocation order are different things, and conflating them is what made
-# the C64's black come out green: the assignment is greedy nearest-unused,
-# so whoever picks first wins a contested colour.
+# allocation order are different things, and conflating them is what made the
+# C64's black come out green: the assignment is greedy nearest-unused, so
+# whoever picks first wins a contested colour.
 #
-#   3 white     the sprite colour - droids and effects are drawn in it, and
-#               it must read as white, so it picks first
-#   1 black     shadows and outlines; black is unambiguous and nothing else
-#               wants it once PREFERRED's red->black is behind it
-#   0 the floor the deck's own colour, and the largest area on screen
-#   2 highlight last, because it is the one with an alternative: it is
-#               already a compromise for a C64 colour MODE 1 cannot match
-SLOT_PRIORITY = (3, 1, 0, 2)
+#   3 white       the sprites are drawn in it and the walls are made of it,
+#                 and it has to read as white, so it picks first
+#   0 the floor   the largest area on screen by far
+#   1 darker      \ the deck's own two, and the pair with the most room to
+#   2 lighter     / move: they are already a compromise for a C64 colour
+SLOT_PRIORITY = (3, 0, 1, 2)
 
 
 def assign_palette(logical):
@@ -275,6 +280,21 @@ def deck_colours(mem, deck):
     return scheme, rec, cell_colour
 
 
+def _deck_colour_freq(mem, cell_colour):
+    """How often each C64 colour appears in the tiles, over the whole set.
+
+    The deck-weighted count needs the RLE and is done by the caller in
+    palette_lab; here the tile set is representative enough and keeps this
+    function dependency-free.
+    """
+    from collections import Counter
+    freq = Counter()
+    for tile in range(TILEDEF_COUNT):
+        for i in range(TILEDEF_SIZE):
+            freq[cell_colour(mem[TILEDEF_ADDR + tile * TILEDEF_SIZE + i])] += 1
+    return freq
+
+
 def deck_background(mem, deck):
     """The play area's $D021 for a deck: SLOT 0 of its colour record.
 
@@ -299,50 +319,44 @@ def build_logical_map(mem, cell_colour, bg):
     """Pick which C64 colours become MODE 1 logical 0-3, in FIXED ROLES.
 
         logical 0 = the deck's background      (%00 - also transparent)
-        logical 1 = black, $D023               (%01 - the low plane alone)
-        logical 2 = the deck's highlight       (%10 - the high plane alone)
-        logical 3 = white, $D022               (%11 - both planes)
+        logical 1 = its darker foreground      (%01 - the low plane alone)
+        logical 2 = its lighter foreground     (%10 - the high plane alone)
+        logical 3 = white                      (%11 - both planes)
 
-    The roles used to be filled by frequency, which put black at 2 on eight
-    decks and at 3 on the other eight - the same four colours either way, but
-    in an order that meant nothing. KC's ordering, 2026-08-17, and the reason
-    is the sprites:
+    Logical 3 is white and holds the sprites, which is KC's ordering and the
+    reason the slots have roles at all: artwork exported at logical 3 has both
+    bits set on an opaque pixel and neither on a transparent one, so a sprite
+    byte IS its own transparency mask, and AND &0F / AND &F0 recolour it in
+    place to logical 1 or 2. It is also faithful - the C64 draws the player
+    white (ref/c64_deck5.png).
 
-      A sprite exported at logical 3 has BOTH bits set on every opaque pixel
-      and neither on a transparent one, so the sprite byte IS its own
-      transparency mask, and `AND &0F` / `AND &F0` recolour it in place to
-      logical 1 (black) or logical 2 (the highlight) from one set of bytes.
-      At logical 1 none of that is possible, which is why the port carries a
-      256-byte SPR_MASKTAB to expand the mask.
+    The other two are the deck's own next-most-used colours, ordered dark then
+    light by luminance so that masking a sprite to 1 always gives the darker
+    option and to 2 the lighter, whatever deck it is standing on.
 
-    Choosing by frequency cost nothing to give up: on all 16 decks the three
-    most-used non-background colours are exactly {white, black, highlight}, so
-    this reorders the slots without changing which colours a deck gets.
+    Counted over the tiles a deck ACTUALLY PLACES, weighted by how often it
+    places them, rather than over the whole tile set: what matters is what is
+    on the screen. Every deck comes out wanting the background plus three
+    colours, so nothing is merged - the fourth is used 2 to 40 times against
+    the third's hundreds or thousands.
     """
     from collections import Counter
-    freq = Counter()
-    for tile in range(32):
-        for i in range(16):
-            code = mem[TILEDEF_ADDR + tile * 16 + i]
-            colour = cell_colour(code)
-            if colour & 8:                       # multicolour cell
-                freq[D022] += 1
-                freq[D023] += 1
-                freq[colour & 7] += 1
-            else:                                # hires cell
-                freq[colour] += 1
+    from rip_levels import decode_deck_rle           # noqa: F401 (see below)
+    freq = _deck_colour_freq(mem, cell_colour)
     freq.pop(bg, None)
 
-    # The highlight is the most-used colour that is not one of the two the
-    # multicolour mode fixes for us.
-    rest = [c for c, _ in freq.most_common() if c not in (D022, D023)]
-    highlight = rest[0] if rest else 0
+    white = D022                                     # 1, and it is white
+    rest = [c for c, _ in freq.most_common() if c != white]
+    while len(rest) < 2:
+        rest.append(0 if 0 not in rest else 2)
+    a, b = rest[0], rest[1]
+    dark, light = (a, b) if LUMA[a] <= LUMA[b] else (b, a)
 
-    chosen = [bg, D023, highlight, D022]
+    chosen = [bg, dark, light, white]
 
-    # No deck's background is black or white, so the four are distinct - but
-    # if one ever were, the duplicate would silently cost a colour. Take the
-    # next unused instead of shipping a slot that can never be selected.
+    # If the background IS white the roles would collide and a slot would be
+    # unreachable. No deck does that, but take the next unused rather than
+    # ship a colour that can never be selected.
     seen = set()
     for i, c in enumerate(chosen):
         if c in seen:
@@ -373,38 +387,26 @@ def build_colour_map(logical):
 
 
 def convert_charset(mem, cell_colour, logical):
-    """C64 charset -> MODE 1, 16 bytes per char, mode chosen per character.
+    """C64 charset -> MODE 1, 16 bytes per char. Every cell is HIRES.
 
-    Multicolour is selected per cell by bit 3 of the colour RAM nibble, so a
-    character is converted as hires (8 px, background + its cell colour) or
-    as multicolour (4 double-width px, 4 colours) depending on the deck.
+    Eight 1-bit pixels: a set bit takes the cell's colour, a clear bit the
+    deck's background. See the header for why there is no multicolour path.
     """
     def logical_of(c64):
         if c64 in logical:
             return logical.index(c64)
         return min(range(4), key=lambda i: abs(LUMA[logical[i]] - LUMA[c64]))
 
-    bg = logical[0]              # logical 0 IS the deck background, by
-                                 # construction in build_logical_map
+    bg = logical_of(logical[0])          # logical 0 is the background
     out = bytearray()
     stats = {'hires': 0, 'multi': 0}
     for c in range(CHARSET_CHARS):
         rows = mem[CHARSET_ADDR + c * 8:CHARSET_ADDR + c * 8 + 8]
-        colour = cell_colour(c)
-        if colour & 8:
-            stats['multi'] += 1
-            pal = [logical_of(bg), logical_of(D022),
-                   logical_of(D023), logical_of(colour & 7)]
-            px = [[pal[(b >> (6 - p * 2)) & 3] for p in range(4)] for b in rows]
-            # each C64 pixel occupies two MODE 1 pixels
-            left = [mode1_byte([p[0], p[0], p[1], p[1]]) for p in px]
-            right = [mode1_byte([p[2], p[2], p[3], p[3]]) for p in px]
-        else:
-            stats['hires'] += 1
-            fg, bgl = logical_of(colour), logical_of(bg)
-            px = [[fg if (b >> (7 - p)) & 1 else bgl for p in range(8)] for b in rows]
-            left = [mode1_byte(p[0:4]) for p in px]
-            right = [mode1_byte(p[4:8]) for p in px]
+        fg = logical_of(cell_colour(c))
+        stats['hires'] += 1
+        px = [[fg if (b >> (7 - p)) & 1 else bg for p in range(8)] for b in rows]
+        left = [mode1_byte(p[0:4]) for p in px]
+        right = [mode1_byte(p[4:8]) for p in px]
         out.extend(left)
         out.extend(right)
     return out, stats
