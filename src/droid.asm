@@ -172,6 +172,52 @@ DR_LOS_MAX = 96
   RTS
 
 \ ============================================================
+\ LoadDeck — decode a deck, build its charset, frame and draw it
+\ ============================================================
+\ IN BANK 4 since Layer 11, for main RAM rather than for tidiness: it is
+\ nothing but calls, and all but three of them are into this bank
+\ already. Every caller runs with SWRAM_DATA paged — GameStart and the
+\ lift are in here, the two debug deck keys are in the main loop where
+\ the data bank is the resting state.
+.LoadDeck
+  LDA deck
+  JSR BuildCharset              \ charset is deck specific
+  JSR SetPalette
+  LDA deck
+  JSR BuildLevel
+
+\ Where we arrive. A lift knows exactly where it puts you; everything
+\ else arrives on WAYPOINT 0, which is the one waypoint InitDeckDroids
+\ never places a droid on and is there for exactly this. It replaces
+\ CentreOnDeck, whose centroid framed the deck without ever asking
+\ whether the cell under the player was walkable — BUGS.md #4.
+  LDA liftPlace
+  BEQ ld_spawn
+  LDA #0
+  STA liftPlace
+  JSR LiftPlace
+  JMP ld_placed
+.ld_spawn
+  JSR DrSpawnPoint              \ -> cellX / cellY, characters
+  JSR SetPosFromWaypoint        \ the pixel position is the authority from
+                                \ here on
+.ld_placed
+  JSR DoorInit                  \ a door left open on the deck we are
+                                \ leaving would patch a tile position on
+                                \ the one we are entering
+  JSR ReframeView
+  JSR DroidsInit                \ the deck's droids, on its waypoints
+IF NOT(DEBUG_ENERGY)
+  JSR PanelSetup                \ Layer 9: the static words and the deck
+                                \ number. AFTER DroidsInit, so the droid
+                                \ count PanelUpdate reads is this deck's
+ENDIF
+IF DEBUG_MAPGUARD
+  JSR MapGuardSnap              \ LAST: the map as the finished load left it
+ENDIF
+  RTS
+
+\ ============================================================
 \ GameStart — StartGame ($1242) and _entership ($1289)
 \ ============================================================
 \ EVERYTHING A NEW GAME NEEDS, and nothing a cold boot needs. main.asm's
@@ -191,6 +237,19 @@ DR_LOS_MAX = 96
 \ they survive a restart. What does not survive is anything the game
 \ writes, which is what follows.
 .GameStart
+\ ---- what the title screen was for -------------------------
+\ $12B6 reads $D41B — free-running SID noise — AFTER however long the
+\ player left the title up, and that wait is what makes the starting
+\ deck unpredictable. TiWait leaves its dwell in overRnd0 and this is
+\ where it meets the LFSR, because drSeed lives in this bank. A zero
+\ result would lock the LFSR for ever, so it is refused twice over.
+  LDA overRnd0
+  BEQ gs_seeded
+  EOR drSeed
+  BEQ gs_seeded
+  STA drSeed
+.gs_seeded
+
   LDA #1
   STA shipLevel                 \ $1255 zeroes it and NextLevel's INC at
                                 \ $129E makes it 1. NewShipDroids is that

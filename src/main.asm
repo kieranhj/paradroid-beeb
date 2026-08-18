@@ -854,6 +854,14 @@ ORG &1100
   JSR PageTabsIn                \ and, with it up, the four droid tables the
                                 \ panel needs and cannot reach from bank 6
 
+\ ---- the title, before any of the game exists --------------
+\ ShowTitle ($2879) is the first thing TitleLoop does and StartGame is
+\ what it falls into. Here it goes between the loads and the rupture:
+\ after the loads because it needs bank 7, before the rupture because a
+\ 25-row picture wants the plain single-cycle display and because R7 =
+\ TAIL_R7 would stop the VSync OSBYTE and the disc both rely on.
+  JSR TitleScreen
+
   JSR SetupRupture              \ NOW the CRTC goes into the rupture's
                                 \ shape: it stops VSync, so it has to be
                                 \ after the last filing-system call
@@ -1560,6 +1568,20 @@ ENDMACRO
 \
 \ THE RANDOMS ARE DRAWN FIRST, on this side of the swap. DrRandom is
 \ bank 4's and its LFSR must stay one sequence — see GoTick's header.
+\ ============================================================
+\ TitleScreen — the title, from boot
+\ ============================================================
+\ Everything the title does is in bank 7 and everything it writes is
+\ main RAM, so this is only the paging. It runs BEFORE SetupRupture and
+\ InstallIrq: the CRTC is still in SetupMode's plain single-cycle shape,
+\ which is exactly what a 25-row picture wants, and the filing system
+\ and OSBYTE are both still the MOS's.
+.TitleScreen
+  PAGEBANK SWRAM_XFER
+  JSR TiShow
+  PAGEBANK SWRAM_DATA
+  RTS
+
 .GoStart7
   PAGEBANK SWRAM_XFER
   JSR GoStart
@@ -1729,47 +1751,6 @@ ASSERT FRAME_LOCK >= 2
   LDA #&7F : STA SYS_VIA_IFR    \ clear anything pending
   LDA #&C2 : STA SYS_VIA_IER    \ enable CA1 (vsync) + T1
   CLI
-  RTS
-
-\ ============================================================
-\ LoadDeck — decode a deck, build its charset, frame and draw it
-\ ============================================================
-.LoadDeck
-  LDA deck
-  JSR BuildCharset              \ charset is deck specific
-  JSR SetPalette
-  LDA deck
-  JSR BuildLevel
-
-\ Where we arrive. A lift knows exactly where it puts you; everything
-\ else arrives on WAYPOINT 0, which is the one waypoint InitDeckDroids
-\ never places a droid on and is there for exactly this. It replaces
-\ CentreOnDeck, whose centroid framed the deck without ever asking
-\ whether the cell under the player was walkable — BUGS.md #4.
-  LDA liftPlace
-  BEQ ld_spawn
-  LDA #0
-  STA liftPlace
-  JSR LiftPlace
-  JMP ld_placed
-.ld_spawn
-  JSR DrSpawnPoint              \ -> cellX / cellY, characters
-  JSR SetPosFromWaypoint        \ the pixel position is the authority from
-                                \ here on
-.ld_placed
-  JSR DoorInit                  \ a door left open on the deck we are
-                                \ leaving would patch a tile position on
-                                \ the one we are entering
-  JSR ReframeView
-  JSR DroidsInit                \ the deck's droids, on its waypoints
-IF NOT(DEBUG_ENERGY)
-  JSR PanelSetup                \ Layer 9: the static words and the deck
-                                \ number. AFTER DroidsInit, so the droid
-                                \ count PanelUpdate reads is this deck's
-ENDIF
-IF DEBUG_MAPGUARD
-  JSR MapGuardSnap              \ LAST: the map as the finished load left it
-ENDIF
   RTS
 
 \ ============================================================
@@ -2137,6 +2118,11 @@ INCLUDE "src/condeck.asm"
 \ console, and only one bank is visible at a time. Both copies come out
 \ of the same generator, so they cannot drift.
 INCLUDE "src/condb.asm"
+\ Layer 11's title screen, and the fourth screen to take the display
+\ over from this bank. Its data comes before its code so the ASSERTs in
+\ title.asm can see TITLE_COLS and TITLE_ROWS.
+INCLUDE "src/data/title.asm"
+INCLUDE "src/title.asm"
 INCLUDE "src/data/droidinfo.asm"
 INCLUDE "src/data/strings7.asm"
 INCLUDE "src/data/droidicon7.asm"
