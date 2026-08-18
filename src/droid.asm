@@ -483,12 +483,12 @@ DR_LOS_MAX = 96
 \ Only DRAWN slots take part, which falls out of the C64 using a
 \ display register: a droid hidden behind a wall has no sprite lit and
 \ cannot collide with anything.
+\n\ drCollHit IS NOT CLEARED AT THE TOP OF THE PASS. byte_0_6C is written
+\ only by ReverseDroidDir and cleared only at _x_none ($1A3E) — the exit
+\ taken when no colliding pair was found at all — so the latch survives
+\ for as long as the pair stays touching. Clearing it here instead let
+\ the reverse re-arm every other pass, which is half of BUGS.md #7a.
 .DrCollide
-  LDA drCollHit                 \ the debounce, from byte_0_6C: one reverse
-  STA drCollWas                 \ per episode, not one per pass
-  LDA #0
-  STA drCollHit
-
   LDA #0
   STA dcOuter
 .dc_outer
@@ -536,6 +536,8 @@ DR_LOS_MAX = 96
   STX dcOuter
   CPX #SPR_SLOTS-1
   BCC dc_outer
+  LDA #0                        \ _x_none ($1A3E): a pass with NO collision at
+  STA drCollHit                 \ all, and the only thing that releases it
   RTS
 
 \ dcOuter and dcInner are the two slots; act on the droids behind them.
@@ -602,8 +604,8 @@ DR_LOS_MAX = 96
   RTS
 .dc_notransfer
 
-  LDA drCollWas                 \ once per episode, or he sticks to the droid
-  BNE dc_x                      \ shaking — and would be drained in a second
+  LDA drCollHit                 \ $1A77: once per episode, or he sticks to the
+  BNE dc_x                      \ droid shaking — drained in a second
   JSR DrPause16
   JSR DrReverse
   LDX #0                        \ the C64 negates the whole-pixel part of
@@ -666,19 +668,28 @@ DR_LOS_MAX = 96
   STA drState,X
   RTS
 
-\ ReverseDroidDir ($1C5F). It LATCHES THE DEBOUNCE, as the original does
-\ at $1C67 — this is the only thing that writes byte_0_6C other than the
-\ clear on a pass with no collision, so contact that does not bump
-\ (a bullet, an explosion) leaves it alone. The original's own copy of
-\ the test sits here too and is redundant for us: both call sites have
-\ already made it.
+\ ReverseDroidDir ($1C5F). IT HOLDS THE DEBOUNCE ITSELF, tested at $1C63
+\ and latched at $1C67, and that guard is load-bearing rather than a
+\ duplicate of the caller's. It was left out here on the grounds that
+\ both call sites had already made the test; only dc_player had. The
+\ droid-droid arm therefore reversed EVERY pass while two droids
+\ overlapped, so the outer droid jittered on the spot with no net drift
+\ while the inner one had its 16 renewed under it and never got to walk
+\ away — a permanent lock, and BUGS.md #7a. On the C64 the second and
+\ later passes do nothing: the first droid keeps the direction it was
+\ given and clears the overlap. Restored 2026-08-18.
+\n\ Being the only writer of the latch is what keeps contact that does not
+\ BUMP — a bullet, an explosion — from arming it.
 .DrReverse
+  LDA drCollHit                 \ $1C63, and it is not optional: the
+  BNE drv_x                     \ droid-droid call site makes no test of its own
   LDA #&FF
   STA drCollHit
   SEC
   LDA #0 : SBC drSpdX,X : STA drSpdX,X
   SEC
   LDA #0 : SBC drSpdY,X : STA drSpdY,X
+.drv_x
   RTS
 
 \ Screen position of slot X, in pixels: the unit is 4 px and the shift
@@ -2183,8 +2194,8 @@ ENDIF
 .dcY         EQUB 0
 .dcX2        EQUB 0
 .dcY2        EQUB 0
-.drCollHit   EQUB 0             \ something touched this pass
-.drCollWas   EQUB 0             \ and had last pass — the debounce
+.drCollHit   EQUB 0             \ byte_0_6C: latched by DrReverse, cleared only
+                                \ by a pass that finds no colliding pair at all
 .nsdDeck     EQUB 0
 .nsdBase     EQUB 0
 .nsdLeft     EQUB 0

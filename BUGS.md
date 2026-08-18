@@ -310,17 +310,49 @@ The buffer oracle is still 0 of 10240 with the draw disabled.
 
 ---
 
-## 7. Droids can lock together, and the player's bounce is heavy — **POLISH, from play**
+## 7. Droids can lock together, and the player's bounce is heavy — **7a FIXED 2026-08-18**
 
 Both reported by KC on 2026-08-15, from playing the Layer 6 build. Filed together because they are
 the same three constants seen from two directions, and neither is a correctness fault: the buffer
 oracle is clean and the frame lock holds. **This is tuning, and it should be done by eye in one
 sitting rather than reasoned about here.**
 
-### 7a. Two droids can stay stuck against each other
+### 7a. Two droids can stay stuck against each other — **FIXED 2026-08-18**
 
-**Severity:** polish. Makes the ship harder to explore than it should be, which is the actual
-complaint — the droids get in the way.
+**Severity:** was filed as polish; it was a defect. Makes the ship harder to explore than it should
+be, which is the actual complaint — the droids get in the way.
+
+> **THE CAUSE: our droid-droid reverse was never debounced.** `ReverseDroidDir` (`$1C5F`) carries
+> the `byte_0_6C` guard *inside itself*, tested at `$1C63` before it touches the speeds, and both
+> C64 call sites reach it — `DoCollision2`'s `_08_1` (`$1BA6`) as well as `_ply_droid` (`$1A82`).
+> `DrReverse` left the guard out on a note that both call sites had already made the test. Only
+> `dc_player` had. So while two droids overlapped, the outer one reversed **every pass** — jittering
+> on the spot with no net drift — while `DrPause16` renewed the inner one's 16 under it every pass
+> so it never got to walk away. A permanent lock.
+>
+> Second half of the same fault: `byte_0_6C` is cleared at `_x_none` (`$1A3E`) alone, the exit taken
+> when no colliding pair was found *at all*. Ours cleared it at the top of every pass and re-latched
+> from `DrReverse`, so a suppressed pass re-armed the reverse for the pass after — half-rate
+> oscillation, still stuck. Both halves are fixed: the guard is back inside `DrReverse`, and
+> `drCollWas` is gone in favour of one persistent `drCollHit` cleared where the C64 clears it.
+>
+> **Measured, A/B, in jsbeeb.** Two droids held overlapping (slots 5 and 6, `|dx|` = 8, `|dy|` = 0),
+> stepped a pass at a time, reading `drSpdX` at a breakpoint on `DrCollide`:
+>
+> | pass | before (HEAD) | after |
+> |---|---|---|
+> | 1 | `+1` → `-1` | `+1` → `-1` |
+> | 2 | `-1` → `+1` | `-1` |
+> | 3 | `+1` → `-1` | `-1` |
+>
+> and once the pair is separated, `drCollHit` returns to 0, so the next episode reverses again.
+> Full write-up, including why the C64's latch is a *tag* and not a boolean, in
+> [`docs/layer-6-droids-live.md`](docs/layer-6-droids-live.md) § "Collision fidelity".
+>
+> **What is left of #7a** is the box shape, not the debounce: `DR_COL_W`/`DR_COL_H` (18 x 14) fire
+> at diagonal offsets like (17, 13) where two 24-wide droids are visibly clear, and those are the
+> offsets a single reverse is least likely to escape. The agreed replacement is a generated
+> minimum-`|dx|`-per-`|dy|` profile — **[DECISION 1]** in the same document. Not yet built.
 
 **Why it can happen, from the code rather than from a repro.** Four properties of the original's
 structure combine, and all four are ports rather than choices of ours:
@@ -335,10 +367,10 @@ structure combine, and all four are ports rather than choices of ours:
 4. **Droids only change direction at waypoints.** A reversed droid walks back the way it came until
    the previous junction; it cannot route around anything.
 
-**KC believes the C64 original does this too, which is consistent with 1–4 being inherited — but
-that has NOT been verified here.** Checking it against a real C64 run would say whether this is
-faithfulness or a port artefact, and that is the first thing to do, because it decides whether the
-fix is allowed to deviate.
+~~**KC believes the C64 original does this too, which is consistent with 1–4 being inherited — but
+that has NOT been verified here.**~~ **Answered by the listing, not by a C64 run: it is a port
+artefact.** Points 1, 2 and 4 above are faithful and harmless on their own; point 3 was the one we
+had not actually implemented, and it is what holds the other three together.
 
 **The port-specific suspect, if it turns out we are worse:** our collision is a box and the C64's is
 the VIC's pixel-exact `$D01E`. `DR_COL_W`/`DR_COL_H` (18 × 14) fire on overlaps the hardware would

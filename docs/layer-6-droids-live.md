@@ -109,6 +109,105 @@ collision at all. So a reverse happens **once per collision episode**, not once 
 it, two droids sitting on top of each other reverse every pass and vibrate. `drCollHit`/`drCollWas`
 are the same latch.
 
+> **Written down here in Layer 6, and then not implemented on the droid-droid arm.** The paragraph
+> above is right and the code was wrong for two months: `DrReverse` dropped the guard, and only the
+> *player* arm tested it. Two droids did exactly what the last sentence predicts. Fixed 2026-08-18
+> — see `BUGS.md` #7a and §Collision fidelity below.
+
+---
+
+## Collision fidelity — revisited 2026-08-18
+
+Prompted by KC from play: droids lock together far more readily here than on the C64. Two separate
+faults, one a defect and one a shape.
+
+### The reverse was never debounced on the droid-droid arm — **defect, fixed**
+
+`ReverseDroidDir` (`$1C5F`) carries the latch **inside itself**, before it touches the speeds:
+
+```
+1C5F  LDA collision2mode
+1C61  EOR #$FF
+1C63  CMP byte_0_6C
+1C65  BEQ _1            \ already latched against this — do nothing at all
+1C67  STA byte_0_6C
+      ...negate droidSpdX,X and droidSpdY,X...
+```
+
+Both call sites reach it: `DoCollision2`'s `_08_1` (`$1BA6`, droid v droid) and `$1A82` in
+`_ply_droid`. Our `DrReverse` omitted the `CMP`/`BEQ` on a note that both call sites had already
+made the test — true of `dc_player`, which tests `drCollWas`, and **false of the droid-droid arm**,
+which called `DrReverse` unconditionally.
+
+What that produces, while two droids overlap:
+
+| pass | droid A (the outer slot) | droid B (the inner) |
+|---|---|---|
+| 1 | reverses, starts walking away | `drState = 16` |
+| 2 | still overlapping → **reverses again**, back into B | re-paused to 16 |
+| 3 | reverses again | re-paused to 16 |
+
+A jitters on the spot with no net drift, and B is re-frozen every pass so its 16 can never run out.
+The pair is stuck permanently. On the C64 the second and later passes change nothing: A keeps the
+direction it was given, clears the overlap in a few iterations, and B's pause then expires. Both
+machines re-pause B every pass — `_08_2` is unguarded — so the pause is not the difference; the
+reverse is.
+
+**The latch must also persist.** `byte_0_6C` is cleared at `_x_none` (`$1A3E`) alone — a pass on
+which no colliding pair was found at all. Ours cleared it at the top of every pass and re-latched
+it from `DrReverse`, so a pass the guard suppressed left it zero and re-armed the reverse for the
+pass after. That alone would have halved the oscillation rate without stopping it. So the fix is
+both halves: the guard inside `DrReverse`, and one persistent `drCollHit` cleared only where the
+C64 clears it. `drCollWas` is gone.
+
+**The latch value is a tag, not a boolean.** In the droid path `collision2mode` is `SprNumber >> 5`,
+so what gets stored is `$FF` — "a droid", any droid. In the player path (`$1A73`) it is the raw
+`SprNumber` of the specific droid hit. We store `$FF` from `DrReverse` and test for non-zero, which
+matches the droid-droid case exactly and is coarser than the original only for the player: on the
+C64 he can bounce off droid 2 in the pass after bouncing off droid 1, and here he cannot until a
+clear pass. Left coarse deliberately — the finer tag needs the droid index threaded into `DrReverse`
+and the player arm is not where the complaint came from.
+
+### The box is the wrong shape — **[DECISION 1]: replace it with a generated distance profile**
+
+Not yet built. Agreed with KC 2026-08-18, before building, under the usual rule.
+
+The box test is `|dx| < 18 && |dy| < 14`, and its constants were always marked "meant to be tuned by
+eye". Its problem is not its area but its corners: two droids offset by (17, 13) are visibly clear
+of each other — the sprites are 24 wide and those are the rotor's transparent gaps — and the box
+says they have collided. Those are also the offsets from which a single reverse is least likely to
+separate the pair, so the shape and the defect above compounded.
+
+**What replaces it.** The Paradroid Redux author solved the same problem the same way and wrote it
+up at <https://paradro.id/coltest.html>: a table of the minimum `|dx|` that clears, indexed by
+`|dy|`, so the region is an octagonal envelope tracking the silhouette instead of a rectangle. His
+droid-droid table, for the record:
+
+```
+DroidDroidDX: 23,23,23,23,22,22,21,21,20,19,18,17,16,15,13,11,7,3,0,0,0
+```
+
+**We generate ours rather than copy his.** `tools/export_droids.py` already replays
+`BuildDroidSprite` and `AnimateDroids` and has per-pixel opacity, so for each `dy` in 0..20 it can
+compute the smallest `dx` at which any opaque pixel of two droids overlaps, unioned over the eight
+rotor phases. Redux simplified his masks the same way — "eliminated animated sprite variations and
+holes". The result is what `$D01E` would have reported on the original's own artwork, so this is a
+deviation in **mechanism** (a table where the C64 read a register) and not in behaviour; it is more
+faithful than the box, not less, and it retires two hand-tuned constants.
+
+**Why it is affordable.** `TAY` then `CMP drColDX,Y` is 4 cycles against `CMP #imm`'s 2, plus one
+range check on `|dy|`; the table is 21 bytes. Against a `DrCollide` that already costs ~1,400 cycles
+a pass this is noise.
+
+`BUL_COL_W`/`BUL_COL_H` get the same treatment as a second, smaller table when this lands.
+
+### What is NOT changing
+
+- **One pair a pass.** `DoCollision` takes the two lowest set bits of `$D01E` and leaves the rest.
+  Faithful, and a pile-up unwinding one pair at a time is the original's behaviour.
+- **`DrPause16`'s 16 and `DrBounce`'s doubling.** Judged by feel, and only once the two faults above
+  are out of the way — `BUGS.md` #7b.
+
 ## The mode dispatch
 
 `RunDroids` picks a handler from `DroidModeJump` using the top bits of the droid's type: mode 0 is a

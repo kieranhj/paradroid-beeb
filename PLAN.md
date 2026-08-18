@@ -32,9 +32,11 @@ layer's detail has stopped being needed to make the next decision, it belongs in
 
 **Open defects live in [`BUGS.md`](BUGS.md)**, with the evidence and what has been ruled out.
 Currently open: **#12** (live lasers corrupt the console text — filed, not investigated), **#9**
-(the leftmost 4-px column lands one row low after horizontal scrolling), **#7** (collision feel —
-tuning, not correctness), and **#1/#2/#3**, all three of which want retesting against fixes that
-landed after they were filed.
+(the leftmost 4-px column lands one row low after horizontal scrolling), **#7b** (the player's
+bounce reads as heavy — tuning), and **#1/#2/#3**, all three of which want retesting against fixes
+that landed after they were filed. **#7a — droids locking together — was a defect and is fixed**
+(2026-08-18): the droid-droid arm had dropped `ReverseDroidDir`'s own `byte_0_6C` guard, so an
+overlapped droid reversed every pass instead of once.
 
 ## Where we are — read this first
 
@@ -92,7 +94,8 @@ the draw call sites — zeroing `sprActive` alone is not enough (BUGS.md #9's no
 |---|---|
 | Console vs live lasers | **BUGS.md #12, open.** Lasers on screen when a console activates stay drawn over the console text. Likely a missing pool teardown on console entry — compare `ReframeView`'s |
 | Edge column off-by-one | **BUGS.md #9, open.** After horizontal scrolling, CRTC unit 0 holds the right content one character row too low — ~60 bytes of 10240, nearly invisible on screen, fails the oracle. In the incremental column draw; sprites all ruled out |
-| Droid collision feel | `BUGS.md` #7 — droids lock together, and the player bounce reads as heavy. Tuning, by eye, in one sitting: `DR_COL_W`/`DR_COL_H`, `DrPause16`'s 16, and the `ASL A` in `DrBounce` |
+| Collision box shape | **Agreed 2026-08-18, not built.** `DR_COL_W`/`DR_COL_H` become a generated minimum-`|dx|`-per-`|dy|` profile — the silhouette instead of a rectangle, at box-test cost, built from our own sprite masks by `tools/export_droids.py`. [DECISION 1] in [`docs/layer-6-droids-live.md`](docs/layer-6-droids-live.md) |
+| Droid collision feel | `BUGS.md` #7b — the player bounce reads as heavy. Tuning, by eye, once the box lands: `DrPause16`'s 16 and the `ASL A` in `DrBounce` |
 | Droid worst case unmeasured | 8 slots (~36,000) + droids (17,000) + full-diagonal level draw (19,172) is ~72,000 of 79,872 before the rest of the loop. It never arose by chance; it wants a rig on a deck with a long open corridor. If it bites, `docs/raster-timing.md` Step 3 is the planned relief |
 | Flicker and edge tearing | Steps 1 and 2 **done 2026-08-15**: the AI moved after the drawing, and the pool splits into two tranches assigned by overlap component, each restored and drawn inside one window. What remains is the worst-case measurement above. [`docs/raster-timing.md`](docs/raster-timing.md) |
 | 2 px world scrolling | Parked, Master-only via shadow RAM. Costs +60–80% on all drawing — see [`docs/master-extensions.md`](docs/master-extensions.md) |
