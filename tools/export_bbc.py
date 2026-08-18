@@ -204,6 +204,8 @@ def assign_palette(logical):
         taken.add(best)
     return out
 
+MAP_TILES = 64 * 16         # the tile map BuildLevel fills
+
 TILEDEF_ADDR = 0xE800
 TILEDEF_COUNT = 32
 TILEDEF_SIZE = 16
@@ -237,7 +239,15 @@ LIFT_TILE_DX  = 5
 LIFT_TILE_DY  = 2
 DECK_META_LEN = 6 * 16
 RLE_START = 0xF249
-RLE_END = 0xFED0            # inclusive-exclusive; covers deck 15 plus terminator
+RLE_END = 0xFFF8            # exclusive. DECK 15 ENDS AT $FFF8, not $FED0:
+                            # its stream starts at $FECB, 5 bytes before the
+                            # old end, and runs 296 bytes past it. The port
+                            # read those 296 bytes off the end of leveldata
+                            # and deck 15 came out mostly empty - while every
+                            # offline render looked right, because Python
+                            # reads the whole 64K image and never notices the
+                            # blob it is supposed to be exporting. Checked by
+                            # check_rle_extent() below.
 
 BANNER = """\\ ============================================================
 \\ {name}
@@ -266,6 +276,36 @@ def mode1_byte(pixels):
         if c & 1:
             out |= 1 << (3 - n)
     return out
+
+
+def check_rle_extent(mem):
+    """Every deck's RLE must decode entirely inside the exported blob.
+
+    BuildLevel stops when the tile map is full, so a stream that needs bytes
+    past RLE_END does not fail on the C64 - it fails on the BBC, silently,
+    reading whatever follows leveldata in the bank. Deck 15 did exactly that
+    from Layer 2 until 2026-08-18.
+    """
+    worst = None
+    for deck in range(16):
+        src = mem[LVPTR_LO + deck] | (mem[LVPTR_HI + deck] << 8)
+        tiles = 0
+        while tiles < MAP_TILES:
+            b = mem[src]
+            if b & 0x80:
+                tiles += mem[src + 1] or 256
+                src += 2
+            else:
+                tiles += 1
+                src += 1
+        if src > RLE_END:
+            over = src - RLE_END
+            if worst is None or over > worst[1]:
+                worst = (deck, over, src)
+    if worst:
+        sys.exit('ERROR: the RLE for deck %d runs %d bytes past RLE_END, to '
+                 '$%04X. Raise RLE_END or the port reads off the end of '
+                 'leveldata.' % worst)
 
 
 def deck_colours(mem, deck):
@@ -418,6 +458,7 @@ def main():
 
     print('Parsing %s ...' % LST_FILE.name)
     mem, filled = parse_listing(LST_FILE)
+    check_rle_extent(mem)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     # ---- character source + per-deck colour data -----------------------

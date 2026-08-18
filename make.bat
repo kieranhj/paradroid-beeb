@@ -1,5 +1,5 @@
 @echo off
-rem Build Paradroid (BBC Model B) -> PARADROID.SSD
+rem Build Paradroid (BBC Model B) -> build\PARADROID.SSD
 rem
 rem   make            assemble to PARADROID.SSD
 rem   make run        assemble and launch in b-em
@@ -11,7 +11,9 @@ setlocal
 set "ROOT=%~dp0"
 if not defined BEEBASM set "BEEBASM=%ROOT%bin\beebasm.exe"
 if not defined BEM set "BEM=C:\Users\khcon\OneDrive\BEEB\B-Em\b-em-42f6597-w64\b-em.exe"
-set "SSD=%ROOT%PARADROID.SSD"
+set "BUILD=%ROOT%build"
+set "SSD=%BUILD%\PARADROID.SSD"
+if not exist "%BUILD%" mkdir "%BUILD%"
 
 if not exist "%BEEBASM%" (
     echo ERROR: beebasm not found at "%BEEBASM%".
@@ -28,7 +30,11 @@ if not exist "%ROOT%src\data\levels.asm" (
     exit /b 1
 )
 
-"%BEEBASM%" -i "%ROOT%src\main.asm" -do "%SSD%" -boot PARA -v > compile.txt
+rem NO -boot HERE. main.asm SAVEs its own !BOOT, with the build stamp and the
+rem debug-flag lines, so -boot tries to write a second one and beebasm stops
+rem with "File already exists on DFS disc image" - even into a brand new
+rem image. -opt 3 sets the boot option so SHIFT+BREAK *EXECs it.
+"%BEEBASM%" -i "%ROOT%src\main.asm" -do "%SSD%" -opt 3 -title PARADROID -v > "%BUILD%\PARADROID.lst"
 if errorlevel 1 (
     echo beebasm failed.
     exit /b 1
