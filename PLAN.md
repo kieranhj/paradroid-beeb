@@ -145,11 +145,9 @@ build rather than from a plan. Read it there and regenerate it when a region mov
 | `&0C90–&10FF` | **1,136 B free** | rest of the reclaimed OS workspace |
 | `&1100–&2FE7` | 7,912 B | code (`PARA`), starting below DFS's `PAGE`. DFS random-access buffer space, safe for `*LOAD` |
 | `&2FE8–&2FFF` | **24 B free** | **the binding constraint.** Layer 10 paid its way in by moving `CalcAxis`/`CalcSpeed` and its own shims into bank 4, Layer 8b's lift view by deleting the routines it replaced, and the console pages' `ConsoleTick` arms took most of the rest. Anything new in main RAM needs the same treatment |
-| `&3000–&37FF` | 2,048 B | sprite background save areas, one page per slot — **eight**, ending exactly where the tile map begins. A ninth would overwrite it |
-| `&3800–&3BFF` | 1,024 B | tile map, fixed home — floating it after `code_end` once put it over the save areas |
-| `&3C00–&48DF` | 3,296 B | **Layer 9's text font**, `PARAFNT`, `*LOAD`ed straight here — 103 glyphs × 32 B |
-| `&48E0–&499F` | 192 B | the status box's twelve border cells, same file |
-| `&49A0–&49FF` | 96 B | the four droid tables, mirrored out of bank 4 for the panel in bank 6 — ends exactly at the panel, **0 B free** |
+| `&3000–&3DFF` | 3,584 B | **Layer 9's text font**, `PARAFNT`, `*LOAD`ed straight here — 103 glyphs, the twelve border cells and the four mirrored droid tables. **Moved down from `&3C00` by Layer 11** so the title screen can have 16,000 contiguous bytes from `&4000` |
+| `&3E00–&45FF` | 2,048 B | sprite background save areas, one page per slot — **eight**, ending exactly where the tile map begins. A ninth would overwrite it |
+| `&4600–&49FF` | 1,024 B | tile map, fixed home — floating it after `code_end` once put it over the save areas. Ends exactly at the panel, **0 B free** |
 | `&4A00–&53FF` | 2,560 B | panel — **4 rows** × 640, the C64's status box exactly, displayed by rupture cycle 1 |
 | `&5400–&54FF` | **256 B free** | |
 | `&5500–&56FF` | 512 B | `CHAR_PTR_LO`/`HI` — character code → charset address, built at startup |

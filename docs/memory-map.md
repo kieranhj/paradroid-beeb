@@ -27,11 +27,22 @@ Regenerate it after any change that moves a region:
 | `&0C90–&10FF` | **1,136 B free** | The rest of the reclaimed workspace |
 | `&1100–&2FE7` | 7,912 B | Code (`PARA`), starting below DFS's `PAGE` of `&1900`. The level draw and droid AI are in bank 4; Layers 7–10's main-RAM halves refilled the room they made |
 | `&2FE8–&2FFF` | **24 B free** | The binding constraint — anything new in main RAM must displace code into a bank |
-| `&3000–&37FF` | 2,048 B | Sprite background save areas, 8 slots × 256 — slot 7 (`&3700`) is the player's bullet. Ends exactly at the tile map |
-| `&3800–&3BFF` | 1,024 B | Tile map, 64 × 16, page-aligned, fixed home |
-| `&3C00–&48DF` | 3,296 B | Layer 9's text font, `PARAFNT` — 103 glyphs × 32 B, `*LOAD`ed here after the bank copies |
-| `&48E0–&499F` | 192 B | The status box's twelve border cells, same file |
-| `&49A0–&49FF` | 96 B | The four droid tables, mirrored out of bank 4 for the panel in bank 6 — ends exactly at the panel |
+| `&3000–&3CDF` | 3,296 B | Layer 9's text font, `PARAFNT` — 103 glyphs × 32 B, `*LOAD`ed here after the bank copies. **Moved down from `&3C00` by Layer 11** |
+| `&3CE0–&3D9F` | 192 B | The status box's twelve border cells, same file |
+| `&3DA0–&3DFF` | 96 B | The four droid tables, mirrored out of bank 4 for the panel in bank 6 — ends exactly at the save areas |
+| `&3E00–&45FF` | 2,048 B | Sprite background save areas, 8 slots × 256 — slot 7 (`&4500`) is the player's bullet. Ends exactly at the tile map |
+| `&4600–&49FF` | 1,024 B | Tile map, 64 × 16, page-aligned, fixed home. Ends exactly at the panel |
+
+> **Why the three moved, 2026-08-18.** Layer 11's title screen is 25 rows × 640 = **16,000
+> contiguous bytes**, and it fits because the title's buffers and the game's never coexist: at title
+> time no deck is loaded, so the save areas, the tile map, the panel and the play buffer are all
+> idle. The only thing standing in the middle of `&3000`–`&7FFF` was `PARAFNT`, so it went to the
+> bottom and the other two moved up behind it. The three now pack exactly onto `PANEL_ADDR`
+> (3,584 + 2,048 + 1,024 = 6,656 = `&3000` to `&4A00`), the framebuffer takes `&4000`–`&7E7F`, and
+> the font sits **below** it — one home, no second load. Nothing depended on the old addresses: the
+> blitter builds its save pointer at runtime from `HI(SPR_SAVE)` and stores through `(svp),Y`, and
+> `mapRowLo`/`mapRowHi` are assembled from `tilemap + r * MAP_COLS`. See
+> [`layer-11-sound-title.md`](layer-11-sound-title.md) §4, [DECISION 1].
 | `&4A00–&53FF` | 2,560 B | Panel — 4 rows × 640, displayed by rupture cycle 1 |
 | `&5400–&54FF` | **256 B free** | |
 | `&5500–&55FF` | 256 B | `CHAR_PTR_LO` — character code → charset address, built at startup |

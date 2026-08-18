@@ -94,13 +94,13 @@ SPR_BYTES = SPR_W * SPR_H       \ 147 bytes of background per slot
 \
 \ Save areas stay a page apart rather than packed into 224 bytes, so
 \ a slot's base is just HI(SPR_SAVE) + slot with a zero low byte.
-SPR_SAVE  = &3000
+SPR_SAVE  = &3E00               \ moved up behind PARAFNT for Layer 11
 SPR_BLOCK = SPR_W * UNIT_BYTES  \ 56: one character row of save area
 ASSERT (SPR_SAVE AND &FF) == 0
-\ Eight pages now, so the save areas run &3000-&37FF and end EXACTLY where
-\ the tile map begins. That is the whole of the gap: a ninth slot would
-\ overwrite the map, and PANEL_ADDR is no longer the binding limit.
-ASSERT SPR_SAVE + SPR_SLOTS * 256 <= &3800
+\ Eight pages, and they end EXACTLY where the tile map begins. That is
+\ the whole of the gap: a ninth slot would overwrite the map, and
+\ PANEL_ADDR is no longer the binding limit. main.asm asserts the fit
+\ against `tilemap` itself, which is where the real edge is.
 ASSERT SPR_SAVE + SPR_SLOTS * 256 <= PANEL_ADDR
 
 \ 21 scanlines starting at scan 0-7 touch at most FOUR character rows,

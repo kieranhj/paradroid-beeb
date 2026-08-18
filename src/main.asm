@@ -384,15 +384,20 @@ VIA_PORTB  = &FE40
 \ Visible play area: P+64 to P+192, and VSync at P+272 — the same
 \ geometry Layer 3c had, so nothing moves and no RAM changes.
 \ ---- Layer 9's text font, in main RAM -----------------------
-\ Shipped in bank 6 and copied here at boot by PageFontIn. &3C00-&47FF
-\ is listed free in docs/memory-map.md for exactly this — runtime-built
-\ data only, and the boot staging that runs through it is finished long
-\ before the copy. 2,112 bytes of a 3,072-byte hole.
-\ IT IS HERE RATHER THAN IN A BANK because the panel engine lives in
+\ IT IS IN MAIN RAM RATHER THAN A BANK because the panel engine lives in
 \ bank 4 and the font in bank 6, and only one bank is visible at a time.
-\ Main RAM is reachable from both, and from Layer 10's transfer game
-\ wherever that ends up. See docs/layer-9-hud.md, decision 1.
-FONT_ADDR = &3C00
+\ Main RAM is reachable from both, and from Layer 10's transfer game.
+\ See docs/layer-9-hud.md, decision 1.
+\ IT MOVED FROM &3C00 TO &3000 FOR LAYER 11, and the sprite save areas
+\ and the tile map moved up behind it. The title screen is 25 rows of
+\ 640 bytes and wants 16,000 CONTIGUOUS bytes; the only thing standing
+\ in the middle of &3000-&7FFF was this font, since at title time no
+\ deck is loaded and the save areas, the tile map, the panel and the
+\ play buffer are all idle. Below the framebuffer it needs no second
+\ home and no second load. The three blocks pack exactly onto
+\ PANEL_ADDR: 3,584 + 2,048 + 1,024 = 6,656 = &3000 to &4A00.
+\ [DECISION 1] in docs/layer-11-sound-title.md.
+FONT_ADDR = &3000
 \ Declared here rather than taken from the generated file, because
 \ beebasm resolves constants in file order and droid.asm's MG_COPY
 \ assert needs the size before src/data/textfont.asm is reached. The
@@ -413,15 +418,16 @@ PN_FRAME_BYTES = PN_FRAME_CELLS * 16
 \ ---- the four droid tables, mirrored out of bank 4 ----------
 \ panel.asm and console.asm are in bank 6 and cannot read bank 4, so
 \ PageTabsIn copies these here at boot. 96 bytes in the tail of the same
-\ hole the font sits in — the font and border cells end at &49A0 and the
-\ panel starts at &4A00, and this is what fills the gap exactly.
+\ hole the font sits in — PARAFNT is one block of 3,584 bytes ending at
+\ SPR_SAVE, and this is its tail.
 PN_TABS     = PN_FRAME_ADDR + PN_FRAME_BYTES
 pnTabCent   = PN_TABS + 0
 pnTabNum    = PN_TABS + 24
 pnTabWeapon = PN_TABS + 48
 pnTabSpeed  = PN_TABS + 72
 ASSERT PN_TABS + 96 <= PANEL_ADDR
-ASSERT FONT_ADDR >= tilemap_end
+ASSERT PN_TABS + 96 <= SPR_SAVE  \ the whole PARAFNT block sits below
+                                 \ the save areas now, not above the map
 
 \ ---- the panel is FOUR rows, because the C64's box is 32 scanlines ----
 \ The C64 status area is eight character rows, but the artwork inside it
@@ -1952,18 +1958,23 @@ ORG code_end
 \ starts at &4800, so &3800-&47FF is clear. That gives the code the whole
 \ of &1100-&3000 instead of whatever was left.
 \
-\ THERE IS NO LONGER ANY GAP BELOW IT. The save areas were seven pages,
-\ ending &36FF with &3700 spare; Layer 7c's eighth slot took that page,
-\ so they end at &37FF and this map begins at the very next byte. The
-\ ASSERT below is now exact rather than slack, and a save-area overrun
-\ that used to land in dead space would now land on the map — which is
-\ what DEBUG_MAPGUARD was written to catch.
+\ THERE IS NO LONGER ANY GAP BELOW IT. The save areas were seven pages;
+\ Layer 7c's eighth took the spare one, so they end at the very byte this
+\ map begins on. The ASSERT below is exact rather than slack, and a
+\ save-area overrun that used to land in dead space would now land on the
+\ map — which is what DEBUG_MAPGUARD was written to catch.
+\ LAYER 11 MOVED ALL THREE. PARAFNT went to &3000 so the title screen
+\ could have 16,000 contiguous bytes from &4000; the save areas followed
+\ it to &3E00 and this map to &4600, still ending exactly on PANEL_ADDR.
+\ Nothing depended on the old addresses: the blitter builds its save
+\ pointer at runtime from HI(SPR_SAVE) and stores through (svp),Y, and
+\ mapRowLo/Hi are assembled from `tilemap + r * MAP_COLS`.
 \
 \ It is above DATA_LOAD, so the PARADAT staging copy runs straight over
 \ it — harmless, because PageDataIn is done long before LoadDeck calls
 \ BuildLevel to fill it in, the same argument the panel and the mask
 \ table rely on.
-ORG &3800
+ORG &4600
 .tilemap
   SKIP MAP_COLS * MAP_ROWS
 .tilemap_end
