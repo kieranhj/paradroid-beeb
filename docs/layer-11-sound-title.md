@@ -232,9 +232,13 @@ frame lock is a floor.
 3. **The message is on the panel line**, not on a hires screen — decisions 6-8 of Layer 10 again,
    and [DECISION 3] had already taken the 999 portrait the C64 draws behind those two strings.
 
-**A trap worth remembering:** `XfRand`'s seed is `XfStart`'s to set and the game over never goes
-through `XfStart`. A zero seed locks the LFSR, so every cell of the wash came out the same pattern
-until `GoWashStart` seeded it from the pass's own random.
+**Two traps, both about the same random number generator.** `XfRand`'s seed is `XfStart`'s to set
+and the game over never goes through `XfStart`; a zero seed locks the LFSR, so every cell of the
+wash came out the same pattern until `GoWashStart` seeded it from the pass's own random. And then it
+still came out the same pattern everywhere but the left-hand column, because **`XfRand`'s tap was
+`$B4`, which is not primitive** — the low two bits of its output are always zero and its period is
+65. One byte, `$B4` → `$1D`, and it also un-skews the transfer board and revives a branch of
+`XfPutRandom` that had never once been taken. **BUGS.md #14**, found by KC from the first play.
 
 **Verified in jsbeeb** end to end: death as a 001 → cloud → `overPhase` 2 with a mixed-pattern wash
 in the buffer and "game over" rendered on the panel text line → 88 passes later a new game, with
@@ -242,6 +246,11 @@ the deck redrawn and `overPhase` back to 0.
 
 `DEBUG_INVULN` landed with it: energy pinned at full at the top of `CbCheckDeath`, in `DEBUG_ANY`
 and in `!BOOT`'s stamp. **[DECISION 5]**
+
+> **Open and cosmetic:** the wash draws in logical 1 and renders **blue** on the deck tested, so it
+> reads as blue static rather than the C64's dissolve into darkness (`$37A6` writes colour `$F0`,
+> low nibble 0, black). Layer 14's, with the caveat that it may mean logical 1 is not black on
+> every deck.
 
 ### 11c — The title screen — DONE 2026-08-18. The loop back to it is NOT
 

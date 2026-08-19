@@ -1462,12 +1462,28 @@ XF_REPLAY_PASSES = 50
 \ XfRand — the SID noise register ($D41B), as DrRandom's LFSR
 \ ============================================================
 \ DrRandom itself is in bank 4 and invisible from here, so this is its
-\ own copy of the same maximal 8-bit LFSR (taps $B4), on its own seed.
+\ own copy of the same maximal 8-bit LFSR, on its own seed. Two seeds on
+\ one polynomial are two independent sequences; that part was always
+\ fine.
+\ THE POLYNOMIAL WAS NOT. It said $B4 and called itself maximal, and $B4
+\ is not a primitive tap for a LEFT-shifting Galois LFSR at all: the
+\ feedback has to reach bit 0, and $B4 = %10110100 has its low two bits
+\ CLEAR. So bit 0 of every output is 0 for ever, bit 1 becomes 0 one
+\ step later, and the period is 65 rather than 255.
+\ What that cost, before it was found:
+\   AND #3   gave 0 nearly always      — EndGame's wash came out one flat
+\                                        colour, BUGS.md #14
+\   AND #$F  gave only 0,4,5,8,12,14   — so XfPutRandom's `CMP #3 : BEQ`
+\                                        at $551 could never be taken, and
+\                                        the board is less varied than the
+\                                        original's
+\ $1D is droid.asm's own, x^8 + x^4 + x^3 + x^2 + 1, and is primitive:
+\ period 255, and all sixteen values out of AND #$F.
 .XfRand
   LDA xfSeed
   ASL A
   BCC xrn_1
-  EOR #&B4
+  EOR #&1D                      \ the same polynomial DrRandom uses
 .xrn_1
   STA xfSeed
   RTS

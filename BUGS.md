@@ -15,6 +15,60 @@ Numbering is historical, not an order — 3 sits after 4 because it was added la
 
 ---
 
+## 14. `XfRand` is not a maximal LFSR — its low two bits are always zero — **FIXED 2026-08-19**
+
+Reported by KC from the first play of the game-over screen: **the wash was only visible in the
+left-hand column** of the play area, not across the window.
+
+**It looked like a drawing bug and was a random-number bug.** `GoWashRow` picks one of four
+patterns per cell with `JSR XfRand : AND #3`, and `XfRand` said this of itself:
+
+> its own copy of the same maximal 8-bit LFSR (taps $B4)
+
+`$B4` is **not** a primitive tap for a left-shifting Galois LFSR. The feedback has to reach bit 0,
+and `$B4` = `%10110100` has its low **two** bits clear, so:
+
+- bit 0 of every output is 0 for ever;
+- bit 1 is the previous output's bit 0, so it is 0 from the second step on;
+- the period is **65**, not 255.
+
+`AND #3` therefore returned 0 almost always and every cell came out pattern 0. The left-hand column
+survived because `GoWashTick` stirs the seed once a pass (`EOR overRnd1`), which can put the low
+bits back for exactly one cell before the shift clears them again — so the first cell of each
+repainted row varied and the other thirty-nine did not.
+
+Simulated from both seeds to be sure:
+
+| tap | period | values from `AND #3` | values from `AND #$F` |
+|---|---|---|---|
+| `$B4`, as it was | 65 | 0, 1, 2 | 0, 4, 5, 8, 12, 14 |
+| `$1D`, `DrRandom`'s | 255 | 0, 1, 2, 3 | all sixteen |
+
+**The fix is one byte**: `EOR #&B4` → `EOR #&1D`, the polynomial `droid.asm` already uses and
+documents (x^8 + x^4 + x^3 + x^2 + 1). Two seeds on one polynomial are two independent sequences,
+which is all `XfRand` ever needed from being separate.
+
+**It was not only the wash.** Three of `XfRand`'s four other callers mask with `AND #$F`, which
+could only ever produce six of sixteen values:
+
+- `XfPutRandom` `$551`: `AND #&F : CMP #3 : BEQ` — **3 was not in the set, so that branch had never
+  been taken**, in any transfer game ever played on this port
+- `XfPutRandom` `$531`: `AND #&F : CMP #5` — a coarse near-even split instead of a 5-in-16 chance
+- `XfGetMove` `$874`: `AND #&F : CLC : ADC #1` — the CPU's target row could only be 1, 5, 9 or 13
+
+So **the transfer board and the CPU opponent were both less varied than the original's**, invisibly,
+since Layer 10. Worth a play now that they are not.
+
+**Verified**: the wash covers the whole play area with a mix of all four densities, and the game
+still restarts after the hold.
+
+> **Still open, and cosmetic:** the wash draws in logical 1, which the port's fixed slot roles call
+> black, and on the deck tested it renders **blue** — so the effect reads as blue static rather than
+> the C64's dissolve into darkness (`$37A6` writes colour `$F0`). That is a palette question for
+> Layer 14, and it may be that logical 1 is not black on every deck.
+
+---
+
 ## 13. The ALERT sign's lamp is dead — it should track the alert level — **2026-08-17**
 
 Found while checking the deck colours against the listing, on KC's prompt that the ALERT text
