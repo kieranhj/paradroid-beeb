@@ -25,8 +25,8 @@ Regenerate it after any change that moves a region:
 | `&0200–&03FF` | 512 B | OS vectors and workspace. We own `IRQ1V` at `&0204` outright |
 | `&0400–&0C8F` | 2,192 B | MODE 1 charset, rebuilt at every deck load — reclaimed OS workspace |
 | `&0C90–&10FF` | **1,136 B free** | The rest of the reclaimed workspace |
-| `&1100–&2FE7` | 7,912 B | Code (`PARA`), starting below DFS's `PAGE` of `&1900`. The level draw and droid AI are in bank 4; Layers 7–10's main-RAM halves refilled the room they made |
-| `&2FE8–&2FFF` | **24 B free** | The binding constraint — anything new in main RAM must displace code into a bank |
+| `&1100–&2F6C` | 7,789 B | Code (`PARA`), starting below DFS's `PAGE` of `&1900`. The level draw and droid AI are in bank 4; Layers 7–10's main-RAM halves refilled the room they made |
+| `&2F6D–&2FFF` | **148 B free** | The binding constraint. It was 24, then 30; Layer 13a's TASK 6 moved the 192 bytes of `rowMul`/`unitMul` out to `&5400` and built them at startup instead. Anything new here still wants displacing into a bank first |
 | `&3000–&3CDF` | 3,296 B | Layer 9's text font, `PARAFNT` — 103 glyphs × 32 B, `*LOAD`ed here after the bank copies. **Moved down from `&3C00` by Layer 11** |
 | `&3CE0–&3D9F` | 192 B | The status box's twelve border cells, same file |
 | `&3DA0–&3DFF` | 96 B | The four droid tables, mirrored out of bank 4 for the panel in bank 6 — ends exactly at the save areas |
@@ -44,7 +44,8 @@ Regenerate it after any change that moves a region:
 > `mapRowLo`/`mapRowHi` are assembled from `tilemap + r * MAP_COLS`. See
 > [`layer-11-sound-title.md`](layer-11-sound-title.md) §4, [DECISION 1].
 | `&4A00–&53FF` | 2,560 B | Panel — 4 rows × 640, displayed by rupture cycle 1 |
-| `&5400–&54FF` | **256 B free** | |
+| `&5400–&54BF` | 192 B | `rowMul`/`unitMul` — the row and unit offset tables, built at startup by `BuildMulTabs`. Moved out of the code image by Layer 13a, TASK 6 |
+| `&54C0–&54FF` | **64 B free** | `PnClear` used to wipe this whole page past the panel — see Layer 13a, TASK 6 |
 | `&5500–&55FF` | 256 B | `CHAR_PTR_LO` — character code → charset address, built at startup |
 | `&5600–&56FF` | 256 B | `CHAR_PTR_HI` |
 | `&5700–&57FF` | 256 B | `SPR_MASKTAB` — data byte → transparency mask, built at startup |
@@ -52,8 +53,10 @@ Regenerate it after any change that moves a region:
 | `&8000–&BFFF` | 16 K | Sideways bank window — one of the FOUR banks below, never more |
 | `&C000–&FFFF` | 16 K | MOS |
 
-Free main RAM totals **1,416 bytes**: 1,136 in the reclaimed OS workspace, 24 below `&3000`, and
-256 above the panel. The room the level draw and `droid.asm` made when they moved into bank 4
+Free main RAM totals **1,348 bytes** (2026-08-19): 1,136 in the reclaimed OS workspace, 148 below
+`&3000`, and 64 above the panel. **The 148 is the number that matters** — `&1100`–`&3000` is the
+only region in the machine that is genuinely full, and it was 30 before Layer 13a's TASK 6. The
+other two are buffer space: nothing loaded with the code can go in either. The room the level draw and `droid.asm` made when they moved into bank 4
 (2026-08-14/15) has since been spent by Layers 7–10's main-RAM halves.
 
 ### The boot-time staging overlay
@@ -90,7 +93,7 @@ already satisfy it.
 
 ## SWRAM bank 4 — `PARADAT`
 
-`&8000–&BED9`, 16,090 bytes used, **294 free** (2026-08-17). Tiles, decks, palettes, droid game
+`&8000–&BED9`, **15 free** (2026-08-19) — and 111 of its apparent alignment holes are not real, see Layer 13a TASK 5. Tiles, decks, palettes, droid game
 data — and the code that reads them: the level draw (2026-08-14), the droid AI (2026-08-15),
 Layer 7's combat and kill chain, Layers 10 and 8b's entry/exit shims, `CalcAxis`/`CalcSpeed`, and
 the console menu and page shims. This bank is the resting state of the latch, so a call into it
@@ -129,13 +132,13 @@ and nothing would diagnose it.
 
 ## SWRAM bank 5 — `PARASPR` (shifts 0 and 1 px)
 
-`&8000–&BBF6`, 15,351 bytes used, **1,033 free** (2026-08-17). Two of the four compiled shifts,
+`&8000–&BBF6`, 15,351 bytes used, **1,033 free** (2026-08-19, unchanged). Two of the four compiled shifts,
 plus Layer 7's effect artwork — 31 bullet and explosion frames, 2,946 B, here because the
 interpreted effect path reads them every row.
 
 ## SWRAM bank 6 — `PARSPR2` (shifts 2 and 3 px)
 
-`&8000–&BFC5`, 16,326 bytes used, **58 free — full** (2026-08-17). The other two shifts, laid out
+`&8000–&BFC5`, **47 free** (2026-08-19) — still effectively full; the 7 it gained came from `PnClear`'s assembled-away tail, Layer 13a TASK 6. The other two shifts, laid out
 identically, plus Layer 9's panel engine, HUD, console, strings and icons.
 
 **Both sprite banks share one layout**: a fixed section of tables at the same addresses in each,
@@ -164,7 +167,7 @@ reads none of the artwork, and the wrap fallback is the only thing that does.
 
 ## SWRAM bank 7 — `PARXFER`
 
-`&8000–&B7E5`, 14,310 bytes used, **2,074 free** (2026-08-17). Layer 10's transfer game and
+`&8000–&B4C6`, **2,874 free** (2026-08-19) — it was 282 before Layer 13a. TASK 1 moved the 2 K shadow screen onto the sprite save areas and TASK 2 deleted 544 bytes of duplicated lift-view glyphs. **This is what unblocks 11d**, whose token-string printer would not fit in 282 bytes. Layer 10's transfer game and
 Layer 8b's lift screen, sharing the shadow screen/colour RAM, the glyph page and the renderer
 pattern; plus both glyph sets, the console's ship page, the deck plan (`condeck.asm`,
 `plandata.asm`), and the droid database (`condb.asm`, `droidinfo.asm`) with its second copies of

@@ -93,7 +93,7 @@ the draw call sites — zeroing `sprActive` alone is not enough (BUGS.md #9's no
 
 | | |
 |---|---|
-| **RAM is the binding constraint now** | Layer 11 filled it: main RAM 30 B, bank 4 15 B, bank 6 40 B, bank 7 282 B. Only bank 5's 1,033 B are left and they are behind the sprite paging. **Layer 13's RAM pass has stopped being optional** — it is what unblocks the rest of Layer 11. See [`docs/layer-11-sound-title.md`](docs/layer-11-sound-title.md) §9 |
+| **RAM: Layer 13a's tier 1 is done, 2026-08-19** | main RAM **148 B** (was 30), bank 4 15 B, bank 5 1,033 B, bank 6 **47 B** (was 40), bank 7 **2,874 B** (was 282). +2,717 bytes, no cycle cost and no behaviour change. **11c's loop and 11d are both unblocked** — the loop needed 39 bytes of main RAM and 11d needed a bank 7 that could hold a token-string printer. Bank 4 and bank 6 are still full. See [`docs/layer-13-ram-pass.md`](docs/layer-13-ram-pass.md) |
 | Twelve title characters, four wash characters | `export_bbc.py` converts only what a tile references, so the title ships its own 36 glyphs and `EndGame`'s wash uses substitute patterns. Extending the shared charset is the better fix and needs KC — [DECISION 8] and [DECISION 7] |
 | Console vs live lasers | **BUGS.md #12, open.** Lasers on screen when a console activates stay drawn over the console text. Likely a missing pool teardown on console entry — compare `ReframeView`'s |
 | Edge column off-by-one | **BUGS.md #9, open.** After horizontal scrolling, CRTC unit 0 holds the right content one character row too low — ~60 bytes of 10240, nearly invisible on screen, fails the oracle. In the incremental column draw; sprites all ruled out |

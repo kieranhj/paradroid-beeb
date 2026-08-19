@@ -200,3 +200,64 @@ gets 7 bytes back.
 > `doorRow[0]` with `doorState` showing a door at step 2 of its animation, and it did not reproduce
 > on two other decks or on the other diagonal. The tables were read back byte-perfect in that same
 > state, so `SetCell` was computing the same addresses it always did. Logged rather than dismissed.
+
+## 3. Tier 1's last two — costed, NOT built, waiting on KC
+
+Both were in the original tier-1 list. Both turned out to need a decision rather than an
+afternoon, and the reason is the same in each case: what tier 1 has already freed changed what
+they are worth.
+
+### [TASK 3] The text font in 1bpp — ~1,648 bytes, and it needs one shared renderer first
+
+**The premise checks out.** Every one of `PARAFNT`'s 3,296 font bytes and 192 border-cell bytes has
+its high nibble equal to its low nibble — measured, not assumed. The artwork is pure two-colour,
+logical 0 and logical 3, which is exactly why `PnGlyph` can recolour it with a single `AND pnMask`.
+So half of every byte is redundant and 1bpp storage is **lossless**: `expand(n) = n | (n << 4)`.
+
+**What stops it being a small change is that there are four readers in two banks** — `PnGlyph` and
+`PnCell` in bank 6, `XfGlyphAt` and `DbGlyph` in bank 7 — and all four share the same loop shape,
+`LDY #15 / LDA (pnSrc),Y / AND pnMask / STA (pnDst),Y / DEY / BPL`. Packing breaks it: the source
+index becomes `Y >> 1` and the output store still needs Y, and the 6502 has no second
+indirect-indexed register. Each site needs a staging step or a restructure, ~25 bytes and ~25 cycles
+a byte. **Bank 6 has 47 bytes and two of the four sites are in it**, so the naive version does not
+even fit.
+
+**The right shape is TASK 8 from the opening analysis: one glyph renderer, in main RAM, called by
+both banks** — main RAM now has the 148 bytes for it, bank code may call main RAM freely, and the
+four sites *shrink*, because each loses its copy loop and gains a `JSR`. That is an architectural
+change to how every screen draws text, so it wants KC rather than a passing edit.
+
+**Where the 1,648 bytes land matters too.** They free `&36xx`–`&3D9F`, which is buffer space under
+the staging overlay: it takes runtime-built tables or a file `*LOAD`ed after the bank copies, which
+is what `PARAFNT` already is. So it is room for **late-loaded graphics data** — the 48 × 84 droid
+portraits that [DECISION 3] deferred are ~2 K for two types and would fit — and it is the enabler
+for the string dedup below. It is **not** code space, and it is not bank space.
+
+### [TASK 7, the natural partner] The string table exists twice — 3,462 bytes
+
+`constrings` is 1,731 bytes in bank 6 and `constrings7` is the same 1,731 in bank 7, because the
+console main screen is in one bank and the droid database in the other and only one is visible at a
+time. Both come from `tools/export_strings.py` so they cannot drift, but they are still two copies.
+
+Move one copy to main RAM below `&3E00` and both bank copies delete: **+3,462 bank, −1,731 main-RAM
+buffer, net +1,731** — and it lands in **bank 6**, which is the tight one. It needs TASK 3 first,
+because that region is full until the font halves. TASK 3 + TASK 7 together are worth about
+**+3,381** and would take the pass past the 8 K target.
+
+> There is a second route that skips TASK 3 entirely: move the console main screen *and*
+> `constrings` into bank 7, which now has 2,874 bytes, and delete `constrings7`. Same +1,731, no
+> font change, but it relocates a screen between banks. Worth costing against TASK 3 + 7 before
+> either is built.
+
+### [TASK 4] The title screen as a transient disc file — ~1,500 bytes of bank 7, and no longer needed
+
+`titleGlyphs` (576), `titleRLE` (564) and the `Ti*`/`Go*` code sit in bank 7 permanently, even
+though [DECISION 6] already agreed the title should be a separate file loaded on the way in and
+discarded by the first deck load.
+
+**Two things argue against building it now.** Bank 7 has gone from 282 bytes to 2,874, so the space
+is no longer wanted — TASK 4 was on the list to unblock 11d, and TASK 1 unblocked it instead. And
+the change needs a disc load *after* boot, which means tearing the rupture and the IRQ down and
+building them back up: `docs/layer-11-sound-title.md` §5 leaves exactly that to KC, and `CLAUDE.md`
+is explicit that rebuilding the display unverified is what `hal_video.asm` was. The 39 bytes of main
+RAM that blocked 11c's loop are now there without touching any of it.
