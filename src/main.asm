@@ -437,7 +437,17 @@ CON_STR_COUNT = 248
 CON_STR_BYTES = 1542            \ 1,541 plus the terminating sentinel
 CON_STR_ADDR  = PN_FRAME_ADDR + PN_FRAME_BYTES
 
-PN_TABS     = CON_STR_ADDR + CON_STR_BYTES
+\ ---- and the font's own decoder -----------------------------
+\ FontCell, its 16-byte expansion table and its ink byte, in the PARAFNT
+\ file rather than in `&1100`-`&3000`. It has to be MAIN RAM, so that
+\ both banks can call it; it does not have to be the CODE IMAGE, which
+\ is the only full region and which Layer 11e needs. Declared as a size
+\ here for the reason FONT_BYTES is, and ASSERTed against the real one
+\ where it is assembled — if it grows, this is the number to bump.
+FONTCODE_ADDR  = CON_STR_ADDR + CON_STR_BYTES
+FONTCODE_BYTES = 82
+
+PN_TABS     = FONTCODE_ADDR + FONTCODE_BYTES
 pnTabCent   = PN_TABS + 0
 pnTabNum    = PN_TABS + 24
 pnTabWeapon = PN_TABS + 48
@@ -1790,72 +1800,6 @@ ASSERT FRAME_LOCK >= 2
   RTS
 
 \ ============================================================
-\ FontCell — one packed font cell, expanded into the buffer
-\ ============================================================
-\ THE FONT SHIPS 1BPP, AND THAT IS THE C64'S OWN FORMAT. The artwork is
-\ two colour — logical 0 and logical 3 — and a MODE 1 byte holding only
-\ those comes out as n<<4 | n, four pixels in eight bits. Pair a cell's
-\ byte i with its byte i+8, the same scanline's left and right halves,
-\ and you get back (left<<4) | right: the C64's own 8-pixels-per-byte
-\ scanline. So the port stopped shipping a converted copy of artwork it
-\ can ship verbatim, and 3,488 bytes of PARAFNT became 1,744.
-\
-\ IT IS HERE, IN MAIN RAM, BECAUSE FOUR CALLERS IN TWO BANKS NEED IT:
-\ PnGlyph and PnCell in bank 6, XfGlyphAt and DbGlyph in bank 7. Only
-\ one bank is visible at a time and bank code may call main RAM freely,
-\ so one copy here replaces what would have been the same loop four
-\ times — and bank 6, which had 47 bytes, gets some back rather than
-\ paying. It is the only main-RAM cost of the change.
-\
-\ swSrc -> the 8 packed bytes, swDst -> the 16-byte destination cell,
-\ fontMask ANDed into every byte on the way out — that is the ink, and
-\ every caller must set it, XfGlyphAt included with &FF for a plain copy.
-\ swDst is left exactly where it was found, so the callers' own row
-\ arithmetic is unchanged.
-\
-\ Two passes rather than one because the second half writes 8 bytes on
-\ from the same source bytes, and with only Y available for indirect
-\ indexing there is nowhere to keep a second destination — zero page is
-\ full. It costs an add and a subtract per cell.
-.FontCell
-  LDY #7                        \ high nibbles -> the left half, bytes 0-7
-.fc_left
-  LDA (swSrc),Y
-  LSR A : LSR A : LSR A : LSR A
-  TAX
-  LDA fontExpand,X
-  AND fontMask
-  STA (swDst),Y
-  DEY
-  BPL fc_left
-
-  CLC                           \ the right half is eight bytes on
-  LDA swDst   : ADC #8 : STA swDst
-  LDA swDst+1 : ADC #0 : STA swDst+1
-
-  LDY #7                        \ low nibbles -> the right half, bytes 8-15
-.fc_right
-  LDA (swSrc),Y
-  AND #&0F
-  TAX
-  LDA fontExpand,X
-  AND fontMask
-  STA (swDst),Y
-  DEY
-  BPL fc_right
-
-  SEC                           \ and hand swDst back as it was given
-  LDA swDst   : SBC #8 : STA swDst
-  LDA swDst+1 : SBC #0 : STA swDst+1
-  RTS
-
-.fontMask  EQUB &FF             \ the ink; set by every caller before the JSR
-.fontExpand                     \ 4 pixel bits -> the MODE 1 byte for them
-  FOR n, 0, 15
-    EQUB (n << 4) OR n
-  NEXT
-
-\ ============================================================
 \ ReframeView — put the strip back under the player, wherever he
 \ has just been PUT rather than moved
 \ ============================================================
@@ -2238,7 +2182,7 @@ SAVE "PARXFER", xfer_start, xfer_end, DATA_LOAD, DATA_LOAD
 \ The twelve border cells are in the same file, straight after the glyphs:
 \ they are read by the same code, from the same main RAM, and a separate
 \ 192-byte disc file would buy nothing.
-CLEAR FONT_ADDR, FONT_ADDR + FONT_BYTES + PN_FRAME_BYTES + CON_STR_BYTES
+CLEAR FONT_ADDR, FONT_ADDR + FONT_BYTES + PN_FRAME_BYTES + CON_STR_BYTES + FONTCODE_BYTES
 ORG FONT_ADDR
 .font_start
 INCLUDE "src/data/textfont.asm"
@@ -2246,11 +2190,89 @@ INCLUDE "src/data/textfont.asm"
 \ the same file for the same reason they do: it is read by main-RAM
 \ addresses from two different banks, so it has no bank to belong to.
 INCLUDE "src/data/strings.asm"
+
+\ AND THE DECODER, for the same reason again — it is called from both
+\ banks, so it must be main RAM, but it need not be the code image.
+.fontcode_start
+\ ============================================================
+\ FontCell — one packed font cell, expanded into the buffer
+\ ============================================================
+\ THE FONT SHIPS 1BPP, AND THAT IS THE C64'S OWN FORMAT. The artwork is
+\ two colour — logical 0 and logical 3 — and a MODE 1 byte holding only
+\ those comes out as n<<4 | n, four pixels in eight bits. Pair a cell's
+\ byte i with its byte i+8, the same scanline's left and right halves,
+\ and you get back (left<<4) | right: the C64's own 8-pixels-per-byte
+\ scanline. So the port stopped shipping a converted copy of artwork it
+\ can ship verbatim, and 3,488 bytes of PARAFNT became 1,744.
+\
+\ IT IS IN MAIN RAM BECAUSE FOUR CALLERS IN TWO BANKS NEED IT: PnGlyph
+\ and PnCell in bank 6, XfGlyphAt and DbGlyph in bank 7. Only one bank
+\ is visible at a time and bank code may call main RAM freely, so one
+\ copy replaces what would have been the same loop four times.
+\
+\ AND IT IS IN THE PARAFNT FILE, NOT THE CODE IMAGE. It only has to be
+\ main RAM, not `&1100`-`&3000` — which is the one region in the machine
+\ that is genuinely full, and which Layer 11e's sound driver has to live
+\ in because the IRQ reads no sideways bank. So it sits with the font it
+\ decodes, in the room the 1bpp packing freed, and gives the code image
+\ its 82 bytes back. Nothing calls it before PARAFNT loads: FillPanel
+\ does not touch the font and the title carries its own glyphs.
+\
+\ swSrc -> the 8 packed bytes, swDst -> the 16-byte destination cell,
+\ fontMask ANDed into every byte on the way out — that is the ink, and
+\ every caller must set it, XfGlyphAt included with &FF for a plain copy.
+\ swDst is left exactly where it was found, so the callers' own row
+\ arithmetic is unchanged.
+\
+\ Two passes rather than one because the second half writes 8 bytes on
+\ from the same source bytes, and with only Y available for indirect
+\ indexing there is nowhere to keep a second destination — zero page is
+\ full. It costs an add and a subtract per cell.
+.FontCell
+  LDY #7                        \ high nibbles -> the left half, bytes 0-7
+.fc_left
+  LDA (swSrc),Y
+  LSR A : LSR A : LSR A : LSR A
+  TAX
+  LDA fontExpand,X
+  AND fontMask
+  STA (swDst),Y
+  DEY
+  BPL fc_left
+
+  CLC                           \ the right half is eight bytes on
+  LDA swDst   : ADC #8 : STA swDst
+  LDA swDst+1 : ADC #0 : STA swDst+1
+
+  LDY #7                        \ low nibbles -> the right half, bytes 8-15
+.fc_right
+  LDA (swSrc),Y
+  AND #&0F
+  TAX
+  LDA fontExpand,X
+  AND fontMask
+  STA (swDst),Y
+  DEY
+  BPL fc_right
+
+  SEC                           \ and hand swDst back as it was given
+  LDA swDst   : SBC #8 : STA swDst
+  LDA swDst+1 : SBC #0 : STA swDst+1
+  RTS
+
+.fontMask  EQUB &FF             \ the ink; set by every caller before the JSR
+.fontExpand                     \ 4 pixel bits -> the MODE 1 byte for them
+  FOR n, 0, 15
+    EQUB (n << 4) OR n
+  NEXT
+.fontcode_end
 .font_end
 ASSERT textfont_end - font_start == FONT_BYTES
 ASSERT panelframe == PN_FRAME_ADDR
 ASSERT constrings == CON_STR_ADDR
-ASSERT font_end - font_start == FONT_BYTES + PN_FRAME_BYTES + CON_STR_BYTES
+ASSERT fontcode_start == FONTCODE_ADDR
+ASSERT fontcode_end - fontcode_start == FONTCODE_BYTES
+ASSERT font_end - font_start == FONT_BYTES + PN_FRAME_BYTES + CON_STR_BYTES + FONTCODE_BYTES
 SAVE "PARAFNT", font_start, font_end, FONT_ADDR, FONT_ADDR
 
 ASSERT CON_TYPES == DR_TYPES    \ console.asm is in bank 4 and cannot see

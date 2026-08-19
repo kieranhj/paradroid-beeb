@@ -302,6 +302,46 @@ Bank 7 gains 1,536 rather than 1,542; the missing 6 went into `planInk`'s `ALIGN
   and the thirteenth is its bottom scanline spilling into the row below.
 - The play buffer is untouched by any of it, as expected.
 
+### [TASK 8] The decoder did not have to be in the code image — **+82 main RAM**
+
+`FontCell`, its 16-byte expansion table and its ink byte were 82 bytes of **`&1100`-`&3000`**, and
+that is the one region in the machine that is genuinely full. They never needed to be there. What
+they need is to be **main RAM**, so that bank 6 and bank 7 can both `JSR` to them — and the room
+TASK 3 freed is main RAM too. So they moved into the `PARAFNT` file, after the string table:
+
+```
+&3000  font        1,648   1bpp
+&3670  panelframe     96
+&36D0  constrings  1,542   one copy, TASK 7
+&3CD6  FontCell       82   TASK 8 — the decoder, with the font it decodes
+&3D28  PN_TABS        96   runtime-filled by PageTabsIn
+&3D88  free          120
+&3E00  SPR_SAVE
+```
+
+**The code image goes back to 148 bytes**, which is where Layer 11e's sound driver has to live: the
+IRQ reads no sideways bank, and the C64 calls its sound driver from the interrupt.
+
+`FONTCODE_BYTES` is declared up front beside `FONT_BYTES` and `CON_STR_BYTES` — beebasm resolves
+constants in file order and `PN_TABS` needs the size — and `ASSERT`ed against the assembled length,
+which is what caught the first guess of 83. Nothing calls `FontCell` before `PARAFNT` loads:
+`FillPanel` does not touch the font and the title carries its own glyphs.
+
+**Verified in jsbeeb**, all four callers, with the decoder running from `&3CD6`:
+
+- The panel is **0 diffs of 2,560 against the build from before TASK 3** — that is, against the
+  original 2bpp font with no `FontCell` at all. `PnGlyph` and `PnCell` both.
+- The droid database's text is byte-identical to the TASK 7 build — "Unit type 001", "Influence
+  Device" and the stat lines. `DbGlyph` and the shared string table.
+- The transfer's panel line renders crisp glyphs with correct descenders. `XfGlyphAt`.
+
+> **Costed and NOT taken: the rest of TASK 8.** The two-cell wrapper is still duplicated three times
+> — `PnGlyph` 87 B, `XfGlyphAt` 107 B, `DbGlyph` 89 B, sharing about 66 bytes of body — and a
+> shared `FontGlyph` would buy roughly 63 bytes in bank 6 and 134 in bank 7 for ~66 of main RAM.
+> The console droid icon is duplicated too, 110 bytes in each bank. **Both were worth doing when
+> banks 6 and 7 had 47 and 282 bytes. They are not now they have 1,609 and 4,410** — the churn
+> across four routines in two banks buys nothing scarce. Recorded so it need not be re-derived.
+
 ### [TASK 4] The title screen as a transient disc file — ~1,500 bytes of bank 7, and no longer needed
 
 `titleGlyphs` (576), `titleRLE` (564) and the `Ti*`/`Go*` code sit in bank 7 permanently, even

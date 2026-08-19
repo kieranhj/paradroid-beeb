@@ -25,13 +25,14 @@ Regenerate it after any change that moves a region:
 | `&0200–&03FF` | 512 B | OS vectors and workspace. We own `IRQ1V` at `&0204` outright |
 | `&0400–&0C8F` | 2,192 B | MODE 1 charset, rebuilt at every deck load — reclaimed OS workspace |
 | `&0C90–&10FF` | **1,136 B free** | The rest of the reclaimed workspace |
-| `&1100–&2FBE` | 7,871 B | Code (`PARA`), starting below DFS's `PAGE` of `&1900`. The level draw and droid AI are in bank 4; Layers 7–10's main-RAM halves refilled the room they made |
-| `&2FBF–&2FFF` | **66 B free** | The binding constraint. It was 24, then 30; TASK 6 moved 192 bytes of `rowMul`/`unitMul` out to `&5400` and TASK 3 spent 82 of the result on `FontCell`, deliberately — that is what makes the font region big enough for `constrings` |
+| `&1100–&2F6C` | 7,789 B | Code (`PARA`), starting below DFS's `PAGE` of `&1900`. The level draw and droid AI are in bank 4; Layers 7–10's main-RAM halves refilled the room they made |
+| `&2F6D–&2FFF` | **148 B free** | The binding constraint, and the region Layer 11e's sound driver must live in because the IRQ reads no bank. It was 24, then 30. TASK 6 moved 192 bytes of `rowMul`/`unitMul` out to `&5400`; TASK 3 spent 82 of that on `FontCell` and TASK 8 moved those 82 into the font region, where main RAM is just as reachable and nothing else wants the space |
 | `&3000–&366F` | 1,648 B | Layer 9's text font, `PARAFNT` — 103 glyphs × **16 B, 1bpp**, the C64's own bytes, expanded by `FontCell` as it draws. Layer 13a TASK 3 |
 | `&3670–&36CF` | 96 B | The status box's twelve border cells, same file, also 1bpp |
 | `&36D0–&3CD5` | 1,542 B | `constrings` — the `$C000` string table, **one copy**, read by the console in bank 6 and the droid database in bank 7 alike. Same `PARAFNT` file. Layer 13a TASK 7 |
-| `&3CD6–&3D35` | 96 B | The four droid tables, mirrored out of bank 4 for the panel in bank 6 |
-| `&3D36–&3DFF` | **202 B free** | What is left of the room TASK 3 freed |
+| `&3CD6–&3D27` | 82 B | `FontCell`, `fontExpand` and `fontMask` — the 1bpp decoder, with the font it decodes rather than in the code image. Layer 13a TASK 8 |
+| `&3D28–&3D87` | 96 B | The four droid tables, mirrored out of bank 4 for the panel in bank 6 |
+| `&3D88–&3DFF` | **120 B free** | What is left of the room TASK 3 freed |
 | `&3E00–&45FF` | 2,048 B | Sprite background save areas, 8 slots × 256 — slot 7 (`&4500`) is the player's bullet. Ends exactly at the tile map |
 | `&4600–&49FF` | 1,024 B | Tile map, 64 × 16, page-aligned, fixed home. Ends exactly at the panel |
 
