@@ -267,11 +267,16 @@ and bits 3-0 their low ones, so the font — exported as logical 3 — becomes l
 #&F0` and logical 1 with `AND #&0F`. `pnMask` carries it; `PnAt` and `ConAt` both reset it to
 `&FF`, so a red field cannot leak into the next thing drawn.
 
-**[DECISION 5]** The sprite flash below energy 8 is **not** built. It needs a per-slot palette,
-which MODE 1 does not have — the C64 changes one sprite's colour register, we would have to
-re-blit the player in a different logical colour or flash the whole palette. Left for Layer 12.
-With the energy bar gone (decision 4), **this is now the only energy readout the port is missing**,
-and the game has none at all until it lands.
+**[DECISION 5 — superseded 2026-08-19]** The sprite flash below energy 8 was **not** built, and
+the reason given here was that it could not be: MODE 1 has no per-slot palette, so we would have
+had to re-blit the player in a different logical colour or flash the whole palette. **It is built.**
+The premise was wrong in an interesting way — a compiled sprite *can* be told its colour, because
+the artwork is stored at logical 3 and choosing a colour is choosing a nibble. The eleven distinct
+pixel patterns live in zero page and `SprSetColour` rewrites them. See `docs/layer-5-blitter.md`
+§ "Colour is not baked in" and the [DECISION] there.
+
+With the energy bar gone (decision 4) this was the only energy readout the port was missing, so it
+is also the thing that decision most needed.
 
 ## 6. The console
 

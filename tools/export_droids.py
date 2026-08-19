@@ -188,6 +188,35 @@ def mode1_mask(b):
     m ^= 0x0F
     return m | (m << 4)
 
+# ---- the colour indirection -----------------------------------------
+# EVERY pixel byte this file emits is P | P<<4 for a 4-bit opacity pattern P.
+# That is not luck: convert_row writes the artwork at DROID_COLOUR = 3, so an
+# opaque pixel sets bit 7-n AND bit 3-n and the two nibbles always carry the
+# same pattern. The colour of a sprite is therefore just which nibble survives
+# - &0F is logical 1, &F0 is logical 2, &FF is logical 3 - and eleven bytes
+# hold every value the compiled code can ever need.
+#
+# So the pixels are reached through zero page instead of as immediates, and
+# SprSetColour rewrites the eleven when the drawing colour changes. ORA zp is
+# 3 cycles against ORA #'s 2 and the SAME two bytes, so this costs one cycle
+# per opaque byte and not one byte of bank.
+#
+# KEEP THIS LIST IN STEP WITH sprColPat IN sprite.asm - the order here is the
+# index order, and DR_COLPAT_N is asserted against SPR_COLPATS.
+COL_PATS = [0x1, 0x2, 0x3, 0x4, 0x6, 0x7, 0x8, 0x9, 0xC, 0xE, 0xF]
+
+
+def colpix(b):
+    """The zero page label holding pixel byte `b` in the current colour."""
+    p = b & 0x0F
+    assert b == p | (p << 4), (
+        'pixel byte &%02X is not nibble-doubled, so its colour cannot be '
+        'chosen by masking a nibble. Has DROID_COLOUR stopped being 3?' % b)
+    assert p in COL_PATS, (
+        'opacity pattern &%X is new. Add it to COL_PATS here AND to '
+        'sprColPat in sprite.asm, and widen SPR_COLPATS.' % p)
+    return 'colPix+%d' % COL_PATS.index(p)
+
 
 def shift_row(row, px=2):
     """Shift a MODE 1 row right by px pixels, 0-3.
@@ -384,10 +413,11 @@ def emit_rotor_code(tab, f, rows, slots, row_slot, shifts, pfx):
                 f.write('  LDA (bufp),Y : STA (svp),Y\n')
                 if m == 0:
                     # every pixel opaque, so the background contributes nothing
-                    f.write('  LDA #&%02X : STA (bufp),Y\n' % b)
+                    f.write('  LDA %s : STA (bufp),Y\n' % colpix(b))
                     draw_bytes += 10
                 else:
-                    f.write('  AND #&%02X : ORA #&%02X : STA (bufp),Y\n' % (m, b))
+                    f.write('  AND #&%02X : ORA %s : STA (bufp),Y\n'
+                            % (m, colpix(b)))
                     draw_bytes += 12
             f.write('  SCANSTEP\n')      # C: the walk lives in the row
             f.write('  RTS\n')
@@ -628,9 +658,9 @@ def emit_glyph_code(tab, f, mem, shifts, pfx):
                         if not b:
                             continue
                         f.write('  LDY drYcol2,X\n')
-                        f.write('  LDA (%s),Y : AND #&%02X : ORA #&%02X'
+                        f.write('  LDA (%s),Y : AND #&%02X : ORA %s'
                                 ' : STA (%s),Y\n'
-                                % (ptr, mode1_mask(b), b, ptr))
+                                % (ptr, mode1_mask(b), colpix(b), ptr))
                         size += 13
                         continue
                     m = mode1_mask(b)
@@ -640,11 +670,11 @@ def emit_glyph_code(tab, f, mem, shifts, pfx):
                     if not b:
                         continue            # saved, nothing drawn over it
                     if m == 0:
-                        f.write('  LDA #&%02X : STA (%s),Y\n' % (b, ptr))
+                        f.write('  LDA %s : STA (%s),Y\n' % (colpix(b), ptr))
                         size += 4
                     else:
-                        f.write('  AND #&%02X : ORA #&%02X : STA (%s),Y\n'
-                                % (m, b, ptr))
+                        f.write('  AND #&%02X : ORA %s : STA (%s),Y\n'
+                                % (m, colpix(b), ptr))
                         size += 6
             f.write('  RTS\n')
             size += 1
@@ -812,6 +842,9 @@ def main():
                         % (FRAMES * 10))
                 f.write('DR_GLYPHS   = 10                '
                         '\\ digit glyphs, and the glyph-table stride\n')
+                f.write('DR_COLPAT_N = %d                 '
+                        '\\ colPix entries, asserted against SPR_COLPATS\n'
+                        % len(COL_PATS))
                 f.write('\n')
 
             f.write('\\ ==== fixed section: SAME SIZE AND ORDER IN BOTH BANKS ====\n')

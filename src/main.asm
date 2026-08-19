@@ -707,21 +707,43 @@ KEY_R      = &CC                \ -52, DEBUG_RESTART only
 \ read once per row of every column drawn, dbTile and dbSub once per
 \ tile of every band. The rest are their neighbours and cost nothing
 \ to bring along.
-subRowOfs = &00                 \ (cellY AND 3)*4, the row within a tile
-tileCol   = &01                 \ BandCharPtr's cached tile column
-colTileCol = &02                \ DrawColumn: its fixed tile column
-colSubX   = &03                 \ and character within the tile
-colHalf   = &04                 \ 0 or 8: which half of the character
-colTileRow = &05                \ cached tile row, changes every 4
-dbTile    = &06                 \ DrawBandRows: tile column being walked
-dbSub     = &07                 \ first character within it
-dbOdd     = &08                 \ mapHX odd: row starts on a right half
-bandDo    = &09                 \ a character row was crossed
-bandRow   = &0A                 \ which map character row
-bandRc    = &0B                 \ and which display row it lands in
-colFirst  = &0C                 \ first column exposed by the move
-colCount  = &0D                 \ how many
-sDelta    = &0E                 \ scrollS delta for the move       (2)
+\ THE ORDER WITHIN THE BLOCK IS LOAD-BEARING, and it was not always.
+\ The five below are the ones whose value CROSSES A SPRITE DRAW:
+\ SprSplitOK reads bandDo and colCount, and ReframeView clears the
+\ pair after SprDrawAll has run, so they are live from one pass into
+\ the next. The eleven after them are consumed no later than the end
+\ of DoRedraws, which the main loop runs before SprDrawAll — so they
+\ are dead at the moment the blitter starts, and sprite.asm's colour
+\ table aliases the whole run at &05-&0F. See SprSetColour.
+\ THE INVARIANT THAT BUYS THIS: nothing inside SprDrawAll's call tree
+\ may run the level draw. It does not today — SprSetSlot's only call
+\ out is SetCell, which touches rCount, uCount, scrollS and bufp and
+\ nothing here. Break that and the symptom is a corrupted sprite
+\ COLOUR, not a corrupted level, so it will not look like what it is.
+bandDo    = &00                 \ a character row was crossed
+colFirst  = &01                 \ first column exposed by the move
+colCount  = &02                 \ how many
+sDelta    = &03                 \ scrollS delta for the move       (2)
+
+\ ---- &05-&0F: dead once DoRedraws has finished ---------------
+subRowOfs = &05                 \ (cellY AND 3)*4, the row within a tile
+tileCol   = &06                 \ BandCharPtr's cached tile column
+colTileCol = &07                \ DrawColumn: its fixed tile column
+colSubX   = &08                 \ and character within the tile
+colHalf   = &09                 \ 0 or 8: which half of the character
+colTileRow = &0A                \ cached tile row, changes every 4
+dbTile    = &0B                 \ DrawBandRows: tile column being walked
+dbSub     = &0C                 \ first character within it
+dbOdd     = &0D                 \ mapHX odd: row starts on a right half
+bandRow   = &0E                 \ which map character row
+bandRc    = &0F                 \ and which display row it lands in
+
+\ ---- and the same eleven bytes, wearing the other hat ---------
+\ The compiled sprite code reaches its pixels through here rather than
+\ as immediates, so one set of generated routines draws in any of the
+\ three logical colours. SprSetColour rewrites them; export_droids.py
+\ emits `ORA colPix+n` and picks n from the byte's opacity pattern.
+colPix    = &05                 \ SPR_COLPATS bytes, through &0F
 
 \ ---- what is worth moving here, and what is not --------------
 \ &10-&3F, &60-&63 and &65 were the last of the free space, and they
@@ -2281,6 +2303,7 @@ ASSERT DR_W == SPR_W            \ sprite.asm declares these ahead of the
 ASSERT DR_H == SPR_H            \ generated data; keep the two in step
 ASSERT DR_SEQSHIFT == SPR_SEQSHIFT
 ASSERT DR_GLYPHS == SPR_DIG_GLYPHS
+ASSERT DR_COLPAT_N == SPR_COLPATS
 
 \ THE TWO SPRITE BANKS MUST AGREE ON WHERE THEIR TABLES ARE. The blitter
 \ names bank 5's labels and reads them with either bank paged, so a
