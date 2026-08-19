@@ -4,14 +4,60 @@ Defects found by measurement, with the evidence for each. Fixed entries stay too
 **FIXED** in the heading, because they record what was *ruled out* as well as what was wrong —
 and the ruled-out list is usually the expensive part to reproduce.
 
-Open as of 2026-08-17: **#13, #12, #9, #7** (polish), and **#1/#2/#3**, which all want retesting
-against fixes that landed after they were filed.
+Open as of 2026-08-19: **#15, #13, #12, #9, #7b** (polish), and **#1/#2/#3**, which all want
+retesting against fixes that landed after they were filed.
 
 Defects 1–4 were found on 2026-08-10 while verifying the Layer 5 sprite save-geometry change
 (`3f69b4d`); all of them predate that commit and reproduce identically on the build before it.
 Later entries carry their own date.
 
 Numbering is historical, not an order — 3 sits after 4 because it was added later.
+
+---
+
+## 16. Enemy droids draw a black rotor and a WHITE number — **FIXED 2026-08-19**
+
+Reported by KC on the first look at the new sprite colours: *"sometimes the enemy droid numbers
+are white not black?"* Intermittent, and only the number block — the rotor above and below it was
+correctly black.
+
+### The cause
+
+`SprDrawSlot` has two paths. A sprite that clears the up-front wrap test runs the **compiled**
+program, whose pixels come from `colPix` and are therefore coloured. A sprite that does not —
+about one in five, the ones whose 21 scanlines straddle the end of the circular strip — runs the
+per-row fallback loop, and in that loop **the digit block never opens**: all eight of its rows go
+through `SprFetchRow` and are blitted interpreted, one row at a time. `SprFetchRow` reads the
+stored artwork out of `drSprData`, which is at **logical 3, white**, and nothing recoloured it.
+
+So a wrapping sprite lost *every* digit row to white while keeping its compiled rotor rows black.
+That asymmetry is why it read as "the numbers": a wrapping rotor row falls back too, but only the
+rows that actually straddle, and usually none of them do.
+
+### The fix
+
+`SprFetchRow`'s mask loop already has the byte in X while it derives the mask, so the recolour is
+`TXA : AND sprColCur : STA sprRowBuf,Y` in the same loop — 11 cycles a byte on a path already
+chosen for correctness over speed. `sprColCur` is the right value there because `SprSetColour` runs
+at `sd_droid`, ahead of the fallback loop, and leaves it equal to the slot's own colour on both
+branches.
+
+Order does not matter, incidentally: `SPR_MASKTAB` folds the low nibble onto the high, so a byte
+carries the same opacity whichever plane is left in it and the mask comes out the same either way.
+
+### How it was reproduced, and why that mattered
+
+Waiting for a droid to wander onto a strip boundary is not a test. Patching `LDA sprNoWrap` to
+`LDA #0` at the fast-path test (`&2C48` in the fixed build, `&2C41` before it) forces **every**
+sprite down the fallback, which makes the defect appear on demand and on every droid. Same deck,
+same droid, same frame count: before, a black rotor around a white `329`; after, all black. The
+player stayed white throughout, which is the control.
+
+### Not affected
+
+**Effect sprites.** `SprEfDraw` builds its own rows and blits them itself — it never calls
+`SprFetchRow` — so bullets and explosions keep their single fixed colour, deliberately. **The
+restore path** never looks at a pixel; it replays saved background.
 
 ---
 

@@ -601,6 +601,19 @@ ENDMACRO
   DEX
   BNE sfr_pass
 
+\ AND THE COLOUR, in the same loop, because this row will NOT go
+\ through the compiled code and so will not see colPix.
+\ That is the whole of BUGS.md #16: a sprite that fails the up-front
+\ wrap test draws its rotor rows compiled — coloured — but every one of
+\ its eight DIGIT rows comes through here, and the stored artwork is
+\ logical 3. Black droid, white number, on about one sprite in five.
+\ Masking after the mask is derived rather than before is arbitrary:
+\ SPR_MASKTAB folds the low nibble onto the high, so a byte carries the
+\ same opacity whichever plane is left in it and the mask is the same
+\ either way. It reads better here, and TAX has already kept the byte.
+\ sprColCur is this slot's mask, not a leftover: SprSetColour ran at
+\ sd_droid, before the fallback loop, and leaves sprColCur equal to
+\ sprColour for the slot in hand whichever branch it took.
 .sfr_mask
   LDY #SPR_W-1
 .sfr_mloop
@@ -608,6 +621,9 @@ ENDMACRO
   TAX
   LDA SPR_MASKTAB,X
   STA sprRowBuf+SPR_W,Y
+  TXA
+  AND sprColCur
+  STA sprRowBuf,Y
   DEY
   BPL sfr_mloop
   LDA sprBank : STA ROMSHAD : STA ROMSEL
