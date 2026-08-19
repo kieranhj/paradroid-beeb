@@ -438,6 +438,17 @@
   BEQ lvc_blank
   TAX
   LDA xsGlyphOf,X               \ glyph * 16 into the pen's set
+  LDY xfPen                     \ ...but the shaft pen has a set of its own
+  CPY #2                        \ only for the rungs. Colour RAM $F9 changes
+  BNE lvc_pen                   \ a glyph only where it has 01 pairs to
+  CMP #SV_MARK0                 \ promote, and outside SV_MARK0..+N none of
+  BCC lvc_pen                   \ them do — so there svChars1 already IS the
+  CMP #SV_MARK0 + SV_MARK_N     \ marked art, and the second copy of it that
+  BCS lvc_pen                   \ svChars2 used to be was 592 bytes of bank
+  SEC                           \ 7 saying nothing. svCharsMk is the three
+  SBC #SV_MARK0                 \ glyphs that do differ, indexed from
+  INY                           \ SV_MARK0, and pen 3 is its base.
+.lvc_pen
   STA xgs
   LDA #0
   STA xgs+1
@@ -445,7 +456,6 @@
   ASL xgs : ROL xgs+1
   ASL xgs : ROL xgs+1
   ASL xgs : ROL xgs+1
-  LDY xfPen
   CLC
   LDA xgs   : ADC lvSetLo,Y : STA xgs
   LDA xgs+1 : ADC lvSetHi,Y : STA xgs+1
@@ -465,10 +475,12 @@
   BPL lvc_wipe
   RTS
 
+\ Pen 0 is the blank, 1 the normal art, 2 the shaft pen falling back to
+\ the normal art, and 3 the shaft rungs' own three glyphs.
 .lvSetLo
-  EQUB 0, LO(svChars1), LO(svChars2)
+  EQUB 0, LO(svChars1), LO(svChars1), LO(svCharsMk)
 .lvSetHi
-  EQUB 0, HI(svChars1), HI(svChars2)
+  EQUB 0, HI(svChars1), HI(svChars1), HI(svCharsMk)
 
 \ ---- code -> glyph, into the SHARED page --------------------
 \ xsGlyphOf belongs to whichever screen is up: XfStart rebuilds it for

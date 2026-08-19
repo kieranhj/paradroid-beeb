@@ -178,17 +178,42 @@ def main():
     out.append('  EQUB ' + ', '.join('&%02X' % c for c in codes))
     out.append('')
 
-    for name, marked, label in (('svChars1', False, 'NORMAL: the embossed art in its own colours'),
-                                ('svChars2', True, 'SHAFT-MARKED: colour RAM $F9 - forced multicolour, 11s white')):
-        out.append('\\ %s. 16 bytes each, left half then right.' % label)
-        out.append('.%s' % name)
-        for c in codes:
-            data = mode1_char(mem, c, marked) if c else [0] * 16
-            out.append('  \\ code &%02X' % c)
-            out.append('  EQUB ' + ', '.join('&%02X' % b for b in data))
-        out.append('.%s_end' % name)
-        out.append('ASSERT %s_end - %s == SV_CHARS * 16' % (name, name))
-        out.append('')
+    normal = [mode1_char(mem, c, False) if c else [0] * 16 for c in codes]
+    marked = [mode1_char(mem, c, True) if c else [0] * 16 for c in codes]
+
+    out.append('\\ NORMAL: the embossed art in its own colours. 16 bytes each,')
+    out.append('\\ left half then right.')
+    out.append('.svChars1')
+    for c, data in zip(codes, normal):
+        out.append('  \\ code &%02X' % c)
+        out.append('  EQUB ' + ', '.join('&%02X' % b for b in data))
+    out.append('.svChars1_end')
+    out.append('ASSERT svChars1_end - svChars1 == SV_CHARS * 16')
+    out.append('')
+
+    # The shaft-marked set used to be emitted whole, all SV_CHARS of it, and
+    # was 592 bytes of bank 7 to say the same thing as svChars1 for all but
+    # three glyphs: colour RAM $F9 only changes a character that HAS 01 pairs
+    # to promote, and only the shaft rungs do. So emit the run that differs
+    # and let LvCell fall back to svChars1 for every glyph outside it.
+    diff = [i for i in range(len(codes)) if normal[i] != marked[i]]
+    assert diff, 'no marked glyph differs - the pen has become redundant'
+    first, last = diff[0], diff[-1]
+    assert diff == list(range(first, last + 1)), \
+        'the differing glyphs are not one run (%r); LvCell assumes a range' % diff
+    out.append('\\ SHAFT-MARKED: colour RAM $F9 - forced multicolour, 11s white.')
+    out.append('\\ ONLY the glyphs that $F9 actually changes, which is the shaft')
+    out.append('\\ rungs and nothing else. LvCell uses svChars1 below SV_MARK0 and')
+    out.append('\\ above SV_MARK0 + SV_MARK_N, and this table between.')
+    out.append('SV_MARK0  = %d' % first)
+    out.append('SV_MARK_N = %d' % (last - first + 1))
+    out.append('.svCharsMk')
+    for i in range(first, last + 1):
+        out.append('  \\ code &%02X' % codes[i])
+        out.append('  EQUB ' + ', '.join('&%02X' % b for b in marked[i]))
+    out.append('.svCharsMk_end')
+    out.append('ASSERT svCharsMk_end - svCharsMk == SV_MARK_N * 16')
+    out.append('')
 
     out.append('\\ SideView_dat ($F180), the RLE stream verbatim - LvDrawPacked is a')
     out.append('\\ transliteration of DrawPacked ($30A0) and reads it as the C64 does.')

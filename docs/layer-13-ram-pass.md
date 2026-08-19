@@ -98,3 +98,37 @@ repaired."*
   the whole cycle was again **0 diffs of 10,240** against a forced redraw.
 - Lift view: `liftMode` 1 brought the side view up (`liftMode` 2) with its own glyph codes in the
   shadow screen at `&3E00`.
+
+### [TASK 2] The lift view's second glyph set was 592 bytes to change three glyphs — **+544 bank 7**
+
+`sideview.asm` shipped `svChars1` and `svChars2`, two full 37-glyph sets at 16 bytes each, the
+second being what colour RAM `$F9` does to the first down a marked shaft. **They differ in 20 bytes
+of 592, and all 20 are in glyphs 33, 34 and 35** — codes `&A5`, `&A6`, `&A7`, the shaft rungs.
+
+That is not a coincidence and it is the reason the saving is safe to take: `$F9` forces
+multicolour and promotes `01` pairs to white, so it changes a glyph **only where the glyph has
+`01` pairs to promote**. Every other character in the set has none, so for all of them `svChars1`
+already *is* the marked artwork, byte for byte.
+
+`tools/export_sideview.py` now emits `svCharsMk` — only the run of glyphs that actually differ —
+with `SV_MARK0` and `SV_MARK_N` beside it, and asserts both that the run is non-empty and that it
+*is* a run, so a future charset change cannot silently break `LvCell`'s range test. `LvCell` gained
+seven instructions: pen 2 below `SV_MARK0` or at/above `SV_MARK0 + SV_MARK_N` uses `svChars1`, and
+between them it subtracts `SV_MARK0` and takes pen 3, `svCharsMk`. The pen table grew by one entry
+and entry 2 now points at `svChars1`.
+
+**Verified in jsbeeb, byte for byte against the build before the change.** With `deck`, `liftNum`
+and `liftMode` poked to the same values on both, the lift view's 10,240-byte render came out
+**0 diffs**. In the render itself the marked rung pattern (`3F 0C 0C 3F …`) appears 8 times — down
+the one chosen shaft — and the unmarked pattern (`0F 0C 0C 0F …`) 27 times, which is the split the
+screen should have.
+
+> **Costed and not taken: `xbCharsPly`/`xbCharsCpu`, 272 bytes.** The transfer board ships three
+> 17-glyph sets — neutral, player, CPU — and the recolour there is *positional*, not a uniform
+> mask: `&FF` maps to `&FF`, `&CF`, `&3F` and `&0F` in different places, because the frame pixels
+> stay logical 3 while the wire pixels recolour. So the sideview trick does not apply. What is true,
+> and measured, is that **the CPU set is exactly derivable from the other two** —
+> `cpu = neutral AND NOT((neutral AND NOT ply) >> 4)` holds for all 272 bytes, and the reverse
+> derivation holds too. That would buy 272 bytes for a per-byte computation in the board renderer.
+> Left undone: it is the worst complexity-per-byte on the list and bank 7 is no longer the scarce
+> bank. Recorded here so it does not have to be re-derived if that changes.
