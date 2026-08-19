@@ -1356,6 +1356,16 @@ ENDIF
 .drs_place
   LDY drSprNum,X
   LDA drType,X : STA sprType,Y  \ the type can change: 999 blows into 001
+
+\ AN ENEMY DROID IS BLACK. dMd0_droid's _new arm ($18FA) writes $F0 —
+\ C64 colour 0 — into SpriteColor the moment a droid is given a sprite,
+\ and nothing changes it again while it lives. Only the player is ever
+\ another colour, and the player is entry 0, which this loop starts
+\ past. Set every pass rather than once at allocation: a slot that has
+\ been round the pool as an effect comes back with the right colour
+\ without anyone having to remember to put it back.
+  LDA #SPR_COL_BLACK
+  STA sprColour,Y
   LDA drSx
   AND #3                        \ the pixel within the 4 px CRTC unit is
   STA sprShift,Y                \ the shift; all four are compiled
