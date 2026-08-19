@@ -110,8 +110,30 @@ the draw call sites — zeroing `sprActive` alone is not enough (BUGS.md #9's no
 | Effect sprites are still one colour | Bullets and explosions run the interpreted path, which was left alone. The enemy bullet's per-pass colour flicker (`efAlt`) is still deferred with the disruptor and friendly fire |
 | `keydown` uses OSBYTE `&81` | The last OS call in the main loop |
 | 8 decks draw ALERT in multicolour | Confirmed faithful to the C64 original, not a bug. Worth a look on real hardware |
-| Transfer: no droid info screens | The C64 shows two full-screen robot data pages (`ShowXferInfo`, `$3734`) before the board. Not ported; the game goes straight to side select. Wants doing alongside Layer 11's presentation work, where the token-string machinery gets its second user |
 | Transfer presentation differs for screen room | Status text on the panel line rather than above the board, numbers standing in for the side-select sprites. Decisions 6–8 in [`docs/layer-10-transfer.md`](docs/layer-10-transfer.md) |
+
+### Missing in-game features
+
+Compiled 2026-08-19 by walking `docs/` and the listing for everything the C64 does in play that the
+port does not. **Presentation the game can be played without is excluded** — the intro manual, the
+5-page `UpackText` canvas, and the title's own polish are in the layer notes instead. Defects, as
+opposed to absences, stay in the table above and in `BUGS.md`.
+
+Two items came off this list the day it was written — the **low-energy flash** and **enemy droid
+colour**, both in the sprite-colour work above.
+
+| | | |
+|---|---|---|
+| **Sound — all of it** | Layer 11e. No SN76489 driver exists, and the `sndFx1`/`SndFx2` writes were dropped rather than stubbed, so no `snd*` symbol survives in `src/`. **The recovered chip encoding in [`docs/layer-11-sound-title.md`](docs/layer-11-sound-title.md) §6 is UNVERIFIED** — it came out of the deleted `hardware.asm`. Verify against the wiki and the emulator first; a driver built on a recalled encoding is what `CLAUDE.md` forbids. Unblocked by 13a for bank space, but the driver must be **resident** because the IRQ reads no bank, and main RAM is down to 54 B | the biggest hole in the game as it plays |
+| The 001 screen | Layer 11d. `NewShipInfo` (`$36B9`) on bank 7's shadow screen. Needs **`PrintTokenString`** (`$36DB`), the token machinery Layer 10 deferred — which is also what the two items below want | not started |
+| Transfer: the two droid info screens | `ShowXferInfo` (`$3734`) shows two full-screen robot data pages before the board; the port goes straight to side select. [DECISION 8] in [`docs/layer-10-transfer.md`](docs/layer-10-transfer.md). Second user of the token-string printer | not started |
+| `DoHighScore` | `$E4E5` — HIGH and LOW score and three-initial entry. It sits between `EndGame` and `TitleLoop` in the original's flow, and **that seam is already built** | not started |
+| Game over → the title | `GoTick7` still ends a game with `JMP GameStart`, so a finished game restarts instead of returning to the title. **Was blocked on ~39 B against 30 free; Layer 13a unblocked it.** Needs `UninstallIrq` and the rebuild sequence — and tearing down and rebuilding the IRQ unverified is exactly the `hal_video.asm` mistake, so it wants the emulator | buildable now |
+| The 48 × 84 droid portrait | ~6 K of unported C64 artwork, **24 K in MODE 1**. Blocks the faithful console database page, `NewShipInfo`, the game-over screen and `ShowXferInfo`. The runtime-composed rotor-and-digits droid stands in everywhere. Deferred with KC 2026-08-17/18; fallback is types 0 and 23 alone, ~2 K | deferred, by decision |
+| The disruptor | Weapon 3, `Disruptor` (`$1B37`) — an area effect rather than a bullet | Layer 7, deferred |
+| `EnemyFireEnemy` | Droids killing each other. Its absence is also why the **`CollisionType` matrix** is still unported: with no friendly fire, every pair that can meet is handled directly | Layer 7, deferred |
+| The enemy bullet's colour flicker | `efAlt` from bank 5 plus a second per-entry field. Now cheaper than it was — the colour machinery exists — but effect sprites run the interpreted path and were left alone | Layer 7, deferred |
+| The recharger's icon animation | The **pad works** (Layer 7b): char 20 under the player, +1 energy every 4th iteration, −5 score. What is missing is the animation. `AnimAllInsideFont` (`$38C4`) runs every other frame off `frameCount AND 1` and rotates pointers through the blocks listed in `ChrAnimData1` (`$6C23` → `$7A60`, `$7BD0`), with `ChrAnimData2` (`$6C28`) the per-character run. Our charset is built once at deck load, so this is ~16 bytes of charset re-poked a pass. **It is a general font animator, not a recharger-specific one** — porting it may light up other animated cells for free | cheap; was meant to ride with Layer 9 and did not |
 
 ## Decisions taken
 
