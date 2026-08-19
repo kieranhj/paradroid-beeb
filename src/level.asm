@@ -284,7 +284,8 @@
 \ ---- working storage ---------------------------------------
 \ Zero page is full. These are touched once per deck change, so
 \ absolute addressing costs nothing that matters.
-.LUTs      SKIP 64              \ 4 hires nibble tables, one per logical
+\ LUTs is NOT here any more: 64 bytes at &54C0, declared in main.asm.
+\ Bank 4 ran out and this was the cheapest thing in it to move.
 .bcDeck    EQUB 0
 .bcRecOfs  EQUB 0
 .bcCmapBase EQUB 0

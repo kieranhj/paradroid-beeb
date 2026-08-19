@@ -157,78 +157,8 @@ CB_ENERGY_FULL = &40
 .ss_x
   RTS
 
-\ ============================================================
-\ DoScore — port of DoScore ($0A7D), the arithmetic half
-\ ============================================================
-\ THE ACCUMULATORS ARE PENDING POINTS, AND THIS IS WHAT SPENDS THEM.
-\ AddScore and SubScore only bank into scoreAdd and scoreSub; the score
-\ itself moves ONE POINT A PASS, here, and GameLoop calls this every
-\ iteration at $13E3. Without it the BCD score only moves on AddScore's
-\ overflow path — once per 256 points banked — so shooting a droid worth
-\ 20 changed nothing on screen and thirteen kills changed it by 255. That
-\ is the bug KC reported; the routine had simply never been ported.
-\
-\ It also makes the score CLIMB rather than jump, which is the original's
-\ feel: a kill ticks the display up over the following passes.
-\
-\ A CREDIT AND A DEBIT CANCEL WITHOUT TOUCHING THE SCORE. $0A83 takes one
-\ off each and starts again, so a pass that owes 3 and is owed 3 does
-\ nothing and costs three loops. That is why this is a loop and not a
-\ pair of ifs.
-\
-\ Only the arithmetic is here. The C64 falls through into its own digit
-\ draw at $0AD9; ours is PanelUpdate's, which repaints when score+3 moves
-\ — see panel.asm.
-.DoScore
-.ds_again
-  LDA scoreAdd
-  BEQ ds_sub
-  DEC scoreAdd
-  LDA scoreSub
-  BEQ ds_add
-  DEC scoreSub                  \ they cancel: look for the next one
-  JMP ds_again
-
-.ds_add
-  SED
-  CLC
-  LDA score+3 : ADC #1 : STA score+3
-  LDX #2
-.ds_addhi
-  LDA score,X : ADC #0 : STA score,X
-  DEX
-  BPL ds_addhi
-  BCC ds_x
-  LDA #&99                      \ saturate rather than wrap
-  STA score+0
-  STA score+1
-  STA score+2
-  STA score+3
-  BNE ds_x                      \ always: A is &99
-
-.ds_sub
-  LDA scoreSub
-  BEQ ds_none
-  DEC scoreSub
-  SED
-  SEC
-  LDA score+3 : SBC #1 : STA score+3
-  LDX #2
-.ds_subhi
-  LDA score,X : SBC #0 : STA score,X
-  DEX
-  BPL ds_subhi
-  BCS ds_x
-  LDA #0                        \ floor at zero, and drop the rest of the
-  STA score+0                   \ debt with it, as $0AD3 does
-  STA score+1
-  STA score+2
-  STA score+3
-  STA scoreSub
-.ds_x
-  CLD
-.ds_none
-  RTS
+\ DoScore is in the PARAFNT block in main.asm, beside FontCell: main RAM
+\ that does not have to be the CODE image, which is the one full region.
 
 \ ============================================================
 \ DoCharUnder — port of DoCharUnder ($2E7B), recharger arm
@@ -468,7 +398,17 @@ MM_DELAY    = 8                 \ DoMobile ($3835) loads 8
   BEQ df_no                     \ a bullet needs a direction to go in
   LDA weaponType
   CMP #3
-  BNE df_go                     \ the disruptor is not a bullet — Layer 7f
+  BNE df_go                     \ the disruptor is not a bullet
+\ $3441: weapon 3 fires the AREA weapon instead, and only if one is not
+\ already running. It still costs the fire delay, because $344D jumps
+\ into _7 rather than returning.
+  LDA disruptorCnt
+  BNE df_no
+  LDA #DISR_FRAMES
+  STA disruptorCnt
+  LDA #0
+  STA disruptorOwner            \ the player's: it will pay him the kills
+  JMP df_delay
 .df_no
   RTS
 .df_go
@@ -826,6 +766,149 @@ ENDIF
   STA sprType+PLY_SLOT
   JMP CbReset001                \ bank 4, where every field it writes but
                                 \ these three already lives
+
+\ DrEnemyFireEnemy and DrFreeEntry are in src/lowcode2.asm, with the
+\ disruptor's helpers and for the same reason: they are main RAM either
+\ way, and the code image is the region that is full.
+
+\ ============================================================
+\ CbDisruptor — port of Disruptor ($231E), weapon 3
+\ ============================================================
+\ NOT A BULLET. The disruptor is an area effect: everything the player
+\ can SEE takes 2 * (40 - type) at once, which is EnemyFireEnemy's own
+\ damage formula applied to the whole screen, and the firer takes a hit
+\ too unless its type is on the immune list. Only the 711 and the 742
+\ carry one — DWeapon_t has weapon 3 for types 17 and 18 alone — and
+\ both of those are immune to it, which is what makes them worth taking.
+\ "WHAT THE PLAYER CAN SEE" IS A DISPLAY TEST ON THE C64: $234B reads
+\ $D015, the VIC's sprite-enable register, so a droid on the deck but
+\ off the window is untouched. sprActive is the same question here.
+\ IT RUNS FOR FOUR ITERATIONS, counted down in disruptorCnt, and the
+\ sweep happens once, on the first. The other three are the flash.
+\ [DECISION] THE SCREEN SHAKE IS NOT PORTED. $23A3 and $23B3 write
+\ random 0-7 into the VIC's fine-scroll registers, jittering the whole
+\ picture for the three frames. Ours cannot: the play strip is exactly
+\ sixteen rows inside one hardware wrap, so moving the CRTC start
+\ vertically fetches rows that were never drawn, and moving it
+\ horizontally shows a column the incremental draw has not written.
+\ Agreed with KC 2026-08-19: the palette flash alone.
+\ The flash itself IS the original's: $239C forces the background to
+\ white for the burst and $2405 puts the saved colour back. Ours does
+\ NOT save and restore palPlay, though, and that is deliberate: the
+\ transfer game and the lift view both save palPlay and install their
+\ own, so a burst that happened to be running when one of them opened
+\ would have its flash saved as the deck's colour and restored on the
+\ way out. disrFlash is an OVERRIDE instead — SetPalPlay writes the four
+\ logical-0 entries white after the table, so nothing is ever stored and
+\ clearing the flag puts whatever palette is current straight back.
+\ A MODAL SCREEN ENDS THE BURST. $1435 sits inside EnterGame, past the
+\ console test at $1427, so the C64 freezes a burst too — it just does
+\ not show, because its console rewrites $D021 on the way in and out.
+\ Ours ends it, which is the same thing one iteration earlier.
+\ CbEnemyDisruptor is in src/lowcode2.asm, for room.
+
+.CbDisruptor
+  LDA disruptorCnt
+  BNE cbd_run
+  RTS
+.cbd_run
+  LDA conActive                 \ the console, the transfer board or the
+  ORA xferActive                \ lift view has the buffer and the palette
+  ORA liftMode
+  BEQ cbd_live
+.cbd_end
+  LDA #0
+  STA disruptorCnt
+  STA disrFlash
+  RTS
+.cbd_live
+  LDA disruptorCnt
+  AND #&0F
+  CMP #1
+  BNE cbd_not1
+  JMP cbd_state1
+.cbd_not1
+  CMP #2
+  BEQ cbd_state2
+  CMP #3
+  BEQ cbd_state2                \ $2400 DECs the background through a ramp
+                                \ of one; with a flat flash the two states
+                                \ are the same thing
+\ ---- the first iteration: the sweep ------------------------
+  LDX drCount
+  DEX
+  BEQ cbd_state2                \ the deck is empty
+.cbd_loop
+  STX drIdx
+  LDY drSprNum,X
+  BEQ cbd_next                  \ no sprite: not on this deck's screen
+  LDA sprActive,Y
+  BEQ cbd_next                  \ behind a wall, or off the window
+  LDA drType,X
+  JSR CbDisrImmune
+  BEQ cbd_next
+  LDA #40
+  SEC
+  SBC drType,X
+  ASL A
+  STA cbTmp
+  LDA drEnergy,X
+  SEC
+  SBC cbTmp
+  STA drEnergy,X
+  BEQ cbd_kill
+  BPL cbd_next
+.cbd_kill
+  LDA disruptorOwner            \ $23ED: only the PLAYER's disruptor pays
+  STA cbNoScore
+  JSR DrKillDroid               \ alert, score, and the entry becomes the
+  LDA #0                        \ explosion — $23B6 to $23FD, all of it
+  STA cbNoScore
+.cbd_next
+  LDX drIdx
+  DEX
+  BNE cbd_loop
+
+\ ---- and the firer, who is not exempt ----------------------
+\ $2376. The player's own arm is not the droids' formula: it is
+\ energy + type - shipLevel - $20, so a big droid on an early ship
+\ shrugs it off and a 001 on ship 8 does not survive its own weapon.
+  LDA drType
+  JSR CbDisrImmune
+  BEQ cbd_state2
+  LDA drEnergy
+  CLC
+  ADC drType
+  SEC
+  SBC shipLevel
+  SEC
+  SBC #&20
+  STA drEnergy
+  BPL cbd_state2
+  LDA #0
+  STA drEnergy
+
+.cbd_state2
+  LDA #1                        \ $239C: the background goes white
+  STA disrFlash
+  LDA disruptorCnt              \ $23A5: the count is masked before the
+  AND #&0F                      \ decrement, not after
+  SEC
+  SBC #1
+  STA disruptorCnt
+  RTS
+
+.cbd_state1
+  LDA #0                        \ $2405: the deck's colour back, and the
+  STA disrFlash                 \ burst is over
+  DEC disruptorCnt
+  RTS
+
+\ CbDisrImmune, CbDisrSave, CbDisrRestore and CbDisrFlash are in
+\ src/lowcode2.asm — page &0D's half of the low overlay. They are main
+\ RAM either way; the code image had 90 bytes left and this routine
+\ wanted 245.
+
 
 \ ============================================================
 \ state

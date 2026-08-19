@@ -40,10 +40,23 @@ ORG LOWBSS_ADDR
 .ansRow     SKIP 1
 .ansLeft    SKIP 1
 
+\ ---- three droid-table arrays, evicted from bank 4 ----------
+\ Pure state, read only by droid.asm, and absolute addressing costs the
+\ same either side of the bank boundary. See droid.asm.
+.drVis      SKIP DR_SLOTS       \ last sight-line answer, per droid
+.drVisNew   SKIP DR_SLOTS       \ needs one now, having just been allocated
+.drBulFrm   SKIP DR_SLOTS       \ an enemy bullet's effect frame
+
 \ ---- the alert lamp -----------------------------------------
 .lampWant   SKIP 1
 .lampHave   SKIP 1
 .lampTmp    SKIP 2
+
+\ ---- the disruptor -----------------------------------------
+.disruptorCnt   SKIP 1          \ counts 4 down to 0 while a burst runs
+.disruptorOwner SKIP 1          \ 0 the player's, non-zero a droid's
+.cbNoScore      SKIP 1          \ DrKillDroid: this kill pays nobody
+.disrFlash      SKIP 1          \ SetPalPlay forces logical 0 white
 
 .lowbss_end
 ASSERT lowbss_end <= LOWBSS_LIMIT

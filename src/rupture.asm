@@ -120,6 +120,13 @@ ENDMACRO
   BPL spp_loop
   RTS
 
+\ THE DISRUPTOR OVERRIDES LOGICAL 0 HERE, after the table rather than in
+\ it. $239C forces the C64's background white for the three frames of a
+\ burst; doing it by writing palPlay would be saved and restored by the
+\ transfer game and the lift view along with the deck's own colours, so
+\ the flash is an override that stores nothing. Logical 0's four ULA
+\ entries are 0, 1, 4 and 5, and white is physical 7, so each is its own
+\ index in the top nibble. Four cycles a fire when no burst is running.
 .SetPalPlay
   LDX #15
 .spl_loop
@@ -127,6 +134,13 @@ ENDMACRO
   STA VIDEO_ULA_PAL
   DEX
   BPL spl_loop
+  LDA disrFlash
+  BEQ spl_x
+  LDA #&00 : STA VIDEO_ULA_PAL
+  LDA #&10 : STA VIDEO_ULA_PAL
+  LDA #&40 : STA VIDEO_ULA_PAL
+  LDA #&50 : STA VIDEO_ULA_PAL
+.spl_x
   RTS
 
 \ ============================================================

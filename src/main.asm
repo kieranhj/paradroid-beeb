@@ -419,11 +419,31 @@ VIA_PORTB  = &FE40
 \ both call. Layer 11e's sound driver is the other obvious tenant.
 \ lowcode.asm's two constants, declared here because beebasm resolves
 \ them in file order and src/lowbss.asm is reached first.
+DR_SLOTS  = 14                  \ droid table: index 1-13, 0 the player.
+                                \ Here rather than in droid.asm because
+                                \ lowbss.asm holds three of its arrays now
+DISR_FRAMES = 4                 \ Disruptor's own count, $3447
 ANIM_MAX  = 8                   \ animated tiles tracked in one view
 RECH_CHAR = 76                  \ ChrAnimData1's second group, $7A60
 
 LOWBSS_ADDR  = &0C90            \ and its state, in the tail of the same
 LOWBSS_LIMIT = &0D00            \ workspace the charset sits in
+\ ---- and the rest of page &0D, below the NMI workspace ------
+\ &0D00-&0D5F is the NMI handler and its workspace and is left strictly
+\ alone: the disc is idle so no NMI is expected, but one spurious NMI
+\ through a page of somebody else's 6502 would be unrecoverable.
+\ &0D60-&0DEF is Econet and mouse workspace and the extended vector
+\ table — no Econet, no mouse, and nothing here claims an extended
+\ vector. &0DF0-&0DFF, the sideways ROMs' private-workspace page bytes,
+\ is skipped as well, which is why the copy comes in two pieces.
+\ It is ONE FILE with the &0E00 block: the image runs &0D60-&10FF with a
+\ hole at &0DF0, so the second copy's source is simply the staging
+\ address plus &A0.
+LOW2_ADDR  = &0D60
+LOW2_LIMIT = &0DF0
+LOW2_BYTES = LOW2_LIMIT - LOW2_ADDR
+LOW2_SKIP  = &0E00 - LOW2_ADDR  \ what the file holds before the &0E00 half
+
 LOW_ADDR  = &0E00
 LOW_LIMIT = &1100
 LOW_PAGES = 3
@@ -480,7 +500,7 @@ CON_STR_ADDR  = PN_FRAME_ADDR + PN_FRAME_BYTES
 \ here for the reason FONT_BYTES is, and ASSERTed against the real one
 \ where it is assembled — if it grows, this is the number to bump.
 FONTCODE_ADDR  = CON_STR_ADDR + CON_STR_BYTES
-FONTCODE_BYTES = 82
+FONTCODE_BYTES = 194            \ FontCell, its table, and DoScore
 
 PN_TABS     = FONTCODE_ADDR + FONTCODE_BYTES
 pnTabCent   = PN_TABS + 0
@@ -655,6 +675,16 @@ USR_VIA_T1CH = &FE65
 \ crosses a page and always costs 4 cycles. They are read once per
 \ character drawn — 40 times a band pass — so the extra cycle would
 \ be worth more than the 128 bytes of alignment.
+\ ---- BuildCharset's nibble tables, out of bank 4 ------------
+\ 64 bytes of deck-load scratch that used to sit in the data bank, moved
+\ into the 64 free bytes below the character tables — the ones PnClear
+\ used to wipe. Bank 4 is the tightest region in the machine and this is
+\ read by nothing but BuildCharset and BuildLampChar, so the move costs
+\ nothing and buys the bank a routine's worth of room.
+LUTS_ADDR = &54C0
+LUTs = LUTS_ADDR
+ASSERT LUTS_ADDR + 64 <= &5500
+
 CHAR_PTR_LO = &5500             \ character code -> charset address
 CHAR_PTR_HI = &5600
 SPR_MASKTAB = &5700             \ data byte -> its transparency mask
@@ -1057,6 +1087,13 @@ ENDIF
 \ so it runs whether the console is up or not and this is here for the
 \ same reason. AddScore only banks points; DoScore is what moves them.
   JSR DoScore
+
+\ The disruptor. $1435 puts it inside EnterGame, past the console test —
+\ but a burst that is frozen there leaves our flash on the screen, so it
+\ runs ABOVE the three modal arms and ends itself when one of them has
+\ the machine. It writes no buffer, only the droid table and a flag the
+\ interrupt reads, so it needs no window.
+  JSR CbDisruptor
 
 IF DEBUG_RESTART
 \ DEBUG: throw this game away and start another, the way Layer 11's game
@@ -1520,8 +1557,20 @@ ENDIF
 \ region rather than the block's own length, so the copy is three fixed
 \ pages and the tail past low_end is stale staging bytes nobody reads.
 .PageLowIn
-  LDA #LO(LOW_STAGE) : STA swSrc
+  LDA #LO(LOW_STAGE) : STA swSrc     \ the page-&0D half first, by the byte
   LDA #HI(LOW_STAGE) : STA swSrc+1
+  LDA #LO(LOW2_ADDR) : STA swDst
+  LDA #HI(LOW2_ADDR) : STA swDst+1
+  LDY #0
+.pli_byte
+  LDA (swSrc),Y
+  STA (swDst),Y
+  INY
+  CPY #LOW2_BYTES
+  BNE pli_byte
+
+  LDA #LO(LOW_STAGE + LOW2_SKIP) : STA swSrc   \ then the &0E00 half, past
+  LDA #HI(LOW_STAGE + LOW2_SKIP) : STA swSrc+1 \ the sixteen skipped bytes
   LDA #LO(LOW_ADDR)  : STA swDst
   LDA #HI(LOW_ADDR)  : STA swDst+1
   LDX #LOW_PAGES
@@ -2368,6 +2417,83 @@ INCLUDE "src/data/strings.asm"
   FOR n, 0, 15
     EQUB (n << 4) OR n
   NEXT
+\ ---- and DoScore, for the same reason -----------------------
+\ It has to be main RAM — bank 4's DrKillDroid banks points through
+\ AddScore and the main loop drains them here — but it does not have to
+\ be `&1100`-`&3000`, and that is the region the disruptor emptied.
+\ ============================================================
+\ DoScore — port of DoScore ($0A7D), the arithmetic half
+\ ============================================================
+\ THE ACCUMULATORS ARE PENDING POINTS, AND THIS IS WHAT SPENDS THEM.
+\ AddScore and SubScore only bank into scoreAdd and scoreSub; the score
+\ itself moves ONE POINT A PASS, here, and GameLoop calls this every
+\ iteration at $13E3. Without it the BCD score only moves on AddScore's
+\ overflow path — once per 256 points banked — so shooting a droid worth
+\ 20 changed nothing on screen and thirteen kills changed it by 255. That
+\ is the bug KC reported; the routine had simply never been ported.
+\
+\ It also makes the score CLIMB rather than jump, which is the original's
+\ feel: a kill ticks the display up over the following passes.
+\
+\ A CREDIT AND A DEBIT CANCEL WITHOUT TOUCHING THE SCORE. $0A83 takes one
+\ off each and starts again, so a pass that owes 3 and is owed 3 does
+\ nothing and costs three loops. That is why this is a loop and not a
+\ pair of ifs.
+\
+\ Only the arithmetic is here. The C64 falls through into its own digit
+\ draw at $0AD9; ours is PanelUpdate's, which repaints when score+3 moves
+\ — see panel.asm.
+.DoScore
+.ds_again
+  LDA scoreAdd
+  BEQ ds_sub
+  DEC scoreAdd
+  LDA scoreSub
+  BEQ ds_add
+  DEC scoreSub                  \ they cancel: look for the next one
+  JMP ds_again
+
+.ds_add
+  SED
+  CLC
+  LDA score+3 : ADC #1 : STA score+3
+  LDX #2
+.ds_addhi
+  LDA score,X : ADC #0 : STA score,X
+  DEX
+  BPL ds_addhi
+  BCC ds_x
+  LDA #&99                      \ saturate rather than wrap
+  STA score+0
+  STA score+1
+  STA score+2
+  STA score+3
+  BNE ds_x                      \ always: A is &99
+
+.ds_sub
+  LDA scoreSub
+  BEQ ds_none
+  DEC scoreSub
+  SED
+  SEC
+  LDA score+3 : SBC #1 : STA score+3
+  LDX #2
+.ds_subhi
+  LDA score,X : SBC #0 : STA score,X
+  DEX
+  BPL ds_subhi
+  BCS ds_x
+  LDA #0                        \ floor at zero, and drop the rest of the
+  STA score+0                   \ debt with it, as $0AD3 does
+  STA score+1
+  STA score+2
+  STA score+3
+  STA scoreSub
+.ds_x
+  CLD
+.ds_none
+  RTS
+
 .fontcode_end
 .font_end
 ASSERT textfont_end - font_start == FONT_BYTES
@@ -2387,13 +2513,25 @@ SAVE "PARAFNT", font_start, font_end, FONT_ADDR, FONT_ADDR
 \ that delivers it, so it cannot be loaded in place. See LOW_ADDR.
 \ It is main RAM, so bank 4 may call it and so may the code image, and
 \ neither needs anything paged. That is the whole point of it.
+ORG LOW2_ADDR
+.low2_start
+INCLUDE "src/lowcode2.asm"
+.low2_end
+ASSERT low2_end <= LOW2_LIMIT
+
+\ The sixteen bytes PageLowIn does not copy. They are in the file so
+\ that the two halves are one contiguous image and the second copy's
+\ source is a constant; nothing ever reads them.
+ORG LOW2_LIMIT
+  SKIP &0E00 - LOW2_LIMIT
+
 ORG LOW_ADDR
 .low_start
 INCLUDE "src/lowcode.asm"
 .low_end
 ASSERT low_end <= LOW_LIMIT
 ASSERT low_end - low_start <= LOW_PAGES * 256
-SAVE "PARALOW", low_start, low_end, LOW_STAGE, LOW_STAGE
+SAVE "PARALOW", low2_start, low_end, LOW_STAGE, LOW_STAGE
 
 ASSERT CON_TYPES == DR_TYPES    \ console.asm is in bank 4 and cannot see
                                 \ the sprite bank's count when it needs it

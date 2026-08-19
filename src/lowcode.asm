@@ -126,6 +126,21 @@
 .dtcCellsLamp
   EQUB 9, 10, &FF
 
+\ ---- CollisionType ($6D6D), transcribed whole --------------
+\ IT IS HERE AND NOT IN BANK 4 because bank 4 had seven bytes left. Its
+\ reader, DrCollided, is bank-4 code and reads it as plain main RAM.
+\ Index = the mode of the party being acted on, times eight, plus the
+\ mode of the other: 0 a droid, 1 an enemy bullet, 2 an explosion, 3 the
+\ player's shot. Modes 4-7 cannot happen and are the original's own
+\ padding.
+\   $80 nothing      $40 explode        $20 friendly fire
+\   $10 free it      $08 reverse/pause  $04 player fire     $02 nothing
+.drCollType
+  EQUB 8,   &20, &20, 4,   &80, &80, &80, &80  \ a DROID, hit by...
+  EQUB &10, &40, &40, &40, &80, &80, &80, &80  \ an enemy BULLET
+  EQUB &80, &80, &80, &80, &80, &80, &80, &80  \ an EXPLOSION: nothing
+  EQUB 2,   2,   2,   &80, &80, &80, &80, &80  \ the PLAYER'S shot
+
 \ ============================================================
 \ AnimTick / AnimPaint — the animated tiles, once a pass
 \ ============================================================
