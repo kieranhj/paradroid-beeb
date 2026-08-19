@@ -738,6 +738,13 @@ dbOdd     = &0D                 \ mapHX odd: row starts on a right half
 bandRow   = &0E                 \ which map character row
 bandRc    = &0F                 \ and which display row it lands in
 
+\ ---- and the same eleven bytes, wearing the other hat ---------
+\ The compiled sprite code reaches its pixels through here rather than
+\ as immediates, so one set of generated routines draws in any of the
+\ three logical colours. SprSetColour rewrites them; export_droids.py
+\ emits `ORA colPix+n` and picks n from the byte's opacity pattern.
+colPix    = &05                 \ SPR_COLPATS bytes, through &0F
+
 \ ---- what is worth moving here, and what is not --------------
 \ &10-&3F, &60-&63 and &65 were the last of the free space, and they
 \ went to the SCALARS the per-pass code reads and writes directly.
@@ -2296,6 +2303,7 @@ ASSERT DR_W == SPR_W            \ sprite.asm declares these ahead of the
 ASSERT DR_H == SPR_H            \ generated data; keep the two in step
 ASSERT DR_SEQSHIFT == SPR_SEQSHIFT
 ASSERT DR_GLYPHS == SPR_DIG_GLYPHS
+ASSERT DR_COLPAT_N == SPR_COLPATS
 
 \ THE TWO SPRITE BANKS MUST AGREE ON WHERE THEIR TABLES ARE. The blitter
 \ names bank 5's labels and reads them with either bank paged, so a

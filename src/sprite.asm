@@ -167,6 +167,36 @@ SPR_MAX_UNIT = PLAY_UNITS - SPR_W       \ 80 - 7 = 73
 SPR_MAX_Y    = PLAY_VIS_ROWS * 8 - SPR_H \ 120 - 21 = 99
 
 \ ============================================================
+\ THE COMPILED SPRITE HAS A COLOUR, and it is not baked in
+\ ============================================================
+\ The C64 gives every sprite its own colour register. An enemy droid
+\ is BLACK — dMd0_droid's _new arm ($18FA) writes $F0 the moment a
+\ droid takes a sprite slot — and the player is white, or clr6_xfer
+\ while moveMode is 0, or a flashing cycle below energy 8 ($3DE5).
+\ We have no such register: the pool draws with generated code and a
+\ generated immediate is the same colour every time it runs.
+\ What saves it is a property of the artwork. export_droids.py writes
+\ the sprites at DROID_COLOUR = 3, so an opaque pixel sets bit 7-n AND
+\ bit 3-n and EVERY pixel byte the compiler emits is P | P<<4 for a
+\ 4-bit opacity pattern P. Choosing a colour is therefore choosing a
+\ nibble — &0F leaves logical 1, &F0 leaves logical 2, &FF leaves
+\ logical 3 — and across all 24 types, 8 phases and 4 shifts only
+\ ELEVEN distinct patterns occur. So the code says `ORA colPix+n`
+\ instead of `ORA #&bb` and eleven zero page bytes carry the colour.
+\ It costs ONE CYCLE per opaque byte and not one byte of bank: ORA zp
+\ is 3 cycles against ORA #'s 2 and both are two bytes long. About 75
+\ opaque bytes go into a sprite, so ~600 cycles on a full pass.
+\ The eleven live at &05-&0F, on top of the level draw's own
+\ temporaries — see the zero page map in main.asm for why that is safe
+\ and what would break it.
+SPR_COLPATS = 11
+ASSERT colPix + SPR_COLPATS - 1 == &0F
+
+SPR_COL_BLACK = &0F             \ logical 1
+SPR_COL_HILIT = &F0             \ logical 2, the deck's highlight
+SPR_COL_WHITE = &FF             \ logical 3, both planes — the stored form
+
+\ ============================================================
 \ SprBuildMask — data byte to transparency mask
 \ ============================================================
 \ The only table still built at run time. A MODE 1 byte holds four
@@ -316,6 +346,38 @@ ENDMACRO
   STA sprSeqBase
   STA sprSeqBaseS,X
   CLC
+  RTS
+
+\ ============================================================
+\ SprSetColour — X = slot. Put this slot's colour in colPix
+\ ============================================================
+\ Rebuilds the eleven only when the colour actually changes, which on
+\ a normal pass is twice: once for the run of black droids and once
+\ for the player. Unchanged costs 17 cycles; a rebuild costs ~200.
+\ sprColCur is invalidated at the top of every SprDrawTr rather than
+\ trusted between passes, because colPix shares its bytes with the
+\ level draw and DoRedraws has run since. &00 is not a legal mask, so
+\ the first slot of every pass always rebuilds.
+\ The mask lives in sprColCur while the loop runs, which is why there
+\ is no separate temporary: A carries the pattern, so the AND has to
+\ come from memory either way.
+\ Only the DRAW calls this. The restore replays saved background and
+\ never looks at a pixel, and an effect has its own path and its own
+\ colour — see SprEfDraw.
+.SprSetColour
+  LDA sprColour,X
+  CMP sprColCur
+  BEQ ssc_same
+  STA sprColCur
+  LDX #SPR_COLPATS-1
+.ssc_loop
+  LDA sprColPat,X
+  AND sprColCur
+  STA colPix,X
+  DEX
+  BPL ssc_loop
+  LDX sprSlot
+.ssc_same
   RTS
 
 \ ============================================================
@@ -813,7 +875,9 @@ ENDMACRO
   BNE SprDrawTr                 \ always
 .SprDrawTr
   STA sprTrWant
-  LDX #0
+  LDA #0
+  STA sprColCur                 \ colPix is shared with the level draw, so
+  LDX #0                        \ never trust it across a pass
 .sdt_loop
   LDA sprTrWant
   CMP #&FF
@@ -1403,6 +1467,7 @@ efSrc = psrc
   BEQ sd_droid
   JMP SprEfDraw
 .sd_droid
+  JSR SprSetColour              \ X = sprSlot, and still is on return
 
 \ ---- the fast path -----------------------------------------
 \ A sprite that cleared the wrap test up front has no row that can
@@ -1740,6 +1805,9 @@ SPR_SPIN = 0                    \ frames between phases; full energy = 0
   STA sprShift,X
   STA sprKind,X
   STA sprKindS,X
+  LDA #SPR_COL_WHITE            \ every slot starts as the port always drew
+  STA sprColour,X               \ them; the sources are wired up next
+  LDA #0
   DEX
   BPL si_loop
 
@@ -1767,8 +1835,16 @@ SPR_SPIN = 0                    \ frames between phases; full energy = 0
 .sprKindS   SKIP SPR_SLOTS      \ the kind the DRAW used, for the restore
 .sprEfFrmS  SKIP SPR_SLOTS      \ and the frame it used, so the box matches
 .sprTr      SKIP SPR_SLOTS     \ tranche per slot, &FF = neither
+.sprColour  SKIP SPR_SLOTS     \ the colour mask the DRAW should use
 .sprComp    SKIP SPR_SLOTS     \ overlap-component label, while assigning
 .sprTrWant  EQUB 0
+
+\ The eleven opacity patterns, stored at logical 3. SprSetColour masks
+\ a nibble off these into colPix. Generated by export_droids.py, which
+\ asserts its own list against this one through DR_COLPAT_N.
+.sprColPat  EQUB &11,&22,&33,&44,&66,&77,&88,&99,&CC,&EE,&FF
+.sprColCur  EQUB 0              \ the mask colPix currently holds
+
 .satI       EQUB 0
 .satJ       EQUB 0
 .satOld     EQUB 0
