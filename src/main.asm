@@ -597,6 +597,20 @@ CHAR_PTR_LO = &5500             \ character code -> charset address
 CHAR_PTR_HI = &5600
 SPR_MASKTAB = &5700             \ data byte -> its transparency mask
 ASSERT CHAR_PTR_LO >= PANEL_ADDR + PANEL_BYTES
+
+\ The row and unit offset tables live here too, and for the same
+\ reason: n * 640 and n * 8 are pure arithmetic, so shipping 192 bytes
+\ of them inside the code image was 192 bytes of the ONE region that
+\ is actually scarce. BuildMulTabs writes them at startup instead.
+\ They must stay in MAIN RAM whatever else moves — SetCell reads them
+\ with the SPRITE bank paged in. See bufcore.asm's header.
+MUL_TABS   = &5400
+ROWMUL_LO  = MUL_TABS
+ROWMUL_HI  = ROWMUL_LO + PLAY_ROWS
+UNITMUL_LO = ROWMUL_HI + PLAY_ROWS
+UNITMUL_HI = UNITMUL_LO + PLAY_UNITS
+ASSERT MUL_TABS >= PANEL_ADDR + PANEL_BYTES
+ASSERT UNITMUL_HI + PLAY_UNITS <= CHAR_PTR_LO
 ASSERT CHAR_PTR_HI == CHAR_PTR_LO + 256
 ASSERT CHAR_PTR_HI + 256 <= SPR_MASKTAB
 
@@ -868,6 +882,11 @@ ORG &1100
 
   JSR FillPanel                 \ after the staging area is done with: it
                                 \ reaches past &4800, over the panel
+
+  JSR BuildMulTabs              \ same window as the two below: &5400 is
+                                \ under the staging overlay AND under the
+                                \ title's framebuffer, so it cannot be
+                                \ written until both are done with
 
   JSR BuildCharPtrs             \ needs the data bank in, and the staging
                                 \ copy finished — it reaches past &5500

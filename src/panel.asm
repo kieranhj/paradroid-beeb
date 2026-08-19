@@ -406,11 +406,21 @@ PN_TEXT_ADDR = PANEL_ADDR + PN_TEXT_ROW * ROW_BYTES
   INC pnDst+1
   DEX
   BNE pn_c_page
+\ The tail is the bytes past the last whole page — and there are none
+\ at PANEL_ROWS = 4, because 4 * 640 is &0A00 and LO of that is zero.
+\ IT HAS TO BE ASSEMBLED AWAY RATHER THAN RUN: `CPY #0` with Y already
+\ zero compares equal only after Y has wrapped, so the loop cleared a
+\ whole extra page — &5400-&54FF, 256 bytes past the panel — every time
+\ PanelInit ran. That was invisible while nothing lived there and was
+\ found the moment the offset tables moved in. The guard is on the
+\ constant, so a PANEL_ROWS that does leave a remainder still gets it.
+IF LO(PANEL_BYTES) > 0
 .pn_c_tail
   STA (pnDst),Y
   INY
   CPY #LO(PANEL_BYTES)
   BNE pn_c_tail
+ENDIF
   RTS
 
 \ ============================================================

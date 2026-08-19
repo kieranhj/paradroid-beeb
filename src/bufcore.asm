@@ -171,24 +171,54 @@
   RTS
 
 \ ---- offset tables -----------------------------------------
-\ Here rather than in scroll.asm because SetCell reads them, and
-\ SetCell runs with the sprite bank paged in.
-.rowMulLo
-  FOR n, 0, PLAY_ROWS-1
-    EQUB LO(n * ROW_BYTES)
-  NEXT
-.rowMulHi
-  FOR n, 0, PLAY_ROWS-1
-    EQUB HI(n * ROW_BYTES)
-  NEXT
-.unitMulLo
-  FOR n, 0, PLAY_UNITS-1
-    EQUB LO(n * UNIT_BYTES)
-  NEXT
-.unitMulHi
-  FOR n, 0, PLAY_UNITS-1
-    EQUB HI(n * UNIT_BYTES)
-  NEXT
+\ Read by SetCell, which runs with the sprite bank paged in, so they
+\ have to be main RAM's — but NOT the code image's. They used to be
+\ 192 bytes of FOR/EQUB sitting in &1100-&3000, which is the only
+\ region in the machine that is genuinely full; they are 192 bytes of
+\ the free page at &5400 now, written once by BuildMulTabs. Startup
+\ pays two short loops and the code image gets the 192 back.
+rowMulLo  = ROWMUL_LO
+rowMulHi  = ROWMUL_HI
+unitMulLo = UNITMUL_LO
+unitMulHi = UNITMUL_HI
+
+\ ============================================================
+\ BuildMulTabs — n * ROW_BYTES and n * UNIT_BYTES, at startup
+\ ============================================================
+\ Running 16-bit addition rather than multiplication, so the step is
+\ the only thing that differs between the two halves. bufp is the
+\ accumulator: it is SetCell's own pointer and nothing is using it
+\ this early. MUST run after the bank staging AND after the title —
+\ both write straight over &5400. See the call site in main.asm.
+.BuildMulTabs
+  LDA #0
+  STA bufp
+  STA bufp+1
+  TAX
+.bmt_row
+  LDA bufp   : STA rowMulLo,X
+  LDA bufp+1 : STA rowMulHi,X
+  CLC
+  LDA bufp   : ADC #LO(ROW_BYTES) : STA bufp
+  LDA bufp+1 : ADC #HI(ROW_BYTES) : STA bufp+1
+  INX
+  CPX #PLAY_ROWS
+  BNE bmt_row
+
+  LDA #0
+  STA bufp
+  STA bufp+1
+  TAX
+.bmt_unit
+  LDA bufp   : STA unitMulLo,X
+  LDA bufp+1 : STA unitMulHi,X
+  CLC
+  LDA bufp   : ADC #LO(UNIT_BYTES) : STA bufp
+  LDA bufp+1 : ADC #HI(UNIT_BYTES) : STA bufp+1
+  INX
+  CPX #PLAY_UNITS
+  BNE bmt_unit
+  RTS
 
 \ ============================================================
 \ SetCell — point bufp at display cell (rCount, uCount)

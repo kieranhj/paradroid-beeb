@@ -769,3 +769,34 @@ If you would rather read RAM directly: `deck` &8B, `plyX` &2B, `posX` &27, `posY
 `deck`, `mapYr` and `line`); `numDoors` &1E7D, `doorCol` &1E61, `doorRow` &1E68, `doorState` &1E6F,
 `doorDirty` &1E76, `tilemap` &3800; and in bank 4, which is the resting state, `doorDef` &A2FB and
 `tiledefs` &8800. Take them from a fresh label dump after any build — they move.
+
+## 15. Incremental draw disagrees with `RedrawAll` beside an animating door — **2026-08-19, unconfirmed**
+
+Found during Layer 13a's RAM pass, while running the buffer oracle after moving the row/unit offset
+tables (`docs/layer-13-ram-pass.md`, TASK 6). **Not yet reproduced, and not yet shown to predate
+that change** — logged so it is not lost.
+
+Diagonal scroll (X + M, 45 frames), then settle. The play buffer differed from a forced `RedrawAll`
+by **176 bytes of 10,240**, falling to 16 and then 7 as it settled over 3 M cycles, so it is not a
+tear. The survivors were **row 7, units 7, 8, 10 and 11**.
+
+`doorRow[0]` was **7** — the same row — and the door table read
+`doorState = 44 44 40 C0 C2 00 00` with `numDoors` 4. `&C2` is a horizontal door at **step 2 of
+five**, i.e. mid-animation, and `&40`/`&C0` are two more at step 0. So the disagreement sat exactly
+on an animating door, in the rows a door patches through `doorDef`/`doorDirty`.
+
+**What is ruled out.** It is not the offset tables the pass moved: they were read back byte-exact
+in that same state, a write breakpoint on their page stayed silent through play and scrolling, and
+a read breakpoint on the rest of the page — which `PnClear` used to zero and no longer does — never
+fired. `SetCell` was therefore computing the same addresses it always has.
+
+**It did not reproduce**: 0 diffs of 10,240 stationary, after horizontal scrolling, after the same
+X + M diagonal on two other decks, and after the opposite Z + K diagonal — five clean runs against
+the one failure.
+
+**It is NOT #9.** That one is 58–62 bytes and every one of them is in CRTC unit 0, the leftmost
+column. This is in units 7–11 and nowhere near the edge.
+
+**Where to look:** `dp_step`'s `doorDirty` and whatever repaints from it, against what `RedrawAll`
+builds from the patched `doorDef`. The reproduction wants a deck with a door in view, the player
+close enough to hold it open, and the oracle run while `doorState` is between 1 and 3.

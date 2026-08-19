@@ -132,3 +132,71 @@ screen should have.
 > derivation holds too. That would buy 272 bytes for a per-byte computation in the board renderer.
 > Left undone: it is the worst complexity-per-byte on the list and bank 7 is no longer the scarce
 > bank. Recorded here so it does not have to be re-derived if that changes.
+
+### [TASK 5] The "739 bytes of alignment holes" in bank 4 were not there — **+0**
+
+Recorded because the first analysis of this pass claimed them and it was wrong.
+
+A gap-finder over the beebasm listing reports six holes in bank 4 totalling 739 bytes. **Four of
+them are `SKIP`-reserved working storage, not waste** — `doorDef` before `blankTileRow` (112),
+`LUTs` before `bcDeck` (64), `drVis`/`drVisNew` before `losTurn` (196) and 256 more before
+`XferEnter4`. `SKIP` emits nothing, so a listing-based gap detector cannot tell reserved storage
+from padding. The same correction applies to main RAM's apparent 28- and 152-byte holes.
+
+That leaves **111 bytes** of genuine `ALIGN &100` padding, before `charRemap` (47) and `colourMap`
+(64). Both are safe to unalign — each is only ever read as `LDA table,X`, `colourMap` at deck load
+and `charRemap` in a single 256-iteration startup loop that `main.asm` notes is "never touched
+again" — but **removing them frees nothing**, and this was measured, not assumed: `tiledefs`
+follows with an `ALIGN` of its own, and 111 bytes of padding removed upstream reappear as 111 bytes
+of padding before it. Bank 4 free stayed at 15.
+
+**`tiledefs`' alignment is load-bearing and must not be removed.** `screen.asm`'s `MapChar` builds
+its pointer as low-nibble × 16 into `tdp` and high-nibble + `HI(tiledefs)` into `tdp+1`, with no
+addition of `LO(tiledefs)` anywhere — which is only correct if `LO(tiledefs)` is zero. `scroll.asm`
+does the same.
+
+So the 111 bytes can only be recovered by *filling* the two holes with blocks of ≤ 47 and ≤ 64
+bytes emitted from the right point in the include order, across three generated files. Not taken:
+the return is small and bank 4 is no longer the only place to put things — see TASK 1.
+
+### [TASK 6] The offset tables were 192 bytes of the one region that is full — **+118 main RAM, +7 bank 6**
+
+**Main RAM went from 30 bytes free to 148**, which is what matters: `&1100-&3000` is the only
+region in the machine that is genuinely full, and Layer 11c's loop needs 39 bytes of it.
+
+`rowMulLo`/`rowMulHi` (16 each) and `unitMulLo`/`unitMulHi` (80 each) were `FOR`/`EQUB` blocks in
+`bufcore.asm`, 192 bytes of the code image holding nothing but *n* × 640 and *n* × 8. They are now
+addresses in the free page at `&5400`, written at startup by `BuildMulTabs` — two 16-bit running
+additions, 74 bytes, so the code image nets 118 back.
+
+They **must** stay in main RAM: `SetCell` reads them with the *sprite* bank paged in, which is
+`bufcore.asm`'s whole reason for existing. `&5400` is under both the bank staging overlay and the
+title's framebuffer, so the call sits with `BuildCharPtrs` and `SprBuildMask`, after both.
+
+**It found a real bug in `PnClear`, which is why `&5400` looked free and was not.** The routine
+clears `HI(PANEL_BYTES)` whole pages and then a tail of `LO(PANEL_BYTES)` bytes — but
+`LO(4 × 640)` is **zero**, and the tail is `STA (pnDst),Y : INY : CPY #0 : BNE`, which with Y
+already zero compares equal only after Y has wrapped. So it cleared a whole extra page,
+`&5400-&54FF`, every time `PanelInit` ran. Invisible while nothing lived there; the tables landed
+in it and came back zeroed. The fix is `IF LO(PANEL_BYTES) > 0` around the tail, so it is assembled
+away at four rows and still assembled in for a `PANEL_ROWS` that does leave a remainder — and bank 6
+gets 7 bytes back.
+
+**Verified in jsbeeb:**
+
+- All 192 bytes read back exactly right: `rowMulLo` `00 80 00 80 …`, `rowMulHi` `00 02 05 07 … 25`,
+  `unitMulLo` counting by 8 and wrapping every 32, `unitMulHi` 32 × `00`, 32 × `01`, 16 × `02`.
+- Unchanged after scrolling, and a **write breakpoint on the table page stayed silent** for 60
+  frames of play and 90 frames of scrolling — nothing writes them once built.
+- A **read breakpoint on `&54D0`** — the part of the page past the tables that `PnClear` used to
+  zero and now nobody initialises — also stayed silent, over 120 frames of play and 90 of
+  scrolling. Nothing was relying on that region being zero.
+- The play buffer matched a forced `RedrawAll` — **0 diffs of 10,240** — stationary, after
+  horizontal scrolling, and after diagonal scrolling in both directions, with
+  `SprDrawAll`/`SprDrawTr` poked to `RTS`.
+
+> **One oracle failure, not explained, and probably not this change — see BUGS.md #15.** On one
+> deck, after a diagonal scroll, 176 bytes differed, settling to 7 over 3 M cycles. It sat on
+> `doorRow[0]` with `doorState` showing a door at step 2 of its animation, and it did not reproduce
+> on two other decks or on the other diagonal. The tables were read back byte-perfect in that same
+> state, so `SetCell` was computing the same addresses it always did. Logged rather than dismissed.
