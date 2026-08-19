@@ -1786,6 +1786,31 @@ efSrc = psrc
 .saa_next
   DEX
   BPL saa_loop
+
+\ ---- and the player's own colour, which is not the pool's --------
+\ $3DE5, the tail of the C64's own rotor-animation pass, and put here
+\ for the same reason: it is the last thing before the draw, so the
+\ colour the blitter uses is this pass's.
+\ THE PLAYER IS WHITE, EXCEPT IN TRANSFER MODE. $3E06 writes $F1 —
+\ white — to sprite 7's colour register every frame that moveMode is
+\ not 0, and the moveMode 0 arm at $3E21 writes clr6_xfer instead.
+\ MM_TRANSFER is 0 here too, so the test ports across unchanged.
+\ clr6_xfer is SLOT 6 of the deck's 12-byte colour record — the same
+\ record Layer 1 took deckBg from as slot 0 — so on the C64 it is a
+\ different colour on every deck: orange, yellow, dark grey, red,
+\ blue, light blue, cyan. We have three inks and white and black are
+\ already the player and the droids, so transfer mode gets logical 2,
+\ the deck's highlight. That is per-deck too, and it is the only
+\ colour left that cannot be mistaken for either. See the note in
+\ docs/layer-7-combat.md for what the alternative would have cost.
+  LDA moveMode
+  BNE saa_white                 \ MM_TRANSFER is 0, as it is on the C64
+  LDA #SPR_COL_HILIT
+  BNE saa_setcol                \ always
+.saa_white
+  LDA #SPR_COL_WHITE
+.saa_setcol
+  STA sprColour+PLY_SLOT
   RTS
 
 SPR_SPIN = 0                    \ frames between phases; full energy = 0
