@@ -182,6 +182,8 @@ DR_LOS_MAX = 96
 .LoadDeck
   LDA deck
   JSR BuildCharset              \ charset is deck specific
+  JSR AnimReset                 \ ...which puts the alert lamp back on its
+                                \ default colour, so the lamp must rebuild
   JSR SetPalette
   LDA deck
   JSR BuildLevel

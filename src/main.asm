@@ -397,6 +397,41 @@ VIA_PORTB  = &FE40
 \ home and no second load. The three blocks pack exactly onto
 \ PANEL_ADDR: 3,584 + 2,048 + 1,024 = 6,656 = &3000 to &4A00.
 \ [DECISION 1] in docs/layer-11-sound-title.md.
+\ ---- the low-RAM overlay: resident code below DFS's PAGE ----
+\ &0E00-&10FF is the sideways-ROM shared workspace, which on this machine
+\ is DFS's and DFS's alone. It is live for as long as the filing system
+\ is, and dead the moment the last *LOAD returns — which is the same
+\ argument the charset at &0400 already relies on, one page higher up.
+\ Nothing may be LOADED here (DFS is using it while it works), so the
+\ block is staged through DATA_LOAD like the four banks and copied down.
+\
+\ PAGE &0D IS DELIBERATELY EXCLUDED. &0D00-&0D5F is the NMI handler and
+\ its workspace, &0D9F-&0DEF the extended vector table and &0DF0-&0DFF
+\ the sideways ROMs' private-workspace page bytes. The disc is idle so
+\ no NMI is expected, but "expected" is not a guarantee and one spurious
+\ NMI through a page of 6502 would be unrecoverable. See KC's
+\ BEEB/Manuals/AllMem.txt.
+\
+\ WHY IT EXISTS: main RAM &1100-&3000 was down to 48 free bytes and bank
+\ 4 to 10, and the four features of this branch need neither of the two
+\ banks that have room, because both are paged out during play. This is
+\ the only main RAM left that a bank-4 routine and a main-RAM routine can
+\ both call. Layer 11e's sound driver is the other obvious tenant.
+\ lowcode.asm's two constants, declared here because beebasm resolves
+\ them in file order and src/lowbss.asm is reached first.
+ANIM_MAX  = 8                   \ animated tiles tracked in one view
+RECH_CHAR = 76                  \ ChrAnimData1's second group, $7A60
+
+LOWBSS_ADDR  = &0C90            \ and its state, in the tail of the same
+LOWBSS_LIMIT = &0D00            \ workspace the charset sits in
+LOW_ADDR  = &0E00
+LOW_LIMIT = &1100
+LOW_PAGES = 3
+\ Staged on the PANEL rather than at DATA_LOAD, because PARAFNT owns
+\ DATA_LOAD and has to be loaded before this one — see the boot code.
+\ The panel is not filled until PanelSetup, long after.
+LOW_STAGE = &4A00
+
 FONT_ADDR = &3000
 \ Declared here rather than taken from the generated file, because
 \ beebasm resolves constants in file order and droid.asm's MG_COPY
@@ -910,8 +945,19 @@ ORG &1100
   JSR PageBankIn
 
   LDX #LO(loadfnt)              \ and a fifth file: Layer 9's text font,
-  LDY #HI(loadfnt)              \ which loads straight to &3C00 and so has
-  JSR OSCLI                     \ to come after every staging copy
+  LDY #HI(loadfnt)              \ which loads straight to FONT_ADDR and so
+  JSR OSCLI                     \ has to come after every staging copy
+
+\ ---- and the low-RAM overlay, which must be LAST -----------
+\ PageLowIn writes &0E00-&10FF, which is DFS's own workspace: do it
+\ before the last filing-system call and the next *LOAD hangs in the
+\ 8271 poll with the ROM's variables underneath it. That cost a build.
+\ It is staged at LOW_STAGE and not at DATA_LOAD for the matching
+\ reason — PARAFNT lands on DATA_LOAD and has to load first.
+  LDX #LO(loadlow)
+  LDY #HI(loadlow)
+  JSR OSCLI
+  JSR PageLowIn
 
   PAGEBANK SWRAM_DATA           \ the data bank is the resting state
   JSR PageTabsIn                \ and, with it up, the four droid tables the
@@ -1173,6 +1219,13 @@ ENDIF
 \ sets of slots. Nothing is lost by the order: the restore replays the
 \ addresses the DRAW recorded, so it does not care where anything has
 \ moved to since.
+\ ---- the animated tiles, ahead of every draw ----------------
+\ AnimTick rotates the recharger's four characters inside the charset,
+\ so it has to run before anything reads it — and its answer is whether
+\ there is buffer work to do, which SprSplitOK needs before it decides.
+\ AnimPaint, below, is the half that writes.
+  JSR AnimTick
+
   JSR SprSplitOK
   STA sprSplit
   BEQ ml_whole
@@ -1209,6 +1262,10 @@ ELSE
   JSR DoRedraws
 ENDIF
 .ml_nodraw
+\ The animated tiles that are on screen already. A no-op unless AnimTick
+\ found some, and when it did the pass is not a split one — so this is
+\ always inside the window the level draw just used.
+  JSR AnimPaint
 IF DEBUG_DRAW
   LDA #DBG_REDRAW : JSR DbgSetBg
 ENDIF
@@ -1409,6 +1466,9 @@ ENDIF
 .loadfnt
   EQUS "LOAD PARAFNT"
   EQUB 13
+.loadlow
+  EQUS "LOAD PARALOW"
+  EQUB 13
 
 \ ============================================================
 \ PageDataIn — move PARADAT from &3000 into sideways RAM bank 0
@@ -1431,10 +1491,17 @@ ENDIF
   STA ROMSHAD                   \ both, always — see the note at the top
   STA ROMSEL
 
-  LDA #LO(DATA_LOAD) : STA swSrc
-  LDA #HI(DATA_LOAD) : STA swSrc+1
   LDA #LO(SWRAM_BASE): STA swDst
   LDA #HI(SWRAM_BASE): STA swDst+1
+
+\ PageCopy — the same staging copy with the destination already set, so
+\ the low-RAM overlay can share it. X = pages, source always DATA_LOAD.
+.PageCopy
+  LDA #LO(DATA_LOAD) : STA swSrc
+  LDA #HI(DATA_LOAD) : STA swSrc+1
+
+\ and once more with both ends given: X = pages, swSrc and swDst set.
+.PageCopyAt
 .pdi_page
   LDY #0
 .pdi_byte
@@ -1447,6 +1514,18 @@ ENDIF
   DEX
   BNE pdi_page
   RTS
+
+\ ---- and the overlay, down to &0E00 rather than up to a bank ----
+\ No ROMSEL: this one stays in main RAM. LOW_PAGES covers the whole
+\ region rather than the block's own length, so the copy is three fixed
+\ pages and the tail past low_end is stale staging bytes nobody reads.
+.PageLowIn
+  LDA #LO(LOW_STAGE) : STA swSrc
+  LDA #HI(LOW_STAGE) : STA swSrc+1
+  LDA #LO(LOW_ADDR)  : STA swDst
+  LDA #HI(LOW_ADDR)  : STA swDst+1
+  LDX #LOW_PAGES
+  JMP PageCopyAt
 
 \ ============================================================
 \ Layer 9 lives in BANK 6 and cannot see bank 4 — the bridge
@@ -1995,6 +2074,8 @@ ORG &0400
 .charset
   SKIP 137 * CHAR_BYTES         \ NUM_CHARS, defined in chardata.asm
 .charset_end
+ASSERT charset_end <= LOWBSS_ADDR
+INCLUDE "src/lowbss.asm"        \ &0C90: the low overlay's state, uninitialised
 ORG code_end
 
 \ ---- tile map: 64 x 16, one byte per tile -------------------
@@ -2296,6 +2377,23 @@ ASSERT fontcode_start == FONTCODE_ADDR
 ASSERT fontcode_end - fontcode_start == FONTCODE_BYTES
 ASSERT font_end - font_start == FONT_BYTES + PN_FRAME_BYTES + CON_STR_BYTES + FONTCODE_BYTES
 SAVE "PARAFNT", font_start, font_end, FONT_ADDR, FONT_ADDR
+
+\ ============================================================
+\ The low-RAM overlay — resident code at &0E00
+\ ============================================================
+\ Assembled where it runs, but SAVEd with a catalogue load address of
+\ DATA_LOAD so that *LOAD stages it and PageLowIn copies it down: DFS is
+\ using &0E00-&10FF as its own workspace for the duration of the load
+\ that delivers it, so it cannot be loaded in place. See LOW_ADDR.
+\ It is main RAM, so bank 4 may call it and so may the code image, and
+\ neither needs anything paged. That is the whole point of it.
+ORG LOW_ADDR
+.low_start
+INCLUDE "src/lowcode.asm"
+.low_end
+ASSERT low_end <= LOW_LIMIT
+ASSERT low_end - low_start <= LOW_PAGES * 256
+SAVE "PARALOW", low_start, low_end, LOW_STAGE, LOW_STAGE
 
 ASSERT CON_TYPES == DR_TYPES    \ console.asm is in bank 4 and cannot see
                                 \ the sprite bank's count when it needs it

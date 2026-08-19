@@ -411,105 +411,28 @@ DOOR_SLOTS = 7                  \ the C64's cap, and it compacts on close
 \ ============================================================
 \ DrawDoorTile — repaint slot X's 4x4 characters in the buffer
 \ ============================================================
-\ The scroll only ever draws the leading edge, so a door that animates
-\ while the view is still has to repaint itself. Cells outside the view
-\ are skipped: they will be drawn correctly whenever they scroll in,
-\ because the band and column paths consult the patched definition.
-\
-\ Cold code — a handful of calls per door transition — so it is written
-\ for clarity and reuses SetCell and BufNextUnit rather than unrolling
-\ anything. Each half-character is copied separately with a wrap
-\ between, which sidesteps the "wrap must not fall inside a character"
-\ condition that COPYCHAR depends on.
+\ The door's half of what is now DrawTileCells, in the low-RAM overlay:
+\ this works out the tile position and points the generic painter at
+\ the door's own patched definition and at the all-sixteen cell list.
+\ The body it used to have moved there so that the recharge pad and the
+\ ALERT lamp could share it — same code, same argument for it, and 200
+\ bytes back out of the one region that is genuinely full.
+\ Cells outside the view are still skipped, and they still come out
+\ right whenever they scroll in, because the band and column paths
+\ consult the patched definition.
 .DrawDoorTile
   STX ddSlot
+  LDA doorCol,X : STA dtcCol
+  LDA doorRow,X : STA dtcRow
 
-  LDA doorCol,X                 \ character origin of the tile
-  ASL A : ASL A                 \ tileCol * 4, 0-252
-  STA ddCharX
-  LDA doorRow,X
-  ASL A : ASL A                 \ tileRow * 4, 0-60
-  STA ddCharY
-
+  LDA doorMul16,X               \ doorDef + slot * 16, this door's copy
+  CLC : ADC #LO(doorDef) : STA dtcDefOp+1
   LDA #0
-  STA ddRow
-  STA ddRow2
-.ddt_row
-  CLC                           \ display row = charY + r - mapYr
-  LDA ddCharY
-  ADC ddRow
-  SEC
-  SBC mapYr
-  CMP #PLAY_ROWS
-  BCS ddt_nextrow               \ above the strip, or below it (unsigned)
-  STA rCount
+  ADC #HI(doorDef) : STA dtcDefOp+2
 
-  LDA #0
-  STA ddCol
-.ddt_col
-  CLC                           \ unit = (charX + c) * 2 - mapHX, 16-bit
-  LDA ddCharX
-  ADC ddCol
-  STA ddTmp
-  LDA #0
-  STA ddTmp+1
-  ASL ddTmp : ROL ddTmp+1
-  SEC
-  LDA ddTmp   : SBC mapHX   : STA ddTmp
-  LDA ddTmp+1 : SBC mapHX+1
-  BNE ddt_nextcol               \ left of the view, or past 255
-  LDA ddTmp
-  CMP #PLAY_UNITS-1
-  BCS ddt_nextcol               \ the right half would fall outside
-  STA uCount
-
-  LDX ddSlot                    \ character code from the patched copy
-  LDA doorMul16,X
-  CLC
-  ADC ddRow2                    \ row * 4, kept alongside ddRow
-  ADC ddCol
-  TAX
-  LDA doorDef,X
-  TAX
-  LDA CHAR_PTR_LO,X : STA chp
-  LDA CHAR_PTR_HI,X : STA chp+1
-
-  JSR SetCell                   \ left half
-  LDY #7
-.ddt_l
-  LDA (chp),Y : STA (bufp),Y
-  DEY
-  BPL ddt_l
-
-  CLC                           \ right half, 8 bytes on in the charset
-  LDA chp : ADC #8 : STA chp
-  BCC ddt_nc
-  INC chp+1
-.ddt_nc
-  JSR BufNextUnit
-  LDY #7
-.ddt_r
-  LDA (chp),Y : STA (bufp),Y
-  DEY
-  BPL ddt_r
-
-.ddt_nextcol
-  INC ddCol
-  LDA ddCol
-  CMP #4
-  BCC ddt_col
-
-.ddt_nextrow
-  CLC
-  LDA ddRow2                    \ row * 4, maintained rather than shifted
-  ADC #4
-  STA ddRow2
-  INC ddRow
-  LDA ddRow
-  CMP #4
-  BCS ddt_done
-  JMP ddt_row
-.ddt_done
+  LDA #LO(dtcCellsAll) : STA dtcListOp+1
+  LDA #HI(dtcCellsAll) : STA dtcListOp+2
+  JSR DrawTileCells
   LDX ddSlot
   RTS
 
@@ -536,13 +459,8 @@ DOOR_SLOTS = 7                  \ the C64's cap, and it compacts on close
 .duSrc      EQUB 0
 .duSrcSlot  EQUB 0
 .duDstSlot  EQUB 0
-.ddSlot     EQUB 0
-.ddCharX    EQUB 0
-.ddCharY    EQUB 0
-.ddRow      EQUB 0
-.ddRow2     EQUB 0              \ ddRow * 4
-.ddCol      EQUB 0
-.ddTmp      EQUW 0
+.ddSlot     EQUB 0              \ the rest of DrawDoorTile's state went
+                                \ with its body, into lowbss.asm
 
 \ slot -> byte offset of its private definition
 .doorMul16  EQUB 0, 16, 32, 48, 64, 80, 96
