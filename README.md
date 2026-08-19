@@ -2,15 +2,18 @@
 
 A port of Andrew Braybrook's *Paradroid* (Commodore 64, 1985) to the BBC Micro Model B.
 
-It plays. The deck hardware-scrolls eight ways under a droid you steer, a pool of seven sprites runs
-over it, doors open as you walk into them and lifts carry you between decks — so the whole ship is
-traversable. Droids patrol it, shoot at you and can kill you; you shoot back, and score. The status
-line and the console screen are the original's, down to the deck being called `Reactor` rather than
-`5`. The transfer minigame plays too: prime with fire, touch a droid, pick a side and fight the
-circuit board for it — win and you *are* that droid, with its weapon and speed. **Sound and the
-title screen are what is left**, plus the pre-game droid info screens the transfer skips for now.
-See [`PLAN.md`](PLAN.md) for the layered build plan, the memory map, decisions taken and current
-status.
+It plays, start to finish. The title screen comes up, the deck hardware-scrolls eight ways under a
+droid you steer, a pool of seven sprites runs over it, doors open as you walk into them and lifts
+carry you between decks — so the whole ship is traversable. Droids patrol it, shoot at you and can
+kill you; you shoot back, and score. The status line and the console are the original's, down to the
+deck being called `Reactor` rather than `5`, and the console carries the ship diagram, the deck plan
+and the droid database. The transfer minigame plays too: prime with fire, touch a droid, pick a side
+and fight the circuit board for it — win and you *are* that droid, with its weapon and speed. Die as
+a 001 and the ship burns out under a dissolve and a game-over message.
+
+**Sound is what is left**, plus the 001 briefing screen, the high-score table, the intro manual and
+the pre-game droid info screens the transfer skips for now. See [`PLAN.md`](PLAN.md) for the layered
+build plan, the memory map, decisions taken and current status.
 
 ## Target
 
@@ -38,6 +41,9 @@ converts mechanically from the ripped data with nothing redrawn.
 | Cursor up/down | debug deck hop |
 | SPACE | force a full redraw (also the verification oracle) |
 
+Some keys are debug builds only and are listed by `!BOOT` when they are compiled in — see the
+`DEBUG_*` flags at the top of `src/main.asm`.
+
 ## Approach
 
 No hardware abstraction layer. The port is built one layer at a time, each verified running in an
@@ -54,7 +60,12 @@ emulator before the next begins:
 8. **Doors, lifts, decks** — ✅ done, taken ahead of 6 and 7 so droid AI has a ship to route through
 9. **HUD and console** — ✅ done
 10. **Transfer minigame** — ✅ done; in a fourth sideways bank, minus the pre-game info screens
-11. Sound, title, polish
+11. **Title, game over, sound** — title screen and the death/game-over sequence ✅ done; sound and
+    the 001 briefing screen outstanding
+12. Balance, fidelity and feel
+13. **Memory and machine compatibility** — the RAM pass ✅ done; sideways-RAM detection and
+    testing on real machines outstanding
+14. Visual pass — the final palettes
 
 Each completed layer keeps its working notes in [`docs/`](docs/) — the measurements, the dead ends
 and the hardware facts bought the hard way, including several options that were costed and
@@ -149,6 +160,8 @@ python tools/export_icons.py      # the console's menu icons -> src/data/
 python tools/export_droidicon.py  # the console's droid icon -> src/data/
 python tools/export_xfer.py       # the transfer board, three ownership sets -> src/data/
 python tools/export_sideview.py   # the lift screen's ship cross-section -> src/data/
+python tools/export_droidinfo.py  # the droid database's stats and descriptions -> src/data/
+python tools/export_title.py      # the title screen's own glyphs and RLE -> src/data/
 ```
 
 The tools require Python 3 and Pillow. Regenerate `src/data/` rather than editing it.

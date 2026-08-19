@@ -145,20 +145,30 @@ build rather than from a plan. Read it there and regenerate it when a region mov
 | ZP `&00–&8F` | 144 B | **all of it used** — the map is in `main.asm`. `&90` up is the OS |
 | `&0400–&0C8F` | 2,192 B | MODE 1 charset, built at deck load — reclaimed OS workspace |
 | `&0C90–&10FF` | **1,136 B free** | rest of the reclaimed OS workspace |
-| `&1100–&2FE7` | 7,912 B | code (`PARA`), starting below DFS's `PAGE`. DFS random-access buffer space, safe for `*LOAD` |
-| `&2FE8–&2FFF` | **24 B free** | **the binding constraint.** Layer 10 paid its way in by moving `CalcAxis`/`CalcSpeed` and its own shims into bank 4, Layer 8b's lift view by deleting the routines it replaced, and the console pages' `ConsoleTick` arms took most of the rest. Anything new in main RAM needs the same treatment |
-| `&3000–&3DFF` | 3,584 B | **Layer 9's text font**, `PARAFNT`, `*LOAD`ed straight here — 103 glyphs, the twelve border cells and the four mirrored droid tables. **Moved down from `&3C00` by Layer 11** so the title screen can have 16,000 contiguous bytes from `&4000` |
-| `&3E00–&45FF` | 2,048 B | sprite background save areas, one page per slot — **eight**, ending exactly where the tile map begins. A ninth would overwrite it |
+| `&1100–&2F6C` | 7,789 B | code (`PARA`), starting below DFS's `PAGE`. DFS random-access buffer space, safe for `*LOAD` |
+| `&2F6D–&2FFF` | **148 B free** | **the binding constraint**, and where Layer 11e's sound driver has to go — the IRQ reads no sideways bank. It was 24, then 30; Layer 13a's TASK 6 and TASK 8 took it here |
+| `&3000–&366F` | 1,648 B | **the text font**, `PARAFNT` — 103 glyphs at **1bpp, the C64's own bytes**, expanded by `FontCell` as it draws. Layer 13a TASK 3 |
+| `&3670–&36CF` | 96 B | the status box's twelve border cells, same file, also 1bpp |
+| `&36D0–&3CD5` | 1,542 B | `constrings` — the `$C000` name table, **one copy**, read by the console in bank 6 and the droid database in bank 7 alike. TASK 7 |
+| `&3CD6–&3D27` | 82 B | `FontCell` and its expansion table — main RAM because both banks call it, but not the code image. TASK 8 |
+| `&3D28–&3D87` | 96 B | the four droid tables, mirrored out of bank 4 for the panel in bank 6 |
+| `&3D88–&3DFF` | **120 B free** | what is left of the room the 1bpp font freed |
+| `&3E00–&45FF` | 2,048 B | sprite background save areas, one page per slot — **eight**, ending exactly where the tile map begins. Also the transfer and lift screens' shadow buffers, which never coexist with them (TASK 1) |
 | `&4600–&49FF` | 1,024 B | tile map, fixed home — floating it after `code_end` once put it over the save areas. Ends exactly at the panel, **0 B free** |
 | `&4A00–&53FF` | 2,560 B | panel — **4 rows** × 640, the C64's status box exactly, displayed by rupture cycle 1 |
-| `&5400–&54FF` | **256 B free** | |
+| `&5400–&54BF` | 192 B | `rowMul`/`unitMul`, the row and unit offset tables, built at startup. TASK 6 |
+| `&54C0–&54FF` | **64 B free** | |
 | `&5500–&56FF` | 512 B | `CHAR_PTR_LO`/`HI` — character code → charset address, built at startup |
 | `&5700–&57FF` | 256 B | data byte → transparency mask table, built at startup |
 | `&5800–&7FFF` | 10,240 B | play buffer: circular strip, 16 rows × 640 |
-| SWRAM bank 4 | 16 K | `PARADAT` — char data, colour schemes, tile defs, deck RLE, waypoints, the combat stat tables, **the level-draw code, the droid AI, Layer 7's combat, Layers 10 and 8b's entry/exit shims, the console menu and page shims, and `CalcAxis`/`CalcSpeed`**. Ends `&BEDA`, **294 B free** |
-| SWRAM bank 5 | 16 K | `PARASPR` — the blitter at shifts 0 and 1 px, **plus Layer 7's effect artwork**: 31 bullet and explosion frames, 2,946 B, here because the interpreted path reads them every row. Ends `&BBF7`, **1,033 B free** |
-| SWRAM bank 6 | 16 K | `PARSPR2` — the same at 2 and 3 px, laid out identically, **plus Layer 9's panel engine, HUD, console, strings and icons**. Ends `&BFC6`, **58 B free — full** |
-| SWRAM bank 7 | 16 K | `PARXFER` — **Layer 10's transfer game and Layer 8b's lift screen**, sharing the shadow screen/colour RAM, the glyph page and the renderer; plus both glyph sets, the console's ship page, **the deck plan** (`condeck.asm`, `plandata.asm`) and **the droid database** (`condb.asm`, `droidinfo.asm`) with its second copies of the string table and the droid icon. Ends `&B7E6`, **~2.0 K free** |
+| SWRAM bank 4 | 16 K | `PARADAT` — char data, colour schemes, tile defs, deck RLE, waypoints, the combat stat tables, **the level-draw code, the droid AI, Layer 7's combat, Layers 10 and 8b's entry/exit shims, the console menu and page shims, and `CalcAxis`/`CalcSpeed`**. **15 B free — the only tight region left** |
+| SWRAM bank 5 | 16 K | `PARASPR` — the blitter at shifts 0 and 1 px, **plus Layer 7's effect artwork**: 31 bullet and explosion frames, 2,946 B, here because the interpreted path reads them every row. **1,033 B free** |
+| SWRAM bank 6 | 16 K | `PARSPR2` — the same at 2 and 3 px, laid out identically, **plus Layer 9's panel engine, HUD, console and icons**. **1,609 B free** |
+| SWRAM bank 7 | 16 K | `PARXFER` — **Layer 10's transfer game and Layer 8b's lift screen**, sharing the glyph page and the renderer; plus the console's ship page, **the deck plan** (`condeck.asm`, `plandata.asm`), **the droid database** (`condb.asm`, `droidinfo.asm`) and Layer 11's title and game over. **4,410 B free** |
+
+> Figures from the **2026-08-19** build, after Layer 13a. The pass freed **6,085 bytes** with no
+> cycle cost and no behaviour change; [`docs/layer-13-ram-pass.md`](docs/layer-13-ram-pass.md) has
+> the task-by-task account and the analysis of why 96 K held less game than the C64's 64 K.
 
 **"Main RAM is full" meant the `PARA` image could not grow past `&3000`** — never that there was no
 RAM. Moving code rather than data is what fixed it: `screen.asm`, `scroll.asm`, `level.asm` and
@@ -382,23 +392,41 @@ see them" is.
 **Exit condition:** the fidelity table complete, the Redux list triaged, and a build KC is happy to
 put in front of someone else.
 
-### Layer 13 — Memory, banks and machine compatibility — planned
+### Layer 13 — Memory, banks and machine compatibility — 13a DONE 2026-08-19
 
 **Until this layer, RAM is not a constraint worth designing around.** KC's ruling, 2026-08-16:
 where a layer needs room, take a fourth sideways bank and move on. Layer 13 is where the
 accumulated cost is paid off in one pass, with the whole game in front of us. Three strands:
 
-#### 13a — The RAM pass
+#### 13a — The RAM pass — **DONE 2026-08-19**, [`docs/layer-13-ram-pass.md`](docs/layer-13-ram-pass.md)
 
-Every bank and every main-RAM hole re-audited with the finished game's real requirements. The
-questions already known to be waiting:
+Taken early rather than after Layer 12, because Layer 11 had filled main RAM to 30 bytes and bank 6
+to 40 and the rest of Layer 11 could not be built until it was. **+6,085 bytes**, in seven changes
+that each cost no cycles and changed no behaviour:
 
 | | |
 |---|---|
-| how many banks are actually needed | four is the working assumption from this layer on; the target says three. Deciding is this pass's job |
-| the bank-4/bank-6 split | Layer 9's panel, HUD and console are in bank 6 with a main-RAM bridge, purely because bank 4 was 224 bytes short at the time (`docs/layer-9-hud.md`, decision 8). If bank 4 gets 1.4 K back they all move home and the bridge goes |
-| the font in main RAM | `&3C00` upward, because it must be readable from bank 4 and bank 6 alike (decision 1). Costs a 3 K hole nothing else can use |
-| the holes | `&0C90–&10FF`, `&2FE8–&3000`, `&5400–&5500`, and what wants them |
+| the transfer's 2 K shadow screen | onto the sprite save areas, which are dead whenever it is up |
+| the lift's second glyph set | 592 bytes to change three glyphs; only those three ship now |
+| the row/unit offset tables | 192 bytes of pure arithmetic out of the code image, built at startup |
+| the text font | **1bpp — the C64's own bytes**, halving `PARAFNT`, with one shared `FontCell` decoder replacing four copies of the same loop |
+| the string table | existed twice, once per bank; now once, in main RAM where both can reach it |
+| `FontCell` itself | out of the code image into the font file — main RAM either way |
+
+It also found and fixed a real defect: `PnClear` cleared a whole extra page past the panel, because
+`LO(PANEL_BYTES)` is zero and its tail loop compared `CPY #0` against a Y that was already zero.
+
+**The questions this pass was going to ask have answered themselves.** Four banks are the working
+assumption and stay; the bank-4/bank-6 split no longer needs undoing, because bank 6 has 1,609 bytes
+rather than 40; and the 3 K font hole is now 1,648 bytes of font plus the string table that used to
+be duplicated. What is left of the original list:
+
+| | |
+|---|---|
+| how many banks | **four, settled.** The four hold ~57 K of the 64 K they offer and 7 K is free across them; three banks are 48 K and cannot take it. The original two-bank target went when the blitter was compiled |
+| bank 4's 15 bytes | the only tight region left. It holds the tile, deck and waypoint data with the level draw and droid AI beside it, all finished — but anything new there still needs something moved first |
+| `&0C90–&10FF` | 1,136 bytes still free and still unclaimed. It is below DFS's workspace at `&0E00`, so it takes runtime-built data, not anything loaded with the code |
+| what was costed and declined | sharing the two-cell glyph wrapper (~200 B), de-duplicating the console droid icon (110 B), and interpreting the compiled digit glyphs (~5.9 K, and it costs cycles). All three are written up in the layer notes with their numbers |
 
 #### 13b — Sideways RAM detection at boot
 
