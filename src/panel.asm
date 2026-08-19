@@ -161,37 +161,27 @@ PN_TEXT_ADDR = PANEL_ADDR + PN_TEXT_ROW * ROW_BYTES
   STA pnSrc
   LDA #0
   STA pnSrc+1
-  ASL pnSrc : ROL pnSrc+1       \ * 32
-  ASL pnSrc : ROL pnSrc+1
-  ASL pnSrc : ROL pnSrc+1
+  ASL pnSrc : ROL pnSrc+1       \ * 16 — a packed glyph is two 8-byte
+  ASL pnSrc : ROL pnSrc+1       \ cells, not two 16-byte ones
   ASL pnSrc : ROL pnSrc+1
   ASL pnSrc : ROL pnSrc+1
   CLC
   LDA pnSrc   : ADC #LO(FONT_ADDR) : STA pnSrc
   LDA pnSrc+1 : ADC #HI(FONT_ADDR) : STA pnSrc+1
 
-  LDY #15                       \ the top cell
-.pn_top
-  LDA (pnSrc),Y
-  AND pnMask                    \ the ink — see PN_INK_TEXT above
-  STA (pnDst),Y
-  DEY
-  BPL pn_top
+  LDA pnMask                    \ the ink — see PN_INK_TEXT above
+  STA fontMask
+  JSR FontCell                  \ the top cell, main RAM: pnSrc and pnDst
+                                \ ARE swSrc and swDst, so nothing is passed
 
   CLC                           \ down one character row for the bottom
   LDA pnDst   : ADC #LO(ROW_BYTES) : STA pnDst
   LDA pnDst+1 : ADC #HI(ROW_BYTES) : STA pnDst+1
   CLC
-  LDA pnSrc   : ADC #16 : STA pnSrc
-  LDA pnSrc+1 : ADC #0  : STA pnSrc+1
+  LDA pnSrc   : ADC #8 : STA pnSrc
+  LDA pnSrc+1 : ADC #0 : STA pnSrc+1
 
-  LDY #15
-.pn_bot
-  LDA (pnSrc),Y
-  AND pnMask
-  STA (pnDst),Y
-  DEY
-  BPL pn_bot
+  JSR FontCell
 
   SEC                           \ back up, then on to the next column
   LDA pnDst   : SBC #LO(ROW_BYTES - 16) : STA pnDst
@@ -206,19 +196,15 @@ PN_TEXT_ADDR = PANEL_ADDR + PN_TEXT_ROW * ROW_BYTES
 \ bytes is 192, so the index times 16 stays in one byte and the pointer
 \ arithmetic is a shift and one add rather than PnGlyph's shift-and-roll.
 .PnCell
-  ASL A : ASL A : ASL A : ASL A \ * 16, and 11 * 16 = 176: no carry out
+  ASL A : ASL A : ASL A         \ * 8, and 11 * 8 = 88: no carry out
   CLC
   ADC #LO(PN_FRAME_ADDR) : STA pnSrc
   LDA #0
   ADC #HI(PN_FRAME_ADDR) : STA pnSrc+1
 
-  LDY #15
-.pn_c_loop
-  LDA (pnSrc),Y
-  AND pnMask
-  STA (pnDst),Y
-  DEY
-  BPL pn_c_loop
+  LDA pnMask
+  STA fontMask
+  JSR FontCell
 
   CLC
   LDA pnDst : ADC #16 : STA pnDst

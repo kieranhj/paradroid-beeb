@@ -794,6 +794,20 @@ fired. `SetCell` was therefore computing the same addresses it always has.
 X + M diagonal on two other decks, and after the opposite Z + K diagonal — five clean runs against
 the one failure.
 
+**2026-08-19, and this is the useful part: it correlates with driving a modal screen by poking its
+flag, not with any of Layer 13a's changes.** Chasing it during TASK 3 produced a 10-byte
+disagreement at the player's own position — and the run that produced it had been forced in and out
+of the console, the transfer and the droid database by writing `conActive`, `xferDroid`, `xfmDone`
+and `conDbReq` directly, which **bypasses `ConsoleClose` and `XferExit4` and therefore skips
+`ReframeView`**. A clean boot of the same build, scrolled the same way with nothing poked but the
+sprite disable, came back **0 diffs of 10,240** — as did the pre-branch build at `20b0697`.
+
+So the suspicion moves off the level draw and onto **what happens to a door whose state changes
+while a modal screen owns the buffer**: the console arm ends the pass with `JMP ml_passend` before
+anything draws, so a `doorDirty` set and consumed under it is never painted, and only a `RedrawAll`
+shows it. That is the same shape as **#12**, where lasers drawn before a console opens stay on
+screen — a missing teardown on modal entry. Worth fixing the two together.
+
 **It is NOT #9.** That one is 58–62 bytes and every one of them is in CRTC unit 0, the leftmost
 column. This is in units 7–11 and nowhere near the edge.
 

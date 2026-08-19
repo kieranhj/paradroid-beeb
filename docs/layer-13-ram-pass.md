@@ -207,31 +207,62 @@ Both were in the original tier-1 list. Both turned out to need a decision rather
 afternoon, and the reason is the same in each case: what tier 1 has already freed changed what
 they are worth.
 
-### [TASK 3] The text font in 1bpp — ~1,648 bytes, and it needs one shared renderer first
+### [TASK 3] The text font in 1bpp — **BUILT 2026-08-19. +1,744 in the font region, +20 bank 6, −82 main RAM**
 
-**The premise checks out.** Every one of `PARAFNT`'s 3,296 font bytes and 192 border-cell bytes has
-its high nibble equal to its low nibble — measured, not assumed. The artwork is pure two-colour,
-logical 0 and logical 3, which is exactly why `PnGlyph` can recolour it with a single `AND pnMask`.
-So half of every byte is redundant and 1bpp storage is **lossless**: `expand(n) = n | (n << 4)`.
+**The packed byte is the C64's own font byte, and that is the whole point.** The artwork is two
+colour — logical 0 and logical 3 — so a MODE 1 byte holding it comes out as `n<<4 | n`: four pixels
+in eight bits. Pair a cell's byte *i* with its byte *i+8*, the same scanline's left and right
+halves, and you get back `(left<<4) | right`, which is the C64's own 8-pixels-per-byte scanline.
+So this is not an encoding the port invented; it is the **removal** of one, and `export_font.py`
+now emits `glyph_rows` straight out rather than converting.
 
-**What stops it being a small change is that there are four readers in two banks** — `PnGlyph` and
-`PnCell` in bank 6, `XfGlyphAt` and `DbGlyph` in bank 7 — and all four share the same loop shape,
-`LDY #15 / LDA (pnSrc),Y / AND pnMask / STA (pnDst),Y / DEY / BPL`. Packing breaks it: the source
-index becomes `Y >> 1` and the output store still needs Y, and the 6502 has no second
-indirect-indexed register. Each site needs a staging step or a restructure, ~25 bytes and ~25 cycles
-a byte. **Bank 6 has 47 bytes and two of the four sites are in it**, so the naive version does not
-even fit.
+| | Was | Now |
+|---|---|---|
+| `textfont`, 103 glyphs × 2 cells | 3,296 | 1,648 |
+| `panelframe`, 12 cells | 192 | 96 |
 
-**The right shape is TASK 8 from the opening analysis: one glyph renderer, in main RAM, called by
-both banks** — main RAM now has the 148 bytes for it, bank code may call main RAM freely, and the
-four sites *shrink*, because each loses its copy loop and gains a `JSR`. That is an architectural
-change to how every screen draws text, so it wants KC rather than a passing edit.
+`PARAFNT` is 1,744 bytes instead of 3,488, and **`&3730`–`&3E00` — 1,744 bytes — is free**. That is
+buffer space under the staging overlay, so it takes runtime-built tables or a file `*LOAD`ed after
+the bank copies, which is exactly what `PARAFNT` itself is. `constrings` is 1,731 and now fits, with
+13 to spare — [TASK 7] below.
 
-**Where the 1,648 bytes land matters too.** They free `&36xx`–`&3D9F`, which is buffer space under
-the staging overlay: it takes runtime-built tables or a file `*LOAD`ed after the bank copies, which
-is what `PARAFNT` already is. So it is room for **late-loaded graphics data** — the 48 × 84 droid
-portraits that [DECISION 3] deferred are ~2 K for two types and would fit — and it is the enabler
-for the string dedup below. It is **not** code space, and it is not bank space.
+**One renderer, in main RAM, replacing four copies.** `PnGlyph` and `PnCell` (bank 6) and
+`XfGlyphAt` and `DbGlyph` (bank 7) were the same loop four times. Packing breaks that loop shape —
+the source index becomes a function of the output index and only Y can index indirectly — so rather
+than solve it four times, `FontCell` solves it once and every site *shrinks*: **bank 6 gained 20
+bytes and bank 7's sites gained about 25**, though bank 7 shows no net change because `planInk`'s
+`ALIGN &100` absorbed it, the same way `tiledefs` absorbs bank 4's in [TASK 5].
+
+`FontCell` costs **82 bytes of the code image** — KC's call, taken deliberately: main RAM drops from
+148 to 66, which still covers 11c's 39, and it is what makes the freed region big enough for
+`constrings`. It runs two passes over the 8 packed bytes, adding 8 to `swDst` between them, because
+a third zero-page pointer does not exist to hold the second half's destination.
+
+**Two things every future caller must know.** `fontMask` is a variable and **must be set before
+every call** — `XfGlyphAt` had no mask at all and now sets `&FF` explicitly. And `XfGlyphAt` moved
+off `xgs`/`xgd` onto `swSrc`/`swDst`, because `FontCell` names that pair; they are free there, as
+`PageBankIn` is boot-only and `PanelTick` does not run while the transfer owns the panel line.
+
+**Verified, in five ways:**
+
+1. **At generation time, which is the real proof.** `export_font.py` asserts for every cell it emits
+   that expanding the packed byte's two nibbles reproduces the MODE 1 pair exactly. All 103 glyphs
+   and 12 border cells pass, so the data cannot be lossy by construction.
+2. **Independently**, against the previous generated file: all 3,488 old bytes reconstruct from the
+   1,744 new ones.
+3. **The panel — `PnGlyph` and `PnCell` — is byte-identical to the pre-change build**: 0 diffs of
+   2,560, same deck, covering all twelve border cells, the mode word, the logo, the score and the
+   deck number.
+4. **The console's text is byte-identical** to the pre-change build on the same deck. The only cells
+   that differ in its 10,240 bytes are the 4 × 3 block holding the rotor-and-digits droid — which is
+   drawn from `conDrRotor`/`conDrDigits` in bank 6 and never touches the font. It differs because it
+   is state: two separate games on the *same* build differ there too.
+5. **The two bank-7 sites render correctly**, checked as bitmaps: the transfer's panel line and the
+   droid database's "Unit type" line both come out crisp, with the `y` and `p` descenders correctly
+   spanning into the lower cell — which is precisely what a mis-paired packing would break.
+
+And the play buffer is unaffected, as it should be: **0 diffs of 10,240** against a forced
+`RedrawAll` after a clean boot and a diagonal scroll.
 
 ### [TASK 7, the natural partner] The string table exists twice — 3,462 bytes
 

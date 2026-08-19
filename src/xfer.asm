@@ -1733,46 +1733,42 @@ XF_COL_TIME  = 19               \ the countdown, centre
 ASSERT PN_TEXT_ADDR > 0         \ panel.asm's constants are visible here
 
 .XfGlyphAt                      \ A = glyph, xfTxtCol = column; advances
-  STA xgs
+\ ON swSrc/swDst AND NOT xgs/xgd, because the font is packed now and
+\ FontCell — main RAM, shared with the panel and the droid database —
+\ names that pair. They are free here: PageBankIn is boot-only and
+\ PanelTick does not run while this screen owns the panel line. The
+\ board renderer keeps xgs/xgd; the two never overlap.
+  STA swSrc
   LDA #0
-  STA xgs+1
-  ASL xgs : ROL xgs+1           \ * 32
-  ASL xgs : ROL xgs+1
-  ASL xgs : ROL xgs+1
-  ASL xgs : ROL xgs+1
-  ASL xgs : ROL xgs+1
+  STA swSrc+1
+  ASL swSrc : ROL swSrc+1       \ * 16 — two 8-byte cells
+  ASL swSrc : ROL swSrc+1
+  ASL swSrc : ROL swSrc+1
+  ASL swSrc : ROL swSrc+1
   CLC
-  LDA xgs   : ADC #LO(FONT_ADDR) : STA xgs
-  LDA xgs+1 : ADC #HI(FONT_ADDR) : STA xgs+1
+  LDA swSrc   : ADC #LO(FONT_ADDR) : STA swSrc
+  LDA swSrc+1 : ADC #HI(FONT_ADDR) : STA swSrc+1
 
   LDA xfTxtCol                  \ col * 16
   ASL A : ASL A : ASL A : ASL A
-  STA xgd
+  STA swDst
   LDA xfTxtCol
   LSR A : LSR A : LSR A : LSR A
-  STA xgd+1
+  STA swDst+1
   CLC
-  LDA xgd   : ADC #LO(PN_TEXT_ADDR) : STA xgd
-  LDA xgd+1 : ADC #HI(PN_TEXT_ADDR) : STA xgd+1
+  LDA swDst   : ADC #LO(PN_TEXT_ADDR) : STA swDst
+  LDA swDst+1 : ADC #HI(PN_TEXT_ADDR) : STA swDst+1
 
-  LDY #15                       \ top cell
-.xga_top
-  LDA (xgs),Y
-  STA (xgd),Y
-  DEY
-  BPL xga_top
+  LDA #&FF                      \ this one draws in every plane it is
+  STA fontMask                  \ given — it never had an ink mask
+  JSR FontCell                  \ top cell
   CLC
-  LDA xgd   : ADC #LO(ROW_BYTES) : STA xgd
-  LDA xgd+1 : ADC #HI(ROW_BYTES) : STA xgd+1
+  LDA swDst   : ADC #LO(ROW_BYTES) : STA swDst
+  LDA swDst+1 : ADC #HI(ROW_BYTES) : STA swDst+1
   CLC
-  LDA xgs   : ADC #16 : STA xgs
-  LDA xgs+1 : ADC #0  : STA xgs+1
-  LDY #15                       \ bottom cell
-.xga_bot
-  LDA (xgs),Y
-  STA (xgd),Y
-  DEY
-  BPL xga_bot
+  LDA swSrc   : ADC #8 : STA swSrc
+  LDA swSrc+1 : ADC #0 : STA swSrc+1
+  JSR FontCell                  \ bottom cell
   INC xfTxtCol
   RTS
 

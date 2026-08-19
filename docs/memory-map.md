@@ -25,11 +25,12 @@ Regenerate it after any change that moves a region:
 | `&0200–&03FF` | 512 B | OS vectors and workspace. We own `IRQ1V` at `&0204` outright |
 | `&0400–&0C8F` | 2,192 B | MODE 1 charset, rebuilt at every deck load — reclaimed OS workspace |
 | `&0C90–&10FF` | **1,136 B free** | The rest of the reclaimed workspace |
-| `&1100–&2F6C` | 7,789 B | Code (`PARA`), starting below DFS's `PAGE` of `&1900`. The level draw and droid AI are in bank 4; Layers 7–10's main-RAM halves refilled the room they made |
-| `&2F6D–&2FFF` | **148 B free** | The binding constraint. It was 24, then 30; Layer 13a's TASK 6 moved the 192 bytes of `rowMul`/`unitMul` out to `&5400` and built them at startup instead. Anything new here still wants displacing into a bank first |
-| `&3000–&3CDF` | 3,296 B | Layer 9's text font, `PARAFNT` — 103 glyphs × 32 B, `*LOAD`ed here after the bank copies. **Moved down from `&3C00` by Layer 11** |
-| `&3CE0–&3D9F` | 192 B | The status box's twelve border cells, same file |
-| `&3DA0–&3DFF` | 96 B | The four droid tables, mirrored out of bank 4 for the panel in bank 6 — ends exactly at the save areas |
+| `&1100–&2FBE` | 7,871 B | Code (`PARA`), starting below DFS's `PAGE` of `&1900`. The level draw and droid AI are in bank 4; Layers 7–10's main-RAM halves refilled the room they made |
+| `&2FBF–&2FFF` | **66 B free** | The binding constraint. It was 24, then 30; TASK 6 moved 192 bytes of `rowMul`/`unitMul` out to `&5400` and TASK 3 spent 82 of the result on `FontCell`, deliberately — that is what makes the font region big enough for `constrings` |
+| `&3000–&366F` | 1,648 B | Layer 9's text font, `PARAFNT` — 103 glyphs × **16 B, 1bpp**, the C64's own bytes, expanded by `FontCell` as it draws. Layer 13a TASK 3 |
+| `&3670–&36CF` | 96 B | The status box's twelve border cells, same file, also 1bpp |
+| `&36D0–&372F` | 96 B | The four droid tables, mirrored out of bank 4 for the panel in bank 6 |
+| `&3730–&3DFF` | **1,744 B free** | What TASK 3 freed. Under the staging overlay, so it takes runtime-built tables or a file loaded after the bank copies — `constrings` at 1,731 is the intended tenant, see TASK 7 |
 | `&3E00–&45FF` | 2,048 B | Sprite background save areas, 8 slots × 256 — slot 7 (`&4500`) is the player's bullet. Ends exactly at the tile map |
 | `&4600–&49FF` | 1,024 B | Tile map, 64 × 16, page-aligned, fixed home. Ends exactly at the panel |
 

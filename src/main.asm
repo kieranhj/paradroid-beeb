@@ -404,16 +404,17 @@ FONT_ADDR = &3000
 \ generated file checks itself against both — see the ASSERTs by its
 \ INCLUDE. This is the same arrangement SPR_W and SPR_H have.
 FONT_GLYPHS = 103               \ 26 capitals are two glyphs each
-FONT_BYTES  = FONT_GLYPHS * 32
+FONT_BYTES  = FONT_GLYPHS * 16  \ 16, not 32: the font ships 1bpp — see
+                                \ FontCell below and export_font.py
 
-\ ---- the status box border, twelve MODE 1 cells -------------
-\ HALF glyphs, 16 bytes each and not 32: the box is 32 scanlines tall and
-\ the border rows contribute only their inner 8 — see PANEL_ADDR below and
-\ the header of tools/export_font.py. Loaded as part of PARAFNT, straight
+\ ---- the status box border, twelve cells --------------------
+\ HALF glyphs, 8 packed bytes each: the box is 32 scanlines tall and the
+\ border rows contribute only their inner 8 — see PANEL_ADDR below and the
+\ header of tools/export_font.py. Loaded as part of PARAFNT, straight
 \ after the glyphs.
 PN_FRAME_ADDR  = FONT_ADDR + FONT_BYTES
 PN_FRAME_CELLS = 12
-PN_FRAME_BYTES = PN_FRAME_CELLS * 16
+PN_FRAME_BYTES = PN_FRAME_CELLS * 8
 
 \ ---- the four droid tables, mirrored out of bank 4 ----------
 \ panel.asm and console.asm are in bank 6 and cannot read bank 4, so
@@ -1771,6 +1772,72 @@ ASSERT FRAME_LOCK >= 2
   LDA #&C2 : STA SYS_VIA_IER    \ enable CA1 (vsync) + T1
   CLI
   RTS
+
+\ ============================================================
+\ FontCell — one packed font cell, expanded into the buffer
+\ ============================================================
+\ THE FONT SHIPS 1BPP, AND THAT IS THE C64'S OWN FORMAT. The artwork is
+\ two colour — logical 0 and logical 3 — and a MODE 1 byte holding only
+\ those comes out as n<<4 | n, four pixels in eight bits. Pair a cell's
+\ byte i with its byte i+8, the same scanline's left and right halves,
+\ and you get back (left<<4) | right: the C64's own 8-pixels-per-byte
+\ scanline. So the port stopped shipping a converted copy of artwork it
+\ can ship verbatim, and 3,488 bytes of PARAFNT became 1,744.
+\
+\ IT IS HERE, IN MAIN RAM, BECAUSE FOUR CALLERS IN TWO BANKS NEED IT:
+\ PnGlyph and PnCell in bank 6, XfGlyphAt and DbGlyph in bank 7. Only
+\ one bank is visible at a time and bank code may call main RAM freely,
+\ so one copy here replaces what would have been the same loop four
+\ times — and bank 6, which had 47 bytes, gets some back rather than
+\ paying. It is the only main-RAM cost of the change.
+\
+\ swSrc -> the 8 packed bytes, swDst -> the 16-byte destination cell,
+\ fontMask ANDed into every byte on the way out — that is the ink, and
+\ every caller must set it, XfGlyphAt included with &FF for a plain copy.
+\ swDst is left exactly where it was found, so the callers' own row
+\ arithmetic is unchanged.
+\
+\ Two passes rather than one because the second half writes 8 bytes on
+\ from the same source bytes, and with only Y available for indirect
+\ indexing there is nowhere to keep a second destination — zero page is
+\ full. It costs an add and a subtract per cell.
+.FontCell
+  LDY #7                        \ high nibbles -> the left half, bytes 0-7
+.fc_left
+  LDA (swSrc),Y
+  LSR A : LSR A : LSR A : LSR A
+  TAX
+  LDA fontExpand,X
+  AND fontMask
+  STA (swDst),Y
+  DEY
+  BPL fc_left
+
+  CLC                           \ the right half is eight bytes on
+  LDA swDst   : ADC #8 : STA swDst
+  LDA swDst+1 : ADC #0 : STA swDst+1
+
+  LDY #7                        \ low nibbles -> the right half, bytes 8-15
+.fc_right
+  LDA (swSrc),Y
+  AND #&0F
+  TAX
+  LDA fontExpand,X
+  AND fontMask
+  STA (swDst),Y
+  DEY
+  BPL fc_right
+
+  SEC                           \ and hand swDst back as it was given
+  LDA swDst   : SBC #8 : STA swDst
+  LDA swDst+1 : SBC #0 : STA swDst+1
+  RTS
+
+.fontMask  EQUB &FF             \ the ink; set by every caller before the JSR
+.fontExpand                     \ 4 pixel bits -> the MODE 1 byte for them
+  FOR n, 0, 15
+    EQUB (n << 4) OR n
+  NEXT
 
 \ ============================================================
 \ ReframeView — put the strip back under the player, wherever he

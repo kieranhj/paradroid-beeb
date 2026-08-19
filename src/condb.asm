@@ -855,8 +855,7 @@ DB_DESC_MAX = &38 - &10         \ sub_0_2DCD's own bound, rebased to 0
   STA pnSrc
   LDA #0
   STA pnSrc+1
-  ASL pnSrc : ROL pnSrc+1       \ * 32
-  ASL pnSrc : ROL pnSrc+1
+  ASL pnSrc : ROL pnSrc+1       \ * 16 — two 8-byte packed cells
   ASL pnSrc : ROL pnSrc+1
   ASL pnSrc : ROL pnSrc+1
   ASL pnSrc : ROL pnSrc+1
@@ -864,27 +863,18 @@ DB_DESC_MAX = &38 - &10         \ sub_0_2DCD's own bound, rebased to 0
   LDA pnSrc   : ADC #LO(FONT_ADDR) : STA pnSrc
   LDA pnSrc+1 : ADC #HI(FONT_ADDR) : STA pnSrc+1
 
-  LDY #15                       \ the top cell
-.db_g_top
-  LDA (pnSrc),Y
-  AND #DB_INK
-  STA (pnDst),Y
-  DEY
-  BPL db_g_top
+  LDA #DB_INK
+  STA fontMask
+  JSR FontCell                  \ the top cell
 
   CLC                           \ the bottom cell, one character row on
   LDA pnDst   : ADC #LO(ROW_BYTES) : STA pnDst
   LDA pnDst+1 : ADC #HI(ROW_BYTES) : STA pnDst+1
   CLC
-  LDA pnSrc   : ADC #16 : STA pnSrc
-  LDA pnSrc+1 : ADC #0  : STA pnSrc+1
-  LDY #15
-.db_g_bot
-  LDA (pnSrc),Y
-  AND #DB_INK
-  STA (pnDst),Y
-  DEY
-  BPL db_g_bot
+  LDA pnSrc   : ADC #8 : STA pnSrc
+  LDA pnSrc+1 : ADC #0 : STA pnSrc+1
+
+  JSR FontCell
 
   SEC                           \ back up, then on to the next column
   LDA pnDst   : SBC #LO(ROW_BYTES - 16) : STA pnDst
