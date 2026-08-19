@@ -692,7 +692,45 @@ handlers next to `DroidRun`. All of `$EA00`–`$EA80`'s droid stats come out of 
 | The console (char 66) | Layer 9, though `DoCharUnder` will already be dispatching on it |
 | Sound | Layer 11. `sndFx1`/`SndFx2` writes are the C64's; leave the values in comments so the driver has them |
 | The recharger's 8-frame icon animation | Charset repoking; rides with Layer 9 |
-| Low-energy colour flashing | `LowNrgColor_t`/`LowNrgXferCol_t` cycle a sprite's colour per frame. Our compiled sprites bake colour into the immediates and cannot; the interpreted effect path *could*, at a cost. Bullets get one fixed colour, and this goes on the list as a real limitation of a compiled blitter rather than an oversight |
+| ~~Low-energy colour flashing~~ | **Built 2026-08-19.** This row said a compiled blitter could not do it, and that was wrong: the artwork is stored at logical 3, so choosing a colour is choosing a nibble, and eleven zero page bytes carry it. `docs/layer-5-blitter.md` § "Colour is not baked in" has the mechanism; the three decisions it forced are below. **Effect sprites still get one fixed colour** — bullets and explosions run the interpreted path and were left alone |
+
+### Sprite colour, 2026-08-19
+
+The C64 gives every sprite a colour register. Three things read it, and none of them was ported
+until now.
+
+| | C64 | ours |
+|---|---|---|
+| an enemy droid | `$F0`, black, written by `dMd0_droid`'s `_new` arm at `$18FA` when the droid takes a slot | logical 1, set in `drs_place` |
+| the player | `$F1`, white, written every frame by `$3E06` | logical 3 |
+| the player, transfer mode | `clr6_xfer`, written by `$3E21` when `moveMode` is 0 | logical 2 — see [DECISION 1] |
+| the player, energy < 8 | `LowNrgColor_t` / `LowNrgXferCol_t`, 8 entries indexed by `frameCount AND 7` | a 4-field duty — see [DECISION 2] |
+
+**[DECISION 1] — transfer mode is logical 2, the deck's highlight.** `clr6_xfer` (`$021B`) is never
+written by any routine, which is what gives it away: `InitColors` (`$27C2`) copies **12 bytes** of
+the deck's colour record into `clr0`-`clr11`, so it is **slot 6 of the same record Layer 1 took
+`deckBg` from as slot 0**. Ripped across the seven schemes it is orange, yellow, dark grey, red,
+blue, light blue and cyan — genuinely per-deck.
+
+We cannot have it, and the obvious route fails badly. Pushing `clr6_xfer` through each deck's own
+`colourMap` gives **logical 0 on decks 13 and 14** — the background, an invisible player — and
+**logical 1, the enemy droids' black, on six more**. Clamping 0 up to 2 fixes the invisible case
+and leaves the six. So transfer mode takes logical 2: the only ink not already meaning "enemy" or
+"player", per-deck like the original's, and an exact colour match on 4 of 16 decks by luck. KC's
+call, with these numbers in front of it.
+
+**[DECISION 2] — the flash takes the rate, not the ramp.** Both tables are a symmetric pulse out of
+the base colour and back, ending on white — greys down to black normally, yellow/orange/red in
+transfer. Eight inks onto three, with two spoken for, cannot carry that. Rank-quantising each table
+to three levels was costed and **rejected**: the transfer cycle's colours are all mid luminance, so
+it comes out barely flashing at all, and that is the mode where the cue matters most. Pushing them
+through the port's existing nearest-luminance merge is worse for the same reason. So it is the base
+colour for four fields and black for four — bit 2 of the same 8-field cycle the C64 counts, at the
+same rate — which reads at speed as the flash it is meant to be. KC's call.
+
+**Watch for this before calling it a bug:** `BlowInto001` (`$1591`) gives the 001 you fall back to
+**energy 7**, under the threshold of 8, so it flashes continuously until it reaches a recharge pad.
+A fresh game starts at `$40` (`$1345`) and does not flash. Both are the original's.
 
 ---
 

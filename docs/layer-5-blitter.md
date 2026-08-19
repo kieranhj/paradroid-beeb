@@ -580,6 +580,57 @@ work changes — was byte-exact every time, and the shift-0 slots were affected 
 ones. That is `BUGS.md` #6, and these runs add one fact to it: it **survives freezing the rotor
 phase**, which refutes the leading hypothesis recorded there.
 
+## Colour is not baked in — 2026-08-19
+
+Everything above treats a compiled sprite's colour as fixed, and `docs/layer-9-hud.md` decision 5
+and `docs/layer-7-combat.md`'s deferred list both went further and said the low-energy flash was
+therefore impossible. It is not, and the reason is a property of the artwork rather than anything
+clever in the blitter.
+
+`export_droids.py` writes the sprites at `DROID_COLOUR = 3`, so an opaque pixel sets bit 7-n **and**
+bit 3-n. Every pixel byte the compiler emits is therefore `P | P<<4` for a 4-bit opacity pattern `P`
+— which is also why a sprite byte is its own transparency mask. **Choosing a colour is choosing a
+nibble:** `AND &0F` leaves logical 1, `AND &F0` leaves logical 2, `&FF` leaves logical 3.
+
+And across all 24 types, 8 phases and 4 shifts there are only **eleven distinct patterns**:
+
+```
+&11 &22 &33 &44 &66 &77 &88 &99 &CC &EE     from ORA #, 750 sites
+&FF                                         from LDA #, 288 sites (fully opaque)
+```
+
+So the generated code says `ORA colPix+n` instead of `ORA #&bb`, `colPix` being eleven zero page
+bytes, and `SprSetColour` rewrites them when the drawing colour changes. `sprColour` holds a mask
+per slot; `sprColCur` skips the rebuild when it has not changed, which on a normal pass means twice
+— once for the run of black droids, once for the player.
+
+**It costs one cycle per opaque byte and not one byte of bank.** `ORA zp` is 3 cycles against
+`ORA #`'s 2 and both are two bytes long, so banks 5 and 6 end exactly where they did. About 75
+opaque bytes go into a sprite, so ~600 cycles on a full eight-slot pass out of 79,872, plus ~200
+per rebuild. Main RAM pays 61 bytes for the routine, the pattern table and the per-slot array.
+
+**Where the eleven bytes came from.** Zero page was full, `&00-&8F` with no gaps. What made it
+possible is that the table only has to survive **inside `SprDrawAll`** — `sprColCur` is invalidated
+at the top of every `SprDrawTr`, so nothing is trusted between passes. `&00-&0F` splits on that
+test: `bandDo`, `colFirst`, `colCount` and `sDelta` cross a sprite draw (`SprSplitOK` reads the
+first and third, and `ReframeView` clears them after `SprDrawAll` has run), and the **other eleven
+are consumed no later than the end of `DoRedraws`**, which the main loop runs first. They were
+reordered so the eleven are contiguous at `&05-&0F` and `colPix` aliases the run.
+
+> **The invariant this rests on: nothing in `SprDrawAll`'s call tree may run the level draw.** It
+> does not today — `SprSetSlot`'s only call out is `SetCell`, which touches `rCount`, `uCount`,
+> `scrollS` and `bufp` and nothing in `&00-&0F`. Break it and the symptom is a corrupted sprite
+> **colour**, not a corrupted level, so it will not look like what it is.
+
+Also considered and not needed: `ORA abs` with the table in main RAM, at 4 cycles and 3 bytes, so
++2 cycles a site and ~1,040 bytes across banks 5 and 6. It would have fitted, and it is the fallback
+if the zero page is ever wanted back. `&90-&96` is the other reserve — `AllMem.txt` has it as unused
+even when an Econet NFS ROM is fitted — but depending on which ROMs are in the machine is worse than
+depending on our own code.
+
+**What it is used for** is in `docs/layer-7-combat.md` § "Sprite colour": enemy droids black, the
+player white or the deck's highlight in transfer mode, and the low-energy flash.
+
 ## What is in the bank, block by block
 
 Reference for the finished article. Addresses are from a `-dd` label dump of the current build;

@@ -26,7 +26,7 @@ Regenerate it after any change that moves a region:
 | `&0400–&0C8F` | 2,192 B | MODE 1 charset, rebuilt at every deck load — reclaimed OS workspace |
 | `&0C90–&10FF` | **1,136 B free** | The rest of the reclaimed workspace |
 | `&1100–&2F6C` | 7,789 B | Code (`PARA`), starting below DFS's `PAGE` of `&1900`. The level draw and droid AI are in bank 4; Layers 7–10's main-RAM halves refilled the room they made |
-| `&2F6D–&2FFF` | **148 B free** | The binding constraint, and the region Layer 11e's sound driver must live in because the IRQ reads no bank. It was 24, then 30. TASK 6 moved 192 bytes of `rowMul`/`unitMul` out to `&5400`; TASK 3 spent 82 of that on `FontCell` and TASK 8 moved those 82 into the font region, where main RAM is just as reachable and nothing else wants the space |
+| `&2FCA–&2FFF` | **54 B free** | The binding constraint, and the region Layer 11e's sound driver must live in because the IRQ reads no bank. It was 24, then 30, then 148. TASK 6 moved 192 bytes of `rowMul`/`unitMul` out to `&5400`; TASK 3 spent 82 of that on `FontCell` and TASK 8 moved those 82 into the font region. The sprite colour work then spent 94: `SprSetColour`, `sprColPat`, `sprColour` and the player's colour arms in `SprAnimateAll`, all of which have to be resident because the blitter calls them with a sprite bank paged in |
 | `&3000–&366F` | 1,648 B | Layer 9's text font, `PARAFNT` — 103 glyphs × **16 B, 1bpp**, the C64's own bytes, expanded by `FontCell` as it draws. Layer 13a TASK 3 |
 | `&3670–&36CF` | 96 B | The status box's twelve border cells, same file, also 1bpp |
 | `&36D0–&3CD5` | 1,542 B | `constrings` — the `$C000` string table, **one copy**, read by the console in bank 6 and the droid database in bank 7 alike. Same `PARAFNT` file. Layer 13a TASK 7 |
@@ -56,8 +56,8 @@ Regenerate it after any change that moves a region:
 | `&8000–&BFFF` | 16 K | Sideways bank window — one of the FOUR banks below, never more |
 | `&C000–&FFFF` | 16 K | MOS |
 
-Free main RAM totals **1,348 bytes** (2026-08-19): 1,136 in the reclaimed OS workspace, 148 below
-`&3000`, and 64 above the panel. **The 148 is the number that matters** — `&1100`–`&3000` is the
+Free main RAM totals **1,254 bytes** (2026-08-19): 1,136 in the reclaimed OS workspace, 54 below
+`&3000`, and 64 above the panel. **The 54 is the number that matters** — `&1100`–`&3000` is the
 only region in the machine that is genuinely full, and it was 30 before Layer 13a's TASK 6. The
 other two are buffer space: nothing loaded with the code can go in either. The room the level draw and `droid.asm` made when they moved into bank 4
 (2026-08-14/15) has since been spent by Layers 7–10's main-RAM halves.
