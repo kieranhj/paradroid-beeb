@@ -683,7 +683,8 @@ USR_VIA_T1CH = &FE65
 \ nothing and buys the bank a routine's worth of room.
 LUTS_ADDR = &54C0
 LUTs = LUTS_ADDR
-ASSERT LUTS_ADDR + 64 <= &5500
+ASSERT LUTS_ADDR >= UNITMUL_HI + PLAY_UNITS
+ASSERT LUTS_ADDR + 64 <= CHAR_PTR_LO
 
 CHAR_PTR_LO = &5500             \ character code -> charset address
 CHAR_PTR_HI = &5600

@@ -24,15 +24,22 @@ Regenerate it after any change that moves a region:
 | `&0100–&01FF` | 256 B | Stack |
 | `&0200–&03FF` | 512 B | OS vectors and workspace. We own `IRQ1V` at `&0204` outright |
 | `&0400–&0C8F` | 2,192 B | MODE 1 charset, rebuilt at every deck load — reclaimed OS workspace |
-| `&0C90–&10FF` | **1,136 B free** | The rest of the reclaimed workspace |
+| `&0C90–&0CF8` | 105 B | `lowbss` — the low overlay's state. `SKIP`ped, not shipped: everything in it is written before it is read |
+| `&0CF9–&0CFF` | **7 B free** | |
+| `&0D00–&0D5F` | 96 B | **NMI handler and its workspace. NOT OURS** — one spurious NMI through a page of somebody else's 6502 would be unrecoverable |
+| `&0D60–&0DCB` | 108 B | `lowcode2` — the low overlay's second chunk, in Econet/mouse workspace and the extended vector table. The disruptor's helpers, the collision matrix's two damage arms, `DrCollMode` |
+| `&0DCC–&0DEF` | **36 B free** | |
+| `&0DF0–&0DFF` | 16 B | **The sideways ROMs' private-workspace page bytes. NOT OURS**, and the reason `PageLowIn` copies in two pieces rather than one |
+| `&0E00–&10F1` | 753 B | `lowcode` — `DrawTileCells`, the animated-tile scan and repaint, the alert lamp, the `CollisionType` table. Staged through `LOW_STAGE` and copied down **after the last `*LOAD`**: this is DFS's own workspace while the filing system is running |
+| `&10F2–&10FF` | **15 B free** | |
 | `&1100–&2F6C` | 7,789 B | Code (`PARA`), starting below DFS's `PAGE` of `&1900`. The level draw and droid AI are in bank 4; Layers 7–10's main-RAM halves refilled the room they made |
 | `&2FCA–&2FFF` | **54 B free** | The binding constraint, and the region Layer 11e's sound driver must live in because the IRQ reads no bank. It was 24, then 30, then 148. TASK 6 moved 192 bytes of `rowMul`/`unitMul` out to `&5400`; TASK 3 spent 82 of that on `FontCell` and TASK 8 moved those 82 into the font region. The sprite colour work then spent 94: `SprSetColour`, `sprColPat`, `sprColour` and the player's colour arms in `SprAnimateAll`, all of which have to be resident because the blitter calls them with a sprite bank paged in |
 | `&3000–&366F` | 1,648 B | Layer 9's text font, `PARAFNT` — 103 glyphs × **16 B, 1bpp**, the C64's own bytes, expanded by `FontCell` as it draws. Layer 13a TASK 3 |
 | `&3670–&36CF` | 96 B | The status box's twelve border cells, same file, also 1bpp |
 | `&36D0–&3CD5` | 1,542 B | `constrings` — the `$C000` string table, **one copy**, read by the console in bank 6 and the droid database in bank 7 alike. Same `PARAFNT` file. Layer 13a TASK 7 |
-| `&3CD6–&3D27` | 82 B | `FontCell`, `fontExpand` and `fontMask` — the 1bpp decoder, with the font it decodes rather than in the code image. Layer 13a TASK 8 |
-| `&3D28–&3D87` | 96 B | The four droid tables, mirrored out of bank 4 for the panel in bank 6 |
-| `&3D88–&3DFF` | **120 B free** | What is left of the room TASK 3 freed |
+| `&3CD6–&3D97` | 194 B | `FontCell`, `fontExpand`, `fontMask` — the 1bpp decoder — and, since 2026-08-20, `DoScore`. Main RAM that does not have to be the code image. Layer 13a TASK 8 |
+| `&3D98–&3DF7` | 96 B | The four droid tables, mirrored out of bank 4 for the panel in bank 6 |
+| `&3DF8–&3DFF` | **8 B free** | What is left of the room TASK 3 freed, after `DoScore` |
 | `&3E00–&45FF` | 2,048 B | Sprite background save areas, 8 slots × 256 — slot 7 (`&4500`) is the player's bullet. Ends exactly at the tile map |
 | `&4600–&49FF` | 1,024 B | Tile map, 64 × 16, page-aligned, fixed home. Ends exactly at the panel |
 
@@ -48,7 +55,7 @@ Regenerate it after any change that moves a region:
 > [`layer-11-sound-title.md`](layer-11-sound-title.md) §4, [DECISION 1].
 | `&4A00–&53FF` | 2,560 B | Panel — 4 rows × 640, displayed by rupture cycle 1 |
 | `&5400–&54BF` | 192 B | `rowMul`/`unitMul` — the row and unit offset tables, built at startup by `BuildMulTabs`. Moved out of the code image by Layer 13a, TASK 6 |
-| `&54C0–&54FF` | **64 B free** | `PnClear` used to wipe this whole page past the panel — see Layer 13a, TASK 6 |
+| `&54C0–&54FF` | 64 B | `LUTs` — `BuildCharset`'s four nibble tables, evicted from bank 4 on 2026-08-20 to make room for the collision matrix. It was the 64 free bytes `PnClear` used to wipe |
 | `&5500–&55FF` | 256 B | `CHAR_PTR_LO` — character code → charset address, built at startup |
 | `&5600–&56FF` | 256 B | `CHAR_PTR_HI` |
 | `&5700–&57FF` | 256 B | `SPR_MASKTAB` — data byte → transparency mask, built at startup |
@@ -56,11 +63,23 @@ Regenerate it after any change that moves a region:
 | `&8000–&BFFF` | 16 K | Sideways bank window — one of the FOUR banks below, never more |
 | `&C000–&FFFF` | 16 K | MOS |
 
-Free main RAM totals **1,254 bytes** (2026-08-19): 1,136 in the reclaimed OS workspace, 54 below
-`&3000`, and 64 above the panel. **The 54 is the number that matters** — `&1100`–`&3000` is the
-only region in the machine that is genuinely full, and it was 30 before Layer 13a's TASK 6. The
-other two are buffer space: nothing loaded with the code can go in either. The room the level draw and `droid.asm` made when they moved into bank 4
-(2026-08-14/15) has since been spent by Layers 7–10's main-RAM halves.
+Free main RAM totals **77 bytes** (2026-08-20), in five pieces: 11 below `&3000`, 15 at the top of
+`lowcode`, 36 in `lowcode2`, 7 in `lowbss` and 8 in the `PARAFNT` tail. **This is the tightest the
+port has ever been**, and the reason is the disruptor: 245 bytes of new main-RAM code against a
+code image with 90 free.
+
+**The 1,136 free bytes at `&0C90` are gone**, spent on the low overlay, and with them the 64 above
+the panel (`LUTs`) and 112 of the `PARAFNT` tail (`DoScore`). What made that possible is that
+`&0E00–&10FF` is DFS's shared workspace and dead from the last `*LOAD` on — but **nothing may be
+LOADED there**, which is why `PARALOW` is staged at `LOW_STAGE` and copied down, and why it must be
+the last filing-system call in the boot sequence. Do it earlier and the next `*LOAD` hangs in the
+8271 poll with the ROM's variables underneath it.
+
+**Layer 11e's sound driver has to be resident and there are 77 bytes.** The reservoirs left are:
+`&0D60`'s 36 and `lowcode`'s 15 (both already main RAM, no work); bank 4's 12; and evicting more
+`SKIP`ped state from bank 4 into `lowbss` — `drState`, `drShipIdx` and `drFireDelay` are 14 bytes
+each and cost nothing to move. Beyond that it means moving a real routine into bank 6 or 7, which
+the paging rule mostly forbids.
 
 ### The boot-time staging overlay
 
@@ -96,7 +115,7 @@ already satisfy it.
 
 ## SWRAM bank 4 — `PARADAT`
 
-`&8000–&BED9`, **15 free** (2026-08-19) — and 111 of its apparent alignment holes are not real, see Layer 13a TASK 5. Tiles, decks, palettes, droid game
+`&8000–&BFF3`, **12 free** (2026-08-20) — and 111 of its apparent alignment holes are not real, see Layer 13a TASK 5. 2026-08-20 took `LUTs` (64 B) out to `&54C0` and `drVis`/`drVisNew`/`drBulFrm` (42 B) out to `&0C90`, and spent all of it and more on `DrCollPair`, the collision matrix and `DrCollAct`. Tiles, decks, palettes, droid game
 data — and the code that reads them: the level draw (2026-08-14), the droid AI (2026-08-15),
 Layer 7's combat and kill chain, Layers 10 and 8b's entry/exit shims, `CalcAxis`/`CalcSpeed`, and
 the console menu and page shims. This bank is the resting state of the latch, so a call into it

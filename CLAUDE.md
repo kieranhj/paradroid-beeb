@@ -162,6 +162,7 @@ addresses from the `beebasm` output rather than from any document.** In outline:
 |---|---|
 | ZP `&00–&8F` | All used. The map is in `main.asm`. `&90` up belongs to the OS |
 | `&0400–&0C90` | MODE 1 charset, built at deck load — reclaimed OS workspace |
+| `&0C90–&10FF` | **The low overlay** (`PARALOW`) — resident code and state in reclaimed DFS/OS workspace. `&0D00–&0D5F` (NMI) and `&0DF0–&0DFF` (ROM private workspace) are **excluded**. Nothing may be *loaded* here; it is staged and copied, and that copy **must be the last filing-system call** |
 | `&1100–…` | Code (`PARA`), starting below DFS's `PAGE`. Ends just short of `&3000` — 24 B free, the binding constraint |
 | `&3000–&37FF` | Sprite background save areas, one page per each of the eight slots |
 | `&3800–&3BFF` | Tile map |
@@ -172,11 +173,13 @@ addresses from the `beebasm` output rather than from any document.** In outline:
 | SWRAM bank 4 | `PARADAT` — tiles, levels, palettes, droid game data, **the level-draw code, the droid AI and Layer 10's entry/exit** |
 | SWRAM bank 5 | `PARASPR` — the blitter, shifts 0 and 1 px |
 | SWRAM bank 6 | `PARSPR2` — shifts 2 and 3 px, same layout, plus Layer 9's panel/console — **full** |
-| SWRAM bank 7 | `PARXFER` — Layer 10's transfer minigame, Layer 8b's lift screen, the console's ship, deck-plan and droid-database pages, and Layer 11's game over and title screen — **282 B free** |
+| SWRAM bank 7 | `PARXFER` — Layer 10's transfer minigame, Layer 8b's lift screen, the console's ship, deck-plan and droid-database pages, and Layer 11's game over and title screen |
 
-**RAM is the binding constraint as of 2026-08-18**, not just main RAM: main RAM 30 B, bank 4 15 B,
-bank 6 40 B, bank 7 282 B. Only bank 5 has room (1,033 B) and it is paged solely inside the
-blitter. Anything new needs something moved first — see `docs/layer-11-sound-title.md` §9.
+**RAM is the binding constraint as of 2026-08-20** and it is tighter than it has ever been: main
+RAM **77 B in five pieces**, bank 4 **12 B**. Banks 5, 6 and 7 have 1,033 / 1,609 / 4,410 B and are
+all paged out during play, so none of it is reachable from the main loop. Anything new needs
+something moved first — `docs/memory-map.md`'s free-RAM section lists what is left and where it can
+come from.
 
 **Only one bank is visible at a time.** `SprRestoreAll` and `SprDrawAll` page their own bank in and
 the data bank back out around themselves, so `SWRAM_DATA` is the resting state. This is safe only
@@ -187,12 +190,18 @@ All four bank files are staged through `&3000` by `*LOAD` and copied up, because
 paged in at `&8000` during a filing-system call. `*LOAD` must also happen **before** `InstallIrq` —
 taking over IRQ1V stops the MOS servicing the filing system.
 
+**`PARALOW` is a sixth disc file and is loaded LAST, after `PARAFNT`.** It carries the low overlay,
+which lands on DFS's own workspace at `&0E00–&10FF`: copy it down before the last `*LOAD` and that
+load hangs in the 8271 poll with the ROM's variables underneath it. It stages on the panel rather
+than at `&3000`, because `PARAFNT` owns `&3000` and has to load first.
+
 ## Source organisation (`src/`)
 
 Single-pass flat build, everything included from `main.asm`. No linker.
 
 `main.asm` holds the constants, the zero page map, the main loop and the IRQ dispatch, and includes
-everything else. **Everything in `src/` is in the build** — the five inherited Master/HAL files that
+everything else. **`lowcode.asm`, `lowcode2.asm` and `lowbss.asm` assemble below `&1100`**, into the
+low overlay — read `lowcode.asm`'s header before putting anything there. **Everything in `src/` is in the build** — the five inherited Master/HAL files that
 were not have been deleted, so nothing there is dead. Keep it that way.
 
 **Four files assemble into SWRAM bank 4, not main RAM**: `screen.asm`, `scroll.asm`, `level.asm` and

@@ -25,7 +25,7 @@ sections below are in neither. **The table is the index; read it first.**
 | **10** | [The level is corrupted when a droid's shot kills you](#10-the-level-is-corrupted-when-a-droids-shot-kills-you--fixed-2026-08-16) | **Fixed** 2026-08-16 | a teleport broke `COPYCHAR`'s parity rule |
 | **11** | [Enemy lasers crawl, and the player can walk through them](#11-enemy-lasers-crawl-and-the-player-can-walk-through-them--fixed-2026-08-16) | **Fixed** 2026-08-16 | a direction was being read as a distance |
 | **12** | [Lasers on screen when a console opens stay drawn over the console text](#12-lasers-on-screen-when-a-console-is-activated-stay-there-and-corrupt-the-console-text--2026-08-16) | **Open** | filed, not investigated. A missing pool teardown on modal entry — same shape as #15 |
-| **13** | [The ALERT sign's lamp is dead; it should track the alert level](#13-the-alert-signs-lamp-is-dead--it-should-track-the-alert-level--2026-08-17) | **Open** | needs one character rebuilt when `Alert` crosses a threshold. Wants agreeing first |
+| **13** | [The ALERT sign's lamp is dead; it should track the alert level](#13-the-alert-signs-lamp-is-dead--it-should-track-the-alert-level--2026-08-17) | **Fixed** 2026-08-20 | one character rebuilt when `Alert` crosses a threshold, and the sign repainted. The ramp is four *states*, not four colours — [DECISION 11] in `docs/layer-7-combat.md`, **not yet ratified** |
 | **14** | [`XfRand` is not a maximal LFSR — its low two bits are always zero](#14-xfrand-is-not-a-maximal-lfsr--its-low-two-bits-are-always-zero--fixed-2026-08-19) | **Fixed** 2026-08-19 |  |
 | **15** | [Incremental draw disagrees with `RedrawAll` beside an animating door](#15-incremental-draw-disagrees-with-redrawall-beside-an-animating-door--2026-08-19-unconfirmed) | **Open, unconfirmed** | did not reproduce in five clean runs. Correlates with poking a modal flag, not with the level draw |
 | **16** | [Enemy droids draw a black rotor and a WHITE number](#16-enemy-droids-draw-a-black-rotor-and-a-white-number--fixed-2026-08-19) | **Fixed** 2026-08-19 | the wrap fallback blits digits interpreted and never sees `colPix` |
@@ -138,7 +138,7 @@ still restarts after the hold.
 
 ---
 
-## 13. The ALERT sign's lamp is dead — it should track the alert level — **2026-08-17**
+## 13. The ALERT sign's lamp is dead — it should track the alert level — **FIXED 2026-08-20**
 
 Found while checking the deck colours against the listing, on KC's prompt that the ALERT text
 should be legible. The lettering turned out to be faithful (see below); **the lamp is not.**
@@ -164,11 +164,17 @@ reads past the record there too — but it never applies on the original, becaus
 **overwrites** `CharColor[$16]` immediately afterwards. We reproduce the incidental behaviour and
 miss the deliberate one.
 
-**Not fixed, because it is a behaviour and not a table.** The port builds its charset once per deck
-load, so a lamp that changes with the alert level needs character `$16` rebuilt when `Alert`
-crosses a threshold — a small entry point into `BuildCharset` for one character, plus a call from
-the alert code. That is a Layer 7/9 change and wants agreeing first. The interim alternative,
-baking the level-0 green, is itself a deviation: it would show "all clear" during a red alert.
+**Fixed 2026-08-20**, and it was a behaviour and not a table, exactly as this entry said. The
+charset is built once per deck load, so the lamp needs character `$16` rebuilt when `Alert` crosses
+a threshold: `BuildLampChar` in `src/lowcode.asm` is `BuildCharset`'s inner loop for one character,
+`AnimLamp` decides when, and the same `AnimScan`/`DrawTileCells` machinery the recharge pad's
+animation uses repaints the two cells of every ALERT sign in view. `LoadDeck` calls `AnimReset`,
+because a rebuilt charset has put the character back on its clamped colour.
+
+**MODE 1 HAS NO FOURTH COLOUR, so the ramp is four states rather than four hues** — black, the
+deck's highlight, white, and white blinking. The blink is a deviation and is the only invented
+thing in the fix; [DECISION 11] in [`docs/layer-7-combat.md`](docs/layer-7-combat.md) has the
+reasoning and the one-line alternative. **KC has not ratified it.**
 
 **The lettering, for the record, is faithful and was checked at the same time.** Characters
 `$63`-`$66` sit on slot 7, which carries bit 3 in schemes 0, 2, 5 and 6 — so on decks

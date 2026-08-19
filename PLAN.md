@@ -25,7 +25,8 @@ C64's own status box above a 320 × 120 play area, the deck hardware-scrolling e
 player — 4 px horizontally, 1 scanline vertically — with the original's acceleration model, a
 dead-zone camera and a 25 Hz frame lock. Sixteen decks, per-deck palette and charset built at load.
 The ship is traversable (doors, lifts, the deck-selection screen) and populated: droids patrol
-waypoints, keep line of sight, collide, shoot back and can kill you. Die riding a captured droid and
+waypoints, keep line of sight, collide, shoot back, kill each other and can kill you. The 711 and
+the 742 carry the disruptor, and so do you once you have taken one. Die riding a captured droid and
 you fall back to a 001 where you stood; die as a 001 and the game is over. Walk onto a console and
 the play area becomes `ConsoleMain`'s screen with all four pages working; touch a droid at
 `moveMode` 0 and the transfer minigame plays, all three outcomes landing on the droid tables.
@@ -53,16 +54,13 @@ the title's own polish are in the layer notes. Defects, as opposed to absences, 
 
 | | | |
 |---|---|---|
-| **Sound — all of it** | Layer 11e. No SN76489 driver exists, and the `sndFx1`/`SndFx2` writes were dropped rather than stubbed, so no `snd*` symbol survives in `src/`. **The recovered chip encoding in [`docs/layer-11-sound-title.md`](docs/layer-11-sound-title.md) §6 is UNVERIFIED** — check it against the wiki and the emulator before building on it. The driver must be **resident**, because the IRQ reads no bank, and main RAM is down to 54 B | the biggest hole in the game as it plays |
+| **Sound — all of it** | Layer 11e. No SN76489 driver exists, and the `sndFx1`/`SndFx2` writes were dropped rather than stubbed, so no `snd*` symbol survives in `src/`. **The recovered chip encoding in [`docs/layer-11-sound-title.md`](docs/layer-11-sound-title.md) §6 is UNVERIFIED** — check it against the wiki and the emulator before building on it. The driver must be **resident**, because the IRQ reads no bank, **and main RAM is down to 77 bytes in five pieces**. Read the free-RAM section of [`docs/memory-map.md`](docs/memory-map.md) before starting: it lists where the next few hundred bytes have to come from | the biggest hole in the game as it plays |
 | The 001 screen | Layer 11d. `NewShipInfo` (`$36B9`) on bank 7's shadow screen. Needs **`PrintTokenString`** (`$36DB`), the token machinery Layer 10 deferred | not started |
 | Transfer: the two droid info screens | `ShowXferInfo` (`$3734`) shows two full-screen robot data pages before the board; the port goes straight to side select. [DECISION 8] in [`docs/layer-10-transfer.md`](docs/layer-10-transfer.md) | not started |
 | `DoHighScore` | `$E4E5` — HIGH and LOW score and three-initial entry. It sits between `EndGame` and `TitleLoop`, and **that seam is already built** | not started |
 | Game over → the title | `GoTick7` still ends a game with `JMP GameStart`. **Was blocked on ~39 B against 30 free; Layer 13a unblocked it.** Needs `UninstallIrq` and the rebuild sequence — and tearing down and rebuilding the IRQ unverified is the `hal_video.asm` mistake, so it wants the emulator | buildable now |
 | The 48 × 84 droid portrait | ~6 K unported, **24 K in MODE 1**. Blocks the faithful console database page, `NewShipInfo`, the game-over screen and `ShowXferInfo`; the rotor-and-digits droid stands in. Deferred with KC; fallback is types 0 and 23 alone, ~2 K | deferred, by decision |
-| The disruptor | Weapon 3, `Disruptor` (`$1B37`) — an area effect rather than a bullet | Layer 7, deferred |
-| `EnemyFireEnemy` | Droids killing each other. Its absence is why the **`CollisionType` matrix** is still unported | Layer 7, deferred |
 | The enemy bullet's colour flicker | `efAlt` from bank 5 plus a second per-entry field. Cheaper now the colour machinery exists, but effect sprites run the interpreted path and were left alone | Layer 7, deferred |
-| The recharger's icon animation | The **pad works**; the animation does not. `AnimAllInsideFont` (`$38C4`) runs every other frame and rotates pointers through the blocks in `ChrAnimData1` (`$6C23`). Our charset is built once at deck load, so this is ~16 bytes re-poked a pass. **It is a general font animator** — porting it may light up other animated cells for free | cheap |
 
 **Three of these want `PrintTokenString` first** — the 001 screen, `ShowXferInfo` and `DoHighScore`
 — so it is the highest-leverage single thing on the list.
@@ -71,7 +69,7 @@ the title's own polish are in the layer notes. Defects, as opposed to absences, 
 
 | | |
 |---|---|
-| **RAM** | main RAM **54 B**, bank 4 **15 B**, bank 5 1,033 B, bank 6 1,609 B, bank 7 4,410 B, plus 120 B at `&3D88`, 1,136 B at `&0C90` and 64 B at `&54C0`. **Main RAM and bank 4 are the tight ones**, and the sound driver has to be resident. [`docs/memory-map.md`](docs/memory-map.md) |
+| **RAM** | main RAM **77 B in five pieces** — 11 below `&3000`, 15 in `lowcode`, 36 in `lowcode2`, 7 in `lowbss`, 8 in the `PARAFNT` tail — and bank 4 **12 B**. Bank 5 1,033 B, bank 6 1,609 B, bank 7 4,410 B, all three paged out during play. **This is the tightest the port has been**: 2026-08-20 spent the whole 1,136-byte `&0C90` hole, the 64 at `&54C0` and 112 of the `PARAFNT` tail on the low overlay and the disruptor. The sound driver still has to be resident. [`docs/memory-map.md`](docs/memory-map.md) lists the reservoirs left |
 | Collision box shape | **Agreed 2026-08-18, not built.** `DR_COL_W`/`DR_COL_H` become a generated minimum-abs-dx-per-abs-dy profile — the silhouette instead of a rectangle, at box-test cost. [DECISION 1] in [`docs/layer-6-droids-live.md`](docs/layer-6-droids-live.md). `BUGS.md` #7b's bounce tuning waits on it |
 | Droid worst case unmeasured | 8 slots (~36,000) + droids (17,000) + full-diagonal level draw (19,172) is ~72,000 of 79,872 before the rest of the loop. It never arose by chance; it wants a rig on a deck with a long open corridor. `docs/raster-timing.md` Step 3 is the planned relief |
 | Twelve title characters, four wash characters | `export_bbc.py` converts only what a TILE references, so the title ships its own 36 glyphs and `EndGame`'s wash uses substitutes. Extending the shared charset is the better fix, moves `NUM_CHARS`, and needs KC |
@@ -97,6 +95,22 @@ the title's own polish are in the layer notes. Defects, as opposed to absences, 
 3. **`mapYr` and `cellY` are SIGNED, and the row being drawn may be off the map** — the view
    scrolls up to `PLY_VOID` (64 px) past each vertical edge. One `AND #&C0` catches both ends, and
    `BandSetRow`, `DrawColumn` and `MapChar` all do it. Anything new that reads a map row must too.
+
+### The low-RAM overlay, `&0C90`–`&10FF`
+
+New since 2026-08-20, and it changes where code may live.
+
+1. **`&0E00`–`&10FF` and `&0D60`–`&0DEF` are ours, `&0D00`–`&0D5F` and `&0DF0`–`&0DFF` are not.**
+   The first is DFS's shared workspace, the second Econet/mouse workspace and the extended vector
+   table; the two exclusions are the NMI handler and the sideways ROMs' private-workspace page
+   bytes. `src/lowcode.asm`, `src/lowcode2.asm` and `src/lowbss.asm` are the three blocks.
+2. **Nothing may be LOADED there.** DFS is using it while it delivers the file. `PARALOW` is staged
+   at `LOW_STAGE` and copied down by `PageLowIn`, which **must be the last filing-system call** —
+   do it earlier and the next `*LOAD` hangs in the 8271 poll. That cost a build.
+3. **It is main RAM**, so bank 4 may `JSR` in and so may the code image, and it may read bank 4
+   wherever `SWRAM_DATA` is paged — everywhere in the main loop, but not at boot before `PARADAT`
+   lands and not inside the blitter. The same one-way rule `bufcore.asm` states.
+4. `src/lowbss.asm` is `SKIP`ped, not shipped: everything in it is written before it is read.
 
 ### Verification
 
@@ -131,6 +145,9 @@ settled which Paradroid this listing is. Per-layer decisions are numbered in eac
 | The four logical colours have fixed roles | 0 the deck's background, 1 black, 2 the deck's highlight, 3 white. Chosen for the sprites, and what makes a sprite byte its own transparency mask | 2026-08-17 |
 | Sprite colour is not baked in | The artwork is logical 3, so choosing a colour is choosing a nibble, and eleven zero page bytes carry it. Enemies black, player white, the deck's highlight in transfer mode, a 4-field flash below energy 8 | 2026-08-19 |
 | Player top speed | **8 px a pass, not the C64's 7** (`CAM_TOPSPD`) — the only movement number not taken from the original. 7 cannot divide the CRTC's 4 px step, so the camera dithers. 14 % fast, bought deliberately | 2026-08-14 |
+| The disruptor's screen shake | **Not ported.** The strip is 16 rows in one hardware wrap, so a CRTC jitter fetches rows that were never drawn. Palette flash alone | 2026-08-19 |
+| The ALERT lamp's four colours | **Four states, not four hues** — MODE 1 has no fifth colour. Black, the deck's highlight, white, white blinking. The blink is a deviation and is **not yet ratified** | 2026-08-20 |
+| Code may live below `&1100` | The reclaimed DFS/OS workspace at `&0C90`–`&10FF`, staged and copied after the last `*LOAD`. Page `&0D`'s NMI half stays untouched | 2026-08-20 |
 | Transfer board shows all 16 rows | The rupture's fire-2→3 interval became a variable (`t1i3`) so the transfer can move the bottom edge down a row | 2026-08-16 |
 
 ## Layers
@@ -146,7 +163,7 @@ Each layer ends with something visibly working in an emulator. Nothing moves on 
 | 4 | Player sprite, speed model, dead-zone camera, wall collision — then the level-draw rewrite, full-diagonal 38,472 → 19,172 cycles | **DONE** [`docs/layer-4-player.md`](docs/layer-4-player.md) |
 | 5 | Droid movement and the ship's roster; **the player spawns on waypoint 0**. Then the **compiled blitter**, 13,998 cycles a sprite → 5,814, four shifts across two banks | **DONE** [`docs/layer-5-droids.md`](docs/layer-5-droids.md), [`docs/layer-5-blitter.md`](docs/layer-5-blitter.md) |
 | 6 | Droids live: line of sight, collision, the mode dispatch. Slot **ownership** separated from `sprActive`, so a droid hidden behind a wall keeps its slot | **DONE** [`docs/layer-6-droids-live.md`](docs/layer-6-droids-live.md) |
-| 7 | Combat: the player as droid entry 0, energy, aging, BCD score, recharge pads, and bullets and explosions as a second sprite class in the same eight slots | **DONE** [`docs/layer-7-combat.md`](docs/layer-7-combat.md) |
+| 7 | Combat: the player as droid entry 0, energy, aging, BCD score, recharge pads, and bullets and explosions as a second sprite class in the same eight slots. **7g and 7h, 2026-08-20**: the `CollisionType` matrix, friendly fire, the disruptor, the recharger's animation and the ALERT lamp | **DONE** [`docs/layer-7-combat.md`](docs/layer-7-combat.md) |
 | 8 | Doors, lifts and the deck-selection screen. Taken ahead of 6 and 7, because droid AI routes *through* doors | **DONE** [`docs/layer-8-doors-lifts.md`](docs/layer-8-doors-lifts.md), [`docs/layer-8b-lift-view.md`](docs/layer-8b-lift-view.md) |
 | 9 | HUD and console: the status line is the C64's and nothing else, and the console is `ConsoleMain`'s line for line, all four pages working | **DONE** [`docs/layer-9-hud.md`](docs/layer-9-hud.md) |
 | 10 | The transfer minigame, entered the original's way, all three outcomes landing on the droid tables | **DONE** [`docs/layer-10-transfer.md`](docs/layer-10-transfer.md) |
