@@ -29,8 +29,9 @@ Regenerate it after any change that moves a region:
 | `&2FBF–&2FFF` | **66 B free** | The binding constraint. It was 24, then 30; TASK 6 moved 192 bytes of `rowMul`/`unitMul` out to `&5400` and TASK 3 spent 82 of the result on `FontCell`, deliberately — that is what makes the font region big enough for `constrings` |
 | `&3000–&366F` | 1,648 B | Layer 9's text font, `PARAFNT` — 103 glyphs × **16 B, 1bpp**, the C64's own bytes, expanded by `FontCell` as it draws. Layer 13a TASK 3 |
 | `&3670–&36CF` | 96 B | The status box's twelve border cells, same file, also 1bpp |
-| `&36D0–&372F` | 96 B | The four droid tables, mirrored out of bank 4 for the panel in bank 6 |
-| `&3730–&3DFF` | **1,744 B free** | What TASK 3 freed. Under the staging overlay, so it takes runtime-built tables or a file loaded after the bank copies — `constrings` at 1,731 is the intended tenant, see TASK 7 |
+| `&36D0–&3CD5` | 1,542 B | `constrings` — the `$C000` string table, **one copy**, read by the console in bank 6 and the droid database in bank 7 alike. Same `PARAFNT` file. Layer 13a TASK 7 |
+| `&3CD6–&3D35` | 96 B | The four droid tables, mirrored out of bank 4 for the panel in bank 6 |
+| `&3D36–&3DFF` | **202 B free** | What is left of the room TASK 3 freed |
 | `&3E00–&45FF` | 2,048 B | Sprite background save areas, 8 slots × 256 — slot 7 (`&4500`) is the player's bullet. Ends exactly at the tile map |
 | `&4600–&49FF` | 1,024 B | Tile map, 64 × 16, page-aligned, fixed home. Ends exactly at the panel |
 
@@ -139,7 +140,7 @@ interpreted effect path reads them every row.
 
 ## SWRAM bank 6 — `PARSPR2` (shifts 2 and 3 px)
 
-`&8000–&BFC5`, **47 free** (2026-08-19) — still effectively full; the 7 it gained came from `PnClear`'s assembled-away tail, Layer 13a TASK 6. The other two shifts, laid out
+`&8000–&B9B7`, **1,609 free** (2026-08-19) — it was 40. TASK 6's `PnClear` fix gave 7, TASK 3's shared `FontCell` 20, and TASK 7's single string table the other 1,542. **No longer the tight bank**. The other two shifts, laid out
 identically, plus Layer 9's panel engine, HUD, console, strings and icons.
 
 **Both sprite banks share one layout**: a fixed section of tables at the same addresses in each,
@@ -168,7 +169,7 @@ reads none of the artwork, and the wrap fallback is the only thing that does.
 
 ## SWRAM bank 7 — `PARXFER`
 
-`&8000–&B4C6`, **2,874 free** (2026-08-19) — it was 282 before Layer 13a. TASK 1 moved the 2 K shadow screen onto the sprite save areas and TASK 2 deleted 544 bytes of duplicated lift-view glyphs. **This is what unblocks 11d**, whose token-string printer would not fit in 282 bytes. Layer 10's transfer game and
+`&8000–&AEC6`, **4,410 free** (2026-08-19) — it was 282 before Layer 13a. TASK 1 moved the 2 K shadow screen onto the sprite save areas and TASK 2 deleted 544 bytes of duplicated lift-view glyphs. **This is what unblocks 11d**, whose token-string printer would not fit in 282 bytes. Layer 10's transfer game and
 Layer 8b's lift screen, sharing the shadow screen/colour RAM, the glyph page and the renderer
 pattern; plus both glyph sets, the console's ship page, the deck plan (`condeck.asm`,
 `plandata.asm`), and the droid database (`condb.asm`, `droidinfo.asm`) with its second copies of

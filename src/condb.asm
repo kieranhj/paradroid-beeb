@@ -698,10 +698,15 @@ DB_DESC_MAX = &38 - &10         \ sub_0_2DCD's own bound, rebased to 0
 \ The C64 has FindStrings' 249 pointers; we scan, as ConTok does, because
 \ 498 bytes of index is more than the saving is worth on a page that
 \ prints a few dozen words when a key is pressed.
+\
+\ THE TABLE IS MAIN RAM'S, and shared with the console in bank 6. There
+\ used to be a second copy in this bank because neither reader could see
+\ the other's; both patch an absolute address, so one copy where they can
+\ both reach it does instead — and this bank keeps the 1,542 bytes.
 .DbTokFind
   STA dbTmp
-  LDA #LO(constrings7) : STA db_get+1
-  LDA #HI(constrings7) : STA db_get+2
+  LDA #LO(constrings) : STA db_get+1
+  LDA #HI(constrings) : STA db_get+2
   LDA dbTmp
   BEQ db_tf_x                   \ token 0 starts at the first byte
 .db_tf_loop

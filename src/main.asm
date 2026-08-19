@@ -421,7 +421,23 @@ PN_FRAME_BYTES = PN_FRAME_CELLS * 8
 \ PageTabsIn copies these here at boot. 96 bytes in the tail of the same
 \ hole the font sits in — PARAFNT is one block of 3,584 bytes ending at
 \ SPR_SAVE, and this is its tail.
-PN_TABS     = PN_FRAME_ADDR + PN_FRAME_BYTES
+\ ---- the $C000 string table, in main RAM --------------------
+\ Every name the console prints — the droid classes, the eight ships, the
+\ sixteen decks, the four alert levels. It USED TO EXIST TWICE, 1,542
+\ bytes in bank 6 for the console main screen and 1,542 more in bank 7
+\ for the droid database, because only one bank is visible at a time and
+\ each reader could only see its own. Both readers patch a self-modifying
+\ absolute with the table's base, so neither cares where it is — and main
+\ RAM is visible from both. One copy, in the room the 1bpp font freed.
+\ Loaded as part of PARAFNT, straight after the border cells.
+\
+\ Declared here for the same reason FONT_BYTES is: beebasm resolves
+\ constants in file order and PN_TABS below needs the size.
+CON_STR_COUNT = 248
+CON_STR_BYTES = 1542            \ 1,541 plus the terminating sentinel
+CON_STR_ADDR  = PN_FRAME_ADDR + PN_FRAME_BYTES
+
+PN_TABS     = CON_STR_ADDR + CON_STR_BYTES
 pnTabCent   = PN_TABS + 0
 pnTabNum    = PN_TABS + 24
 pnTabWeapon = PN_TABS + 48
@@ -2170,14 +2186,9 @@ INCLUDE "src/data/droids2.asm"
 INCLUDE "src/panel.asm"
 INCLUDE "src/console.asm"
 
-\ ---- the $C000 string table, beside the code that reads it -
-\ Every name the console prints — the droid classes, the eight ships, the
-\ sixteen decks, the four alert levels. Here rather than in bank 4 for the
-\ same reason as everything else in this file: bank 6 is where the reader
-\ is, and only one bank is visible at a time.
-CON_STR_COUNT = 248
-CON_STR_BYTES = 1542            \ 1,541 plus the terminating sentinel
-INCLUDE "src/data/strings.asm"
+\ The string table is NOT here any more: it is main RAM's, in PARAFNT,
+\ because the droid database in bank 7 needed the same 1,542 bytes and
+\ could not see this copy. See CON_STR_ADDR at the top of this file.
 INCLUDE "src/data/conicons.asm"
 INCLUDE "src/data/droidicon.asm"
 .spr2_end
@@ -2199,10 +2210,10 @@ INCLUDE "src/data/xferboard.asm"
 \ all xfer.asm's, safe because the two can never be up at once.
 INCLUDE "src/liftview.asm"
 INCLUDE "src/condeck.asm"
-\ The droid database, and the two tables it needs a second copy of: the
-\ string table and the console's droid icon both live in bank 6 with the
-\ console, and only one bank is visible at a time. Both copies come out
-\ of the same generator, so they cannot drift.
+\ The droid database. It needs the console's droid icon a second time —
+\ that one still lives in bank 6 and only one bank is visible at a time —
+\ but NOT the string table any more: that is main RAM's now, one copy,
+\ read by both. See CON_STR_ADDR at the top of this file.
 INCLUDE "src/condb.asm"
 \ Layer 11's title screen, and the fourth screen to take the display
 \ over from this bank. Its data comes before its code so the ASSERTs in
@@ -2210,7 +2221,6 @@ INCLUDE "src/condb.asm"
 INCLUDE "src/data/title.asm"
 INCLUDE "src/title.asm"
 INCLUDE "src/data/droidinfo.asm"
-INCLUDE "src/data/strings7.asm"
 INCLUDE "src/data/droidicon7.asm"
 INCLUDE "src/data/plandata.asm"
 INCLUDE "src/data/sideview.asm"
@@ -2228,14 +2238,19 @@ SAVE "PARXFER", xfer_start, xfer_end, DATA_LOAD, DATA_LOAD
 \ The twelve border cells are in the same file, straight after the glyphs:
 \ they are read by the same code, from the same main RAM, and a separate
 \ 192-byte disc file would buy nothing.
-CLEAR FONT_ADDR, FONT_ADDR + FONT_BYTES + PN_FRAME_BYTES
+CLEAR FONT_ADDR, FONT_ADDR + FONT_BYTES + PN_FRAME_BYTES + CON_STR_BYTES
 ORG FONT_ADDR
 .font_start
 INCLUDE "src/data/textfont.asm"
+\ AND THE STRING TABLE, which is neither font nor frame but belongs in
+\ the same file for the same reason they do: it is read by main-RAM
+\ addresses from two different banks, so it has no bank to belong to.
+INCLUDE "src/data/strings.asm"
 .font_end
 ASSERT textfont_end - font_start == FONT_BYTES
 ASSERT panelframe == PN_FRAME_ADDR
-ASSERT font_end - font_start == FONT_BYTES + PN_FRAME_BYTES
+ASSERT constrings == CON_STR_ADDR
+ASSERT font_end - font_start == FONT_BYTES + PN_FRAME_BYTES + CON_STR_BYTES
 SAVE "PARAFNT", font_start, font_end, FONT_ADDR, FONT_ADDR
 
 ASSERT CON_TYPES == DR_TYPES    \ console.asm is in bank 4 and cannot see

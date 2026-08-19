@@ -264,21 +264,43 @@ off `xgs`/`xgd` onto `swSrc`/`swDst`, because `FontCell` names that pair; they a
 And the play buffer is unaffected, as it should be: **0 diffs of 10,240** against a forced
 `RedrawAll` after a clean boot and a diagonal scroll.
 
-### [TASK 7, the natural partner] The string table exists twice — 3,462 bytes
+### [TASK 7] The string table existed twice — **BUILT 2026-08-19. +1,542 bank 6, +1,536 bank 7**
 
-`constrings` is 1,731 bytes in bank 6 and `constrings7` is the same 1,731 in bank 7, because the
-console main screen is in one bank and the droid database in the other and only one is visible at a
-time. Both come from `tools/export_strings.py` so they cannot drift, but they are still two copies.
+`constrings` was 1,542 bytes in bank 6 for the console main screen and `constrings7` was the same
+1,542 in bank 7 for the droid database, because only one bank is visible at a time and neither
+reader could see the other's copy.
 
-Move one copy to main RAM below `&3E00` and both bank copies delete: **+3,462 bank, −1,731 main-RAM
-buffer, net +1,731** — and it lands in **bank 6**, which is the tight one. It needs TASK 3 first,
-because that region is full until the font halves. TASK 3 + TASK 7 together are worth about
-**+3,381** and would take the pass past the 8 K target.
+**Neither reader cares where the table is.** Both patch a self-modifying absolute with its base —
+`ConTok` writes `ctk_get+1/+2`, `DbTokFind` writes `db_get+1/+2` — and then scan for bit 7, because
+the C64's `FindStrings` index is 249 pointers and 498 bytes was never worth it here. An absolute
+address reaches main RAM from either bank, so **one copy in main RAM serves both**, and it goes in
+the room TASK 3 freed: `PARAFNT` carries it straight after the border cells.
 
-> There is a second route that skips TASK 3 entirely: move the console main screen *and*
-> `constrings` into bank 7, which now has 2,874 bytes, and delete `constrings7`. Same +1,731, no
-> font change, but it relocates a screen between banks. Worth costing against TASK 3 + 7 before
-> either is built.
+```
+&3000  font        1,648      1bpp, TASK 3
+&3670  panelframe     96
+&36D0  constrings  1,542      <- TASK 7, one copy, loaded not paged
+&3CD6  PN_TABS        96      runtime-filled by PageTabsIn
+&3D36  free          202
+&3E00  SPR_SAVE
+```
+
+`CON_STR_COUNT`/`CON_STR_BYTES` moved up beside `FONT_BYTES` for the reason that block already
+gives — beebasm resolves constants in file order and `PN_TABS` needs the size. `export_strings.py`
+stopped emitting the second copy and `src/data/strings7.asm` is gone.
+
+Bank 7 gains 1,536 rather than 1,542; the missing 6 went into `planInk`'s `ALIGN`, as in TASK 5.
+
+**Verified in jsbeeb:**
+
+- The table loads at `&36D0` with the source's own bytes (`C7 4C 44 4A 53 43 4C 41 43 C2 …`).
+- **The droid database — the reader whose base address actually changed — prints correctly**:
+  "Unit type 001" and "Influence Device", the C64's own tokens, rendered legibly.
+- **The console main screen is byte-identical to the pre-change build** on the same deck. Thirteen
+  cells of its 10,240 bytes differ and all thirteen are the rotor-and-digits droid image, which is
+  drawn from `conDrRotor` in bank 6 and has nothing to do with the strings — twelve are the image
+  and the thirteenth is its bottom scanline spilling into the row below.
+- The play buffer is untouched by any of it, as expected.
 
 ### [TASK 4] The title screen as a transient disc file — ~1,500 bytes of bank 7, and no longer needed
 

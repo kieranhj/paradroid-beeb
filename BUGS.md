@@ -290,6 +290,13 @@ has hidden in non-zero `line`, odd/even `mapHX`, or a diagonal, and this fits th
 starting map row is the place to look; the vertical scroll offset is the thing it is most likely
 not to be accounting for.
 
+> **2026-08-19, and it may not be unit 0 that matters.** Layer 13a's TASK 7 verification turned up
+> the same *shape* at **unit 22**: 30 bytes, one column, but only in rows 0, 1, 14 and 15 — the
+> buffer's wrap rows — after a **diagonal** scroll. It did not reproduce on the next sample from the
+> same boot, and the change it was testing touches neither the level draw nor the scroll. If it is
+> the same defect then the column at fault is *whichever one was newly exposed*, and unit 0 is
+> simply where a purely horizontal scroll always leaves it. Worth testing that way round.
+
 It is a **4-pixel column at the very edge of the play area, so it is close to invisible on screen**
 — which is why it went unnoticed and why it needs the byte oracle rather than a screenshot.
 
