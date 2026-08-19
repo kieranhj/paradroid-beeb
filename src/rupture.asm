@@ -545,8 +545,13 @@ IF DEBUG_POS
 \ addresses — one byte per scanline — and successive digits are eight
 \ bytes apart, which is the next 4-pixel column.
 \
-\ swSrc/swDst are borrowed: they belong to the startup bank copy and
-\ are dead from LoadDeck onwards. Nothing else in a pass touches them.
+\ swSrc/swDst are borrowed. They are NOT dead outside the startup bank
+\ copy, which this comment used to claim: panel.asm aliases them as
+\ pnSrc/pnDst for every string it prints, and droid.asm takes them as
+\ mgSrc/mgRef under DEBUG_MAPGUARD. What makes the borrow safe is that
+\ all of them are transient scratch inside one routine, and this runs
+\ from the MAIN LOOP and not the IRQ, so no two uses interleave.
+\ Anything wanting to hold a value in them across a call would break.
 \
 \ NOT COMPATIBLE WITH DEBUG_VSYNC — both write the top-left digit.
 .DbgPosOut

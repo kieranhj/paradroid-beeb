@@ -4,14 +4,34 @@ Defects found by measurement, with the evidence for each. Fixed entries stay too
 **FIXED** in the heading, because they record what was *ruled out* as well as what was wrong —
 and the ruled-out list is usually the expensive part to reproduce.
 
-Open as of 2026-08-19: **#15, #13, #12, #9, #7b** (polish), and **#1/#2/#3**, which all want
-retesting against fixes that landed after they were filed.
-
 Defects 1–4 were found on 2026-08-10 while verifying the Layer 5 sprite save-geometry change
 (`3f69b4d`); all of them predate that commit and reproduce identically on the build before it.
 Later entries carry their own date.
 
-Numbering is historical, not an order — 3 sits after 4 because it was added later.
+Numbering is historical, not an order — 3 sits after 4 because it was added later, and the
+sections below are in neither. **The table is the index; read it first.**
+
+| | Defect | Status | |
+|---|---|---|---|
+| **1** | [`RedrawAll`'s split-row repair has no effect — the oracle disagrees at `line != 0`](#1-redrawalls-split-row-repair-has-no-effect--the-debug-oracle-is-wrong) | **Probably moot** | the split row it describes no longer exists; kept until its own tests are re-run |
+| **2** | [Blank scanlines at the top of the window after stopping against a wall](#2-blank-scanlines-inside-the-visible-window-after-stopping-against-a-wall) | **Open** | the view retreats a pixel after the band is computed. Wants retesting |
+| **3** | [Top line wrong for one frame when stopping after moving up at speed](#3-top-line-wrong-for-one-frame-when-stopping-after-moving-up-at-full-speed) | **Open** | never instrumented. Retest against the 2026-08-14 wrap fix first |
+| **4** | [The player can spawn inside a wall and is then stuck](#4-the-player-can-spawn-inside-a-wall-and-is-then-stuck--fixed-2026-08-15) | **Fixed** 2026-08-15 | waypoint-0 spawn; `CentreOnDeck` deleted |
+| **5** | [Player sprite's lower part missing at a doorway](#5-player-sprites-lower-part-missing-at-a-doorway--fixed-2026-08-14) | **Fixed** 2026-08-14 | the interpreted row fell into the walking tail |
+| **6** | [The rotor restore leaves pixels behind, at both shifts](#6-the-rotor-restore-leaves-pixels-behind-at-both-shifts--fixed-2026-08-14-same-cause-as-5) | **Fixed** 2026-08-14 | same cause as #5 |
+| **7** | [Droids lock together (7a); the player's bounce is heavy (7b)](#7-droids-can-lock-together-and-the-players-bounce-is-heavy--7a-fixed-2026-08-18) | **7a fixed** 2026-08-18, **7b open** | 7a was a missing debounce. What is left is the box SHAPE and the feel |
+| **8** | [Droids from the last deck survive into the next one](#8-droids-from-the-last-deck-survive-into-the-next-one--fixed-2026-08-15) | **Fixed** 2026-08-15 |  |
+| **9** | [One 4-pixel column is wrong down most of the strip after horizontal scrolling](#9-one-4-pixel-column-is-wrong-down-most-of-the-strip-after-horizontal-scrolling--2026-08-15) | **Open** | 58-62 bytes of 10,240, all in CRTC unit 0. Sprites ruled out; it is in the incremental column draw |
+| **10** | [The level is corrupted when a droid's shot kills you](#10-the-level-is-corrupted-when-a-droids-shot-kills-you--fixed-2026-08-16) | **Fixed** 2026-08-16 | a teleport broke `COPYCHAR`'s parity rule |
+| **11** | [Enemy lasers crawl, and the player can walk through them](#11-enemy-lasers-crawl-and-the-player-can-walk-through-them--fixed-2026-08-16) | **Fixed** 2026-08-16 | a direction was being read as a distance |
+| **12** | [Lasers on screen when a console opens stay drawn over the console text](#12-lasers-on-screen-when-a-console-is-activated-stay-there-and-corrupt-the-console-text--2026-08-16) | **Open** | filed, not investigated. A missing pool teardown on modal entry — same shape as #15 |
+| **13** | [The ALERT sign's lamp is dead; it should track the alert level](#13-the-alert-signs-lamp-is-dead--it-should-track-the-alert-level--2026-08-17) | **Open** | needs one character rebuilt when `Alert` crosses a threshold. Wants agreeing first |
+| **14** | [`XfRand` is not a maximal LFSR — its low two bits are always zero](#14-xfrand-is-not-a-maximal-lfsr--its-low-two-bits-are-always-zero--fixed-2026-08-19) | **Fixed** 2026-08-19 |  |
+| **15** | [Incremental draw disagrees with `RedrawAll` beside an animating door](#15-incremental-draw-disagrees-with-redrawall-beside-an-animating-door--2026-08-19-unconfirmed) | **Open, unconfirmed** | did not reproduce in five clean runs. Correlates with poking a modal flag, not with the level draw |
+| **16** | [Enemy droids draw a black rotor and a WHITE number](#16-enemy-droids-draw-a-black-rotor-and-a-white-number--fixed-2026-08-19) | **Fixed** 2026-08-19 | the wrap fallback blits digits interpreted and never sees `colPix` |
+
+`## Delivered: DEBUG_POS` near the end is not a defect — it is the position bookmark that came out
+of #5, kept with the defects because that is where it is looked for.
 
 ---
 
@@ -48,10 +68,13 @@ carries the same opacity whichever plane is left in it and the mask comes out th
 ### How it was reproduced, and why that mattered
 
 Waiting for a droid to wander onto a strip boundary is not a test. Patching `LDA sprNoWrap` to
-`LDA #0` at the fast-path test (`&2C48` in the fixed build, `&2C41` before it) forces **every**
-sprite down the fallback, which makes the defect appear on demand and on every droid. Same deck,
+`LDA #0` at the fast-path test forces **every** sprite down the fallback, which makes the defect appear on demand and on every droid. Same deck,
 same droid, same frame count: before, a black rotor around a white `329`; after, all black. The
 player stayed white throughout, which is the control.
+
+The test site was `&2C48` in the fixed build and `&2C41` before it, but **do not reuse those
+numbers** — it is in `sd_droid`, near the end of main RAM, so anything added to `sprite.asm` or
+earlier moves it. Find it in the listing as `LDA &12` immediately after `JSR SprSetColour`.
 
 ### Not affected
 
@@ -650,7 +673,9 @@ on waypoint 0 and centring the view on that replaces the centroid guess entirely
 data is already exported (`wpData`, `wpOfsLo/Hi`, `wpCount`). This belongs with the droid-state
 work rather than the blitter.
 
-**Workaround meanwhile:** `TD_DECK = 1` in `main.asm`.
+~~**Workaround meanwhile:** `TD_DECK = 1` in `main.asm`.~~ **Gone** — `TD_DECK` went with
+`droidtest.asm` when the fix landed, as the note at the top of this entry says. Left struck through
+because the rest of this section is the evidence as it was gathered.
 
 ---
 
@@ -814,14 +839,27 @@ Read it off the screen or a screenshot and poke the values back to return to a s
 Verified against RAM: the panel and zero page agree.
 
 **Not compatible with `DEBUG_VSYNC`** — both write the top-left digit. `DbgPosOut` is in
-`rupture.asm`; it borrows `swSrc`/`swDst`, which belong to the startup bank copy and are dead from
-`LoadDeck` onwards.
+`rupture.asm` and borrows `swSrc`/`swDst`.
+
+> **Corrected 2026-08-19.** This used to say those two are "dead from `LoadDeck` onwards", and they
+> are not: `panel.asm` aliases them as `pnSrc`/`pnDst` for every string it prints, and `droid.asm`
+> takes them as `mgSrc`/`mgRef` under `DEBUG_MAPGUARD`. It is safe anyway, but for a different
+> reason — **all of them are transient scratch inside one routine, and `DbgPosOut` is called from
+> the main loop (`main.asm`), not from the IRQ**, so no two uses can interleave. Anything that
+> wants to hold a value in them ACROSS a call would break, and the old wording invited exactly
+> that.
 
 If you would rather read RAM directly: `deck` &8B, `plyX` &2B, `posX` &27, `posY` &29, `mapHX` &80,
 `mapYr` &86, `line` &24, `scrollS` &7E, `plyCX` &35, `plyCY` &37 (all zero page, 16-bit except
-`deck`, `mapYr` and `line`); `numDoors` &1E7D, `doorCol` &1E61, `doorRow` &1E68, `doorState` &1E6F,
-`doorDirty` &1E76, `tilemap` &3800; and in bank 4, which is the resting state, `doorDef` &A2FB and
-`tiledefs` &8800. Take them from a fresh label dump after any build — they move.
+`deck`, `mapYr` and `line`); `numDoors` &24B7, `doorCol` &249B, `doorRow` &24A2, `doorState` &24A9,
+`doorDirty` &24B0, `tilemap` &4600; and in bank 4, which is the resting state, `doorDef` &A48D and
+`tiledefs` &8800.
+
+> **Take them from a fresh label dump after any build — they move, and every one of these had.**
+> Checked 2026-08-19: the zero page addresses were all still right, and **every non-zero-page one
+> was stale** — the five door variables by &63A, `doorDef` by &192, and `tilemap` from &3800 to
+> &4600, which Layer 11 [DECISION 1] moved to make room for the title's framebuffer. The dump is
+> one command, in `CLAUDE.md` under "Symbol addresses come from".
 
 ## 15. Incremental draw disagrees with `RedrawAll` beside an animating door — **2026-08-19, unconfirmed**
 
