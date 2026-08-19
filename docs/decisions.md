@@ -10,6 +10,21 @@ banks and a five-row panel). This file keeps the *reasoning*: why MODE 1, the no
 files it deleted, and the evidence for which Paradroid the listing is. Per-layer decisions are
 numbered in each layer's own doc.
 
+### How the bank count grew from two to four
+
+`PLAN.md` carries only the settled answer, so the steps are here. Each was forced, not chosen, and
+the shape of the argument matters more than the dates: every increase came from **code**, not data.
+
+| | | |
+|---|---|---|
+| **2 × 16K** | the original target | 2026-08-04 |
+| **3 × 16K** | a compiled shift is ~5.5 K of generated 6502 and 1 px positioning needs four of them, so the blitter alone outgrew one bank. [`layer-5-blitter.md`](layer-5-blitter.md) records the alternatives costed against it | 2026-08-14 |
+| **4 × 16K** | bank 7 for Layer 10's transfer game, which keeps `xfer_DoColumn` and the rest verbatim on a shadow screen. Banks 4–7 is the Master's own sideways RAM numbering, so the port uses it on a B too | 2026-08-16 |
+
+**Four is settled** (Layer 13a, 2026-08-19): the four hold ~57 K of the 64 K they offer with ~7 K
+free across them, and three banks are 48 K and cannot take it. A machine with fewer is not a
+supported target — 13b is where the build learns to say so rather than writing into ROM.
+
 ### The no-HAL rule, and the five deleted files
 
 An earlier iteration of this project designed a hardware abstraction layer up front, targeting a
