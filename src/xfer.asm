@@ -1928,15 +1928,25 @@ XF_LC = PN_LOWER_A
 \ Screen and colour at a fixed page offset, so the C64's "add $90 to the
 \ high byte" becomes "add 3". The stage page is the C64's $4400: eight
 \ 16-byte pulser-count arrays, cleared whole by XfClearSubGame.
-ALIGN &100
-.xsScr
-  SKIP XS_COFF                  \ 640 used; the rest is the fixed offset
-.xsCram
-  SKIP &280
-.xsStage
-  SKIP &100
-.xsGlyphOf
-  SKIP &100
+\
+\ THEY LIVE ON TOP OF THE SPRITE SAVE AREAS, in main RAM, and cost this
+\ bank nothing. The three screens that use them — the transfer game, the
+\ lift view and the game over — are all modal: each short-circuits the
+\ pass with JMP ml_passend before SprRestoreAll and SprDrawAll, so the
+\ pool is frozen the whole time one is up, and every way out of all
+\ three goes through ReframeView, whose rv_unsave clears all eight
+\ sprSaved flags and whose RedrawAll repaints the buffer. So nothing
+\ ever reads a background this has overwritten. ConDeckEnter4 already
+\ stages the deck RLE here on the same reasoning; the console and these
+\ three are mutually exclusive, and both re-stage on every entry.
+\
+\ 1,920 bytes of the 2,048, so the layout is unchanged and xsStage
+\ keeps the same non-page-aligned offset it had in the bank.
+xsScr     = SPR_SAVE
+xsCram    = xsScr + XS_COFF
+xsStage   = xsCram + &280
+xsGlyphOf = xsStage + &100
+ASSERT xsGlyphOf + &100 <= SPR_SAVE + SPR_SLOTS * 256
 
 \ ============================================================
 \ GoStart / GoTick — _gameover ($1455) and its explosion cloud
