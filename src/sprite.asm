@@ -1803,6 +1803,33 @@ efSrc = psrc
 \ the deck's highlight. That is per-deck too, and it is the only
 \ colour left that cannot be mistaken for either. See the note in
 \ docs/layer-7-combat.md for what the alternative would have cost.
+\ BELOW ENERGY 8 HE FLASHES, and that is the only energy readout the
+\ game has: KC dropped the port's own energy bar in layer-9-hud.md
+\ decision 4 because the C64 does not have one, which left this as the
+\ whole of the cue. $3DEE tests energy against 8 and indexes
+\ LowNrgColor_t (or LowNrgXferCol_t in transfer mode) with frameCount
+\ AND 7 — eight entries, a symmetric fade out of the base colour and
+\ back, ending on white.
+\ [DECISION, KC 2026-08-19] We take the RATE and not the ramp. Eight
+\ inks collapse onto three and two of ours are already spoken for, so
+\ the tables cannot survive: rank-quantising them leaves the transfer
+\ cycle barely flashing at all, because every colour in it is mid
+\ luminance. So it is the base colour for four fields and black for
+\ four, which is bit 2 of the same 8-field cycle the C64 counts, and
+\ reads at speed as the flash it is meant to be. fieldCount is the
+\ IRQ's own count at fire 3, one per field, so it is frameCount.
+\ drEnergy is entry 0, the player, and it lives in bank 4 — safe to
+\ read here because SWRAM_DATA is the resting state and SprDrawAll has
+\ not paged the sprite bank in yet. combat.asm reads it the same way.
+  LDA drEnergy
+  CMP #8
+  BCS saa_lit
+  LDA fieldCount
+  AND #4
+  BEQ saa_lit                   \ four fields the base colour, four black
+  LDA #SPR_COL_BLACK
+  BNE saa_setcol                \ always
+.saa_lit
   LDA moveMode
   BNE saa_white                 \ MM_TRANSFER is 0, as it is on the C64
   LDA #SPR_COL_HILIT
