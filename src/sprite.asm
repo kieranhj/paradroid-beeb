@@ -1108,7 +1108,9 @@ SPR_OVL_Y = SPR_H + 8
 .SprSplitOK
   LDA bandDo                    \ the level draw would run over tranche B
   ORA colCount
-  BNE sso_no
+  ORA animDirty                 \ and so would a recharger or an alert lamp
+  BNE sso_no                    \ repainting itself — same argument as a door
+
 \ A door only writes the buffer on a pass where it MOVES. One that is
 \ being held open — bit 6, set by the probes in CheckWalls, which run
 \ before this — is not decremented and not marked dirty by

@@ -745,3 +745,188 @@ A fresh game starts at `$40` (`$1345`) and does not flash. Both are the original
 **Nothing here is blocked and nothing is left to find out.** The one open question — whether
 character 20 is the recharger in our charset numbering — was checked against `tiledefs.asm` on
 2026-08-15 and it is, uniquely. See 7b.
+
+---
+
+# 7g — the collision matrix, friendly fire and the disruptor ✅ **DONE 2026-08-20**
+
+The three rows this layer left open in `PLAN.md`, landed together because they are one piece of
+code: the matrix is what selects between the arms, and the disruptor and friendly fire *are* two of
+the arms.
+
+## The matrix
+
+`DoCollision2` (`$1B51`) and `CollisionType` (`$6D6D`). The port has carried two hard-coded arms
+since Layer 6 — reverse the first droid, pause the second — and that is the table's `$08` entry and
+nothing else. Everything else in it silently did nothing.
+
+The table is **32 bytes, transcribed whole**. The index is the mode of the party being acted on,
+times eight, plus the mode of the other; a mode is the sprite's number byte shifted right five,
+which for our types is the same shift on `drType`:
+
+| | hit by a droid | by an enemy bullet | by an explosion | by the player's shot |
+|---|---|---|---|---|
+| **a droid** | `08` reverse / pause | `20` friendly fire | `20` friendly fire | `04` player fire |
+| **an enemy bullet** | `10` free it | `40` explode | `40` explode | `40` explode |
+| **an explosion** | `80` nothing | `80` | `80` | `80` |
+| **the player's shot** | `02` nothing | `02` | `02` | `80` |
+
+`$1B68` swaps the pair and runs the chain again, so both parties are acted on, and the two arms
+differ in exactly one place: `$08` reverses the first and stops the second. `DrCollAct` reproduces
+`$1B56`'s own `ASL`/`BMI` chain rather than a jump table, because the bit order *is* the priority
+order.
+
+**Two columns of it cannot arise here and ship anyway.** The player's own collisions never reach
+`DoCollision2` — `$1A43` branches to `_ply_droid` first, which is `dc_player` — and the player's
+shot is our slot 7, with no droid-table entry, handled by `DrBulletHit` before the pair loop. A
+32-byte transcription is faithful by construction; a trimmed one is faithful until the first thing
+it gets wrong.
+
+## Friendly fire
+
+`EnemyFireEnemy` (`$1BF6`), which is the `20` arm and which the original very much has. The damage
+is `2 * (40 - type)` — **the target's own weakness, not the shooter's strength** — so a 001 caught
+in a 999's crossfire dies instantly and the 999 barely notices whatever hits it. Nothing scales it
+by who fired.
+
+It is reached from two columns, and the second is the interesting one: **an explosion is a `20`
+against a droid too**, so a droid that dies next to another takes it with it. That is what makes a
+crowded corridor worth backing out of.
+
+`FreeSpriteTmp2` (`$1C82`) came with it as the `10` arm — zero energy, which the compaction reads
+as dead, and the slot back to the pool. It is the same three stores `DrBullet`'s own death arm
+already had, so that now calls it.
+
+The score is **not** gated: `KillDroid` pays for anything it kills, including a droid killed by
+another droid. That is the original's.
+
+## The disruptor
+
+`Disruptor` (`$231E`) — weapon 3, and `PLAN.md`'s "an area effect rather than a bullet".
+
+- **`DWeapon_t` gives it to types 17 and 18 only**, the 711 and the 742, and `DisruptorImmune`
+  (`$6E5B`) is `8, 17, 18, 20, 23` — so both droids that carry one are immune to it. That is what
+  makes them worth taking.
+- **Everything the player can SEE takes `2 * (40 - type)` at once.** `$234B` reads `$D015`, the
+  VIC's sprite-enable register, so a droid on the deck but off the window is untouched. `sprActive`
+  is the same question here.
+- **The firer is not exempt**, and its arm is not the droids' formula:
+  `energy + type - shipLevel - $20`. A big droid on an early ship shrugs it off; a 001 on ship 8
+  does not survive its own weapon.
+- `disruptorOwner` decides who is paid. `$23ED` awards `ShootScore` only when the player fired it.
+- **Four iterations.** The sweep is the first; the rest are the flash. `$3441` refuses a second
+  burst while one is running and still charges the fire delay, so a held trigger fires it at the
+  weapon's own rate.
+- The enemy trigger (`$34A1`) draws against `shipLevel` from a mask of **`$7F`**, not the bullet
+  path's `$1F` — so even on ship 8 it is one draw in thirty-two rather than one in four.
+
+### [DECISION 9] The screen shake is not ported — agreed with KC 2026-08-19
+
+`$23A3` and `$23B3` write a random 0–7 into the VIC's fine-scroll registers, jittering the whole
+picture for the three frames of the burst. **Ours cannot.** The play strip is exactly sixteen rows
+inside one hardware wrap, so moving the CRTC start vertically fetches rows that were never drawn
+(`CLAUDE.md`'s "the display window must fit inside ONE hardware wrap"), and moving it horizontally
+shows a 4-pixel column the incremental draw has not written — the same family as `BUGS.md` #9.
+KC chose the palette flash alone. Reopening it means finding the sixteenth row back first.
+
+### [DECISION 10] The flash is an override, not a saved palette
+
+`$239C` forces `$D021` white for the burst and `$2405` puts the saved colour back. The obvious port
+— save `palPlay`'s four logical-0 entries, write white, restore — **was built and was wrong**, and
+the console found it within a minute of play: the transfer game and the lift view both save
+`palPlay` and install their own, so a flash caught by one of them is restored later as the deck's
+colour, and a burst frozen by a modal screen never restores at all.
+
+So `disrFlash` is a flag and `SetPalPlay` writes the four white entries *after* the table. Nothing
+is ever stored, clearing the flag puts whatever palette is current straight back, and the cost is
+four cycles a fire when no burst is running.
+
+**A modal screen ends the burst.** `$1435` sits inside `EnterGame`, past the console test at
+`$1427`, so the C64 freezes a burst there too — it just does not show, because its console rewrites
+`$D021` on the way in and out. `CbDisruptor` therefore runs *above* the three modal arms in the
+main loop and ends itself when one of them has the machine.
+
+## Measured in jsbeeb, 2026-08-20
+
+| | |
+|---|---|
+| A disruptor against a visible type 4 | energy `&40` → dead: damage is `2 * (40 - 4)` = 72. `drType` becomes `&40`, the explosion |
+| The firer's own cost | player `&40` → `&1F`: `64 + 0 - 1 - 32` = 31, the original's arithmetic exactly |
+| Score | `150` after three kills, so `disruptorOwner` 0 is paying |
+| The flash | `palPlay` untouched; the screen white for three passes and the deck's green back after |
+| Friendly fire | an explosion parked on a type 4 killed it through the matrix — `drType` `&40` |
+| Frame lock | `gameTick` moved 100 over 200 fields: still exactly two fields a pass |
+
+---
+
+# 7h — the animated tiles ✅ **DONE 2026-08-20**
+
+Two things that share one mechanism: the recharger's icon animation (`PLAN.md`'s "the pad works;
+the animation does not") and `BUGS.md` #13, the dead ALERT lamp.
+
+## The recharger
+
+`AnimAllInsideFont` (`$38C4`), called from `GameLoop` at `$1401`. Every other iteration it rotates
+four consecutive character bitmaps inside the font, and the screen follows for free because **the
+font IS the screen's source** on a C64.
+
+Ours is not: characters are blitted into the play buffer when they scroll in. So the rotation has
+to be followed by repainting whatever is already on screen — and that is the one mechanical
+difference, forced by the display model rather than chosen.
+
+**The rotation is done to the charset, not to the character codes in the map.** That is what keeps
+every draw path agreeing: a pad that scrolls in mid-animation comes in at the phase everything else
+is showing, and `RedrawAll` stays a valid oracle. Rotating codes instead would have needed the band
+draw, the column draw and the debug redraw all taught about the phase.
+
+`ChrAnimData1` (`$6C23`) names **two** groups, at `$7A60` and `$7BD0` — characters 76–79 and
+122–125. **Only the first is ported**: 122–125 are referenced by no tile definition, so they are
+not among the 137 characters `export_bbc.py` converts. 76–79 are the four turning pointers around
+tile 20, the recharge pad, and they sit in its eight non-centre cells.
+
+`AnimScan` walks the eleven visible tile columns and all sixteen rows — 176 map bytes on a tick
+pass, 1.6 % of a pass amortised over the two — and records up to eight tiles. `AnimPaint` repaints
+them after the level draw. `animDirty` joins `bandDo` and `colCount` in `SprSplitOK`, on exactly
+the argument a moving door already had: a pass that writes the buffer cannot be split.
+
+`DrawDoorTile`'s body became `DrawTileCells`, parameterised by a definition and a list of cells,
+and the door is now a twenty-byte wrapper round it. Same code, same argument for it, and 200 bytes
+back out of the code image.
+
+## The ALERT lamp — `BUGS.md` #13
+
+Character `&16`, twice in row 2 of tile 22. `InitColors` (`$2835`) and `DoAlertAndAging` (`$3E38`)
+both write `CharColor+$16` from `AlertColors` (`$6D45`) indexed by `Alert >> 6`: green, yellow,
+orange, red. Ours read the slot the C64 leaves lying past the end of its 12-byte record and clamped
+it, which reproduces the incidental behaviour and misses the deliberate one.
+
+### [DECISION 11] MODE 1 has no fourth colour to give it — the ramp becomes four *states*
+
+The port's four logicals have fixed roles — 0 the deck's background, 1 black, 2 the deck's
+highlight, 3 white — and all four are spoken for by the artwork and the sprites. Green, yellow,
+orange and red cannot exist at once. What the lamp *can* have is its own logical, because character
+`&16` is the only user of its colour slot:
+
+| `Alert >> 6` | C64 | here |
+|---|---|---|
+| 0 | green | logical 1, black — the lamp is unlit |
+| 1 | yellow | logical 2, the deck's highlight |
+| 2 | orange | logical 3, white |
+| 3 | red | white, **blinking** against black every 8 passes |
+
+**The blink is the deviation**, and it is the only thing in 7g/7h that is not in the original. It
+buys the fourth state a three-colour ramp cannot carry. **Not yet ratified by KC** — dropping the
+level-3 arm makes it a flat three-state ramp and costs one line of `lowcode.asm`.
+
+`BuildLampChar` is `BuildCharset`'s inner loop for a single character, reusing the deck's `LUTs`
+and its zero-page pointers, both dead at the point in the pass where `AnimTick` runs. `LoadDeck`
+calls `AnimReset` after `BuildCharset`, because a rebuilt charset has put character `&16` back on
+its clamped colour and the comparison would otherwise skip the rebuild.
+
+## Measured in jsbeeb, 2026-08-19/20
+
+| | |
+|---|---|
+| The rotation | characters 76–79 move one step every second pass, and each takes the previous one's sixteen bytes exactly |
+| The repaint | a pad poked into the tile map painted, animated, and matched `RedrawAll` cell for cell on the eight animated cells |
+| The lamp | `&00`/`&40`/`&80` in `alertLvl` rebuilt character `&16` at logicals 1, 2 and 3, and repainted both cells of a sign poked into view |

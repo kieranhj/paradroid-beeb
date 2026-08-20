@@ -73,7 +73,6 @@
 \ up. Everything else still runs.
 DR_MOVES = TRUE
 
-DR_SLOTS  = 14                  \ index 1-13; 0 is the sentinel
 DR_REFY   = 13                  \ reference cell below the sprite top
 DR_NEAR_X = SPR_MAX_UNIT * 4 + 3    \ furthest left edge that still draws
 DR_ENERGY = &40                 \ a droid's full energy, from $16AA
@@ -182,6 +181,8 @@ DR_LOS_MAX = 96
 .LoadDeck
   LDA deck
   JSR BuildCharset              \ charset is deck specific
+  JSR AnimReset                 \ ...which puts the alert lamp back on its
+                                \ default colour, so the lamp must rebuild
   JSR SetPalette
   LDA deck
   JSR BuildLevel
@@ -249,6 +250,12 @@ ENDIF
   BEQ gs_seeded
   STA drSeed
 .gs_seeded
+
+  LDA #0                        \ $10DB and $13D0: no burst is running, and
+  STA disruptorCnt              \ nobody is owed the kills of one
+  STA disruptorOwner
+  STA cbNoScore
+  STA disrFlash
 
   LDA #1
   STA shipLevel                 \ $1255 zeroes it and NextLevel's INC at
@@ -770,28 +777,89 @@ ENDIF
 \ lived and suppressed the player's own bounce with it.
 .DrCollided
   LDA dcOuter                   \ slot 0 is the player, and the pairs are
-  BEQ dc_player                 \ ordered so he can only be the outer one
+  BNE dc_matrix                 \ ordered so he can only be the outer one
+  JMP dc_player
+.dc_matrix
+\
+\ DoCollision2 ($1B51) and CollisionType ($6D6D), which the port carried
+\ as two hard-coded arms — reverse the first, pause the second — until
+\ the friendly-fire work needed the rest of the table. The player's own
+\ collisions are NOT in it: $1A43 branches to _ply_droid and friends
+\ before DoCollision2 is ever reached, which is dc_player below.
+\ THE PLAYER'S BULLET IS NOT IN IT EITHER, and on the C64 it is: sprite
+\ 0 is the player's shot and it takes column 3 of the table. Ours is
+\ slot 7, has no droid-table entry, and is handled by DrBulletHit before
+\ this loop runs — so mode 3 never arises here. The table ships whole
+\ anyway, because a 32-byte transcription is faithful by construction
+\ and a trimmed one is faithful until the first thing it gets wrong.
+  LDY dcOuter
+  LDA drSlotOwner,Y
+  BEQ dc_none
+  STA dcIdxA
+  LDY dcInner                   \ an explosion still owns its slot, so it
+  LDA drSlotOwner,Y             \ turns up here — and the table is what
+  BNE dc_gotpair                \ says it may not be shoved about
+.dc_none
+  RTS
+.dc_gotpair
+  STA dcIdxB
 
-\ An explosion still owns its slot and still has a table entry, so it
-\ turns up in the pair loop — and must not be shoved about like a droid.
-\ The player's bullet is slot 7 and has no owner at all, so the BEQ
-\ already drops it.
-  LDY dcOuter                   \ droid v droid: the first reverses...
-  LDA drSlotOwner,Y
-  BEQ dc_x
+  LDX dcIdxA : JSR DrCollMode : STA dcModeA
+  LDX dcIdxB : JSR DrCollMode : STA dcModeB
+
+\ Index = the TARGET's mode * 8 + the other one's, which is what
+\ GetCollisionType's collision2mode/collision1mode pair comes to once
+\ $1B68's swap is unwound. Two passes, one per party, exactly as the
+\ swap-and-repeat at _1 does.
+  LDA dcModeA
+  ASL A : ASL A : ASL A
+  CLC : ADC dcModeB
   TAX
-  LDA drType,X
-  CMP #DR_TYPE_BULLET
-  BCS dc_x
-  JSR DrReverse
-  LDY dcInner                   \ ...and the second stands still
-  LDA drSlotOwner,Y
-  BEQ dc_x
+  LDA drCollType,X
+  LDX dcIdxA
+  LDY #0                        \ arm 1: $08 means reverse
+  JSR DrCollAct
+
+  LDA dcModeB
+  ASL A : ASL A : ASL A
+  CLC : ADC dcModeA
   TAX
-  LDA drType,X
-  CMP #DR_TYPE_BULLET
-  BCS dc_x
+  LDA drCollType,X
+  LDX dcIdxB
+  LDY #1                        \ arm 2: $08 means stand still
+  JMP DrCollAct
+
+\ DrCollMode is in src/lowcode2.asm. Bank 4 had three bytes left.
+
+\ ---- DrCollAct — one entry of the table, one party ---------
+\   A = the action byte, X = the droid it happens to, Y = which arm
+\ The bit order is $1B56's own ASL chain, and the two arms differ in
+\ exactly one place: $08 reverses the first party and stops the second.
+.DrCollAct
+  STX drIdx
+  STY dcArm
+  BMI dca_x                     \ $80: nothing happens to this one
+  ASL A : BMI dca_explode       \ $40
+  ASL A : BMI dca_efire         \ $20
+  ASL A : BMI dca_free          \ $10
+  ASL A : BMI dca_bump          \ $08
+  ASL A : BMI dca_pfire         \ $04
+.dca_x
+  RTS                           \ $02 is a no-op in both arms
+.dca_explode
+  JMP DrExplodeSprite
+.dca_efire
+  JMP DrEnemyFireEnemy
+.dca_free
+  JMP DrFreeEntry
+.dca_bump
+  LDA dcArm
+  BNE dca_pause
+  JMP DrReverse
+.dca_pause
   JMP DrPause16
+.dca_pfire
+  JMP DrPlyFireEnemy
 
 \ ---- the player has walked into a droid ---------------------
 \ THE DEBOUNCE IS THE DROID ARM'S ALONE, and putting it in front of all
@@ -1755,8 +1823,11 @@ BUL_COL_H = 10
   STA alertLvl
   LDY drType,X
   LDX drCent,Y
+  LDA cbNoScore                 \ $23ED: a droid's disruptor pays nobody
+  BNE dkd_noscore
   LDA drShootScore,X
   JSR AddScore
+.dkd_noscore
 \ falls through
 
 \ ---- DrExplodeSprite — port of ExplodeSprite ($1BCA) -------
@@ -1909,7 +1980,7 @@ BUL_COL_H = 10
   LDA drWeapon,Y
   BEQ def_x                     \ unarmed
   CMP #3
-  BEQ def_x                     \ the disruptor is not a bullet
+  BEQ def_disr                  \ the disruptor is not a bullet: $345C
   LDA drFireDelay,X
   BNE def_x
   LDA drCount
@@ -1930,6 +2001,8 @@ BUL_COL_H = 10
   JMP DrAddBullet
 .def_x
   RTS
+.def_disr
+  JMP CbEnemyDisruptor          \ main RAM, with the rest of the weapon
 
 \ ---- DrAddBullet — port of AddBullet ($34B5) ---------------
 \ THE SPEED IS A DIRECTION, NOT A DISTANCE, and that is the whole point
@@ -2120,17 +2193,8 @@ BUL_COL_H = 10
   JMP DrExplodeSprite           \ it dies as an explosion, as $18B7 does
 
 .dbl_dead
-  LDX drIdx
-  LDA #0
-  STA drEnergy,X
-  LDY drSprNum,X
-  STA drSprNum,X
-  BEQ dbl_x
-  STA sprActive,Y
-  STA sprKind,Y
-  STA drSlotOwner,Y
-.dbl_x
-  RTS
+  JMP DrFreeEntry               \ the same three stores, and $1C82's
+                                \ FreeSpriteTmp2 wants them too
 
 \ ============================================================
 \ DrHurtPlayer — the arms of DoCollision that cost the player energy
@@ -2368,8 +2432,9 @@ ENDIF
 .drPosYlo    SKIP DR_SLOTS
 .drPosYhi    SKIP DR_SLOTS
 
-.drVis       SKIP DR_SLOTS      \ last sight-line answer, per droid
-.drVisNew    SKIP DR_SLOTS      \ needs one now, having just been allocated
+\ drVis, drVisNew and drBulFrm are in src/lowbss.asm, at &0C90: three
+\ 14-byte arrays of pure state that cost the same to read from main RAM
+\ as from the bank, and 42 bytes the bank did not have.
 .losTurn     EQUB 1             \ the slot whose turn it is
 
 .drSlotOwner SKIP SPR_SLOTS     \ droid index holding each sprite slot, 0 free
@@ -2394,7 +2459,6 @@ ENDIF
 .diIdx       EQUB 0
 .drTmp       EQUB 0
 .drDmg       EQUB 0             \ Layer 7e: damage worked out before it lands
-.drBulFrm    SKIP DR_SLOTS      \ 7f: an enemy bullet's effect frame
 .drNewSlot   EQUB 0
 .dbSpdX      EQUB 0
 .dbSpdY      EQUB 0
@@ -2418,6 +2482,11 @@ ENDIF
 .lsDom       EQUB 0             \ 0 = X is the long axis, 1 = Y
 .lsCount     EQUB 0
 
+.dcIdxA      EQUB 0             \ DrCollided: the two droids behind the pair
+.dcIdxB      EQUB 0
+.dcModeA     EQUB 0             \ and their collision modes, 0-3
+.dcModeB     EQUB 0
+.dcArm       EQUB 0             \ 0 = the first party, 1 = the second
 .dcHit       EQUB 0             \ what the player ran into, for the damage arm
 .dcOuter     EQUB 0             \ DrCollide: the pair of slots in hand
 .dcInner     EQUB 0

@@ -141,6 +141,34 @@ MAP_CHAR_W = MAP_COLS * 4       \ 256 characters across
 MAP_CHAR_H = MAP_ROWS * 4       \ 64 character rows
 
 \ ---- debug build options ------------------------------------
+\ **WHICH OF THESE ACTUALLY BUILD, 2026-08-20.** The code image ends at
+\ FONT_ADDR and has 11 spare bytes, so a debug flag that adds more than
+\ that does not fit — and until the GUARD went in below, it did not SAY
+\ so: `CLEAR FONT_ADDR, ...` releases beebasm's overwrite check over
+\ exactly the range the overrun lands in, so the build succeeded, `PARA`
+\ scribbled on the front of the text font, and the PARAFNT load scribbled
+\ back over the code's tail. That is what a corrupt player sprite and an
+\ illegible frame digit were. Four flags were doing it.
+\   DEBUG_VSYNC    ok    the readouts moved to bank 6 — src/dbgpanel.asm
+\   DEBUG_POS      ok    same
+\   DEBUG_ENERGY   ok    same, plus a mirror for its two bank-4 bytes
+\   DEBUG_INVULN   ok
+\   DEBUG_XFERWIN  ok    on by default
+\   DEBUG_RESTART  ok    on by default
+\   DEBUG_RASTER   NO    59 bytes over the code image
+\   DEBUG_DRAW     NO    83 bytes over
+\   DEBUG_TIME     NO    154 bytes over
+\   DEBUG_MAPGUARD NO    MG_COPY is 1 K and bank 4 has 12 bytes
+\ COMBINATIONS matter too, because each readout's shim costs 20 bytes of
+\ src/lowcode2.asm's 36: VSYNC, POS and ENERGY each build alone, but
+\ POS+ENERGY does not. The fix is a shared enter/leave pair instead of a
+\ shim apiece — 18 bytes once and 9 each — and it was left undone rather
+\ than done half-asleep. It fails at build time now, which is the point.
+\ The last four are NOT a regression from the debug code — they are the
+\ RAM situation, and they need main-RAM room found before they can come
+\ back. DEBUG_RASTER's and DEBUG_DRAW's instrumentation cannot move to a
+\ bank at all: the interrupt and the blitter call it, and neither may
+\ page. See docs/memory-map.md for where the next bytes could come from.
 \ DEBUG_RASTER tints the background at entry to each rupture
 \ interrupt, so the scanline each one lands on is visible:
 \   magenta  from the VSync IRQ
@@ -212,13 +240,19 @@ DEBUG_POS    = FALSE
 \ cycles of the 80,000 in a pass. Anything that had to mask, or that
 \ spanned more than one byte per row, would start measuring itself.
 \
-\ It costs 117 bytes of main RAM. That used to be nearly all of what was
-\ left; since the tile map was given a fixed home at &3800 the code has
-\ room to &3000, so it is off by default out of tidiness rather than
-\ necessity.
+\ It costs 143 bytes, and it does NOT cost them in the code image any
+\ more: DbgFrameCount and the digit font are in bank 6, in
+\ src/dbgpanel.asm, with a shim in src/lowcode2.asm to page them in.
+\ They had to be. The code image has eleven spare bytes and this flag
+\ wanted 143 of them, which for weeks it took SILENTLY — see the GUARD
+\ at FONT_ADDR below, and BUGS.md #17.
 \
-\ OFF SINCE LAYER 9, and now it has to be: DbgFrameCount writes its digit
-\ to PANEL_ADDR+0..4, which is the top-left of the HUD's droid number.
+\ THE DIGIT IS NOT AT PANEL_ADDR any more either. That is the status
+\ box's rounded corner, drawn in the same logical 3 the digit is, so it
+\ was black on black with the corner's own artwork destroyed underneath
+\ it. It goes at DBG_PANEL_TL instead — scanline 3 of unit 4, the first
+\ clean paper inside the box's top border. Off by default out of
+\ tidiness now, not necessity.
 DEBUG_VSYNC  = FALSE
 
 \ DEBUG_TIME measures one routine in CYCLES, which DEBUG_DRAW cannot:
@@ -397,6 +431,61 @@ VIA_PORTB  = &FE40
 \ home and no second load. The three blocks pack exactly onto
 \ PANEL_ADDR: 3,584 + 2,048 + 1,024 = 6,656 = &3000 to &4A00.
 \ [DECISION 1] in docs/layer-11-sound-title.md.
+\ ---- the low-RAM overlay: resident code below DFS's PAGE ----
+\ &0E00-&10FF is the sideways-ROM shared workspace, which on this machine
+\ is DFS's and DFS's alone. It is live for as long as the filing system
+\ is, and dead the moment the last *LOAD returns — which is the same
+\ argument the charset at &0400 already relies on, one page higher up.
+\ Nothing may be LOADED here (DFS is using it while it works), so the
+\ block is staged through DATA_LOAD like the four banks and copied down.
+\
+\ PAGE &0D IS DELIBERATELY EXCLUDED. &0D00-&0D5F is the NMI handler and
+\ its workspace, &0D9F-&0DEF the extended vector table and &0DF0-&0DFF
+\ the sideways ROMs' private-workspace page bytes. The disc is idle so
+\ no NMI is expected, but "expected" is not a guarantee and one spurious
+\ NMI through a page of 6502 would be unrecoverable. See KC's
+\ BEEB/Manuals/AllMem.txt.
+\
+\ WHY IT EXISTS: main RAM &1100-&3000 was down to 48 free bytes and bank
+\ 4 to 10, and the four features of this branch need neither of the two
+\ banks that have room, because both are paged out during play. This is
+\ the only main RAM left that a bank-4 routine and a main-RAM routine can
+\ both call. Layer 11e's sound driver is the other obvious tenant.
+\ lowcode.asm's two constants, declared here because beebasm resolves
+\ them in file order and src/lowbss.asm is reached first.
+DR_SLOTS  = 14                  \ droid table: index 1-13, 0 the player.
+                                \ Here rather than in droid.asm because
+                                \ lowbss.asm holds three of its arrays now
+DISR_FRAMES = 4                 \ Disruptor's own count, $3447
+ANIM_MAX  = 8                   \ animated tiles tracked in one view
+RECH_CHAR = 76                  \ ChrAnimData1's second group, $7A60
+
+LOWBSS_ADDR  = &0C90            \ and its state, in the tail of the same
+LOWBSS_LIMIT = &0D00            \ workspace the charset sits in
+\ ---- and the rest of page &0D, below the NMI workspace ------
+\ &0D00-&0D5F is the NMI handler and its workspace and is left strictly
+\ alone: the disc is idle so no NMI is expected, but one spurious NMI
+\ through a page of somebody else's 6502 would be unrecoverable.
+\ &0D60-&0DEF is Econet and mouse workspace and the extended vector
+\ table — no Econet, no mouse, and nothing here claims an extended
+\ vector. &0DF0-&0DFF, the sideways ROMs' private-workspace page bytes,
+\ is skipped as well, which is why the copy comes in two pieces.
+\ It is ONE FILE with the &0E00 block: the image runs &0D60-&10FF with a
+\ hole at &0DF0, so the second copy's source is simply the staging
+\ address plus &A0.
+LOW2_ADDR  = &0D60
+LOW2_LIMIT = &0DF0
+LOW2_BYTES = LOW2_LIMIT - LOW2_ADDR
+LOW2_SKIP  = &0E00 - LOW2_ADDR  \ what the file holds before the &0E00 half
+
+LOW_ADDR  = &0E00
+LOW_LIMIT = &1100
+LOW_PAGES = 3
+\ Staged on the PANEL rather than at DATA_LOAD, because PARAFNT owns
+\ DATA_LOAD and has to be loaded before this one — see the boot code.
+\ The panel is not filled until PanelSetup, long after.
+LOW_STAGE = &4A00
+
 FONT_ADDR = &3000
 \ Declared here rather than taken from the generated file, because
 \ beebasm resolves constants in file order and droid.asm's MG_COPY
@@ -445,7 +534,7 @@ CON_STR_ADDR  = PN_FRAME_ADDR + PN_FRAME_BYTES
 \ here for the reason FONT_BYTES is, and ASSERTed against the real one
 \ where it is assembled — if it grows, this is the number to bump.
 FONTCODE_ADDR  = CON_STR_ADDR + CON_STR_BYTES
-FONTCODE_BYTES = 82
+FONTCODE_BYTES = 194            \ FontCell, its table, and DoScore
 
 PN_TABS     = FONTCODE_ADDR + FONTCODE_BYTES
 pnTabCent   = PN_TABS + 0
@@ -620,6 +709,17 @@ USR_VIA_T1CH = &FE65
 \ crosses a page and always costs 4 cycles. They are read once per
 \ character drawn — 40 times a band pass — so the extra cycle would
 \ be worth more than the 128 bytes of alignment.
+\ ---- BuildCharset's nibble tables, out of bank 4 ------------
+\ 64 bytes of deck-load scratch that used to sit in the data bank, moved
+\ into the 64 free bytes below the character tables — the ones PnClear
+\ used to wipe. Bank 4 is the tightest region in the machine and this is
+\ read by nothing but BuildCharset and BuildLampChar, so the move costs
+\ nothing and buys the bank a routine's worth of room.
+LUTS_ADDR = &54C0
+LUTs = LUTS_ADDR
+ASSERT LUTS_ADDR >= UNITMUL_HI + PLAY_UNITS
+ASSERT LUTS_ADDR + 64 <= CHAR_PTR_LO
+
 CHAR_PTR_LO = &5500             \ character code -> charset address
 CHAR_PTR_HI = &5600
 SPR_MASKTAB = &5700             \ data byte -> its transparency mask
@@ -872,6 +972,20 @@ ENDMACRO
 
 \ DFS reserves &1100-&18FF for random-access file buffers, which
 \ simple *LOAD / OSFILE loads never touch. So we start at &1100.
+\ GUARD, NOT JUST AN ASSERT. The code image ends where PARAFNT begins,
+\ and beebasm's overwrite check does not catch the overrun on its own:
+\ the `CLEAR FONT_ADDR, ...` further down releases the guard over
+\ exactly the range the code would spill into, so an over-long image
+\ assembles silently, `*RUN PARA` scribbles on the first bytes of the
+\ text font, and the PARAFNT load then scribbles back over the code's
+\ tail. **DEBUG_VSYNC did precisely that, unnoticed, for weeks** — the
+\ only bound in the file was `code_end <= SPR_SAVE`, left over from when
+\ the font lived at &3C00.
+\ GUARD fires DURING assembly, at the instruction that crosses the line,
+\ so it names the routine rather than a total at the end. The ASSERT by
+\ `.code_end` is the belt to this pair of braces.
+GUARD FONT_ADDR
+
 ORG &1100
 .start
 
@@ -910,8 +1024,19 @@ ORG &1100
   JSR PageBankIn
 
   LDX #LO(loadfnt)              \ and a fifth file: Layer 9's text font,
-  LDY #HI(loadfnt)              \ which loads straight to &3C00 and so has
-  JSR OSCLI                     \ to come after every staging copy
+  LDY #HI(loadfnt)              \ which loads straight to FONT_ADDR and so
+  JSR OSCLI                     \ has to come after every staging copy
+
+\ ---- and the low-RAM overlay, which must be LAST -----------
+\ PageLowIn writes &0E00-&10FF, which is DFS's own workspace: do it
+\ before the last filing-system call and the next *LOAD hangs in the
+\ 8271 poll with the ROM's variables underneath it. That cost a build.
+\ It is staged at LOW_STAGE and not at DATA_LOAD for the matching
+\ reason — PARAFNT lands on DATA_LOAD and has to load first.
+  LDX #LO(loadlow)
+  LDY #HI(loadlow)
+  JSR OSCLI
+  JSR PageLowIn
 
   PAGEBANK SWRAM_DATA           \ the data bank is the resting state
   JSR PageTabsIn                \ and, with it up, the four droid tables the
@@ -1011,6 +1136,13 @@ ENDIF
 \ so it runs whether the console is up or not and this is here for the
 \ same reason. AddScore only banks points; DoScore is what moves them.
   JSR DoScore
+
+\ The disruptor. $1435 puts it inside EnterGame, past the console test —
+\ but a burst that is frozen there leaves our flash on the screen, so it
+\ runs ABOVE the three modal arms and ends itself when one of them has
+\ the machine. It writes no buffer, only the droid table and a flag the
+\ interrupt reads, so it needs no window.
+  JSR CbDisruptor
 
 IF DEBUG_RESTART
 \ DEBUG: throw this game away and start another, the way Layer 11's game
@@ -1173,6 +1305,13 @@ ENDIF
 \ sets of slots. Nothing is lost by the order: the restore replays the
 \ addresses the DRAW recorded, so it does not care where anything has
 \ moved to since.
+\ ---- the animated tiles, ahead of every draw ----------------
+\ AnimTick rotates the recharger's four characters inside the charset,
+\ so it has to run before anything reads it — and its answer is whether
+\ there is buffer work to do, which SprSplitOK needs before it decides.
+\ AnimPaint, below, is the half that writes.
+  JSR AnimTick
+
   JSR SprSplitOK
   STA sprSplit
   BEQ ml_whole
@@ -1209,6 +1348,10 @@ ELSE
   JSR DoRedraws
 ENDIF
 .ml_nodraw
+\ The animated tiles that are on screen already. A no-op unless AnimTick
+\ found some, and when it did the pass is not a split one — so this is
+\ always inside the window the level draw just used.
+  JSR AnimPaint
 IF DEBUG_DRAW
   LDA #DBG_REDRAW : JSR DbgSetBg
 ENDIF
@@ -1409,6 +1552,9 @@ ENDIF
 .loadfnt
   EQUS "LOAD PARAFNT"
   EQUB 13
+.loadlow
+  EQUS "LOAD PARALOW"
+  EQUB 13
 
 \ ============================================================
 \ PageDataIn — move PARADAT from &3000 into sideways RAM bank 0
@@ -1431,10 +1577,17 @@ ENDIF
   STA ROMSHAD                   \ both, always — see the note at the top
   STA ROMSEL
 
-  LDA #LO(DATA_LOAD) : STA swSrc
-  LDA #HI(DATA_LOAD) : STA swSrc+1
   LDA #LO(SWRAM_BASE): STA swDst
   LDA #HI(SWRAM_BASE): STA swDst+1
+
+\ PageCopy — the same staging copy with the destination already set, so
+\ the low-RAM overlay can share it. X = pages, source always DATA_LOAD.
+.PageCopy
+  LDA #LO(DATA_LOAD) : STA swSrc
+  LDA #HI(DATA_LOAD) : STA swSrc+1
+
+\ and once more with both ends given: X = pages, swSrc and swDst set.
+.PageCopyAt
 .pdi_page
   LDY #0
 .pdi_byte
@@ -1447,6 +1600,30 @@ ENDIF
   DEX
   BNE pdi_page
   RTS
+
+\ ---- and the overlay, down to &0E00 rather than up to a bank ----
+\ No ROMSEL: this one stays in main RAM. LOW_PAGES covers the whole
+\ region rather than the block's own length, so the copy is three fixed
+\ pages and the tail past low_end is stale staging bytes nobody reads.
+.PageLowIn
+  LDA #LO(LOW_STAGE) : STA swSrc     \ the page-&0D half first, by the byte
+  LDA #HI(LOW_STAGE) : STA swSrc+1
+  LDA #LO(LOW2_ADDR) : STA swDst
+  LDA #HI(LOW2_ADDR) : STA swDst+1
+  LDY #0
+.pli_byte
+  LDA (swSrc),Y
+  STA (swDst),Y
+  INY
+  CPY #LOW2_BYTES
+  BNE pli_byte
+
+  LDA #LO(LOW_STAGE + LOW2_SKIP) : STA swSrc   \ then the &0E00 half, past
+  LDA #HI(LOW_STAGE + LOW2_SKIP) : STA swSrc+1 \ the sixteen skipped bytes
+  LDA #LO(LOW_ADDR)  : STA swDst
+  LDA #HI(LOW_ADDR)  : STA swDst+1
+  LDX #LOW_PAGES
+  JMP PageCopyAt
 
 \ ============================================================
 \ Layer 9 lives in BANK 6 and cannot see bank 4 — the bridge
@@ -1995,6 +2172,8 @@ ORG &0400
 .charset
   SKIP 137 * CHAR_BYTES         \ NUM_CHARS, defined in chardata.asm
 .charset_end
+ASSERT charset_end <= LOWBSS_ADDR
+INCLUDE "src/lowbss.asm"        \ &0C90: the low overlay's state, uninitialised
 ORG code_end
 
 \ ---- tile map: 64 x 16, one byte per tile -------------------
@@ -2029,7 +2208,10 @@ ORG &4600
 .tilemap_end
 ASSERT tilemap >= SPR_SAVE + SPR_SLOTS * 256
 ASSERT tilemap_end <= PANEL_ADDR
-ASSERT code_end <= SPR_SAVE
+ASSERT code_end <= FONT_ADDR    \ the real bound: PARAFNT loads at &3000.
+                                \ It used to read SPR_SAVE, which was
+                                \ right when the font lived at &3C00 and
+                                \ has been 3,584 bytes too slack since
 
 \ ============================================================
 \ Generated data — in sideways RAM bank 0
@@ -2151,6 +2333,7 @@ INCLUDE "src/data/droids2.asm"
 \ pass by PanelTick. See docs/layer-9-hud.md, decision 8.
 INCLUDE "src/panel.asm"
 INCLUDE "src/console.asm"
+INCLUDE "src/dbgpanel.asm"     \ the debug readouts, beside the panel they draw on
 
 \ The string table is NOT here any more: it is main RAM's, in PARAFNT,
 \ because the droid database in bank 7 needed the same 1,542 bytes and
@@ -2287,6 +2470,83 @@ INCLUDE "src/data/strings.asm"
   FOR n, 0, 15
     EQUB (n << 4) OR n
   NEXT
+\ ---- and DoScore, for the same reason -----------------------
+\ It has to be main RAM — bank 4's DrKillDroid banks points through
+\ AddScore and the main loop drains them here — but it does not have to
+\ be `&1100`-`&3000`, and that is the region the disruptor emptied.
+\ ============================================================
+\ DoScore — port of DoScore ($0A7D), the arithmetic half
+\ ============================================================
+\ THE ACCUMULATORS ARE PENDING POINTS, AND THIS IS WHAT SPENDS THEM.
+\ AddScore and SubScore only bank into scoreAdd and scoreSub; the score
+\ itself moves ONE POINT A PASS, here, and GameLoop calls this every
+\ iteration at $13E3. Without it the BCD score only moves on AddScore's
+\ overflow path — once per 256 points banked — so shooting a droid worth
+\ 20 changed nothing on screen and thirteen kills changed it by 255. That
+\ is the bug KC reported; the routine had simply never been ported.
+\
+\ It also makes the score CLIMB rather than jump, which is the original's
+\ feel: a kill ticks the display up over the following passes.
+\
+\ A CREDIT AND A DEBIT CANCEL WITHOUT TOUCHING THE SCORE. $0A83 takes one
+\ off each and starts again, so a pass that owes 3 and is owed 3 does
+\ nothing and costs three loops. That is why this is a loop and not a
+\ pair of ifs.
+\
+\ Only the arithmetic is here. The C64 falls through into its own digit
+\ draw at $0AD9; ours is PanelUpdate's, which repaints when score+3 moves
+\ — see panel.asm.
+.DoScore
+.ds_again
+  LDA scoreAdd
+  BEQ ds_sub
+  DEC scoreAdd
+  LDA scoreSub
+  BEQ ds_add
+  DEC scoreSub                  \ they cancel: look for the next one
+  JMP ds_again
+
+.ds_add
+  SED
+  CLC
+  LDA score+3 : ADC #1 : STA score+3
+  LDX #2
+.ds_addhi
+  LDA score,X : ADC #0 : STA score,X
+  DEX
+  BPL ds_addhi
+  BCC ds_x
+  LDA #&99                      \ saturate rather than wrap
+  STA score+0
+  STA score+1
+  STA score+2
+  STA score+3
+  BNE ds_x                      \ always: A is &99
+
+.ds_sub
+  LDA scoreSub
+  BEQ ds_none
+  DEC scoreSub
+  SED
+  SEC
+  LDA score+3 : SBC #1 : STA score+3
+  LDX #2
+.ds_subhi
+  LDA score,X : SBC #0 : STA score,X
+  DEX
+  BPL ds_subhi
+  BCS ds_x
+  LDA #0                        \ floor at zero, and drop the rest of the
+  STA score+0                   \ debt with it, as $0AD3 does
+  STA score+1
+  STA score+2
+  STA score+3
+  STA scoreSub
+.ds_x
+  CLD
+.ds_none
+  RTS
+
 .fontcode_end
 .font_end
 ASSERT textfont_end - font_start == FONT_BYTES
@@ -2296,6 +2556,35 @@ ASSERT fontcode_start == FONTCODE_ADDR
 ASSERT fontcode_end - fontcode_start == FONTCODE_BYTES
 ASSERT font_end - font_start == FONT_BYTES + PN_FRAME_BYTES + CON_STR_BYTES + FONTCODE_BYTES
 SAVE "PARAFNT", font_start, font_end, FONT_ADDR, FONT_ADDR
+
+\ ============================================================
+\ The low-RAM overlay — resident code at &0E00
+\ ============================================================
+\ Assembled where it runs, but SAVEd with a catalogue load address of
+\ DATA_LOAD so that *LOAD stages it and PageLowIn copies it down: DFS is
+\ using &0E00-&10FF as its own workspace for the duration of the load
+\ that delivers it, so it cannot be loaded in place. See LOW_ADDR.
+\ It is main RAM, so bank 4 may call it and so may the code image, and
+\ neither needs anything paged. That is the whole point of it.
+ORG LOW2_ADDR
+.low2_start
+INCLUDE "src/lowcode2.asm"
+.low2_end
+ASSERT low2_end <= LOW2_LIMIT
+
+\ The sixteen bytes PageLowIn does not copy. They are in the file so
+\ that the two halves are one contiguous image and the second copy's
+\ source is a constant; nothing ever reads them.
+ORG LOW2_LIMIT
+  SKIP &0E00 - LOW2_LIMIT
+
+ORG LOW_ADDR
+.low_start
+INCLUDE "src/lowcode.asm"
+.low_end
+ASSERT low_end <= LOW_LIMIT
+ASSERT low_end - low_start <= LOW_PAGES * 256
+SAVE "PARALOW", low2_start, low_end, LOW_STAGE, LOW_STAGE
 
 ASSERT CON_TYPES == DR_TYPES    \ console.asm is in bank 4 and cannot see
                                 \ the sprite bank's count when it needs it
