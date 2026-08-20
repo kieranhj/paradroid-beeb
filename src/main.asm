@@ -240,13 +240,19 @@ DEBUG_POS    = FALSE
 \ cycles of the 80,000 in a pass. Anything that had to mask, or that
 \ spanned more than one byte per row, would start measuring itself.
 \
-\ It costs 117 bytes of main RAM. That used to be nearly all of what was
-\ left; since the tile map was given a fixed home at &3800 the code has
-\ room to &3000, so it is off by default out of tidiness rather than
-\ necessity.
+\ It costs 143 bytes, and it does NOT cost them in the code image any
+\ more: DbgFrameCount and the digit font are in bank 6, in
+\ src/dbgpanel.asm, with a shim in src/lowcode2.asm to page them in.
+\ They had to be. The code image has eleven spare bytes and this flag
+\ wanted 143 of them, which for weeks it took SILENTLY — see the GUARD
+\ at FONT_ADDR below, and BUGS.md #17.
 \
-\ OFF SINCE LAYER 9, and now it has to be: DbgFrameCount writes its digit
-\ to PANEL_ADDR+0..4, which is the top-left of the HUD's droid number.
+\ THE DIGIT IS NOT AT PANEL_ADDR any more either. That is the status
+\ box's rounded corner, drawn in the same logical 3 the digit is, so it
+\ was black on black with the corner's own artwork destroyed underneath
+\ it. It goes at DBG_PANEL_TL instead — scanline 3 of unit 4, the first
+\ clean paper inside the box's top border. Off by default out of
+\ tidiness now, not necessity.
 DEBUG_VSYNC  = FALSE
 
 \ DEBUG_TIME measures one routine in CYCLES, which DEBUG_DRAW cannot:

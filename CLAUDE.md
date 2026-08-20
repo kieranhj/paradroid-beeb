@@ -201,7 +201,13 @@ Single-pass flat build, everything included from `main.asm`. No linker.
 
 `main.asm` holds the constants, the zero page map, the main loop and the IRQ dispatch, and includes
 everything else. **`lowcode.asm`, `lowcode2.asm` and `lowbss.asm` assemble below `&1100`**, into the
-low overlay — read `lowcode.asm`'s header before putting anything there. **Everything in `src/` is in the build** — the five inherited Master/HAL files that
+low overlay — read `lowcode.asm`'s header before putting anything there. `dbgpanel.asm` assembles
+into bank 6, beside the panel its readouts draw on.
+
+**`GUARD FONT_ADDR` guards the top of the code image and is not optional.** `CLEAR FONT_ADDR, ...`
+releases beebasm's own overwrite check over exactly the range an over-long image spills into, so
+without the GUARD an overrun assembles silently and corrupts `PARAFNT` at run time. A build that
+stops with *Guard point hit* at `sprScan0` means the code image is full. **Everything in `src/` is in the build** — the five inherited Master/HAL files that
 were not have been deleted, so nothing there is dead. Keep it that way.
 
 **Four files assemble into SWRAM bank 4, not main RAM**: `screen.asm`, `scroll.asm`, `level.asm` and

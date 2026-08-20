@@ -3,13 +3,17 @@
 A port of Andrew Braybrook's *Paradroid* (Commodore 64, 1985) to the BBC Micro Model B.
 
 It plays, start to finish. The title screen comes up, the deck hardware-scrolls eight ways under a
-droid you steer, a pool of seven sprites runs over it, doors open as you walk into them and lifts
+droid you steer, a pool of eight sprites runs over it, doors open as you walk into them and lifts
 carry you between decks — so the whole ship is traversable. Droids patrol it, shoot at you and can
-kill you; you shoot back, and score. The status line and the console are the original's, down to the
-deck being called `Reactor` rather than `5`, and the console carries the ship diagram, the deck plan
-and the droid database. The transfer minigame plays too: prime with fire, touch a droid, pick a side
-and fight the circuit board for it — win and you *are* that droid, with its weapon and speed. Die as
-a 001 and the ship burns out under a dissolve and a game-over message.
+kill you; you shoot back, and score. They kill *each other* too, because a droid's shot and a
+droid's explosion hurt whatever else they touch. The 711 and the 742 carry the disruptor — an area
+weapon that hits everything on screen at once and costs the firer as well — and so do you, once you
+have taken one. Recharge pads turn under you and the ALERT signs light as the ship gets angrier.
+The status line and the console are the original's, down to the deck being called `Reactor` rather
+than `5`, and the console carries the ship diagram, the deck plan and the droid database. The
+transfer minigame plays too: prime with fire, touch a droid, pick a side and fight the circuit board
+for it — win and you *are* that droid, with its weapon and speed. Die as a 001 and the ship burns
+out under a dissolve and a game-over message.
 
 **Sound is what is left**, plus the 001 briefing screen, the high-score table, the intro manual and
 the pre-game droid info screens the transfer skips for now. See [`PLAN.md`](PLAN.md) for the layered
@@ -56,7 +60,7 @@ emulator before the next begins:
 4. **Player movement** — ✅ done
 5. **Droid movement** — ✅ done; a compiled sprite blitter across two banks
 6. **Droids** — ✅ done
-7. **Combat** — ✅ done
+7. **Combat** — ✅ done; including the disruptor, friendly fire and the animated deck tiles
 8. **Doors, lifts, decks** — ✅ done, taken ahead of 6 and 7 so droid AI has a ship to route through
 9. **HUD and console** — ✅ done
 10. **Transfer minigame** — ✅ done; in a fourth sideways bank, minus the pre-game info screens
@@ -86,7 +90,7 @@ beebasm's assembly listing.
 Or, without PowerShell:
 
 ```
-make.bat            :: assemble to PARADROID.SSD
+make.bat            :: assemble into build/
 make.bat run        :: assemble and launch in b-em
 ./make.sh           # same, for sh / Git Bash / Linux
 ```
@@ -96,8 +100,13 @@ Both honour `BEEBASM` and `BEM` environment variables if your tools live elsewhe
 Or directly:
 
 ```
-beebasm -i src/main.asm -do PARADROID.SSD -boot PARA -v
+beebasm -i src/main.asm -do PARADROID.SSD -opt 3 -title PARADROID -v
 ```
+
+**Do not pass `-boot`.** `main.asm` assembles its own `!BOOT`, carrying the build stamp and the
+list of debug flags that are on, so `-boot` tries to write a second one and beebasm stops with
+"File already exists on DFS disc image". `-opt 3` sets the boot option that makes SHIFT+BREAK
+`*EXEC` it.
 
 The build needs `src/data/`, which is converted game artwork and so is not in the repository —
 generate it with the `tools/export_*.py` scripts (see below) before assembling.
@@ -106,8 +115,8 @@ The result is a bootable DFS disc image. Note that DFS filenames are limited to 
 the executable on disc is `PARA`.
 
 > **jsbeeb will not boot an unpadded SSD.** It hangs in the DFS FDC poll loading `PARASPR`, because
-> beebasm's image ends mid-track and jsbeeb will not read the last partial one. `build.ps1` writes
-> the padded copy for you; pad it yourself if you invoke beebasm directly.
+> beebasm's image ends mid-track and jsbeeb will not read the last partial one. `build.ps1` and
+> `make.sh` write the padded copy for you; pad it yourself if you invoke beebasm directly.
 
 ## Repository layout
 

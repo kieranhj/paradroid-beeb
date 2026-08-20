@@ -33,6 +33,9 @@ the play area becomes `ConsoleMain`'s screen with all four pages working; touch 
 Sprites are coloured the C64's way — enemies black, the player white, the deck's highlight in
 transfer mode, flashing below energy 8.
 
+Recharge pads turn under the player and the ALERT signs light as the ship gets angrier: both are
+charset animations repainted onto the tiles in view.
+
 **Keys:** Z/X left/right, K/M up/down, L fire — and, through the original's own `moveMode` machine,
 the lift, console and transfer trigger. Cursor up/down is a debug deck hop, SPACE a forced redraw.
 
@@ -70,6 +73,7 @@ the title's own polish are in the layer notes. Defects, as opposed to absences, 
 | | |
 |---|---|
 | **RAM** | main RAM **77 B in five pieces** — 11 below `&3000`, 15 in `lowcode`, 36 in `lowcode2`, 7 in `lowbss`, 8 in the `PARAFNT` tail — and bank 4 **12 B**. Bank 5 1,033 B, bank 6 1,609 B, bank 7 4,410 B, all three paged out during play. **This is the tightest the port has been**: 2026-08-20 spent the whole 1,136-byte `&0C90` hole, the 64 at `&54C0` and 112 of the `PARAFNT` tail on the low overlay and the disruptor. The sound driver still has to be resident. [`docs/memory-map.md`](docs/memory-map.md) lists the reservoirs left |
+| **Four debug flags will not build** | `DEBUG_RASTER` (59 B over the code image), `DEBUG_DRAW` (83), `DEBUG_TIME` (154) and `DEBUG_MAPGUARD` (1 K of bank 4), plus `DEBUG_POS`+`DEBUG_ENERGY` together. They were all corrupting the build SILENTLY until the `GUARD FONT_ADDR` of 2026-08-20; now they fail it. `DEBUG_RASTER`'s and `DEBUG_DRAW`'s instrumentation cannot move to a bank — the interrupt and the blitter call it — so they want main-RAM room found first. The table is in `main.asm`'s debug header; `BUGS.md` #17 has the story |
 | Collision box shape | **Agreed 2026-08-18, not built.** `DR_COL_W`/`DR_COL_H` become a generated minimum-abs-dx-per-abs-dy profile — the silhouette instead of a rectangle, at box-test cost. [DECISION 1] in [`docs/layer-6-droids-live.md`](docs/layer-6-droids-live.md). `BUGS.md` #7b's bounce tuning waits on it |
 | Droid worst case unmeasured | 8 slots (~36,000) + droids (17,000) + full-diagonal level draw (19,172) is ~72,000 of 79,872 before the rest of the loop. It never arose by chance; it wants a rig on a deck with a long open corridor. `docs/raster-timing.md` Step 3 is the planned relief |
 | Twelve title characters, four wash characters | `export_bbc.py` converts only what a TILE references, so the title ships its own 36 glyphs and `EndGame`'s wash uses substitutes. Extending the shared charset is the better fix, moves `NUM_CHARS`, and needs KC |
@@ -95,6 +99,18 @@ the title's own polish are in the layer notes. Defects, as opposed to absences, 
 3. **`mapYr` and `cellY` are SIGNED, and the row being drawn may be off the map** — the view
    scrolls up to `PLY_VOID` (64 px) past each vertical edge. One `AND #&C0` catches both ends, and
    `BandSetRow`, `DrawColumn` and `MapChar` all do it. Anything new that reads a map row must too.
+
+### Adding code anywhere
+
+**`GUARD FONT_ADDR` is what stops the code image growing into `PARAFNT`, and it exists because
+nothing else did.** `CLEAR FONT_ADDR, ...` releases beebasm's own overwrite check over exactly the
+range an over-long image spills into, so for weeks an over-long debug build assembled cleanly,
+`*RUN PARA` scribbled on the text font and the `*LOAD PARAFNT` scribbled back over the code. If a
+build stops with *Guard point hit* at `sprScan0`, that is the code image full — not a bug in what
+you just added. `BUGS.md` #17.
+
+The other regions have `ASSERT`s of their own: `low_end <= LOW_LIMIT`, `low2_end <= LOW2_LIMIT`,
+`lowbss_end <= LOWBSS_LIMIT`, `data_end <= SWRAM_BASE + &4000`. Add one for anything new.
 
 ### The low-RAM overlay, `&0C90`–`&10FF`
 
