@@ -67,8 +67,24 @@ bytes rather than 132; the flag has been broken for as long as the code image ha
 - The readouts moved to **bank 6**, in `src/dbgpanel.asm`, beside the panel code they draw over.
   The shims that page it in are in `src/lowcode2.asm`. `DbgEnergyOut` reads `drType` and
   `drEnergy` out of bank 4, so its shim mirrors those into main RAM before it pages.
-- `DEBUG_VSYNC`, `DEBUG_POS` and `DEBUG_ENERGY` now each build and run. Verified in jsbeeb:
-  `PANEL_ADDR` reads `FF 11 FF 88 FF`, the digit **2**, and the sprites are intact.
+- `DEBUG_VSYNC`, `DEBUG_POS` and `DEBUG_ENERGY` now each build and run.
+
+### And then it still could not be read — a second, separate fault
+
+With the corruption gone, KC: *"the frame rate text is not legible."* It was being drawn correctly
+and was invisible anyway.
+
+All three readouts started at `PANEL_ADDR`, and `PANEL_ADDR` is the top-left corner of the status
+box — the **rounded** corner, drawn in the same logical 3 the digits use. A black digit on a black
+corner, with the corner's own artwork destroyed underneath it. That is not a regression either:
+Layer 9 put a real box there, and before Layer 9 the panel was a placeholder with a blank corner.
+
+Panel row 0 reads `00 00 FF 00 00 00 00 00` for every unit from 3 onwards — the box's top border is
+scanline 2 and scanlines 3-7 are clean paper, inside the box and above the text row. Unit 4 is the
+first clear of the corner, so `DBG_PANEL_TL` is scanline 3 of unit 4 and all three readouts hang
+off it. Verified in jsbeeb: the digit reads `FF 11 FF 88 FF` on paper, the box corner is back to
+its own `FF FF CC 88 00 11 11 33`, and `DEBUG_ENERGY` prints `00 40 40 00 00 00000000` in the
+clear.
 
 ### What is still broken, and it is the RAM and not the debug code
 

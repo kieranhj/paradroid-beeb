@@ -19,9 +19,22 @@
 \ droid table in bank 4 and reach it through dbgEnMirror, filled by the
 \ shim before it pages. DEBUG_MAPGUARD's five bytes go the same way.
 
+\ ---- WHERE THE READOUTS GO ---------------------------------
+\ NOT the panel's top-left byte, which is where all of this used to
+\ start and which is the one place in the box a black digit cannot be
+\ read: PANEL_ADDR is the top-left corner of the status box, the ROUNDED
+\ corner, and it is drawn in the same logical 3 the digits are. Black on
+\ black, in a corner, with the corner's own artwork destroyed under it.
+\ That is what "the frame rate text is not legible" was.
+\ Panel row 0 reads `00 00 FF 00 00 00 00 00` for every unit from 3 on:
+\ the box's top border is scanline 2 and scanlines 3-7 are clean paper,
+\ inside the box and above the text row. Unit 4 is the first one clear
+\ of the corner, so that is scanline 3 of unit 4.
+DBG_PANEL_TL = PANEL_ADDR + 4 * UNIT_BYTES + 3
+
 IF DEBUG_VSYNC OR DEBUG_POS
 \ ============================================================
-\ DbgFrameCount — fields per main-loop iteration, top-left of the panel
+\ DbgFrameCount — fields per main-loop iteration, on the panel
 \ ============================================================
 \ vsyncCount is already bumped once per field by IrqHandler's CA1 arm,
 \ so the reading is just the difference across one iteration. Called
@@ -50,11 +63,11 @@ IF DEBUG_VSYNC OR DEBUG_POS
   TAX
   LDA dbgMul5,X
   TAX
-  LDA dbgFont+0,X : STA PANEL_ADDR+0
-  LDA dbgFont+1,X : STA PANEL_ADDR+1
-  LDA dbgFont+2,X : STA PANEL_ADDR+2
-  LDA dbgFont+3,X : STA PANEL_ADDR+3
-  LDA dbgFont+4,X : STA PANEL_ADDR+4
+  LDA dbgFont+0,X : STA DBG_PANEL_TL+0
+  LDA dbgFont+1,X : STA DBG_PANEL_TL+1
+  LDA dbgFont+2,X : STA DBG_PANEL_TL+2
+  LDA dbgFont+3,X : STA DBG_PANEL_TL+3
+  LDA dbgFont+4,X : STA DBG_PANEL_TL+4
   RTS
 
 .dbgLastVs EQUB 0
@@ -167,8 +180,8 @@ IF DEBUG_POS
 \
 \ NOT COMPATIBLE WITH DEBUG_VSYNC — both write the top-left digit.
 .Dbg6PosOut
-  LDA #LO(PANEL_ADDR) : STA swDst
-  LDA #HI(PANEL_ADDR) : STA swDst+1
+  LDA #LO(DBG_PANEL_TL) : STA swDst
+  LDA #HI(DBG_PANEL_TL) : STA swDst+1
   LDY #0
 .dpo_next
   STY dbgIdx
@@ -257,8 +270,8 @@ IF DEBUG_ENERGY
 \ swSrc/swDst are borrowed exactly as DbgPosOut borrows them: they
 \ belong to the startup bank copy and are dead from LoadDeck onwards.
 .Dbg6EnergyOut
-  LDA #LO(PANEL_ADDR + ROW_BYTES) : STA swDst
-  LDA #HI(PANEL_ADDR + ROW_BYTES) : STA swDst+1
+  LDA #LO(DBG_PANEL_TL + ROW_BYTES) : STA swDst
+  LDA #HI(DBG_PANEL_TL + ROW_BYTES) : STA swDst+1
   LDY #0
 .deo_next
   STY dbgIdx
