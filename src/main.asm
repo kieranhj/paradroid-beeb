@@ -155,10 +155,21 @@ MAP_CHAR_H = MAP_ROWS * 4       \ 64 character rows
 \   DEBUG_INVULN   ok
 \   DEBUG_XFERWIN  ok    on by default
 \   DEBUG_RESTART  ok    on by default
-\   DEBUG_RASTER   NO    59 bytes over the code image
-\   DEBUG_DRAW     NO    83 bytes over
-\   DEBUG_TIME     NO    154 bytes over
+\   DEBUG_DECK     ok    on by default
+\   DEBUG_RASTER   ok    was 59 bytes over the code image
+\   DEBUG_DRAW     ok    was 83 over
+\   DEBUG_TIME     ok    was 154 over
 \   DEBUG_MAPGUARD NO    MG_COPY is 1 K and bank 4 has 12 bytes
+\ THE FIRST THREE CAME BACK ON 2026-08-20 with the raster-timing pass,
+\ which moved the tranche decision into bank 6 and gave the code image
+\ 323 free bytes against eleven. RASTER has been built and RUN since,
+\ and draws its four bands correctly; DRAW and TIME have been assembled
+\ but not run, so read their headers before trusting them.
+\ READING RASTER'S BANDS: fire 2's band is the deck's OWN background, so
+\ on a deck whose background happens to be green it cannot be told from
+\ fire 1's, and on a blue deck it cannot be told from fire 3's. Deck 1
+\ is blue and deck 2 is green, which covers both cases. Hop to a deck
+\ with a different scheme before concluding a fire is missing.
 \ COMBINATIONS matter too, because each readout's shim costs 20 bytes of
 \ src/lowcode2.asm's 36: VSYNC, POS and ENERGY each build alone, but
 \ POS+ENERGY does not. The fix is a shared enter/leave pair instead of a
@@ -189,9 +200,14 @@ DEBUG_RASTER = FALSE
 \ next frame) — if a band reaches into the play area, that work is
 \ overrunning its window.
 \
-\ Three bands — the sprites, the level draw and everything else are
-\ separate budgets, and the two that matter are the ones that grow
-\ with what is happening rather than with the code:
+\ THE RULE IS NOT "NO BAND MAY TOUCH THE PLAY AREA". Three of the four
+\ belong in a window and reaching the play area means they overran; the
+\ RED one is display-period work by design and is supposed to be there.
+\ What matters for red is that it ENDS before the window B tranche.
+\ Four bands — the sprites, the level draw, the per-pass overhead and
+\ the display-period work are separate budgets, and the two that matter
+\ are the ones that grow with what is happening rather than with the
+\ code:
 \
 \   magenta  SprRestoreAll, then SprAnimateAll + SprDrawAll. Two
 \            bands, one either side of the redraw, because that is
@@ -212,6 +228,21 @@ DEBUG_RASTER = FALSE
 \            movement, wall probes and SetCRTCStart. This one should
 \            barely move — if it grows, the growth is in code that
 \            runs every pass regardless.
+\   red      the droid AI, the animated-tile scan, the collisions, the
+\            aging and the panel — everything after the draw. None of
+\            it writes the play buffer, which is why it is allowed to
+\            run while the play area is displayed. IT ENDS AT THE WORK
+\            AND NOT AT THE WAIT, so whatever is left untinted before
+\            the window B tranche is genuine slack.
+\ THE SECOND MAGENTA BAND USED TO SWALLOW THE RED ONE. Until 2026-08-20
+\ the tint set before SprAnimateAll ran on until the tranche-B block at
+\ the far end of the pass, so the sprite band reported the droid AI, the
+\ panel and the idle as sprite work and reached deep into the play area
+\ on every pass. It broke when Step 1 of docs/raster-timing.md moved
+\ DroidsUpdate below the draw and the closing tint stayed where it was;
+\ Phase 1 of the same document then put AnimScanPass in the same gap.
+\ Reported by KC, who was reading the band and seeing an overrun that
+\ was not there.
 DEBUG_DRAW   = FALSE
 
 \ DEBUG_POS prints the state needed to RETURN TO A SPOT along the top of
@@ -365,6 +396,20 @@ DEBUG_XFERWIN = TRUE
 \ 11b and 11c depend on it.
 DEBUG_RESTART = TRUE
 
+\ DEBUG_DECK is the third: cursor UP and DOWN hop the player straight to
+\ the deck above or below, one deck a press, without a lift. It predates
+\ Layer 8's lifts and 8b's deck-selection screen, and it is what made
+\ every deck reachable while they were being built.
+\ IT IS NOT A READOUT, so it belongs off in anything a player will see:
+\ the whole ship is walkable now and a hop past a locked deck is not
+\ something the C64 can do. Left ON while the decks past 1 are still
+\ being brought up, because reaching deck 11 by lift to look at one tile
+\ is several minutes a time.
+\ The keys are the LIFT'S while liftMode is non-zero, which is why the
+\ arm below tests it first: with the flag off that test goes with it,
+\ because nothing else here wants UP or DOWN.
+DEBUG_DECK = TRUE
+
 \ DEBUG_INVULN pins the player's energy at full, so a run can be taken
 \ deep into the ship without a 001's death ending it. Asked for by KC
 \ alongside 11b, which is what took the free respawn away: the port used
@@ -384,6 +429,9 @@ DEBUG_INVULN = FALSE
 DBG_SPR      = 5                \ magenta — the sprite pool
 DBG_LEVEL    = 3                \ yellow  — DoRedraws, the level draw
 DBG_REDRAW   = 6                \ cyan    — keys, movement, CRTC park
+DBG_AI       = 1                \ red     — the droid AI and the rest of the
+                                \ display-period work. THIS ONE IS SUPPOSED TO
+                                \ BE OVER THE PLAY AREA; see the header
 
 \ ---- screen geometry ---------------------------------------
 \ These live here rather than in screen.asm/rupture.asm because
@@ -1130,20 +1178,22 @@ IF DEBUG_POS
   JSR DbgPosOut                 \ where we are, for getting back here
 ENDIF
 \ ============================================================
-\ The score's pending points, one a pass
+\ The score and the disruptor — MOVED OUT OF THE WINDOW
 \ ============================================================
-\ GameLoop calls DoScore at $13E3, BEFORE it tests consoleState at $1427,
-\ so it runs whether the console is up or not and this is here for the
-\ same reason. AddScore only banks points; DoScore is what moves them.
-  JSR DoScore
-
-\ The disruptor. $1435 puts it inside EnterGame, past the console test —
-\ but a burst that is frozen there leaves our flash on the screen, so it
-\ runs ABOVE the three modal arms and ends itself when one of them has
-\ the machine. It writes no buffer, only the droid table and a flag the
-\ interrupt reads, so it needs no window.
-  JSR CbDisruptor
-
+\ Both used to run here, at the top of the pass, and both write no play
+\ buffer at all: DoScore moves banked points onto the panel and
+\ CbDisruptor writes the droid table and a flag the interrupt reads. The
+\ window is 24,576 cycles and the drawing needs every one of them, so
+\ they run below the draw now, at ml_afterdraw.
+\
+\ THEY STILL RUN IN EVERY STATE, which is what put them at the top of
+\ the pass in the first place. GameLoop calls DoScore at $13E3 BEFORE it
+\ tests consoleState at $1427, so it runs whether the console is up or
+\ not; and a disruptor burst frozen by a modal state would leave our
+\ flash on the screen. So ml_afterdraw sits immediately above ml_passend
+\ — the one point EVERY arm of the pass converges on, the four modal
+\ ones included — rather than beside the droid AI, which the modal arms
+\ jump over.
 IF DEBUG_RESTART
 \ DEBUG: throw this game away and start another, the way Layer 11's game
 \ over will. ABOVE the three modal blocks below, not down with the other
@@ -1309,7 +1359,9 @@ ENDIF
 \ AnimTick rotates the recharger's four characters inside the charset,
 \ so it has to run before anything reads it — and its answer is whether
 \ there is buffer work to do, which SprSplitOK needs before it decides.
-\ AnimPaint, below, is the half that writes.
+\ AnimPaint, below, is the half that writes; AnimScanPass, after the
+\ draw, is the half that COSTS — 10,060 cycles of the window until it
+\ was moved out of it. See docs/raster-timing.md.
   JSR AnimTick
 
   JSR SprSplitOK
@@ -1340,14 +1392,17 @@ ENDIF
 IF DEBUG_DRAW
   LDA #DBG_LEVEL : JSR DbgSetBg \ the level draw on its own: it is the
 ENDIF                           \ band that varies with the direction
-  LDA sprSplit                  \ a split pass has no band, no columns and
-  BNE ml_nodraw                 \ no doors — that is what made it splittable
+\ THE LEVEL DRAW RUNS ON A SPLIT PASS TOO, which it did not used to.
+\ A split pass used to be DEFINED as one with no band, no columns and
+\ no doors, so this was skipped; SprSplitDecide now forces any sprite
+\ standing under the draw into tranche A instead, which is what makes
+\ the two safe together. Skipping it here after that change would stop
+\ the deck scrolling. See docs/raster-timing.md.
 IF DEBUG_TIME
   JSR TimeCall                  \ TimeCall calls DoRedraws — see its header
 ELSE
   JSR DoRedraws
 ENDIF
-.ml_nodraw
 \ The animated tiles that are on screen already. A no-op unless AnimTick
 \ found some, and when it did the pass is not a split one — so this is
 \ always inside the window the level draw just used.
@@ -1363,8 +1418,11 @@ ENDIF
 \ activates a sprite slot and SprSplitOK must see it.
 
 \ UP and DOWN belong to the lift while it has the controls. Outside one
-\ they stay the debug free hop, which is worth keeping until every deck
-\ is reachable by lift and can be tested that way instead.
+\ they are DEBUG_DECK's free hop, one deck a press and no lift needed.
+\ The whole block is the flag's, the liftMode test included: nothing
+\ else in the pass wants either key, and a build without the hop should
+\ not be reading them at all. Two OSBYTEs a pass, inside the window.
+IF DEBUG_DECK
   LDA liftMode                  \ entering the lift: the debug hop keeps
   BNE ml_notDn                  \ its hands off the deck this pass
 
@@ -1399,6 +1457,7 @@ ENDIF
 .ml_dnOff
   LDA #0 : STA prevDn
 .ml_notDn
+ENDIF
 
 IF DEBUG_DRAW
   JSR DbgDeckBg                 \ back to the deck's real background
@@ -1424,6 +1483,27 @@ ENDIF
 .ml_drawall
   JSR SprDrawAll
 .ml_drawn
+IF DEBUG_DRAW
+  LDA #DBG_AI : JSR DbgSetBg    \ THE MAGENTA BAND ENDS HERE, and until
+ENDIF                           \ 2026-08-20 it did not: the tint set before
+                                \ SprAnimateAll ran on until the tranche-B
+                                \ block at the far end of the pass, so it was
+                                \ reporting the droid AI, the panel and the
+                                \ WaitWindowB idle as sprite work and reaching
+                                \ well into the play area. Nothing was
+                                \ overrunning. It went wrong when Step 1 moved
+                                \ DroidsUpdate below the draw and left the
+                                \ closing tint where it was.
+
+\ ---- the animated-tile list, for the NEXT pass --------------
+\ The window is shut and the beam is over the play area, which is where
+\ a routine that reads the map and writes no buffer belongs. It rebuilds
+\ the list only when the view has crossed a tile column, so most passes
+\ pay twenty cycles for the test and nothing else.
+\ ABOVE DroidsUpdate on purpose: it borrows `maprow`, which the band
+\ draw owns and the droid AI also uses, and this is the gap between the
+\ two where it is dead.
+  JSR AnimScanPass
 
 \ ============================================================
 \ The droids run HERE, after the drawing, and that is deliberate
@@ -1501,6 +1581,10 @@ ELSE
                                 \ every window the play area needs
 ENDIF
 
+IF DEBUG_DRAW
+  JSR DbgDeckBg                 \ the AI band ends at the work, not at the
+ENDIF                           \ wait: what is left untinted is real slack
+
   \ The second window. Everything above ran in the first one and the
   \ display that follows it.
   JSR WaitWindowB
@@ -1526,7 +1610,17 @@ IF DEBUG_DRAW
   JSR DbgDeckBg
 ENDIF
 
+\ ---- the score and the disruptor ----------------------------
+\ Below every draw in the pass, tranche B included, and above the point
+\ all four modal arms converge on. Neither writes the play buffer.
+.ml_afterdraw
+  JSR DoScore
+  JSR CbDisruptor
+
 .ml_passend
+IF DEBUG_DRAW
+  JSR DbgDeckBg                 \ the four modal arms JMP here, over every
+ENDIF                           \ other close: no band may outlive a pass
   \ The pass is not allowed to be shorter than FRAME_LOCK fields. It IS
   \ allowed to be longer: an overrun carries on from wherever it landed
   \ instead of being rounded up to the next boundary, so a heavy pass
@@ -2335,6 +2429,12 @@ INCLUDE "src/panel.asm"
 INCLUDE "src/console.asm"
 INCLUDE "src/dbgpanel.asm"     \ the debug readouts, beside the panel they draw on
 
+\ ---- and the tranche decision ------------------------------
+\ Nothing to do with the panel: it is here because bank 6 has the room
+\ and because every byte it reads is main RAM or zero page, so it can
+\ answer the question without bank 4. sprite.asm holds the bridge.
+INCLUDE "src/sprsplit.asm"
+
 \ The string table is NOT here any more: it is main RAM's, in PARAFNT,
 \ because the droid database in bank 7 needed the same 1,542 bytes and
 \ could not see this copy. See CON_STR_ADDR at the top of this file.
@@ -2677,7 +2777,7 @@ SAVE "PARA",    start,      code_end, start
 \ ------------------------------------------------------------------
 DEBUG_ANY1 = DEBUG_RASTER OR DEBUG_DRAW OR DEBUG_POS OR DEBUG_VSYNC
 DEBUG_ANY2 = DEBUG_TIME OR DEBUG_ENERGY OR DEBUG_MAPGUARD OR DEBUG_XFERWIN
-DEBUG_ANY3 = DEBUG_RESTART OR DEBUG_INVULN
+DEBUG_ANY3 = DEBUG_RESTART OR DEBUG_INVULN OR DEBUG_DECK
 DEBUG_ANY  = DEBUG_ANY1 OR DEBUG_ANY2 OR DEBUG_ANY3
 
 CLEAR &7E00, &7F00
@@ -2718,6 +2818,9 @@ EQUS " RESTART"
 ENDIF
 IF DEBUG_INVULN
 EQUS " INVULN"
+ENDIF
+IF DEBUG_DECK
+EQUS " DECK"
 ENDIF
 EQUB 13
 ENDIF
