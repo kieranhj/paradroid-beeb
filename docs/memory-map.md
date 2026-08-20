@@ -63,7 +63,7 @@ Regenerate it after any change that moves a region:
 | `&8000–&BFFF` | 16 K | Sideways bank window — one of the FOUR banks below, never more |
 | `&C000–&FFFF` | 16 K | MOS |
 
-Free main RAM totals **77 bytes** (2026-08-20), in five pieces: 11 below `&3000`, 15 at the top of
+Free main RAM totals **389 bytes** (2026-08-20, after the raster-timing pass), in five pieces: 323 below `&3000`, 0 at the top of
 `lowcode`, 36 in `lowcode2`, 7 in `lowbss` and 8 in the `PARAFNT` tail. **This is the tightest the
 port has ever been**, and the reason is the disruptor: 245 bytes of new main-RAM code against a
 code image with 90 free.
@@ -160,7 +160,7 @@ interpreted effect path reads them every row.
 
 ## SWRAM bank 6 — `PARSPR2` (shifts 2 and 3 px)
 
-`&8000–&B9B7`, **1,609 free** (2026-08-19) — it was 40. TASK 6's `PnClear` fix gave 7, TASK 3's shared `FontCell` 20, and TASK 7's single string table the other 1,542. **No longer the tight bank**. The other two shifts, laid out
+`&8000–&BC31`, **975 free** (2026-08-20 — `src/sprsplit.asm`, the tranche decision, moved in from the code image; it was 1,609) — it was 40. TASK 6's `PnClear` fix gave 7, TASK 3's shared `FontCell` 20, and TASK 7's single string table the other 1,542. **No longer the tight bank**. The other two shifts, laid out
 identically, plus Layer 9's panel engine, HUD, console, strings and icons.
 
 **Both sprite banks share one layout**: a fixed section of tables at the same addresses in each,

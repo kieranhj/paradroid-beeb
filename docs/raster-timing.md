@@ -248,3 +248,194 @@ diagonal scroll, and the frame-lock check that 128 passes take exactly 10,223,61
 
 > **Main RAM is the practical constraint on all of this: 116 bytes.** Splitting the pool and
 > pipelining the AI both add code. `droid.asm` moving into bank 4 comes first — see `PLAN.md`.
+
+---
+
+# The 2026-08-20 pass: where it had drifted back to, and Phases 1 and 2
+
+Reopened after KC reported the flicker back, "particularly the enemy droids", and suspected that
+the collision work and the animated tiles had eaten the budget. Both halves of that were right.
+
+## The instrument, since `DEBUG_TIME` stopped building
+
+`DEBUG_TIME` is 154 bytes over the code image (`BUGS.md` #17), so everything below was measured
+with a **zero-byte harness**: execute breakpoints on the `JSR` sites in `mainloop` — addresses out
+of `build/PARADROID.lst` — and, at each stop, `read_registers` for `elapsed_cycles`. Two jsbeeb
+quirks decide whether it works at all:
+
+- **`cycles_run` is NOT the actual count when a breakpoint fires.** It returns the number
+  *requested*. Use `elapsed_cycles` from `read_registers`; that one is exact.
+- **A run that starts with PC already on a breakpoint returns immediately with `cycles_run` 0.** So
+  the sweep is: read, *clear the breakpoint that just fired*, run. Set every site up front and walk
+  them one per run.
+
+Breakpoints do fire under `run_for_cycles` — the older note saying otherwise was wrong. Anchor the
+timeline on the fire-3 handler (`INC fieldCount`), which is where a window opens.
+
+## What the pass looked like before
+
+Deck 1, standing still, **one sprite**, split taken, no level draw — the lightest pass the game can
+have. Offsets from window A opening:
+
+| offset | phase | cost |
+|---:|---|---:|
+| 0 | fire 3 — **window A opens** | |
+| 70 → 6,898 | `DoScore`, `CbDisruptor`, keys, movement, fire | 6,828 |
+| 6,898 → 16,958 | **`AnimTick`** | **10,060** |
+| 16,958 → 20,484 | `SprSplitOK` + restore | 3,526 |
+| 20,484 → 20,600 | `SetCRTCStart`; level draw skipped | 116 |
+| 20,600 → 21,392 | three debug `keydown`s (OSBYTE) | 774 |
+| 21,392 → **26,148** | `SprAnimateAll` + draw | 4,756 |
+| **24,576** | **window closes — the draw is 1,572 cycles LATE** | |
+| 26,148 → 37,870 | `DroidsUpdate` (11,786 with everything culled) + the rest | 11,722 |
+
+Three things fall out of that, and they are the whole diagnosis:
+
+1. **There is no headroom at all.** One sprite and no level draw already overruns the window. Each
+   further sprite is +5,182 (1,759 restore + 3,423 draw), so four sprites finish ~13,000 cycles
+   into the display. Enemy droids are drawn *after* the player in slot order, so they are the ones
+   still missing when the beam arrives — exactly the reported symptom.
+2. **16,888 cycles — 69% of the window — went on work that writes no pixels.**
+3. **`AnimTick` cost 10,060 cycles and on that pass found nothing.** `AnimScan` walks 11 tile
+   columns by 16 map rows, and it was doing it at the front of window A.
+
+And the split — the only thing that prevents flicker — was refused on **every pass the player
+moves**, because `colCount` was a global veto.
+
+## Phase 1 — get the work that draws nothing out of the window
+
+**`AnimScan` and `AnimLamp` moved below the draw**, into the play area's own display period, and
+fill the list for the *next* pass. `AnimTick` keeps only `AnimRotate`, because that changes the
+charset every draw reads. It is the same one-pass pipeline the droid AI took, and `AnimReset` had
+to learn to empty the list, because the list now survives a pass.
+
+**What the lamp costs** is that `BuildLampChar` rebuilds character `$16` after this pass's level
+draw rather than before it, so a sign scrolling in on the pass the alert level changes shows the
+old colour for one pass. 40 ms, once per change of state.
+
+**`DoScore` and `CbDisruptor` moved to `ml_afterdraw`**, immediately above `ml_passend` — the one
+point every arm of the pass converges on, the four modal ones included, which is what preserves the
+C64's "runs whether the console is up or not" ordering.
+
+A **cached** tile list keyed on the view's left tile column would take `AnimTick` to ~20 cycles
+rather than ~1,500. It was built and then abandoned: ~60 bytes, and the low overlay had 15. Worth
+returning to if `AnimScanPass`'s ~7,000 cycles of display time are ever wanted back.
+
+## Phase 2 — let the split survive scrolling
+
+**[DECISION, 2026-08-20] The global veto is replaced by a local test.** What the level draw writes
+this pass is known before it runs, and every writer reduces to a one-dimensional span:
+
+| writer | covers | test |
+|---|---|---|
+| the band | one display row, full width | scanlines only |
+| the columns | 4-pixel columns, full height | units only |
+| a door | one tile | units only |
+| an animated tile | one tile | units only |
+
+So instead of refusing the split, `SprAssignTr` **forces any overlap component holding a sprite
+under one of those writes into tranche A** — the tranche that is already erased while the level
+draw runs. Tranche B is then disjoint from everything the pass writes, by construction.
+
+Both sprite spans are padded by eight, a pass's worth of scroll, because a tranche-B sprite's saved
+background was taken last pass and has to be covered where it was drawn *then*. The tile tests
+ignore rows. Every approximation errs towards forcing A, which costs a split and never costs
+correctness.
+
+The one global veto left is the **stale slot** — no longer drawable but still holding a saved
+background — which is the single pass a droid leaves the window.
+
+`DoRedraws` is **no longer skipped on a split pass**. It used to be, because a split pass was
+*defined* as one with nothing to draw; skipping it after this change would stop the deck scrolling.
+
+**Where the code went.** The decision grew past the eleven bytes the code image had left, so it
+moved to **bank 6** as `src/sprsplit.asm`, behind a five-instruction bridge in `sprite.asm` on
+`PanelTick`'s pattern. It can live there because every byte it reads is outside bank 4 — the level
+draw's flags and `line` are zero page, and the door table, the animated-tile list and the sprite
+arrays are all main RAM. Moving it out gave the code image back **323 free bytes** against 11
+before; bank 6 went from 1,609 free to 975.
+
+## What it measures now
+
+Same harness, on the pass that matters: **scrolling diagonally, two sprites (the player and a 302),
+the level draw running, split taken.**
+
+| offset from window A open | phase | cost |
+|---:|---|---:|
+| 0 | window A opens | |
+| 0 → 11,459 | keys, movement, fire, `AnimTick`, `SprSplitOK`, restore of tranche A | 11,459 |
+| 11,459 → 16,340 | **`DoRedraws`** — a column pass | 4,881 |
+| 16,340 → 17,133 | `AnimPaint` + the three debug keys | 793 |
+| 17,133 → **21,617** | `SprAnimateAll` + `SprDrawTr(A)` | 4,484 |
+| **24,576** | **window A closes — 2,959 cycles to spare** | |
+| 39,936 | window B opens; tranche B — the enemy droid — is erased and redrawn there | |
+
+`sprTr` on that pass is `[0, FF, FF, FF, FF, FF, 1, FF]`: the player in A, the droid in B, **while
+scrolling**. The old code refused the split outright on exactly that pass.
+
+`AnimTick` is 1,558 cycles on a rotate pass and ~30 otherwise, against 10,060.
+
+## How it was verified, and the trap in the obvious method
+
+**The buffer oracle has to take both dumps inside ONE pass.** The first attempt dumped the buffer,
+pressed SPACE, ran 800,000 cycles and dumped again — and reported 35 bytes wrong on the new build
+and 196 on an intermediate one. Both were **artefacts**: 800,000 cycles is twenty passes, and a
+door opening or a recharger turning in between is a difference that has nothing to do with the
+change under test. The baseline scoring 0 on the same method was luck of that run's state.
+
+The protocol that works:
+
+1. drive the view diagonally so `line != 0` and `mapHX` is odd, then stop;
+2. poke **all three** draw sites to `NOP` — `SprDrawTr(A)`, `SprDrawAll`, `SprDrawTr(B)` — and let
+   a pass or two run, so the restores take every sprite off the buffer;
+3. hold SPACE and break on the `JSR RedrawAll` itself; dump the buffer;
+4. clear that breakpoint, break on the instruction *after* it, run, dump. `RedrawAll` takes more
+   than 500,000 cycles, so the first run may not reach the second breakpoint — run again rather
+   than concluding it was missed;
+5. diff. Nothing else has moved: it is the same pass.
+
+**Result: 0 of 10,240 bytes**, scrolled diagonally with the split active.
+
+## What is left
+
+The margin in window A is **2,959 cycles**, which is 0.57 of a sprite — a third sprite in tranche A
+overflows it. The next item is the one Phase 1 did not take:
+
+- **`ReadKeys` + `CalcSpeed` + `CheckWalls` cost 5,004 cycles** and are the largest thing left
+  above the erase. They cannot simply move below the level draw, because `ApplyMove` decides the
+  scroll — but they can be *pipelined*, computing the speeds at the end of the pass for the next
+  one's `ApplyMove`. `CheckWalls` would then run against the position `ApplyMove` has just
+  produced, which is the position it will move from, so it is not even stale. `DoCharUnder` reads
+  `plyCX`/`plyCY` and would have to follow it.
+- Step 3 above — the column half of `DoRedraws` into window B — is still available and still cheap.
+- `FRAME_LOCK` 3 remains the last resort, and remains KC's call.
+
+## A postscript: the magenta band was lying
+
+Reported by KC while reading `DEBUG_DRAW` on the build above — *"the magenta portion is still
+frequently catching the main play area"*. It was, and **nothing was overrunning**: the band was
+over-reporting.
+
+`DEBUG_DRAW` tints the background at the start of a piece of work and the tint runs until the next
+one. The magenta set before `SprAnimateAll` had no close after the draw, so it ran on through
+`AnimScanPass`, `DroidsUpdate`, the collisions, `DoAging`, `DoCharUnder`, `PanelTick` and the
+`WaitWindowB` idle — to the tranche-B block at the far end of the pass. It was reporting some
+20,000 cycles of display-period work as sprite work.
+
+**It broke in Step 1 above.** While `DroidsUpdate` ran *before* the draw there was almost nothing
+between the draw and the end of the pass, so the band ended about where the sprite work did. Moving
+the droid AI below the draw left the closing tint where it was, and Phase 1 then put
+`AnimScanPass` in the same gap.
+
+The fix closes magenta where the draw ends and gives the display-period work a band of its own
+(**red**, `DBG_AI`), closed before `WaitWindowB` so that untinted space is genuine slack. Measured
+on the fixed build, from window A opening:
+
+| band | opens | closes | |
+|---|---:|---:|---|
+| magenta — `SprAnimateAll` + the draw | 12,833 | **17,049** | ends 7,527 cycles before the play area |
+| red — the droid AI and the rest | 17,049 | 30,038 | 5,462 cycles into the play area, by design |
+| | | 39,936 | window B opens — 9,898 cycles of slack |
+
+So on the fixed build **magenta touching the play area is a real overrun again**, which is what the
+instrument is for. Red touching it is expected: none of that work writes the buffer.

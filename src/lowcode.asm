@@ -163,33 +163,62 @@
 \ in mid-animation comes in at the phase everything else is showing, and
 \ RedrawAll stays a valid oracle.
 \
-\ SPLIT IN TWO because the two halves belong in different places in the
-\ pass. AnimTick runs BEFORE SprSplitOK — it rotates the charset, so it
-\ has to be ahead of every draw, and its answer is what tells the split
-\ test there is buffer work to do. AnimPaint runs after the level draw,
-\ inside the same window everything else writes the buffer in.
+\ SPLIT IN THREE, and WHERE each piece runs is the whole point.
+\
+\ THE SCAN IS THE EXPENSIVE ONE and it used to run at the front of
+\ window A. Measured 2026-08-20: 10,060 cycles of a 24,576-cycle window,
+\ on a pass where it found nothing at all — 41% of the only window the
+\ drawing has, spent reading the map. So AnimScanPass runs AFTER the
+\ draw, in the play area's own display period, and fills the list for
+\ the NEXT pass. One pass of latency, the same trade the droid AI took;
+\ see docs/raster-timing.md.
+\
+\ AnimTick is what is left in the window: the rotation, and nothing
+\ else. It has to stay ahead of every draw because it changes the
+\ charset the draws read.
+\
+\ AnimPaint runs after the level draw, inside the same window everything
+\ else writes the buffer in, over the list the last pass built.
+\
+\ THE LAMP WENT WITH THE SCAN, because whether the lamp has moved is
+\ what decides whether the signs need scanning, and that question has to
+\ be answered on the same side of the draw as the scan it gates. What it
+\ costs is that BuildLampChar now rebuilds the character after this
+\ pass's level draw rather than before it, so a sign scrolling in on the
+\ pass the lamp changes shows the old colour for one pass and AnimPaint
+\ corrects it on the next. 40 ms, once per change of alert state.
 .AnimTick
+  LDA gameTick                  \ $38C4: every other frame, and on the
+  AND #1                        \ C64 that is every other ITERATION
+  BNE ant_done
+  JSR AnimRotate
+.ant_done
+  LDA animDirty                 \ what the LAST pass's scan found
+  RTS
+
+\ ---- AnimScanPass — build the list for the next pass --------
+\ The parity is inverted against AnimTick's on purpose: this runs at the
+\ end of the pass BEFORE the one that will rotate, so it asks whether
+\ gameTick is odd rather than even.
+.AnimScanPass
   LDA #0
   STA animCount
   STA animDirty
 
-  LDA gameTick                  \ $38C4: every other frame, and on the
-  AND #1                        \ C64 that is every other ITERATION
-  BNE ant_lamp
-
-  JSR AnimRotate
+  LDA gameTick
+  AND #1
+  BEQ asp_lamp
   LDA #20                       \ the recharge pad
   STA animWant
   JSR AnimScan
 
-.ant_lamp
+.asp_lamp
   JSR AnimLamp                  \ has the alert lamp's colour moved?
-  BEQ ant_done
+  BEQ asp_done
   LDA #22                       \ the ALERT sign
   STA animWant
   JSR AnimScan
-.ant_done
-  LDA animDirty
+.asp_done
   RTS
 
 \ ---- AnimPaint — repaint what AnimScan found ---------------
@@ -421,9 +450,16 @@
 \ on its clamped slot colour, so whatever the lamp last held is no
 \ longer what is in the charset and the comparison above would skip the
 \ rebuild. &FF is a colour no ramp entry can be.
+\ IT ALSO EMPTIES THE LIST. That did not matter while the scan and the
+\ paint were in the same pass; now the list is built at the end of one
+\ pass and painted in the next, so a deck load between the two would
+\ repaint the old deck's cells onto the new one's map.
 .AnimReset
   LDA #&FF
   STA lampHave
+  LDA #0
+  STA animCount
+  STA animDirty
   RTS
 
 \ ---- BuildLampChar — one character, one chosen logical ------
