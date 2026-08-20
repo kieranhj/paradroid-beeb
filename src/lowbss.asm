@@ -34,7 +34,6 @@ ORG LOWBSS_ADDR
 .animCount  SKIP 1
 .animWant   SKIP 1
 .animDirty  SKIP 1              \ SprSplitOK reads this: buffer work to do
-.animTmp    SKIP 1
 .animSave   SKIP CHAR_BYTES     \ the character the rotation carries round
 .ansCol     SKIP 1
 .ansRow     SKIP 1
@@ -57,6 +56,17 @@ ORG LOWBSS_ADDR
 .disruptorOwner SKIP 1          \ 0 the player's, non-zero a droid's
 .cbNoScore      SKIP 1          \ DrKillDroid: this kill pays nobody
 .disrFlash      SKIP 1          \ SetPalPlay forces logical 0 white
+
+IF DEBUG_ENERGY
+\ The bank-4 bytes DbgEnergyOut cannot read for itself: bank 6 is paged
+\ while it runs. Its shim in lowcode2.asm fills these first.
+.dbgEnMirror
+IF DEBUG_MAPGUARD
+  SKIP 8                        \ drType, drEnergy, then mgHit..mgWant whole
+ELSE
+  SKIP 2
+ENDIF
+ENDIF
 
 .lowbss_end
 ASSERT lowbss_end <= LOWBSS_LIMIT

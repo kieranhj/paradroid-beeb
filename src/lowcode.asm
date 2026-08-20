@@ -323,9 +323,11 @@
 
 \ X = source character code, Y = destination character code.
 .AnimCopy
-  STY animTmp
-  JSR AnimSetSrc
-  LDX animTmp
+  TYA                           \ the stack, not a byte of lowbss: &0C90 is
+  PHA                           \ 112 bytes and DEBUG_ENERGY's mirror wanted
+  JSR AnimSetSrc                \ the last one
+  PLA
+  TAX
   JSR AnimSetDst
   LDY #CHAR_BYTES-1
 .anc_loop

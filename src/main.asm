@@ -141,6 +141,34 @@ MAP_CHAR_W = MAP_COLS * 4       \ 256 characters across
 MAP_CHAR_H = MAP_ROWS * 4       \ 64 character rows
 
 \ ---- debug build options ------------------------------------
+\ **WHICH OF THESE ACTUALLY BUILD, 2026-08-20.** The code image ends at
+\ FONT_ADDR and has 11 spare bytes, so a debug flag that adds more than
+\ that does not fit — and until the GUARD went in below, it did not SAY
+\ so: `CLEAR FONT_ADDR, ...` releases beebasm's overwrite check over
+\ exactly the range the overrun lands in, so the build succeeded, `PARA`
+\ scribbled on the front of the text font, and the PARAFNT load scribbled
+\ back over the code's tail. That is what a corrupt player sprite and an
+\ illegible frame digit were. Four flags were doing it.
+\   DEBUG_VSYNC    ok    the readouts moved to bank 6 — src/dbgpanel.asm
+\   DEBUG_POS      ok    same
+\   DEBUG_ENERGY   ok    same, plus a mirror for its two bank-4 bytes
+\   DEBUG_INVULN   ok
+\   DEBUG_XFERWIN  ok    on by default
+\   DEBUG_RESTART  ok    on by default
+\   DEBUG_RASTER   NO    59 bytes over the code image
+\   DEBUG_DRAW     NO    83 bytes over
+\   DEBUG_TIME     NO    154 bytes over
+\   DEBUG_MAPGUARD NO    MG_COPY is 1 K and bank 4 has 12 bytes
+\ COMBINATIONS matter too, because each readout's shim costs 20 bytes of
+\ src/lowcode2.asm's 36: VSYNC, POS and ENERGY each build alone, but
+\ POS+ENERGY does not. The fix is a shared enter/leave pair instead of a
+\ shim apiece — 18 bytes once and 9 each — and it was left undone rather
+\ than done half-asleep. It fails at build time now, which is the point.
+\ The last four are NOT a regression from the debug code — they are the
+\ RAM situation, and they need main-RAM room found before they can come
+\ back. DEBUG_RASTER's and DEBUG_DRAW's instrumentation cannot move to a
+\ bank at all: the interrupt and the blitter call it, and neither may
+\ page. See docs/memory-map.md for where the next bytes could come from.
 \ DEBUG_RASTER tints the background at entry to each rupture
 \ interrupt, so the scanline each one lands on is visible:
 \   magenta  from the VSync IRQ
@@ -938,6 +966,20 @@ ENDMACRO
 
 \ DFS reserves &1100-&18FF for random-access file buffers, which
 \ simple *LOAD / OSFILE loads never touch. So we start at &1100.
+\ GUARD, NOT JUST AN ASSERT. The code image ends where PARAFNT begins,
+\ and beebasm's overwrite check does not catch the overrun on its own:
+\ the `CLEAR FONT_ADDR, ...` further down releases the guard over
+\ exactly the range the code would spill into, so an over-long image
+\ assembles silently, `*RUN PARA` scribbles on the first bytes of the
+\ text font, and the PARAFNT load then scribbles back over the code's
+\ tail. **DEBUG_VSYNC did precisely that, unnoticed, for weeks** — the
+\ only bound in the file was `code_end <= SPR_SAVE`, left over from when
+\ the font lived at &3C00.
+\ GUARD fires DURING assembly, at the instruction that crosses the line,
+\ so it names the routine rather than a total at the end. The ASSERT by
+\ `.code_end` is the belt to this pair of braces.
+GUARD FONT_ADDR
+
 ORG &1100
 .start
 
@@ -2160,7 +2202,10 @@ ORG &4600
 .tilemap_end
 ASSERT tilemap >= SPR_SAVE + SPR_SLOTS * 256
 ASSERT tilemap_end <= PANEL_ADDR
-ASSERT code_end <= SPR_SAVE
+ASSERT code_end <= FONT_ADDR    \ the real bound: PARAFNT loads at &3000.
+                                \ It used to read SPR_SAVE, which was
+                                \ right when the font lived at &3C00 and
+                                \ has been 3,584 bytes too slack since
 
 \ ============================================================
 \ Generated data — in sideways RAM bank 0
@@ -2282,6 +2327,7 @@ INCLUDE "src/data/droids2.asm"
 \ pass by PanelTick. See docs/layer-9-hud.md, decision 8.
 INCLUDE "src/panel.asm"
 INCLUDE "src/console.asm"
+INCLUDE "src/dbgpanel.asm"     \ the debug readouts, beside the panel they draw on
 
 \ The string table is NOT here any more: it is main RAM's, in PARAFNT,
 \ because the droid database in bank 7 needed the same 1,542 bytes and

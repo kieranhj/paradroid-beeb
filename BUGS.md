@@ -28,10 +28,61 @@ sections below are in neither. **The table is the index; read it first.**
 | **13** | [The ALERT sign's lamp is dead; it should track the alert level](#13-the-alert-signs-lamp-is-dead--it-should-track-the-alert-level--2026-08-17) | **Fixed** 2026-08-20 | one character rebuilt when `Alert` crosses a threshold, and the sign repainted. The ramp is four *states*, not four colours — [DECISION 11] in `docs/layer-7-combat.md`, **not yet ratified** |
 | **14** | [`XfRand` is not a maximal LFSR — its low two bits are always zero](#14-xfrand-is-not-a-maximal-lfsr--its-low-two-bits-are-always-zero--fixed-2026-08-19) | **Fixed** 2026-08-19 |  |
 | **15** | [Incremental draw disagrees with `RedrawAll` beside an animating door](#15-incremental-draw-disagrees-with-redrawall-beside-an-animating-door--2026-08-19-unconfirmed) | **Open, unconfirmed** | did not reproduce in five clean runs. Correlates with poking a modal flag, not with the level draw |
+| **17** | [Four debug flags silently push the code image past `&3000`](#17-four-debug-flags-silently-push-the-code-image-past-3000--partly-fixed-2026-08-20) | **Partly fixed** 2026-08-20 | VSYNC, POS and ENERGY fixed and a `GUARD` added so it can never be silent again. RASTER, DRAW, TIME and MAPGUARD still do not fit and now fail the build |
 | **16** | [Enemy droids draw a black rotor and a WHITE number](#16-enemy-droids-draw-a-black-rotor-and-a-white-number--fixed-2026-08-19) | **Fixed** 2026-08-19 | the wrap fallback blits digits interpreted and never sees `colPix` |
 
 `## Delivered: DEBUG_POS` near the end is not a defect — it is the position bookmark that came out
 of #5, kept with the defects because that is where it is looked for.
+
+---
+
+## 17. Four debug flags silently push the code image past `&3000` — **PARTLY FIXED 2026-08-20**
+
+Reported by KC: *"the DEBUG_VSYNC flag no longer works correctly — the player sprite gets corrupted
+and the vsync number is not legible."*
+
+### The cause, and why nothing complained
+
+`FONT_ADDR` is `&3000` and the code image runs up to it. `DEBUG_VSYNC` adds 143 bytes —
+`DbgFrameCount`, the 16-digit 4x5 font and its ×5 table — and the image had **eleven** bytes spare.
+
+beebasm did not object, and that is the interesting part. `CLEAR FONT_ADDR, ...`, further down
+`main.asm`, releases the overwrite guard over **exactly the range an over-long code image spills
+into** — so the assembler happily wrote code at `&3000`, `SAVE "PARA"` shipped it, and at run time
+two things then happened in order: `*RUN PARA` scribbled the tail over the first bytes of the text
+font, and the `*LOAD PARAFNT` a moment later scribbled the font back over the code's tail. A
+corrupt player sprite and an unreadable digit is exactly what that looks like.
+
+The only bound in the file was `ASSERT code_end <= SPR_SAVE`, and `SPR_SAVE` is `&3E00` — correct
+when the font lived at `&3C00`, and 3,584 bytes too slack since Layer 11 moved it.
+
+**Not caused by the 2026-08-20 features.** On the commit before them `DEBUG_VSYNC` overran by 105
+bytes rather than 132; the flag has been broken for as long as the code image has been full.
+
+### The fix
+
+- **`GUARD FONT_ADDR`** before `ORG &1100`, plus `ASSERT code_end <= FONT_ADDR`. KC's suggestion,
+  and the right one: `GUARD` fires *during* assembly, at the instruction that crosses the line, so
+  it names the routine instead of a total at the end.
+- The readouts moved to **bank 6**, in `src/dbgpanel.asm`, beside the panel code they draw over.
+  The shims that page it in are in `src/lowcode2.asm`. `DbgEnergyOut` reads `drType` and
+  `drEnergy` out of bank 4, so its shim mirrors those into main RAM before it pages.
+- `DEBUG_VSYNC`, `DEBUG_POS` and `DEBUG_ENERGY` now each build and run. Verified in jsbeeb:
+  `PANEL_ADDR` reads `FF 11 FF 88 FF`, the digit **2**, and the sprites are intact.
+
+### What is still broken, and it is the RAM and not the debug code
+
+| | |
+|---|---|
+| `DEBUG_RASTER` | 59 bytes over. Its instrumentation is **inside the interrupt** and cannot move to a bank |
+| `DEBUG_DRAW` | 83 bytes over. `DbgSetBg` is called **from inside the blitter**, with a sprite bank paged — it cannot move either |
+| `DEBUG_TIME` | 154 bytes over |
+| `DEBUG_MAPGUARD` | `MG_COPY` is 1 K and bank 4 has 12 bytes |
+| `DEBUG_POS` + `DEBUG_ENERGY` | fits neither: two 20-byte shims and a mirror against `lowcode2`'s 36 free. A shared enter/leave pair — 18 bytes once, 9 each — fixes it |
+
+All five now **fail the build with a message** instead of shipping a corrupt image, and the table
+in `main.asm`'s debug header records which is which. They want main-RAM room found first; see the
+free-RAM section of [`docs/memory-map.md`](docs/memory-map.md).
 
 ---
 

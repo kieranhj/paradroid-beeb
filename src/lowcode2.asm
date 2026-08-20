@@ -109,3 +109,53 @@
   LSR A : LSR A : LSR A : LSR A : LSR A
   RTS
 
+\ ============================================================
+\ The debug readouts' shims — page bank 6 in, call, page back
+\ ============================================================
+\ The routines themselves are in src/dbgpanel.asm, in bank 6. These are
+\ here rather than in the code image for the reason everything else in
+\ this file is: the code image is the one region that is genuinely full,
+\ and a shim is twenty bytes it does not have.
+\
+\ PanelTick's idiom exactly — and safe for the same reason: the
+\ interrupt reads neither bank, and every call site is in the main loop
+\ with SWRAM_DATA resting.
+
+IF DEBUG_VSYNC OR DEBUG_POS
+.DbgFrameCount
+  PAGEBANK SWRAM_SPR2
+  JSR Dbg6FrameCount
+  PAGEBANK SWRAM_DATA
+  RTS
+ENDIF
+
+IF DEBUG_POS
+.DbgPosOut
+  PAGEBANK SWRAM_SPR2
+  JSR Dbg6PosOut
+  PAGEBANK SWRAM_DATA
+  RTS
+ENDIF
+
+IF DEBUG_ENERGY
+\ THE MIRROR IS THE WHOLE REASON THIS IS NOT A BARE PAGEBANK. drType and
+\ drEnergy are entry 0 of the droid table and live in BANK 4; read them
+\ with bank 6 paged and you get the panel's artwork instead. Copy them
+\ here, while the data bank is still in, and let the readout print the
+\ copies. DEBUG_MAPGUARD's five bytes are in bank 4 too.
+.DbgEnergyOut
+  LDA drType   : STA dbgEnMirror+0
+  LDA drEnergy : STA dbgEnMirror+1
+IF DEBUG_MAPGUARD
+  LDX #5                        \ mgHit..mgWant are six consecutive bytes,
+.dbg_mg                         \ so copy the run and let the source table
+  LDA mgHit,X                   \ step over mgPhase rather than skipping it
+  STA dbgEnMirror+2,X           \ here
+  DEX
+  BPL dbg_mg
+ENDIF
+  PAGEBANK SWRAM_SPR2
+  JSR Dbg6EnergyOut
+  PAGEBANK SWRAM_DATA
+  RTS
+ENDIF
