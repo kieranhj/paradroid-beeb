@@ -395,6 +395,13 @@ plumbing in `TiWait`, and it should follow once the driver is proven, not gate i
   branch straight to the envelope; SndSilence no longer clears request bytes — every entry to
   state 2 passes through it anyway; a second `snf_att` entry taking A directly). Verified:
   CH3 reads attenuation 15 the moment the hum takes the voice. **Bank 4 is at 0 bytes free.**
+  **Round seven — the cut, not the tail.** The remaining held note was the release draining
+  *past* the sequencer's end with the frequency frozen — a 0.6 s constant-pitch fade the C64
+  never plays: `ResetVoice` (`$0678`) writes the TEST bit then control 0 — **no waveform — an
+  instant cut** at effect end. The port now does the same (level to 0, no envelope step on
+  the way out), and idle voices run nothing at all — the only release that sounds is a
+  mid-effect gate expiry, exactly the C64's semantics. Byte-neutral. Captured: the explosion
+  fades through its sweep and chops dead on its final tick.
   **The same session found a real driver bug**: `SndConv` counted its shifts in X, and the
   flush picks the channel from X after converting — every in-range voice-1 tone was landing
   on channel 0. The hum had escaped because its clamp path skips the shift loops. Counters

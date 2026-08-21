@@ -248,7 +248,14 @@ ASSERT HI(snFreqLo) == HI(snPhase+1)   \ one page: the copy walk below
 
 .SndVoice
   LDA snCount,X
-  BEQ SndEnv                    \ idle: the release tail still runs
+  BNE snv_live
+  RTS                           \ idle: NOTHING runs — the C64 cuts the
+                                \ voice at effect end (ResetVoice, $0678:
+                                \ test bit + waveform 0), so there is no
+                                \ post-effect tail to envelope. The only
+                                \ release that sounds is a mid-effect
+                                \ gate expiry, on the live path below
+.snv_live
   CLC                           \ frequency += slide, MOD 65536 — the wrap
   LDA snFreqLo,X                \ is load-bearing, see the exporter header
   ADC snSlideLo,X
@@ -287,12 +294,14 @@ ASSERT HI(snFreqLo) == HI(snPhase+1)   \ one page: the copy walk below
 .snv_count
   DEC snCount,X
   BNE SndEnv
-  LDA #2                        \ effect over: release phase, free the
-  STA snPhase,X                 \ voice ($0678-$0686). The C64 would test
-  LDA #0                        \ the chain byte here ($0680); no record
-  STA snActive,X                \ in the data uses it, so neither field
-                                \ nor code path exists — export_sound.py
-                                \ asserts that stays true
+  LDA #0                        \ effect over: CUT, as ResetVoice does —
+  STA snActive,X                \ level to zero, voice freed, and no
+  STA snLevel,X                 \ envelope step on the way out (a stale
+  RTS                           \ phase must not resurrect the level).
+                                \ The C64 would test the chain byte here
+                                \ ($0680); no record uses it, so neither
+                                \ field nor code path exists —
+                                \ export_sound.py asserts that stays true
 \ ---- envelope ----------------------------------------------
 .SndEnv
   LDA snPhase,X
