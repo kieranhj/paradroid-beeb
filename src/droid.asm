@@ -3079,36 +3079,18 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
   RTS
 
 \ ---- the deck plan's way in and out -------------------------
-\ con_DeckInfo ($3001) reads the level RLE straight from lvPtr — data
-\ that lives in THIS bank, which the bank-7 drawer cannot see. The
-\ shim stages a copy of the deck's stream at SPR_SAVE: the sprite
-\ background saves are scratch while the console is up, because
-\ ReframeView throws them away on the way out (rv_unsave). 512 bytes
-\ covers the longest deck stream (~333) with room; the copy running
-\ past the stream's own end is harmless, the decoder stops at 1,024
-\ cells and never reads the excess.
+\ con_DeckInfo ($3001) reads the level RLE on the C64; since Layer 13d
+\ the port has no level RLE at all — the maps ship zx0-packed and the
+\ depacker rebuilds the tile map at &4600, which is main RAM, static
+\ after BuildLevel, and readable from bank 7 directly. So the staging
+\ copy this shim used to make at SPR_SAVE is gone: ConDeck7 walks the
+\ tile map in place, and this is only the display work.
 \
 \ THE PLAN IS 16 ROWS and the console displays 15 — so the page
 \ borrows the transfer game's t1i3 trick: with the scroll flat the
 \ 16th buffer row is real content and only the fire-3 interval hides
 \ it. Decks 2, 10, 11 and 12 have map in row 15; the C64 shows it.
 .ConDeckEnter4
-  LDY deck
-  CLC
-  LDA deckOffsetLo,Y : ADC #LO(leveldata) : STA src
-  LDA deckOffsetHi,Y : ADC #HI(leveldata) : STA src+1
-  LDY #0
-.cdk_copy
-  LDA (src),Y
-  STA SPR_SAVE,Y
-  INY
-  BNE cdk_copy
-  INC src+1
-.cdk_copy2
-  LDA (src),Y
-  STA SPR_SAVE+&100,Y
-  INY
-  BNE cdk_copy2
   LDA #LO(T1_I3X)
   STA t1i3Lo
   LDA #HI(T1_I3X)

@@ -61,8 +61,14 @@
 \ skip the marker instead of reproducing the overwrite.
 
 .ConDeck7
-  LDA #LO(SPR_SAVE) : STA xsrc  \ the staged stream, not lvPtr
-  LDA #HI(SPR_SAVE) : STA xsrc+1
+  LDA #LO(tilemap) : STA xsrc   \ THE TILE MAP ITSELF, main RAM: since
+  LDA #HI(tilemap) : STA xsrc+1 \ Layer 13d the level RLE no longer
+                                \ exists — the maps ship zx0-packed and
+                                \ BuildLevel decompresses straight into
+                                \ the map — and the map is static after
+                                \ BuildLevel, so this page reads it in
+                                \ place. No staging, no run decoding;
+                                \ ConDeckEnter4 keeps only its t1i3 work
   LDA deck                      \ the deck's ink row: planInk + deck*32
   LSR A : LSR A : LSR A         \ high bit of the *32
   CLC : ADC #HI(planInk)
@@ -75,25 +81,12 @@
   STA lvRow                     \ ptr_14+1
 .cd7_next
   LDY #0
-  LDA (xsrc),Y
-  BPL cd7_single
-  AND #&7F
-  STA lvChar
-  INY
-  LDA (xsrc),Y
-  STA lvLen
-  CLC
-  LDA xsrc   : ADC #2 : STA xsrc
-  LDA xsrc+1 : ADC #0 : STA xsrc+1
-  JMP cd7_run
-.cd7_single
-  STA lvChar
-  LDA #1
-  STA lvLen
-  CLC
-  LDA xsrc   : ADC #1 : STA xsrc
-  LDA xsrc+1 : ADC #0 : STA xsrc+1
-.cd7_run
+  LDA (xsrc),Y                  \ one map cell, already AND #&1F by
+  STA lvChar                    \ BuildLevel's own construction
+  INC xsrc
+  BNE cd7_n1
+  INC xsrc+1
+.cd7_n1
   LDA lvPos
   CMP #42
   BCS cd7_skip
@@ -105,25 +98,17 @@
   INC lvPos
   LDA lvPos
   CMP #64
-  BCC cd7_more
-  LDA lvChar                    \ the row is done: its 40th column is
-  PHA                           \ code 0, around the run in flight
-  LDA #0
-  STA lvChar
+  BCC cd7_next
+  LDA #0                        \ the row is done: its 40th column is
+  STA lvChar                    \ code 0, the blank
   LDA #39
   JSR ConDeckCell
-  PLA
-  STA lvChar
   LDA #0
   STA lvPos
   INC lvRow
   LDA lvRow
   CMP #16
-  BCS cd7_mark
-.cd7_more
-  DEC lvLen
-  BNE cd7_run
-  BEQ cd7_next
+  BCC cd7_next
 
 \ ---- the player's cell, $3032-$305D -------------------------
 \ Tile column = plyMapPos/4 and the C64's plyMapPos is our reference

@@ -665,11 +665,54 @@ def main():
         f.write('.liftShaft\n')
         emit_bytes(f, sh)
 
-        f.write('\n.leveldata\n')
-        emit_bytes(f, rle)
-        f.write('.leveldata_end\n')
-    print('  levels.asm    %5d bytes RLE + %d bytes metadata'
-          % (len(rle), len(meta) + 32))
+        # ---- the deck maps, ZX0-compressed ----
+        # Layer 13d: the RLE is decoded OFFLINE - exactly BuildLevel's old
+        # semantics, from the C64's absolute pointers, until the 1,024-tile
+        # map is full (decks 1 and 2 legitimately run on into the next
+        # deck's stream) - and each decoded map is zx0-compressed. The
+        # depacker in level.asm decompresses straight into the tile map,
+        # so the RLE format and its decoder are gone from the port. The
+        # decoded maps are still byte-identical to what the C64 builds;
+        # only the packaging changed. See tools/zx0.py.
+        import zx0
+        packs = []
+        for deck in range(16):
+            src = (ptr_hi[deck] << 8) | ptr_lo[deck]
+            m = bytearray()
+            while len(m) < MAP_TILES:
+                b = mem[src]
+                if b & 0x80:
+                    n = mem[src + 1] or 256
+                    src += 2
+                else:
+                    n = 1
+                    src += 1
+                t = b & 0x1F
+                for _ in range(n):
+                    m.append(t)
+                    if len(m) == MAP_TILES:
+                        break
+            z = zx0.compress(bytes(m))
+            if zx0.decompress(z) != bytes(m):
+                sys.exit('ERROR: zx0 round-trip failed for deck %d' % deck)
+            packs.append(z)
+        pofs = [0]
+        for z in packs[:-1]:
+            pofs.append(pofs[-1] + len(z))
+        f.write('\n\\ Per-deck offsets into deckPack\n')
+        f.write('.deckPackLo\n')
+        emit_bytes(f, [o & 0xFF for o in pofs])
+        f.write('.deckPackHi\n')
+        emit_bytes(f, [(o >> 8) & 0xFF for o in pofs])
+        f.write('\n\\ The sixteen decoded maps, zx0 (v2, forwards) streams\n')
+        f.write('.deckPack\n')
+        for deck, z in enumerate(packs):
+            f.write('\\ deck %d: %d bytes\n' % (deck, len(z)))
+            emit_bytes(f, z)
+        f.write('.deckPack_end\n')
+        total_pack = sum(len(z) for z in packs)
+    print('  levels.asm    %5d bytes zx0 deck maps (RLE was %d) + %d metadata'
+          % (total_pack, len(rle), len(meta) + 32))
 
     print('\nWrote to %s' % OUT_DIR)
 

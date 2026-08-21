@@ -2504,6 +2504,7 @@ INCLUDE "src/data/droidgame.asm"
 INCLUDE "src/screen.asm"
 INCLUDE "src/scroll.asm"
 INCLUDE "src/level.asm"
+INCLUDE "src/zx0depack.asm"    \ Layer 13d: BuildLevel's decompressor
 INCLUDE "src/droid.asm"
 .data_end
 

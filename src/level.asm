@@ -51,62 +51,25 @@
   JMP SetPalPlay                \ live immediately, not at the next fire 1
 
 \ ============================================================
-\ BuildLevel — RLE-decode a deck into the tile map
+\ BuildLevel — decompress a deck into the tile map
 \   A = deck number (0-15)
 \
-\ RLE format, unchanged from the C64:
-\   bit 7 clear -> one tile, index in bits 0-4
-\   bit 7 set   -> tile index in bits 0-4, next byte is the count
-\ Stops when the map is full. A count of 0 means 256, which falls
-\ out of decrementing after the store.
+\ Layer 13d: the C64's RLE and its decoder are GONE. export_bbc.py
+\ decodes each deck offline — the RLE semantics BuildLevel used to
+\ implement, byte-identical maps — and zx0-compresses the result, and
+\ this is now just the pointer setup in front of Zx0Unpack, which
+\ writes the 1,024 tiles straight into the map. The decoded map is
+\ what it always was; only the packaging changed. See zx0depack.asm.
 \ ============================================================
 .BuildLevel
   TAY
   CLC
-  LDA deckOffsetLo,Y : ADC #LO(leveldata) : STA src
-  LDA deckOffsetHi,Y : ADC #HI(leveldata) : STA src+1
+  LDA deckPackLo,Y : ADC #LO(deckPack) : STA src
+  LDA deckPackHi,Y : ADC #HI(deckPack) : STA src+1
 
   LDA #LO(tilemap) : STA mapptr
   LDA #HI(tilemap) : STA mapptr+1
-
-.bl_next
-  LDY #0
-  LDA (src),Y
-  STA rptTile
-  BPL bl_single
-  INY                           \ bit 7 set: a count byte follows
-  LDA (src),Y
-  STA rptLen
-  ADDPTR src, 2
-  JMP bl_fill
-.bl_single
-  LDA #1
-  STA rptLen
-  ADDPTR src, 1
-.bl_fill
-  LDA rptTile
-  AND #&1F
-  STA rptTile
-  LDY #0
-.bl_put
-  LDA rptTile
-  STA (mapptr),Y
-  INC mapptr
-  BNE bl_nohi
-  INC mapptr+1
-.bl_nohi
-  LDA mapptr+1                  \ map full?
-  CMP #HI(tilemap_end)
-  BNE bl_more
-  LDA mapptr
-  CMP #LO(tilemap_end)
-  BEQ bl_done
-.bl_more
-  DEC rptLen
-  BNE bl_put
-  JMP bl_next
-.bl_done
-  RTS
+  JMP Zx0Unpack                 \ and its RTS
 
 \ ============================================================
 \ BuildCharset — convert the C64 characters to MODE 1 for a deck
