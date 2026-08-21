@@ -980,6 +980,12 @@ DB_DESC_MAX = &38 - &10         \ sub_0_2DCD's own bound, rebased to 0
   CMP poLastType
   BEQ db_i_same
   STA poLastType
+  LDA #LO(PO_DST0)              \ $36B3's own `LDA #40`: this page's
+  STA poBase                    \ rectangle, and it has to be said out
+  LDA #HI(PO_DST0)              \ loud because the game over moves it
+  STA poBase+1
+  LDA dbType                    \ AGAIN: PoDraw takes the type in A, and
+                                \ the two loads above just ate it
   JMP PoDraw                    \ bank 7 to bank 7: a plain JSR-less tail
 .db_i_same
   RTS

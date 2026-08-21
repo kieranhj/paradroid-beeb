@@ -79,7 +79,14 @@ Voice 1 unless stated. Addresses are the `STA sndFx1`/`SndFx2` sites in
 | $13 | `_gameover` `$146B` | Player death explosion |
 | $14 | `DoCharUnder` `$2EAD` | Energiser recharge tick |
 | $15 | `conRedraw` `$2C85`; `DrInfo1–4` `$2CF6/$2D31/$2D4D/$2D76` | Console beep / page flip |
-| $16 | `con_Back2Main` `$2CB8/$2CC3`; `DoLift` `$2696` (v2); game-over seam `$14E7` (v2) | Mode-change chord |
+| $16 | `con_Back2Main` `$2CB8/$2CC3`; `DoLift` `$2696` (v2); **console OPEN `$14E7` (v2)** | Mode-change chord |
+
+> **`$14E7` was mis-attributed here as "the game-over seam", and the port acted on it.**
+> The label above it is `_console`: `$14DD`-`$14EB` save the VIC state, switch the character
+> base and set `consoleState` to `$C0`. It is the console opening, and nothing to do with
+> `EndGame`. `GoWashStart` posted it on the way into the wash on the strength of this row,
+> so the console's chord announced the game over; KC heard it and it is gone (2026-08-21,
+> Layer 11d). **`EndGame` posts exactly two effects: `$F` at `$37BF` and 5 at `$37FE`.**
 | $17 | `RunDroids` `$17EB` (with the +250 bonus) | Droid destroyed by ramming |
 | $18 | `DoAlertAndAging` `$3E83` (voice 2, idle-retrigger) | **Per-deck background hum** |
 | $19 | `DoCollision` `$1B17/$1B29` | Player collision damage |
@@ -299,7 +306,9 @@ bullet-hit, the lift sounds, and the game start.
 
 **Still open, KC's list:**
 
-- **The game-over set** (fx 5, $F, $13, $16) — "needs work but leave for now".
+- **The game-over set** (fx 5, $F, $13, $16) — was "needs work but leave for now"; **done
+  2026-08-21 with Layer 11d**: $F alone on the wash (noise, instrument 4), 5 with the 999 page as
+  `$37FE` posts it, and $16 removed from the seam entirely — see the note on the $16 row above.
 - The transfer-verdict mapping (win/lose/tie → `$C`/`$D`/`$B`) is still the stage-3 guess —
   A/B against VICE or the real thing when convenient.
 - The noise scale factor (`NOISE_SHIFT`) and the periodic ≈ pitch/15 approximation have

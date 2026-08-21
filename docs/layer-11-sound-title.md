@@ -155,10 +155,16 @@ animation *ends* on) must not be overwritten by `BlowInto001`'s 7, which is why 
 identical speed-clamp block is deliberately *not* shared; and `SprInit` moved out of boot to here,
 because it resets state where `SprBuildMask` beside it builds a table.
 
-**`DEBUG_RESTART` exists so this is testable at all** — R restarts the game — and it sits **above**
+**`DEBUG_RESTART` existed so this was testable at all** — R restarted the game, and it sat **above**
 the console / transfer / lift-view blocks in the main loop, each of which ends its pass with
 `JMP ml_passend`. Below them it could not be reached from exactly the states worth testing from,
 which are exactly the states a game can end in.
+
+**It was removed 2026-08-21 and ESCAPE replaces it** (Layer 11d). ESCAPE self-destructs, which
+reaches the same boot split by the long way round — the death, the wash, the 999 page, the title —
+and therefore tests strictly more than R did. It sits **below** the modal blocks for the opposite
+reason to R's: a player-facing quit has no business firing while the console or a half-finished
+transfer owns the machine.
 
 **Verified in jsbeeb.** Every field poked dirty — `conActive` 1, `liftMode` 2, `moveMode` 0,
 `plyDying` 1, `maxEnergy` 5, `weaponType` 3, `alertLvl` `$C0`, score `12345678`, `shipLevel` 5,

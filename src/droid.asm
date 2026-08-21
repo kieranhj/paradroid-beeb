@@ -369,13 +369,13 @@ ENDIF
   ADC #DECK_START_LO
   STA deck
 
-  LDA #&12                      \ $1250: the driver into game-FX mode, and
-  STA sndState                  \ $1334's deck materialise. ONLY that one:
-  LDA #7                        \ the C64 spreads fx 6, $B and 7 across
-  STA sndFx1                    \ seconds of score countdown and screens
-                                \ the port does not have yet, and played
-                                \ together they smear (KC). fx 6 and $B
-                                \ return with the 001 screen, 11d
+  LDA #&12                      \ $1250: the driver into game-FX mode.
+  STA sndState                  \ $1334's deck materialise USED to be here
+                                \ too; 11d moved it, because the 001 screen
+                                \ now stands between GameStart and the deck
+                                \ and the alert has to land when the DECK
+                                \ does, not before the screen. IsDone posts
+                                \ it. fx $B is the screen's own
   JMP LoadDeck                  \ and its RTS
 
 .NewShipDroids

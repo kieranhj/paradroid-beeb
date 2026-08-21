@@ -583,8 +583,22 @@ state tracking — is moot rather than fixed. `DrawColumn` still uses the genera
 
 ### Open questions
 
+- **When to switch the CRTC into the rupture, and how not to lose the TV's lock.** *(KC,
+  2026-08-21.)* `SetupRupture` rewrites R4, R5, R6 and R7 from `SetupMode`'s plain 39-row frame to
+  the three-cycle shape, and it does it wherever the CPU has got to. A real television needs
+  several fields to pull vertical sync back afterwards, so the way into a game — and the way back
+  after a game over — rolls or tears for a moment. Three things to try, in rough order of promise:
+  switch **on a field boundary** rather than mid-frame; **order the writes so every intermediate
+  state is still a legal 312-line frame**, rather than passing through one that is not; and
+  **blank the display across the change** so whatever the beam does is not visible. All three have
+  to respect what is already known and written down above — R6, R7 and R12/R13 belong to the cycle
+  *before* the one they fire on, R5 must not be touched near a cycle boundary (its 5-bit wrap costs
+  ~29 scanlines), and R7 must not be sitting at `TAIL_R7` while a filing-system call runs, because
+  that stops VSync and hangs the 8271 poll. **None of this is measured yet** — it wants the
+  emulator and then real hardware, since a TV's tolerance is the thing being tuned.
 - **Granularity.** 1 scanline vertical against 4 pixels horizontal is a lopsided pair. Stepping
   vertical by 2 or 4 scanlines costs nothing extra (identical machinery) and may feel better.
+  *(Settled 2026-08-21: 1 scanline stays. Kept here for the reasoning.)*
 - **Source-pointer cache.** A scanline strip still does 40 character lookups for 80 bytes copied, so
   lookups dominate. Caching the current source row's 40 pointers (80 bytes, rebuilt every 8
   scanlines) makes a strip a straight indexed copy. That is the difference between smooth scrolling

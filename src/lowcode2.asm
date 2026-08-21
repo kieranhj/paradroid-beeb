@@ -159,3 +159,42 @@ ENDIF
   PAGEBANK SWRAM_DATA
   RTS
 ENDIF
+
+\ ============================================================
+\ GameStartInfo — a game starts with the 001 screen
+\ ============================================================
+\ LAYER 11d. StartGame ($12C7) calls NewShipInfo, so every one of
+\ GameStart's callers goes through here instead.
+\
+\ infoActive IS SET FIRST, and that is the whole trick: it makes
+\ LoadDeck's ReframeView a no-op (see the guard on ReframeView), so the
+\ deck is NOT drawn on the way in. The 001 screen is the first thing a
+\ game puts up, exactly as $12C7 is reached before DoNewDeck, and the
+\ deck arrives when the screen is dismissed.
+\
+\ pmShip is PanelTick's mirror and no pass has run yet, so it is filled
+\ by hand: IsShip reads it for the ship's name and bank 7 cannot see
+\ shipLevel itself.
+\
+\ IT IS HERE, IN THE SECOND LOW BLOCK, because &1100-&3000 had nine
+\ bytes left and the ReframeView guard wanted six of them.
+\ ESCAPE IS MADE AN ORDINARY KEY HERE, and it has to be: the self-destruct
+\ reads it with OSBYTE &81, but the MOS would also raise an escape
+\ CONDITION on the same press — and the next filing-system call, which is
+\ GoTitle's own `*LOAD`s on the way out of the game it just ended, would
+\ fail with Escape. OSBYTE 229 with X=1 stops the condition being raised
+\ and leaves the key readable. Done per game start rather than once at
+\ boot because it costs nothing here and cannot be missed.
+.GameStartInfo
+  LDA #229
+  LDX #1
+  LDY #0
+  JSR OSBYTE
+
+  LDA #1
+  STA infoActive
+  JSR GameStart
+  LDA shipLevel
+  STA pmShip
+  LDX #IS_SCR_001+1
+  JMP InfoCall
