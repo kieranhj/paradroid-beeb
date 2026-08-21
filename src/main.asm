@@ -623,6 +623,7 @@ CON_STR_ADDR  = PN_FRAME_ADDR + PN_FRAME_BYTES
 FONTCODE_ADDR  = CON_STR_ADDR + CON_STR_BYTES
 FONTCODE_BYTES = 194            \ FontCell, its table, and DoScore
 
+
 PN_TABS     = FONTCODE_ADDR + FONTCODE_BYTES
 pnTabCent   = PN_TABS + 0
 pnTabNum    = PN_TABS + 24
@@ -691,6 +692,12 @@ TAIL_R4  = TAIL_CYC_ROWS - 1    \ 12
 \ registers, the play cycle's blank and unblank — arrives a rowful of
 \ scanlines into the wrong part of the frame.
 FRAME_DROP_ROWS = 3             \ character rows the picture moves DOWN
+
+\ Layer 11f: the plain frame SetupPlain restores, which is what the OS's
+\ own VDU 22 leaves MODE 1 at, less the drop. title.asm's MODE1_R7 is the
+\ same 34 and is declared there because TiCRTC needs it in that file.
+PLAIN_R4 = 38                   \ 39 rows of 8 = 312 lines
+PLAIN_R7 = 34 - FRAME_DROP_ROWS
 
 TAIL_R7  = 8 - FRAME_DROP_ROWS  \ VSync at P+208+40 = P+248
 ASSERT TAIL_R7 >= 0
@@ -2086,6 +2093,11 @@ ENDMACRO
   LDX #LO(loadtitl)
   LDY #HI(loadtitl)
   JSR OSCLI
+  JSR HsEntry                   \ Layer 11f: the high-score entry, if the
+                                \ game just ended on one. It draws on the
+                                \ 999 page, which SetupPlain left on
+                                \ screen, and it needs PARTITL loaded and
+                                \ the title NOT yet painted over it
   JSR TiShow
 
   LDX #LO(loadfnt)              \ the text font, straight back onto the
@@ -2146,7 +2158,9 @@ ENDMACRO
                                 \ masked so no tick interleaves the port A
                                 \ save/restore. UninstallIrq CLIs at its end
   JSR UninstallIrq
-  JSR SetupMode
+  JSR SetupPlain                \ NOT SetupMode: its VDU 22 would clear
+                                \ &3000-&7FFF and take the 999 page and
+                                \ the font with it. Layer 11f
 \ Put DFS's workspace back before the first load. The low overlay has
 \ been sitting on &0E00-&10FF — DFS's own variables — since the last
 \ PageLowIn, and a filing-system call against that garbage hangs in the
@@ -2838,10 +2852,14 @@ INCLUDE "src/portrait.asm"
 \ printer, their geometry constants and PoDraw, and beebasm resolves
 \ constants in file order.
 INCLUDE "src/infoscr.asm"
+INCLUDE "src/hstable.asm"       \ Layer 11f: 25 B that outlive a title
 \ droidicon7.asm is gone with the rotor-and-digits stand-in: the
 \ database draws the C64's own portrait now.
 INCLUDE "src/data/droidinfo.asm"
 INCLUDE "src/data/plandata.asm"
+\ Layer 11f, placed HERE and not beside infoscr.asm: plandata carries an
+\ ALIGN &100 for planInk, and whatever sits before it pays the padding.
+\ Behind it, this block costs the bank its own size and nothing more.
 INCLUDE "src/data/sideview.asm"
 .xfer_end
 SAVE "PARXFER", xfer_start, xfer_end, DATA_LOAD, DATA_LOAD
@@ -3043,8 +3061,17 @@ ORG TITLE_ADDR
 .titl_start
 INCLUDE "src/data/title.asm"
 INCLUDE "src/title.asm"
+\ Layer 11f: DoHighScore runs from here, before the title paints.
+\ Its alphabet comes with it because this block is assembled over
+\ the text font's ground -- see highscore.asm's header.
+INCLUDE "src/data/hsfont.asm"
+INCLUDE "src/highscore.asm"
 .titl_end
 ASSERT titl_end <= TI_BASE
+\ AND below FontCell, which highscore.asm calls rather than carrying a
+\ copy of: PARAFNT is still resident when this overlay runs, and only
+\ the part of it below titl_end has been overwritten.
+ASSERT titl_end <= FONTCODE_ADDR
 SAVE "PARTITL", titl_start, titl_end, TITLE_ADDR, TITLE_ADDR
 
 \ ============================================================

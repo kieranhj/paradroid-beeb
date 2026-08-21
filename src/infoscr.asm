@@ -354,6 +354,13 @@ IS_BLANK = &FF                  \ IsEntry's third door, and not a screen
   LDA #IS_SCR_XFER2
   JMP IsStart
 .is_dn_act
+  CPX #IS_SCR_OVER              \ $3812: DoHighScore sits between this
+  BNE is_dn_norm                \ page and TitleLoop, and draws on it.
+  LDA #1                        \ $3812: DoHighScore sits between this page
+  STA hsArmed                   \ and TitleLoop. It cannot run HERE — it is
+  LDX isScr                     \ an overlay that has not been loaded yet —
+.is_dn_norm                     \ so this arms it and TitleSeq calls it once
+                                \ PARTITL is in. See highscore.asm
   LDA isActFor,X
   STA infoAct
   CPX #IS_SCR_001

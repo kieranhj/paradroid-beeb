@@ -68,6 +68,7 @@ PN_LOGO0    = 90                \ the seven logo cells, 90-96
 PN_BOXBAR   = 97                \ $7C, the box's vertical bar
 PN_DASH     = 98                \ $2E — the console's separator
 PN_COLON    = 99                \ $2A
+PN_BANG     = 102               \ $25 — the string table's, and $E733's
 
 \ ---- WIDE IS NOT THE SAME AS CAPITAL -----------------------
 \ ToUpper ($2E3D) is where the original says so: it special-cases $54,
