@@ -376,6 +376,16 @@ plumbing in `TiWait`, and it should follow once the driver is proven, not gate i
   volume, so the tone re-enters cleanly. Verified in the capture: the reset tick is a single
   `atten=15`, the return is period-then-`atten=10`, and the muted opening writes nothing at
   all.
+  **Rounds four and five (same day)**: the wee itself was fading in mid-glide — its first
+  seven C64 ticks are sub-floor — so `FX_OVERRIDES` in the exporter (the one sanctioned home
+  for eared data deviations, each with its reason) re-bases fx24's F0 at 1836, putting the
+  whole 20-tick glide above the floor: 122 → ~380 Hz, peaking well over the wubs. And the
+  short low blip left in front of it was envelope tick quantisation: an
+  instant-attack-instant-decay instrument held its attenuation-0 peak for a full 20 ms tick
+  where the SID's peak lasts milliseconds. The attack-completing tick now falls straight into
+  its first decay step (a branch retarget — zero bytes), so such instruments open at their
+  sustain level. Captured: the full-length wee opens at `atten=10`, and no attenuation-0
+  write exists anywhere in the hum.
   **The same session found a real driver bug**: `SndConv` counted its shifts in X, and the
   flush picks the channel from X after converting — every in-range voice-1 tone was landing
   on channel 0. The hum had escaped because its clamp path skips the shift loops. Counters

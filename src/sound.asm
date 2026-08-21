@@ -301,6 +301,7 @@ ASSERT HI(snFreqLo) == HI(snPhase+1)   \ one page: the copy walk below
   CMP #2
   BEQ sne_rel
   LDA snLevel,X                 \ decay toward sustain, hold there
+.sne_decayA                     \ (A = the level to decay from)
   SEC
   SBC snDec,X
   BCC sne_toSus
@@ -316,10 +317,12 @@ ASSERT HI(snFreqLo) == HI(snPhase+1)   \ one page: the copy walk below
   CLC
   ADC snAtk,X
   BCC sne_store
-  LDA #1                        \ peak: into decay
-  STA snPhase,X
-  LDA #255
-  BNE sne_store                 \ always
+  LDA #1                        \ peak: into decay — ON THIS SAME TICK.
+  STA snPhase,X                 \ The SID's peak lasts milliseconds; a
+  LDA #255                      \ full 20 ms tick of it played the hum's
+  BNE sne_decayA                \ lowest note at attenuation 0 — KC's
+                                \ "blip". An instant-decay instrument now
+                                \ opens straight at its sustain level
 .sne_rel
   LDA snLevel,X
   SEC
