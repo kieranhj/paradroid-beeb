@@ -187,9 +187,15 @@ addresses from the `beebasm` output rather than from any document.** In outline:
 **RAM is the binding constraint as of 2026-08-21**: main RAM 100 B in pieces (47 below
 `&3000`), bank 4 **3 B — effectively zero** — the sound driver, its data and every trigger took
 the lot even after the char bitmaps+remap were ZX0-packed and `charSlot` nibble-packed to pay
-for it. The build PRINTs bank 4's fuel gauge every run. Banks 5, 6 and 7 have 1,033 / 63 / 826 B and are all paged out during
+for it. The build PRINTs bank 4's fuel gauge every run. Banks 5, 6 and 7 have 1,033 / 58 / 826 B and are all paged out during
 play, so none of it is reachable from the main loop. Anything new needs something moved first —
 `docs/memory-map.md`'s free-RAM section lists what is left and where it can come from.
+
+**Every debug build except `DEBUG_INVULN` currently fails to assemble**, and that is the RAM above
+rather than the flags: `RASTER`/`DRAW`/`TIME` hit the main-RAM `GUARD`, `POS`/`VSYNC`/`ENERGY` blow
+bank 6's `spr2_end` assert, `MAPGUARD` blows bank 4's one-page assert in `sound.asm`. The three that
+ship ON — `XFERWIN`, `RESTART`, `DECK` — build, which is why the default build is fine. Accepted by
+KC 2026-08-21; they come back when space does. Do not chase one as a bug in the flag.
 
 **Only one bank is visible at a time.** `SprRestoreAll` and `SprDrawAll` page their own bank in and
 the data bank back out around themselves, so `SWRAM_DATA` is the resting state. This is safe
