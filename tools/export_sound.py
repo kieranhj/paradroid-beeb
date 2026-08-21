@@ -353,7 +353,8 @@ def main():
     lines += [
         "",
         "\\ effect 24's per-deck patch values, indexed by deck 0-15:",
-        "\\ segment timer / reload / count -> sndFxTab + 23*11 + 5/6/7",
+        "\\ segment timer / reload / count -> sndFxTab + 23*11 + 5/6/7.",
+        "\\ (Not nibble-packable: decks 9 and 12 carry counts of $12/$11.)",
         ".sndBgVar1",
         "  EQUB " + ",".join(f"&{b:02X}" for b in bg_vars[0]),
         ".sndBgVar2",

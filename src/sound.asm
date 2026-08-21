@@ -102,15 +102,16 @@
   CMP #2
   BEQ stk_go                    \ running: the common case
   JSR SndSilence                \ any other nonzero value is an init
-  LDA #2                        \ request — the C64's $1x shape ($0526),
-  STA sndState                  \ collapsed to its one surviving value:
-                                \ $12 is all there is until the chatter
-                                \ lands [DECISION 4]
+  DEC snQuiet                   \ request — the C64's $1x shape ($0526),
+  LDA #2                        \ collapsed to its one surviving value:
+  STA sndState                  \ $12 is all there is until the chatter
+                                \ lands [DECISION 4]. The DEC undoes the
+                                \ snQuiet=1 SndSilence just set: state 2
+                                \ is only ever entered HERE, so the next
+                                \ state-0 tick must silence anew
 .stk_x
   RTS
 .stk_go
-  LDA #0                        \ chip is (about to be) live again, so the
-  STA snQuiet                   \ NEXT state-0 tick must silence it anew
 
 \ ---- request pickup, both voices ($05A0-$05CB) --------------
   LDX #0
@@ -247,9 +248,7 @@ ASSERT HI(snFreqLo) == HI(snPhase+1)   \ one page: the copy walk below
 
 .SndVoice
   LDA snCount,X
-  BNE snv_live
-  JMP SndEnv                    \ idle: the release tail still runs
-.snv_live
+  BEQ SndEnv                    \ idle: the release tail still runs
   CLC                           \ frequency += slide, MOD 65536 — the wrap
   LDA snFreqLo,X                \ is load-bearing, see the exporter header
   ADC snSlideLo,X
@@ -345,7 +344,14 @@ ASSERT HI(snFreqLo) == HI(snPhase+1)   \ one page: the copy walk below
   JSR snf_voice
   LDX #1
   JSR snf_voice
-  JMP SndWrClose
+  LDA snNzOwn                   \ an UNOWNED noise channel is silenced:
+  BPL snf_done                  \ a tone effect taking over the owner
+  LDA #15                       \ voice releases ownership mid-release,
+  LDY #3                        \ and the fading hiss was left frozen at
+  JSR snf_attA                  \ its last attenuation until the next
+.snf_done                       \ noise claim — KC heard the explosion
+  JMP SndWrClose                \ tail hang. Cache-diffed: free in the
+                                \ steady state
 
 .snf_voice
   LDA snLevel,X
@@ -410,6 +416,7 @@ ASSERT HI(snFreqLo) == HI(snPhase+1)   \ one page: the copy walk below
 \ ---- attenuation snTmp -> channel Y, diffed -----------------
 .snf_att
   LDA snTmp
+.snf_attA
   CMP snChAtt,Y
   BEQ snfv_x
   STA snChAtt,Y
@@ -481,11 +488,9 @@ ASSERT HI(snFreqLo) == HI(snPhase+1)   \ one page: the copy walk below
   STA snActive+0 : STA snActive+1
   STA snCount+0  : STA snCount+1
   STA snLevel+0  : STA snLevel+1
-  STA sndFx1
-  STA sndFx2
-  LDA #1
-  STA snQuiet
-  RTS
+  LDA #1                        \ (requests are NOT cleared: nothing reads
+  STA snQuiet                   \ them in state 0, and every entry into
+  RTS                           \ state 2 comes through this silence)
 
 \ ============================================================
 \ SndConv — SID frequency (snCvL/H) to SN period (snCvL/H).

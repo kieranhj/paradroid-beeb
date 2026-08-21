@@ -386,6 +386,15 @@ plumbing in `TiWait`, and it should follow once the driver is proven, not gate i
   its first decay step (a branch retarget — zero bytes), so such instruments open at their
   sustain level. Captured: the full-length wee opens at `atten=10`, and no attenuation-0
   write exists anywhere in the hum.
+  **Round six — the orphaned noise channel** (KC: the droid explosion "left on a note until
+  the next sound cancels it"). The explosion's release was fading correctly until the hum —
+  same voice — re-posted: a tone effect taking over the owner voice releases noise ownership,
+  and with no owner nothing ever wrote channel 3 again, leaving the hiss frozen at its last
+  attenuation. The flush now ends with a tail rule: **an unowned noise channel is silenced**,
+  cache-diffed so it costs nothing steady-state. Funded by three driver trims (idle voices
+  branch straight to the envelope; SndSilence no longer clears request bytes — every entry to
+  state 2 passes through it anyway; a second `snf_att` entry taking A directly). Verified:
+  CH3 reads attenuation 15 the moment the hum takes the voice. **Bank 4 is at 0 bytes free.**
   **The same session found a real driver bug**: `SndConv` counted its shifts in X, and the
   flush picks the channel from X after converting — every in-range voice-1 tone was landing
   on channel 0. The hum had escaped because its clamp path skips the shift loops. Counters
