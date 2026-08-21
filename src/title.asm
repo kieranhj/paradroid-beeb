@@ -1,5 +1,5 @@
 \ ============================================================
-\ title.asm — the title screen, in SWRAM bank 7
+\ title.asm — the title screen, the PARTITL disc overlay
 \ ============================================================
 \ ShowTitle ($2879) copies Title_dat ($CC00) — a raw 40 x 25 character
 \ screen — into screen RAM, colours it out of CharColor, and then waits
@@ -26,9 +26,13 @@
 \ of its thirty-six characters are not in the ported set — see the
 \ header of tools/export_title.py, and [DECISION 8].
 \
-\ IN BANK 7 with the transfer game, the lift view and the game over: the
-\ four screens that take the display over. Everything it writes is main
-\ RAM, so the only reason for the shim in main.asm is the paging itself.
+\ A DISC OVERLAY, NOT A BANK RESIDENT. Layer 13d restored [DECISION 6]:
+\ this file assembles at TITLE_ADDR = &3000, over PARAFNT's ground, and
+\ TitleSeq *LOADs it when the title is wanted — at boot, and again on
+\ the way back from a game over — then reloads PARAFNT over it. The two
+\ are never wanted at once. Everything here is main RAM, so there is no
+\ paging anywhere in it; bank 7's free space went to the droid portrait
+\ pool instead.
 
 TI_BASE = &4000                 \ 25 rows x 640; ends &7E7F, clear of &8000
 ASSERT TI_BASE + TITLE_COLS * TITLE_ROWS * 16 <= &8000

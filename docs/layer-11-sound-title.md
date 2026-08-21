@@ -1,8 +1,10 @@
 # Layer 11 — Title, the 001 screen, game over, and sound
 
-**Status: 11a, 11b and the title half of 11c built 2026-08-18. The game-over → title
-loop, 11d and 11e are not built, and the loop is BLOCKED — see §5.** Scoped with KC 2026-08-18. Decisions KC might want to revisit
-are marked **[DECISION]** and collected in §7; things deliberately left out are in §8.
+**Status: 11a, 11b and ALL of 11c built — the game-over → title loop landed 2026-08-20,
+verified in jsbeeb over two consecutive game overs. 11d and 11e are not built.** Scoped with KC
+2026-08-18. Decisions KC might want to revisit are marked **[DECISION]** and collected in §7;
+things deliberately left out are in §8. 2026-08-20 also restored [DECISION 6]: the title is the
+`PARTITL` disc overlay again, not a bank 7 resident — see §11c.
 
 The layer's shape came out of reading the listing rather than the plan: the flow this builds is the
 original's own, `Restart0` → `TitleLoop` → `StartGame` → the game → `EndGame` → `TitleLoop`, and
@@ -68,7 +70,7 @@ today, and at `&3000` from 11c on, see §4. The
 
 | | |
 |---|---|
-| 48 × 84 portrait | ~1,008 B **per type** in MODE 1 (12 bytes × 84 rows), × 24 = 24 K. Not being ported — see [DECISION 3] |
+| 48 × 84 portrait | **Ported 2026-08-20** — the pool is 4,032 B verbatim and `PoDraw` expands at draw time; the 24 K figure was a mistake. See [DECISION 3] and `layer-9-hud.md` §6f. 11d only has to point `NewShipInfo` at it with its own rectangle |
 | Title screen | `Title_dat`'s 1,000-byte character map, and a display to put it on |
 | Intro manual | the 15.5 K canvas and a scroll engine that reads a character map. Deferred — §8 |
 | `PrintTokenString` | `$36DB`, deferred from Layer 10 decision 8; `NewShipInfo` needs it |
@@ -252,13 +254,15 @@ and in `!BOOT`'s stamp. **[DECISION 5]**
 > low nibble 0, black). Layer 14's, with the caveat that it may mean logical 1 is not black on
 > every deck.
 
-### 11c — The title screen — DONE 2026-08-18. The loop back to it is NOT
+### 11c — The title screen — DONE 2026-08-18; the loop back DONE 2026-08-20
 
-**The title itself is built and verified.** `src/title.asm` in bank 7, `TiShow` called from a
-four-instruction shim between the disc loads and `SetupRupture` — after the loads because it needs
-bank 7, before the rupture because a 25-row picture wants the plain single-cycle display and because
-`R7 = TAIL_R7` would stop the VSync that OSBYTE and the disc both rely on. No IRQ is installed yet
-at that point, which is what makes the boot half easy and the loop hard.
+**The title itself is built and verified.** `src/title.asm` — since 2026-08-20 assembled at
+`TITLE_ADDR = &3000` and shipped as the **`PARTITL` disc overlay**, [DECISION 6] restored: bank 7's
+free space went to the droid portrait plan instead. `TitleSeq` (main RAM) *LOADs it over PARAFNT's
+ground, runs `TiShow` in place — it is all main RAM now, no paging anywhere in it — then reloads
+`PARAFNT` and `PARALOW` over it and rebuilds everything the title's framebuffer sat on. It runs with
+the CRTC in `SetupMode`'s plain single-cycle shape and the MOS's IRQ in place, because the loads
+need VSync and the filing system and `TiWait`'s keydown needs OSBYTE.
 
 R6 alone cuts the height to 25 rows; R4, R5 and R7 keep `SetupMode`'s 39-row, 312-line, 50 Hz frame,
 so the picture sits at the **top** of the frame rather than centred. Centring is R7's and is left to
@@ -291,25 +295,35 @@ panel text; matching it is Layer 14's job along with every other palette.
 **Verified in jsbeeb**: the rendered title matches `tools/output/title_screen_7800.png` cell for
 cell, fire skips it into the game, and the timeout falls through into the game on its own.
 
-#### The loop back to the title is BLOCKED on main RAM
+#### The loop back to the title — DONE 2026-08-20, and what it took
 
-`GoTick7` still ends a game with `JMP GameStart`. Sending it to the title instead needs, in main RAM
-and nowhere else:
+`GoTick7` now ends a game with `JMP GoTitle`: `UninstallIrq`, `SetupMode`, `RestoreDfsWs`, then the
+same `TitleSeq` boot uses — load `PARTITL`, `TiShow`, reload `PARAFNT` and `PARALOW`, `PageLowIn`,
+`PageTabsIn`, `SetupRupture`, `FillPanel`, `BuildMulTabs`, `BuildCharPtrs`, `SprBuildMask`,
+`InstallIrq` — and hands what comes back to `GameStart`. Verified in jsbeeb: boot → title → game →
+death as a 001 → wash → title → fire → new game, twice consecutively. ~187 bytes of main RAM,
+affordable because the raster-timing pass had freed 323.
 
-| | |
-|---|---|
-| `UninstallIrq` | ~15 B. The rupture IRQ rewrites R6/R12/R13 every field, so it must stop or it overwrites the title's display the moment it is set |
-| the sequence itself | `UninstallIrq`, `SetupMode`, `TitleScreen`, `SetupRupture`, `BuildCharPtrs`, `SprBuildMask`, `FillPanel`, `InstallIrq`, `GameStart` — ~24 B of `JSR`s |
+**`UninstallIrq` restores more than the vector.** `InstallIrq` now saves the MOS's System VIA IER,
+ACR and **T1 latches** (read via `&FE46`/`&FE47`) before clobbering them, and `UninstallIrq` hands
+all of it back — the latches matter because the rupture reprograms them every field and the MOS's
+100 Hz events (the keyboard scan OSBYTE `&81` reads, the clock, the disc timeouts) run off what it
+left there. Writing the LATCH registers only, never `T1C-H`: T1 is continuous and picks the value
+up on its next underflow. Measured clean-boot values for reference: T1L `&270E`, ACR `&60`, IER
+enabled bits `&73`.
 
-`BuildCharPtrs` and `SprBuildMask` are not optional: `CHAR_PTR_LO/HI` and `SPR_MASKTAB` live at
-`&5500`-`&57FF`, **inside the title's framebuffer**, and the title destroys them. `FillPanel` for the
-same reason.
-
-That is about **39 bytes against the 30 free**, and it cannot go in a bank: it pages banks and calls
-main-RAM setup, so it has to be resident. Turning `DEBUG_RESTART` off would return ~12 B and make it
-fit — which is the natural trade once the title provides a real route back — but the change also
-tears down and rebuilds the IRQ, and doing that unverified is precisely what `CLAUDE.md`'s warning
-about `hal_video.asm` is about. **Left for KC.**
+**The hard bug: the low overlay sits on what the filing system needs.** The first attempt hung the
+game-over `*LOAD` in the DFS retry loop and then crashed through zero page, and `*DISC` did not
+recover it. Two regions are the reason: `&0E00`-`&10FF` is DFS's own workspace (under `lowcode`),
+and `&0D9F`+ is the MOS's **extended vector table** (under `lowcode2`) — which is how DFS 1.2
+routes FILEV into its ROM, so `*LOAD` was jumping through our code bytes. Boot never sees this
+because its loads all run before the first `PageLowIn`. The fix is `SaveDfsWs`/`RestoreDfsWs`:
+`TitleSeq` snapshots the two buried spans — `&0D60`-`&0DEF` and `&0E00`-`&10FF` — into **bank 6**
+(`dfsSave`, 912 B, SKIPped; bank 6 was the free space nothing else could use, and it keeps banks 5
+and 7 clear for the flicker and the portraits) right after its last `*LOAD`, and `GoTitle`
+restores them byte for byte before the game-over loads — a state the MOS and DFS were actually in,
+extended vectors, catalogue cache and all. `&0D00`-`&0D5F` (NMI) and `&0DF0`-`&0DFF` (ROM
+workspace bytes) are not in the snapshot: nothing of ours ever writes them.
 
 ### 11d — The 001 screen — NOT BUILT
 
@@ -353,11 +367,13 @@ pre-rendered bitmap and not the full 32 rows. KC's call: it keeps the original's
 block letters out of the level tile characters — so Layer 14 tunes it as artwork and a palette
 rather than as a picture. The rupture is torn down for it and rebuilt on the way into the game.
 
-**[DECISION 3]** The 48 × 84 droid portrait is **not ported**. `NewShipInfo` and the game-over
-screen draw the **runtime-composed rotor-and-digits droid** instead — the same substitution the
-console's droid database already makes (`layer-9-hud.md` §6f decision 2). 24 K in MODE 1 is the
-reason; a partial port of types 0 and 23 alone would be ~2 K and is the fallback if the substitution
-reads badly. TODO in §8.
+**[DECISION 3] — REVERSED 2026-08-20, with KC.** The 48 × 84 droid portrait **is ported**: the
+costing that deferred it was wrong (the unique pool is 4,032 B verbatim, not 6 K, and never 24 K —
+expansion happens at draw time), and `portrait.asm`/`portraits.asm` in bank 7 now draw it on the
+console's database page, byte-for-byte against `BuildIntroSprites` (`layer-9-hud.md` §6f
+decision 2 has the detail). `NewShipInfo` and the game-over screen still show the
+rotor-and-digits droid ONLY because neither has been pointed at `PoDraw` yet — its rectangle is
+anchored to the database page's and wants parameterising first. That is 11d's business.
 
 **[DECISION 4]** The **waypoint-0 respawn is dropped**. `BlowInto001` (`$1573`) does not move the
 player and neither will we: falling back to a 001 leaves you where you died. This is a *removal* of
@@ -371,9 +387,8 @@ by the first deck load, and re-loaded on the way back from a game over. No fifth
 
 ## 8. Deferred — TODOs, agreed 2026-08-18
 
-- **The 48 × 84 droid portrait.** Blocks the faithful `NewShipInfo` and `EndGame`, `ShowXferInfo`'s
-  two droid info screens (deferred from Layer 10), and the intro manual's random-droid page.
-  ~1,008 B per type in MODE 1; 24 K for all 24, ~2 K for types 0 and 23 alone.
+- ~~The 48 × 84 droid portrait~~ — **ported 2026-08-20**, see [DECISION 3]. What remains here is
+  pointing `NewShipInfo`, `EndGame` and `ShowXferInfo` at `PoDraw` with a parameterised rectangle.
 - **The intro manual.** `UpackText`'s 15.5 K canvas, five pages, panned by the game's own scroll
   engine. Wants the rupture back *and* the scroll engine reading a character map instead of a tile
   map — the two are the same machinery on the C64 and are not here.

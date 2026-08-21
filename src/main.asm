@@ -534,6 +534,16 @@ LOW_PAGES = 3
 \ The panel is not filled until PanelSetup, long after.
 LOW_STAGE = &4A00
 
+\ ---- the title screen overlay -------------------------------
+\ PARTITL is a seventh disc file, not a resident of bank 7 — [DECISION 6]
+\ of docs/layer-11-sound-title.md, restored in Layer 13d: bank 7's free
+\ space is spoken for by the droid portrait pool. It loads over PARAFNT's
+\ ground, runs there, and is destroyed by PARAFNT's reload the moment the
+\ title is done — the two are never wanted at once. It must end below its
+\ own framebuffer, TI_BASE = &4000 (defined in title.asm, asserted at the
+\ SAVE).
+TITLE_ADDR = &3000
+
 FONT_ADDR = &3000
 \ Declared here rather than taken from the generated file, because
 \ beebasm resolves constants in file order and droid.asm's MG_COPY
@@ -1071,55 +1081,13 @@ ORG &1100
   LDX #XFER_PAGES
   JSR PageBankIn
 
-  LDX #LO(loadfnt)              \ and a fifth file: Layer 9's text font,
-  LDY #HI(loadfnt)              \ which loads straight to FONT_ADDR and so
-  JSR OSCLI                     \ has to come after every staging copy
-
-\ ---- and the low-RAM overlay, which must be LAST -----------
-\ PageLowIn writes &0E00-&10FF, which is DFS's own workspace: do it
-\ before the last filing-system call and the next *LOAD hangs in the
-\ 8271 poll with the ROM's variables underneath it. That cost a build.
-\ It is staged at LOW_STAGE and not at DATA_LOAD for the matching
-\ reason — PARAFNT lands on DATA_LOAD and has to load first.
-  LDX #LO(loadlow)
-  LDY #HI(loadlow)
-  JSR OSCLI
-  JSR PageLowIn
-
-  PAGEBANK SWRAM_DATA           \ the data bank is the resting state
-  JSR PageTabsIn                \ and, with it up, the four droid tables the
-                                \ panel needs and cannot reach from bank 6
-
-\ ---- the title, before any of the game exists --------------
-\ ShowTitle ($2879) is the first thing TitleLoop does and StartGame is
-\ what it falls into. Here it goes between the loads and the rupture:
-\ after the loads because it needs bank 7, before the rupture because a
-\ 25-row picture wants the plain single-cycle display and because R7 =
-\ TAIL_R7 would stop the VSync OSBYTE and the disc both rely on.
-  JSR TitleScreen
-
-  JSR SetupRupture              \ NOW the CRTC goes into the rupture's
-                                \ shape: it stops VSync, so it has to be
-                                \ after the last filing-system call
-
-  JSR FillPanel                 \ after the staging area is done with: it
-                                \ reaches past &4800, over the panel
-
-  JSR BuildMulTabs              \ same window as the two below: &5400 is
-                                \ under the staging overlay AND under the
-                                \ title's framebuffer, so it cannot be
-                                \ written until both are done with
-
-  JSR BuildCharPtrs             \ needs the data bank in, and the staging
-                                \ copy finished — it reaches past &5500
-  JSR SprBuildMask              \ AFTER the mode change: VDU 22 clears
-                                \ &3000-&7FFF, mask table included.
-                                \ SprInit is NOT here: it resets state
-                                \ rather than building a table, so it
-                                \ belongs to GameStart
-
-  JSR InstallIrq                \ after the load: taking over the IRQ stops
-                                \ the MOS servicing the filing system
+\ ---- the title, and everything that rebuilds after it ------
+\ TitleSeq is shared with the game-over seam (GoTitle): load PARTITL,
+\ show the title, reload PARAFNT and PARALOW over it, rebuild every
+\ table under the title's framebuffer, raise the rupture and take the
+\ IRQ. On this path the CRTC is already in SetupMode's plain shape and
+\ the MOS still owns the machine, which is what its loads require.
+  JSR TitleSeq
 
 \ ---- the random seed ---------------------------------------
 \ The C64 does not have one: its random source is $D41B, SID voice 3's
@@ -1649,6 +1617,9 @@ ENDIF                           \ other close: no band may outlive a pass
 .loadlow
   EQUS "LOAD PARALOW"
   EQUB 13
+.loadtitl
+  EQUS "LOAD PARTITL"
+  EQUB 13
 
 \ ============================================================
 \ PageDataIn — move PARADAT from &3000 into sideways RAM bank 0
@@ -1718,6 +1689,59 @@ ENDIF                           \ other close: no band may outlive a pass
   LDA #HI(LOW_ADDR)  : STA swDst+1
   LDX #LOW_PAGES
   JMP PageCopyAt
+
+\ ---- the DFS workspace snapshot -----------------------------
+\ The low overlay buries TWO things the filing system cannot live
+\ without: &0E00-&10FF is DFS's own workspace (under lowcode), and
+\ lowcode2 at &0D60-&0DCB sits on the MOS's EXTENDED VECTOR TABLE at
+\ &0D9F — which is how DFS 1.2 routes FILEV into its ROM. A
+\ filing-system call made with the overlay down goes FILEV ->
+\ extended-vector stub -> a vector made of our code bytes -> garbage;
+\ measured in jsbeeb as a crash into zero page, and *DISC does not
+\ recover it. So TitleSeq snapshots both spans into bank 6 (dfsSave,
+\ 912 B) after its last *LOAD, and GoTitle puts them back before the
+\ game-over loads: a byte-for-byte restore of a state the MOS and DFS
+\ were actually in — extended vectors, ROM workspace bytes, catalogue
+\ cache and all. &0D00-&0D5F (NMI) and &0DF0-&0DFF are NOT in the
+\ snapshot: nothing of ours ever writes them. Bank 6 is paged around
+\ the copy — safe here because neither routine runs from inside a bank.
+DFSWS2_ADDR = &0D60             \ lowcode2's span, extended vectors under it
+DFSWS2_LEN  = &0DF0 - &0D60     \ 144 bytes
+DFSWS_ADDR  = &0E00
+DFSWS_PAGES = 3                 \ &0E00-&10FF
+.SaveDfsWs
+  PAGEBANK SWRAM_SPR2
+  LDY #0
+.sdw_lo
+  LDA DFSWS2_ADDR,Y
+  STA dfsSave,Y
+  INY
+  CPY #DFSWS2_LEN
+  BNE sdw_lo
+  LDA #LO(DFSWS_ADDR) : STA swSrc
+  LDA #HI(DFSWS_ADDR) : STA swSrc+1
+  LDA #LO(dfsSave + DFSWS2_LEN) : STA swDst
+  LDA #HI(dfsSave + DFSWS2_LEN) : STA swDst+1
+  BNE dws_copy                  \ always: the HI is never zero
+
+.RestoreDfsWs
+  PAGEBANK SWRAM_SPR2
+  LDY #0
+.rdw_lo
+  LDA dfsSave,Y
+  STA DFSWS2_ADDR,Y
+  INY
+  CPY #DFSWS2_LEN
+  BNE rdw_lo
+  LDA #LO(dfsSave + DFSWS2_LEN) : STA swSrc
+  LDA #HI(dfsSave + DFSWS2_LEN) : STA swSrc+1
+  LDA #LO(DFSWS_ADDR) : STA swDst
+  LDA #HI(DFSWS_ADDR) : STA swDst+1
+.dws_copy
+  LDX #DFSWS_PAGES
+  JSR PageCopyAt
+  PAGEBANK SWRAM_DATA
+  RTS
 
 \ ============================================================
 \ Layer 9 lives in BANK 6 and cannot see bank 4 — the bridge
@@ -1908,18 +1932,88 @@ ENDMACRO
 \ THE RANDOMS ARE DRAWN FIRST, on this side of the swap. DrRandom is
 \ bank 4's and its LFSR must stay one sequence — see GoTick's header.
 \ ============================================================
-\ TitleScreen — the title, from boot
+\ TitleSeq — the title, and everything that rebuilds after it
 \ ============================================================
-\ Everything the title does is in bank 7 and everything it writes is
-\ main RAM, so this is only the paging. It runs BEFORE SetupRupture and
-\ InstallIrq: the CRTC is still in SetupMode's plain single-cycle shape,
-\ which is exactly what a 25-row picture wants, and the filing system
-\ and OSBYTE are both still the MOS's.
-.TitleScreen
-  PAGEBANK SWRAM_XFER
+\ Shared by boot and the game-over seam, because from here the two are
+\ the same journey. The caller must have the CRTC in SetupMode's plain
+\ single-cycle shape and the MOS's IRQ in place: the loads need VSync
+\ and the filing system, TiWait's keydown needs OSBYTE, and a 25-row
+\ picture wants the plain display.
+\
+\ PARTITL loads at TITLE_ADDR = &3000, over PARAFNT's ground — the two
+\ are never wanted at once — and runs in place: it is main RAM, so no
+\ paging. PARAFNT then reloads over it, and PARALOW is re-staged and
+\ re-copied because every *LOAD here used &0E00-&10FF as DFS workspace.
+\ PageLowIn stays the LAST filing-system call for exactly that reason.
+\
+\ Everything after the loads rebuilds what the title's framebuffer
+\ (&4000-&7E7F) and the staging overlay sat on: the panel, the &5400
+\ tables, CHAR_PTR and SPR_MASKTAB. SprInit is NOT here: it resets
+\ state rather than building a table, so it belongs to GameStart —
+\ which also rebuilds the tile map and the charset, so the deck's own
+\ ground needs nothing from us.
+.TitleSeq
+  LDX #LO(loadtitl)
+  LDY #HI(loadtitl)
+  JSR OSCLI
   JSR TiShow
-  PAGEBANK SWRAM_DATA
-  RTS
+
+  LDX #LO(loadfnt)              \ the text font, straight back onto the
+  LDY #HI(loadfnt)              \ ground the title borrowed
+  JSR OSCLI
+
+  LDX #LO(loadlow)              \ the low overlay, staged at LOW_STAGE;
+  LDY #HI(loadlow)              \ its copy-down must be the last
+  JSR OSCLI                     \ filing-system call — see PageLowIn
+
+  JSR SaveDfsWs                 \ snapshot DFS's workspace (&0E00-&10FF)
+                                \ into bank 7 while it is still DFS's:
+                                \ PageLowIn is about to bury it, and
+                                \ GoTitle needs it back for its loads
+  JSR PageLowIn
+
+  PAGEBANK SWRAM_DATA           \ the data bank is the resting state
+  JSR PageTabsIn                \ and, with it up, the four droid tables the
+                                \ panel needs and cannot reach from bank 6
+
+  JSR SetupRupture              \ NOW the CRTC goes into the rupture's
+                                \ shape: it stops VSync, so it has to be
+                                \ after the last filing-system call
+
+  JSR FillPanel                 \ after the staging area is done with: it
+                                \ reaches past &4800, over the panel
+
+  JSR BuildMulTabs              \ &5400 is under the staging overlay AND
+                                \ under the title's framebuffer, so it
+                                \ cannot be written until both are done
+
+  JSR BuildCharPtrs             \ needs the data bank in, and the staging
+                                \ copy finished — it reaches past &5500
+  JSR SprBuildMask              \ the title's framebuffer sat on the mask
+                                \ table too
+  JMP InstallIrq                \ take the IRQ back, and its RTS
+
+\ ============================================================
+\ GoTitle — a game is over; show the title, then start another
+\ ============================================================
+\ The other half of the boot seam: give the machine back to the MOS,
+\ put the CRTC back in the plain shape TitleSeq requires, run the same
+\ sequence boot does, and hand what comes back to GameStart. UninstallIrq
+\ must come first — the rupture IRQ rewrites R6/R12/R13 every field, so
+\ any display SetupMode set up would be overwritten within one.
+.GoTitle
+  JSR UninstallIrq
+  JSR SetupMode
+\ Put DFS's workspace back before the first load. The low overlay has
+\ been sitting on &0E00-&10FF — DFS's own variables — since the last
+\ PageLowIn, and a filing-system call against that garbage hangs in the
+\ 8271 retry loop (measured; *DISC does not recover it either). TitleSeq
+\ snapshotted the real thing into bank 7 just before PageLowIn trampled
+\ it, so this is a byte-for-byte restore of a state DFS was actually in.
+\ Boot does not need it: its loads all run before the first PageLowIn.
+  JSR RestoreDfsWs
+  JSR TitleSeq
+  JMP GameStart                 \ bank 4 — TitleSeq left SWRAM_DATA paged
 
 .GoStart7
   PAGEBANK SWRAM_XFER
@@ -1937,7 +2031,8 @@ ENDMACRO
   BEQ gt_x
   LDA #0
   STA overDone
-  JMP GameStart                 \ bank 4, and it clears overPhase
+  JMP GoTitle                   \ the title, then GameStart — which
+                                \ clears overPhase
 .gt_x
   RTS
 
@@ -2074,6 +2169,18 @@ ASSERT FRAME_LOCK >= 2
 \ ============================================================
 .InstallIrq
   SEI
+\ Save what the MOS had FIRST, before any of it is clobbered, so that
+\ UninstallIrq can hand it all back for the game-over title. The T1
+\ latches matter as much as the vector: the rupture reprograms them
+\ every field, and the MOS's 100 Hz events — the keyboard scan OSBYTE
+\ &81 reads, the clock, the disc timeouts — run off what it left there.
+\ Reading &FE46/&FE47 reads the latches without touching the counter.
+  LDA SYS_VIA_IER : AND #&7F : STA oldSysIer
+  LDA USR_VIA_IER : AND #&7F : STA oldUsrIer
+  LDA SYS_VIA_ACR : STA oldSysAcr
+  LDA SYS_VIA_T1LL : STA oldSysT1L
+  LDA SYS_VIA_T1LH : STA oldSysT1H
+
   LDA #&7F : STA SYS_VIA_IER    \ silence every interrupt source on both
   LDA #&7F : STA USR_VIA_IER    \ VIAs — anything we do not service would
                                 \ hold the IRQ line asserted forever
@@ -2089,6 +2196,32 @@ ASSERT FRAME_LOCK >= 2
 
   LDA #&7F : STA SYS_VIA_IFR    \ clear anything pending
   LDA #&C2 : STA SYS_VIA_IER    \ enable CA1 (vsync) + T1
+  CLI
+  RTS
+
+\ ============================================================
+\ UninstallIrq — give the machine back to the MOS
+\ ============================================================
+\ The exact inverse, from the saves above: silence everything, put the
+\ MOS's ACR and T1 latches back, restore IRQ1V, then re-enable what the
+\ MOS had enabled. Writing the T1 LATCHES only — never T1C-H, which
+\ would restart the counter mid-count — is enough: T1 is continuous and
+\ reloads from the latch on its next underflow, so the MOS clock is at
+\ most one rupture interval late.
+\ Callable only after InstallIrq has run at least once; boot calls
+\ InstallIrq first, so the saves are always populated.
+.UninstallIrq
+  SEI
+  LDA #&7F : STA SYS_VIA_IER
+  LDA #&7F : STA USR_VIA_IER
+  LDA oldSysAcr : STA SYS_VIA_ACR
+  LDA oldSysT1L : STA SYS_VIA_T1LL
+  LDA oldSysT1H : STA SYS_VIA_T1LH
+  LDA oldIrq1V   : STA IRQ1V
+  LDA oldIrq1V+1 : STA IRQ1V+1
+  LDA #&7F : STA SYS_VIA_IFR    \ nothing of ours may be left pending
+  LDA oldSysIer : ORA #&80 : STA SYS_VIA_IER
+  LDA oldUsrIer : ORA #&80 : STA USR_VIA_IER
   CLI
   RTS
 
@@ -2240,6 +2373,11 @@ ENDIF
 .vsyncCount EQUB 0              \ bumped by IrqHandler once per field
 .gameTick  EQUB 0               \ the C64's frameCount, once per ITERATION
 .oldIrq1V  EQUW 0
+.oldSysIer EQUB 0               \ the MOS's VIA state, saved by InstallIrq
+.oldUsrIer EQUB 0               \ and handed back by UninstallIrq for the
+.oldSysAcr EQUB 0               \ game-over title's loads and keyreads
+.oldSysT1L EQUB 0
+.oldSysT1H EQUB 0
 
 .code_end
 
@@ -2440,6 +2578,17 @@ INCLUDE "src/sprsplit.asm"
 \ could not see this copy. See CON_STR_ADDR at the top of this file.
 INCLUDE "src/data/conicons.asm"
 INCLUDE "src/data/droidicon.asm"
+\ The DFS workspace snapshot — the two spans the low overlay buries and
+\ the filing system cannot live without: &0D60-&0DEF (the extended
+\ vector table DFS 1.2 routes FILEV through, under lowcode2) and
+\ &0E00-&10FF (DFS's own workspace, under lowcode). Captured by
+\ SaveDfsWs after TitleSeq's last *LOAD, put back by RestoreDfsWs for
+\ the game-over loads. In THIS bank because it is pure data touched
+\ only by those two main-RAM helpers, which page the bank around the
+\ copy — and bank 6 was the free space nothing else could use. Written
+\ before it is read; it ships as zeroes and bank space is what it costs.
+.dfsSave
+  SKIP DFSWS2_LEN + DFSWS_PAGES * &100
 .spr2_end
 SAVE "PARSPR2", spr2_start, spr2_end, DATA_LOAD, DATA_LOAD
 
@@ -2464,11 +2613,9 @@ INCLUDE "src/condeck.asm"
 \ but NOT the string table any more: that is main RAM's now, one copy,
 \ read by both. See CON_STR_ADDR at the top of this file.
 INCLUDE "src/condb.asm"
-\ Layer 11's title screen, and the fourth screen to take the display
-\ over from this bank. Its data comes before its code so the ASSERTs in
-\ title.asm can see TITLE_COLS and TITLE_ROWS.
-INCLUDE "src/data/title.asm"
-INCLUDE "src/title.asm"
+\ The title screen is NOT here any more: it is the PARTITL disc overlay,
+\ assembled at TITLE_ADDR after the PARAFNT block below. Layer 13d took
+\ it out to fund the droid portrait pool.
 INCLUDE "src/data/droidinfo.asm"
 INCLUDE "src/data/droidicon7.asm"
 INCLUDE "src/data/plandata.asm"
@@ -2656,6 +2803,26 @@ ASSERT fontcode_start == FONTCODE_ADDR
 ASSERT fontcode_end - fontcode_start == FONTCODE_BYTES
 ASSERT font_end - font_start == FONT_BYTES + PN_FRAME_BYTES + CON_STR_BYTES + FONTCODE_BYTES
 SAVE "PARAFNT", font_start, font_end, FONT_ADDR, FONT_ADDR
+
+\ ============================================================
+\ The title screen — the PARTITL disc overlay
+\ ============================================================
+\ [DECISION 6] of docs/layer-11-sound-title.md, restored: the title is
+\ a disc file loaded when it is wanted, not a resident of bank 7 —
+\ bank 7's free space is spoken for by the droid portrait pool. It
+\ assembles over PARAFNT's ground at TITLE_ADDR: the two are never
+\ wanted at once, and TitleSeq reloads PARAFNT the moment the title is
+\ done. It must end below its own framebuffer at TI_BASE = &4000.
+\ Its data comes before its code so the ASSERTs in title.asm can see
+\ TITLE_COLS and TITLE_ROWS.
+CLEAR TITLE_ADDR, &4000
+ORG TITLE_ADDR
+.titl_start
+INCLUDE "src/data/title.asm"
+INCLUDE "src/title.asm"
+.titl_end
+ASSERT titl_end <= TI_BASE
+SAVE "PARTITL", titl_start, titl_end, TITLE_ADDR, TITLE_ADDR
 
 \ ============================================================
 \ The low-RAM overlay — resident code at &0E00
