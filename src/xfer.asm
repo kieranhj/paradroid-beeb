@@ -2165,10 +2165,21 @@ GO_HOLD      = 88               \ $3802: xfer_plySpriteX counts 88 down
   STA overPhase
   LDA #GO_HOLD
   STA overTick
-  LDA #5                        \ $3800: the GAME OVER message's cue, and
-  STA sndFx1                    \ $14E7's transition chord on voice 2
-  LDA #&16
-  STA sndFx2
+  LDA #&F                       \ $37BD: the wash's own roar, and it is
+  STA sndFx1                    \ NOISE — effect 15 plays instrument 4, on
+                                \ the SN's noise channel.
+                                \
+                                \ EndGame POSTS NOTHING ELSE, and this used
+                                \ to post two things it should not. fx 5 is
+                                \ $37FE's, the 999 page's, and a triangle
+                                \ held 128 ticks sat on the voice so the
+                                \ static never spoke — IsStart posts it now.
+                                \ And fx $16 was here as "$14E7's
+                                \ transition chord": $14E7 is under
+                                \ `_console`, the console-OPENING path, so
+                                \ that was the console's noise arriving
+                                \ before the wash for no reason. KC heard
+                                \ it. Both gone. 11d
   RTS
 
 \ One pass of the hold: boil one row, and count down to the restart.

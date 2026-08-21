@@ -160,7 +160,35 @@ two `poBase` stores in between ate the type and the portrait vanished from three
 until A was reloaded. Same family as the `PAGEBANK` clobber above — a register quietly carrying a
 parameter across a fall-through.
 
-## 7. Still to do
+## 7. The sound these screens carry
+
+Layer 11e left fx `$B` and `$E`'s "`ShowXferInfo`/ship-announce moments" deliberately unwired,
+because their screens did not exist. They exist now, so each screen announces itself the way the
+original does — `isSndFor`, posted before the draw:
+
+| screen | fx | the C64 |
+|---|---|---|
+| 001 | `$B` | `$1282`'s announce (posted for `ShowShipClear`; KC asked for it here too) |
+| transfer 1 | `$B` | `$374A` |
+| transfer 2 | `$C` | `$376B` |
+| game over | `5` | `$37FE`, **with the 999 and not before it** |
+
+**`$1334`'s deck materialise moved out of `GameStart`.** With the 001 screen now standing between
+`GameStart` and the deck, posting it there put the alert *before* the screen. `IsDone` posts it
+instead, so it lands when the deck does — KC's "the robot sound on the 001 screen before the ship
+alert on gameplay start".
+
+**`EndGame` posts exactly two effects, and `GoWashStart` was posting the wrong two.** fx 5 is the
+999 page's, and as a triangle held for 128 ticks it sat on the voice so the wash's static never
+spoke. And fx `$16` was there on the strength of a mis-attribution in `docs/layer-11e-sound.md` —
+"game-over seam `$14E7`" — when `$14E7` is under `_console`, the console-OPENING path. So the
+console's chord was announcing the game over, which is what KC heard. Both gone; the wash now posts
+`$F` alone, which plays instrument 4 on the SN's noise channel. That table row is corrected.
+
+**Verified from the chip**, not by ear: during the wash CH3 reads `noise=7 vol=3` with all three
+tone channels at 15, and on the 999 page CH0 reads `vol=3` with the noise back at 15.
+
+## 8. Still to do
 
 - Verify the two transfer pages and the game-over page in play.
 - The deck-clear arm (`RunDroids` `$17DC`): `CPY #1`, the 250+250 bonus, `notInDeck`, and the

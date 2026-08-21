@@ -142,6 +142,16 @@ IS_BLANK = &FF                  \ IsEntry's third door, and not a screen
 .is_st_fixed
   STA dbType
 
+\ ---- the screen's own voice ---------------------------------
+\ $374A and $376B post $B and $C as ShowXferInfo's two pages go up, and
+\ $37FE posts 5 with the 999. The 001 screen's $B is the one the C64
+\ posts at $1282 for ShowShipClear rather than for NewShipInfo — KC
+\ asked for it here, and it is the same announce, on the same shape of
+\ screen. [DECISION 6]
+  LDX isScr
+  LDA isSndFor,X
+  STA sndFx1
+
 \ ---- flatten the strip, ConsoleOpen's own -------------------
 \ The page addresses the buffer as a plain 16 x 640 array through
 \ dbLineLo/Hi, so the scroll has to be parked first — exactly what
@@ -331,6 +341,11 @@ IS_BLANK = &FF                  \ IsEntry's third door, and not a screen
 .is_dn_act
   LDA isActFor,X
   STA infoAct
+  CPX #IS_SCR_001
+  BNE is_dn_x
+  LDA #IS_FX_DECK               \ $1334's deck materialise, held back from
+  STA sndFx1                    \ GameStart so the alert lands with the
+.is_dn_x                        \ deck rather than before the screen
   RTS
 
 \ ============================================================
@@ -355,6 +370,16 @@ IS_BLANK = &FF                  \ IsEntry's third door, and not a screen
 \ Entry 1 is never read: the first transfer page chains inside IsDone.
 .isActFor
   EQUB IS_ACT_GAME, IS_ACT_GAME, IS_ACT_BOARD, IS_ACT_TITLE
+
+\ The effect each screen announces itself with: $374A, $376B, $37FE, and
+\ $1282's announce for the 001.
+IS_FX_ANNOUNCE = &0B
+IS_FX_ANNOUNCE2 = &0C
+IS_FX_OVER     = &05
+IS_FX_DECK     = &07            \ $1334, and it is IsDone's now
+
+.isSndFor
+  EQUB IS_FX_ANNOUNCE, IS_FX_ANNOUNCE, IS_FX_ANNOUNCE2, IS_FX_OVER
 
 \ "This is the unit that you currently control. Prepare to board
 \  Robo-<ship> influence to eliminate all rogue robots."
