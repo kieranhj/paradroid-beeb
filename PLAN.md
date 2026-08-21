@@ -168,6 +168,7 @@ settled which Paradroid this listing is. Per-layer decisions are numbered in eac
 | The droid portrait is ported | Reversing layer-11's [DECISION 3]: the pool is 4,032 B of verbatim C64 sprites, expanded at draw time — the 6 K / 24 K costing that deferred it was wrong | 2026-08-20 |
 | The deck maps ship ZX0-compressed | Decoded offline, byte-identical maps; the C64's RLE and both its decoders are gone, and bank 4 got ~1.1 K back. sideview stays in bank 7 — the approved move to bank 5 was unbuildable, `dfsSave` moved to bank 6 instead | 2026-08-20 |
 | Transfer board shows all 16 rows | The rupture's fire-2→3 interval became a variable (`t1i3`) so the transfer can move the bottom edge down a row | 2026-08-16 |
+| The four banks ship ZX0-compressed on disc | Boot 14.4 s → 10.4 s measured. `PARDEPK` (an eighth disc file, the same depack macro as bank 4's) unpacks each bank from `&3200` straight into SWRAM; `tools/make_disc.py` compresses and lays the disc out in boot access order after beebasm — **the raw beebasm image is no longer bootable**. [`docs/loader-compression.md`](docs/loader-compression.md) | 2026-08-21 |
 
 ## Layers
 

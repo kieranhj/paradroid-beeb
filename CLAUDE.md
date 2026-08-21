@@ -90,16 +90,24 @@ proves no instruction was added, removed or reordered.
 
 | | |
 |---|---|
-| `build/PARADROID.SSD` | the disc image |
+| `build/PARADROID-raw.ssd` | beebasm's direct output — **NOT bootable**, see below |
+| `build/PARADROID.SSD` | the disc image, post-processed by `tools/make_disc.py` |
 | `build/PARADROID-200K.SSD` | the same, padded — **give this one to jsbeeb** |
 | `build/PARADROID.lst` | beebasm's `-v` listing, ~870 KB |
 
 DFS filenames are max 7 characters — the executable on disc is `PARA`.
 
-**jsbeeb will not boot an unpadded SSD.** It hangs in the DFS FDC poll loading `PARASPR`, because
-beebasm's image ends mid-track and jsbeeb will not read the last partial one. `build.ps1` writes
-the padded copy for you; if you invoke beebasm by hand, pad before handing the image to an
-emulator or publishing it.
+**The build is two stages: beebasm, then `tools/make_disc.py`.** The tool ZX0-compresses the four
+bank files with `bin/zx0.exe` (sources and build line in `tools/zx0src/`; round-trip-verified
+through `tools/zx0.py` every build), moves their catalogue load address to `DEPK_STREAM`, and lays
+the disc out physically in boot access order. The loader (`UnpackBankIn` + the `PARDEPK` overlay)
+only understands that layout, so **`PARADROID-raw.ssd` hangs at the first bank load** — never hand
+it to an emulator. Boot measured 14.4 s → 10.4 s; `docs/loader-compression.md` has the numbers.
+
+**jsbeeb will not boot an unpadded SSD.** It hangs in the DFS FDC poll, because an image that ends
+mid-track leaves jsbeeb refusing to read the last partial one. `build.ps1` (via `make_disc.py`)
+writes the padded copy for you; pad before handing any hand-built image to an emulator or
+publishing it.
 
 **beebasm writes its progress and success messages to stderr.** In PowerShell that renders as an
 error, and if you pipe or redirect *that stream* under `$ErrorActionPreference = 'Stop'` it raises
@@ -109,7 +117,7 @@ code. Redirecting **stdout** alone is safe, which is how `build.ps1` captures th
 
 **beebasm's `SAVE` writes a loose host file whenever it has no disc image to put it in**, so any
 run without a working `-do` drops `PARA`, `PARADAT`, `PARASPR`, `PARSPR2`, `PARXFER`, `PARAFNT`,
-`PARALOW` and `PARTITL`
+`PARALOW`, `PARTITL` and `PARDEPK`
 in the project root. They are gitignored. Two things follow: a `-do` path that cannot be written leaves a
 build that *looks* like it worked, and the symbol dump below litters unless you give it one.
 
@@ -120,7 +128,7 @@ Symbol addresses come from
 ```
 
 which dumps every global label as one long line of `'name':decimal` — the quick way to find a
-variable's runtime address for an emulator poke. `-do` is there only to stop the eight loose files.
+variable's runtime address for an emulator poke. `-do` is there only to stop the nine loose files.
 
 ## Confirmed hardware facts (measured, not assumed)
 
@@ -164,7 +172,7 @@ addresses from the `beebasm` output rather than from any document.** In outline:
 | ZP `&00–&8F` | All used. The map is in `main.asm`. `&90` up belongs to the OS |
 | `&0400–&0C90` | MODE 1 charset, built at deck load — reclaimed OS workspace |
 | `&0C90–&10FF` | **The low overlay** (`PARALOW`) — resident code and state in reclaimed DFS/OS workspace. `&0D00–&0D5F` (NMI) and `&0DF0–&0DFF` (ROM private workspace) are **excluded**. Nothing may be *loaded* here; it is staged and copied, and that copy **must be the last filing-system call** |
-| `&1100–…` | Code (`PARA`), starting below DFS's `PAGE`. Ends just short of `&3000` — 24 B free, the binding constraint |
+| `&1100–…` | Code (`PARA`), starting below DFS's `PAGE`. Ends just short of `&3000` — 47 B free, the binding constraint |
 | `&3000–&37FF` | Sprite background save areas, one page per each of the eight slots |
 | `&3800–&3BFF` | Tile map |
 | `&3C00–&49FF` | Layer 9's text font (`PARAFNT`), border cells and mirrored droid tables |
@@ -176,7 +184,7 @@ addresses from the `beebasm` output rather than from any document.** In outline:
 | SWRAM bank 6 | `PARSPR2` — shifts 2 and 3 px, same layout, plus Layer 9's panel/console and the 912 B `dfsSave` snapshot — **full** (63 B) |
 | SWRAM bank 7 | `PARXFER` — Layer 10's transfer minigame, Layer 8b's lift screen, the console's ship, deck-plan and droid-database pages, and Layer 11's game over. The title is NOT here any more — it is the `PARTITL` disc overlay. **5,690 B free, reserved for the droid portrait pool** |
 
-**RAM is the binding constraint as of 2026-08-21**: main RAM 99 B in pieces (46 below
+**RAM is the binding constraint as of 2026-08-21**: main RAM 100 B in pieces (47 below
 `&3000`), bank 4 **3 B — effectively zero** — the sound driver, its data and every trigger took
 the lot even after the char bitmaps+remap were ZX0-packed and `charSlot` nibble-packed to pay
 for it. The build PRINTs bank 4's fuel gauge every run. Banks 5, 6 and 7 have 1,033 / 63 / 826 B and are all paged out during
@@ -190,9 +198,13 @@ IRQ does with banks is Layer 11e's sound tick**, which saves `ROMSHAD`, pages `S
 `SndTick` and restores what it found — legal because `PAGEBANK` writes the shadow first. Anything
 else in the IRQ must still read no bank; check that again before putting anything else in one.
 
-All four bank files are staged through `&3000` by `*LOAD` and copied up, because the MOS has the DFS ROM
-paged in at `&8000` during a filing-system call. `*LOAD` must also happen **before** `InstallIrq` —
-taking over IRQ1V stops the MOS servicing the filing system.
+All four bank files ship ZX0-compressed on disc (written by `tools/make_disc.py`, not by the
+SAVEs): `*LOAD` drops each stream at `DEPK_STREAM = &3200` and `UnpackBankIn` decompresses it
+straight into the bank via **`PARDEPK`, an eighth disc file** — the `ZX0_DEPACKER` macro from
+`zx0depack.asm` again, loaded once at `&3000` before the banks and dead once `PARTITL` lands on
+it. They cannot be loaded at `&8000` even uncompressed, because the MOS has the DFS ROM paged in
+there during a filing-system call. `*LOAD` must also happen **before** `InstallIrq` — taking over
+IRQ1V stops the MOS servicing the filing system. See `docs/loader-compression.md`.
 
 **`PARALOW` is a sixth disc file and is loaded LAST, after `PARAFNT`.** It carries the low overlay,
 which lands on DFS's own workspace at `&0E00–&10FF` **and, via `lowcode2`, on the MOS's extended

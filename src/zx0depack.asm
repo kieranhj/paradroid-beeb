@@ -26,6 +26,14 @@
 \ bank and the tile map is main RAM. It is deck-load code: correctness
 \ and size over speed, ~40k cycles for a 1,024-byte map.
 \
+\ THE BODY IS A MACRO because the same decompressor is wanted twice:
+\ here in bank 4 for BuildLevel, and a second copy in the PARDEPK boot
+\ overlay (see main.asm), which unpacks the four ZX0-compressed bank
+\ files from DEPK_STREAM into sideways RAM at boot — code in a bank
+\ cannot fill another bank, and the code image has no room for a copy.
+\ Instantiating the macro twice emits identical instructions; only the
+\ addresses differ.
+\
 \ ZERO PAGE, borrowed from the level draw's scratch, idle until the
 \ level draw runs (which is after this returns):
 \   src     -> the compressed stream (the caller's)
@@ -40,7 +48,7 @@ zxlen = subRowOfs
 zxbit = colTileCol
 zxwrk = rptTile
 
-.Zx0Unpack
+MACRO ZX0_DEPACKER
   LDA #1
   STA zxofs
   LDA #0
@@ -214,3 +222,8 @@ zxwrk = rptTile
   INC zxlen+1
 .zi_1
   RTS
+ENDMACRO
+
+\ ---- the bank-4 copy, for BuildLevel ------------------------
+.Zx0Unpack
+  ZX0_DEPACKER

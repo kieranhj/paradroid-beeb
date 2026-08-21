@@ -64,7 +64,7 @@ Regenerate it after any change that moves a region:
 | `&C000–&FFFF` | 16 K | MOS |
 
 Free main RAM totals **99 bytes** (2026-08-21, after Layer 11e stage 3's trigger posts and the
-`SndAmbient` call): 46 below `&3000` (`code_end` = `&2FD2`), 0 at the top of `lowcode`, 36 in
+`SndAmbient` call): 47 below `&3000` (`code_end` = `&2FD1`), 0 at the top of `lowcode`, 36 in
 `lowcode2`, 9 in `lowbss` and 8 in the `PARAFNT` tail. The seam spent ~213: `TitleSeq`, `GoTitle`, `UninstallIrq`
 (with the MOS VIA-state saves in `InstallIrq`), `SaveDfsWs`/`RestoreDfsWs` and the `loadtitl`
 string — all of it resident of necessity, because it pages banks and runs while the MOS owns the

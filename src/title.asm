@@ -152,7 +152,7 @@ tigd  = svp                     \ and where it lands
 \ GameStart, in bank 4 where the LFSR lives.
 \
 \ keydown is main RAM and goes through OSBYTE, which pages the OS ROM in
-\ and restores from ROMSHAD — which PageBankIn keeps honest, and which
+\ and restores from ROMSHAD — which UnpackBankIn keeps honest, and which
 \ is why the main loop can call it with a bank up too.
 .TiWait
   LDA #0

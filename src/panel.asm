@@ -49,8 +49,9 @@
 \ pointers, dead from LoadDeck onwards. MapGuard borrows the same pair
 \ for the same reason and is now off; the debug readouts borrow swDst
 \ and are replaced by this file. **Nothing may call the panel engine
-\ from inside PageBankIn or PageFontIn**, which is the only window where
-\ they are live, and both run once at boot.
+\ from inside PageCopyAt's callers or PageFontIn**, which is the only
+\ window where they are live: PageLowIn/PageFontIn run once at boot, and
+\ the DFS-workspace snapshot only at the game-over seam.
 pnSrc = swSrc
 pnDst = swDst
 

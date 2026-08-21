@@ -492,7 +492,7 @@ VIA_PORTB  = &FE40
 \ is, and dead the moment the last *LOAD returns — which is the same
 \ argument the charset at &0400 already relies on, one page higher up.
 \ Nothing may be LOADED here (DFS is using it while it works), so the
-\ block is staged through DATA_LOAD like the four banks and copied down.
+\ block is staged high (at LOW_STAGE, on the panel) and copied down.
 \
 \ PAGE &0D IS DELIBERATELY EXCLUDED. &0D00-&0D5F is the NMI handler and
 \ its workspace, &0D9F-&0DEF the extended vector table and &0DF0-&0DFF
@@ -550,6 +550,19 @@ LOW_STAGE = &4A00
 \ own framebuffer, TI_BASE = &4000 (defined in title.asm, asserted at the
 \ SAVE).
 TITLE_ADDR = &3000
+
+\ ---- the boot depacker overlay ------------------------------
+\ PARDEPK is an eighth disc file: the ZX0 decompressor (the same macro
+\ bank 4 instantiates for BuildLevel — see zx0depack.asm) with a stub
+\ that points it at DEPK_STREAM -> SWRAM_BASE. The four bank files ship
+\ ZX0-compressed on disc with a catalogue load address of DEPK_STREAM
+\ (written by tools/make_disc.py, not by the SAVEs below), and the boot
+\ loads PARDEPK once at DEPK_ADDR and JSRs it after paging each bank in.
+\ It shares PARAFNT/PARTITL's ground and dies when PARTITL loads; by
+\ then all four banks are up and nothing wants it again — the game-over
+\ seam reloads no bank.
+DEPK_ADDR   = &3000
+DEPK_STREAM = &3200
 
 FONT_ADDR = &3000
 \ Declared here rather than taken from the generated file, because
@@ -1070,33 +1083,35 @@ ORG &1100
 \ step earlier. bufcore.asm's header has the measurement.
   JSR SetupMode
 
-  LDX #LO(loadcmd)              \ must follow the mode change: VDU 22
-  LDY #HI(loadcmd)              \ clears what the OS thinks is its screen
-  JSR OSCLI
-  LDA #SWRAM_DATA               \ PARADAT lands at &3000 and is copied up
-  LDX #DATA_PAGES               \ into SWRAM; the staging area is free after
-  JSR PageBankIn
+  LDX #LO(loaddepk)             \ must follow the mode change: VDU 22
+  LDY #HI(loaddepk)             \ clears what the OS thinks is its screen.
+  JSR OSCLI                     \ The boot depacker, loaded once at
+                                \ DEPK_ADDR and reused for all four banks
+
+  LDX #LO(loadcmd)              \ PARADAT's ZX0 stream lands at DEPK_STREAM
+  LDY #HI(loadcmd)              \ and is unpacked straight into SWRAM; the
+  JSR OSCLI                     \ staging area is free after
+  LDA #SWRAM_DATA
+  JSR UnpackBankIn
 
   LDX #LO(loadspr)              \ and again for the sprite bank, staged over
-  LDY #HI(loadspr)              \ the same &3000. The filing system pages
-  JSR OSCLI                     \ DFS in and out around its own call and
-  LDA #SWRAM_SPR                \ restores from ROMSHAD, which PageBankIn
-  LDX #SPR_PAGES                \ has kept honest, so the second load is no
-  JSR PageBankIn                \ different from the first
+  LDY #HI(loadspr)              \ the same DEPK_STREAM. The filing system
+  JSR OSCLI                     \ pages DFS in and out around its own call
+  LDA #SWRAM_SPR                \ and restores from ROMSHAD, which
+  JSR UnpackBankIn              \ UnpackBankIn has kept honest, so the
+                                \ second load is no different from the first
 
   LDX #LO(loadspr2)             \ and a third: shifts 2 and 3 px live in a
   LDY #HI(loadspr2)             \ bank of their own, because four compiled
   JSR OSCLI                     \ shifts do not fit in one
   LDA #SWRAM_SPR2
-  LDX #SPR2_PAGES
-  JSR PageBankIn
+  JSR UnpackBankIn
 
   LDX #LO(loadxfer)             \ and a fourth bank: the transfer minigame,
-  LDY #HI(loadxfer)             \ staged through &3000 like the others
+  LDY #HI(loadxfer)             \ staged through DEPK_STREAM like the others
   JSR OSCLI
   LDA #SWRAM_XFER
-  LDX #XFER_PAGES
-  JSR PageBankIn
+  JSR UnpackBankIn
 
 \ ---- the title, and everything that rebuilds after it ------
 \ TitleSeq is shared with the game-over seam (GoTitle): load PARTITL,
@@ -1619,6 +1634,9 @@ ENDIF                           \ other close: no band may outlive a pass
   JSR WaitNextPass
   JMP mainloop
 
+.loaddepk
+  EQUS "LOAD PARDEPK"
+  EQUB 13
 .loadcmd
   EQUS "LOAD PARADAT"
   EQUB 13
@@ -1642,13 +1660,16 @@ ENDIF                           \ other close: no band may outlive a pass
   EQUB 13
 
 \ ============================================================
-\ PageDataIn — move PARADAT from &3000 into sideways RAM bank 0
+\ UnpackBankIn — fill a sideways RAM bank from its ZX0 stream
 \ ============================================================
-\ PARADAT is assembled at &8000 but its catalogue load address is
-\ DATA_LOAD, so *LOAD puts it in main RAM and this copies it up.
-\ It cannot be loaded straight into the bank: while the filing
+\ The four bank files ship ZX0-compressed and *LOAD at DEPK_STREAM
+\ (a catalogue address tools/make_disc.py writes). They cannot be
+\ loaded straight into the bank even uncompressed: while the filing
 \ system is working, the MOS has the DFS ROM paged in at &8000, so
-\ the bytes would land in the ROM socket and be discarded.
+\ the bytes would land in the ROM socket and be discarded. A selects
+\ the bank; the PARDEPK overlay at DEPK_ADDR (loaded just before, and
+\ resident until PARTITL lands on it) unpacks DEPK_STREAM -> &8000.
+\ Boot-only, before InstallIrq: the MOS IRQ touches no bank.
 \
 \ The data bank stays selected from here on. Every character drawn
 \ reads `tiledefs` through it, so it cannot be paged out during play.
@@ -1657,21 +1678,12 @@ ENDIF                           \ other close: no band may outlive a pass
 \ BASIC, which we
 \ never return to, and not DFS, which lives in its own socket and
 \ which the MOS pages in and back out around each of its own calls.
-\ Called twice, once per bank: A selects it, X is the page count.
-.PageBankIn
+.UnpackBankIn
   STA ROMSHAD                   \ both, always — see the note at the top
   STA ROMSEL
+  JMP DEPK_ADDR                 \ its RTS returns to our caller
 
-  LDA #LO(SWRAM_BASE): STA swDst
-  LDA #HI(SWRAM_BASE): STA swDst+1
-
-\ PageCopy — the same staging copy with the destination already set, so
-\ the low-RAM overlay can share it. X = pages, source always DATA_LOAD.
-.PageCopy
-  LDA #LO(DATA_LOAD) : STA swSrc
-  LDA #HI(DATA_LOAD) : STA swSrc+1
-
-\ and once more with both ends given: X = pages, swSrc and swDst set.
+\ PageCopyAt — the staging copy: X = pages, swSrc and swDst set.
 .PageCopyAt
 .pdi_page
   LDY #0
@@ -2504,12 +2516,14 @@ ASSERT code_end <= FONT_ADDR    \ the real bound: PARAFNT loads at &3000.
 \ Generated data — in sideways RAM bank 0
 \ ============================================================
 \ Assembled at &8000 so every label resolves to its address in the
-\ bank, but SAVEd with a catalogue load address of DATA_LOAD, so
-\ *LOAD drops it in main RAM for PageDataIn to copy up. &3000 is a
-\ safe staging area: the OS thinks the screen is &3000-&7FFF, but
-\ the CRTC has been repointed at a 10K window starting &5800, so
-\ only &5800-&7FFF is ever fetched for display — and the staging
-\ copy is dead by the time anything is drawn.
+\ bank. The SAVE's catalogue load address of DATA_LOAD is a relic the
+\ shipping disc never sees: tools/make_disc.py replaces this file (and
+\ the other three banks) with its ZX0 stream, loading at DEPK_STREAM
+\ for UnpackBankIn to decompress straight into the bank. &3000 up is a
+\ safe staging area either way: the OS thinks the screen is
+\ &3000-&7FFF, but the CRTC has been repointed at a 10K window
+\ starting &5800, so only &5800-&7FFF is ever fetched for display —
+\ and the staged stream is dead by the time anything is drawn.
 \
 \ Layer 5 spends the &3000-&4707 this frees on droid state and the
 \ per-slot background save buffers.
@@ -2890,6 +2904,29 @@ INCLUDE "src/title.asm"
 .titl_end
 ASSERT titl_end <= TI_BASE
 SAVE "PARTITL", titl_start, titl_end, TITLE_ADDR, TITLE_ADDR
+
+\ ============================================================
+\ The boot depacker — the PARDEPK disc file
+\ ============================================================
+\ The eighth disc file: the ZX0 decompressor macro from zx0depack.asm
+\ again (bank 4 has the other copy, for BuildLevel), behind a stub that
+\ aims it at DEPK_STREAM -> SWRAM_BASE. Loaded once at boot, before the
+\ four compressed bank files; UnpackBankIn pages the target bank in and
+\ JMPs here with the stream already loaded. It shares PARAFNT and
+\ PARTITL's ground and must fit below DEPK_STREAM, where the streams
+\ land. The ZP it borrows (the level draw's scratch, via zx0depack.asm's
+\ aliases) is idle at boot.
+CLEAR DEPK_ADDR, DEPK_STREAM
+ORG DEPK_ADDR
+.depk_start
+  LDA #LO(DEPK_STREAM) : STA src
+  LDA #HI(DEPK_STREAM) : STA src+1
+  LDA #LO(SWRAM_BASE)  : STA mapptr
+  LDA #HI(SWRAM_BASE)  : STA mapptr+1
+  ZX0_DEPACKER
+.depk_end
+ASSERT depk_end <= DEPK_STREAM
+SAVE "PARDEPK", depk_start, depk_end, DEPK_ADDR, DEPK_ADDR
 
 \ ============================================================
 \ The low-RAM overlay — resident code at &0E00

@@ -1757,7 +1757,7 @@ ASSERT PN_TEXT_ADDR > 0         \ panel.asm's constants are visible here
 .XfGlyphAt                      \ A = glyph, xfTxtCol = column; advances
 \ ON swSrc/swDst AND NOT xgs/xgd, because the font is packed now and
 \ FontCell — main RAM, shared with the panel and the droid database —
-\ names that pair. They are free here: PageBankIn is boot-only and
+\ names that pair. They are free here: the boot copies are boot-only and
 \ PanelTick does not run while this screen owns the panel line. The
 \ board renderer keeps xgs/xgd; the two never overlap.
   STA swSrc
