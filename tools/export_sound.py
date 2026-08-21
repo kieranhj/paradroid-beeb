@@ -112,9 +112,13 @@ TICK_MS = 20                  # 50 Hz driver tick
 
 # Instruments rendered as PERIODIC noise (a 1/15 duty-cycle pulse train
 # per the wiki's sn76489 page - a buzz, not a hiss). Tried for the hum
-# and REVERTED by KC 2026-08-21: the tone hum sounded right. Empty for
-# now; stage 4 may voice the disruptor this way.
-PERIODIC_BASS = set()
+# and REVERTED by KC (the tone hum was right); ADOPTED by KC 2026-08-21
+# for instrument 11 - the disruptor (fx04, 60-102 Hz) and the
+# zero-damage collision bump (fx26, 90-98 Hz), both living entirely
+# below the tone floor and both a flat 122 Hz bong as clamped tones.
+# The pulse-train fundamental (tone/15) under the /16 noise scale lands
+# within 7% of the SID pitch, so both play their real warble.
+PERIODIC_BASS = {11}
 
 # Per-effect record overrides - the ONLY place ported sound data is
 # allowed to differ from the C64's bytes, each entry a deliberate,

@@ -122,9 +122,7 @@
 
 .stk_req
   LDA sndFx1,X                  \ sndFx1/sndFx2 are adjacent, as $91/$92 were
-  BNE stkr_1
-  RTS
-.stkr_1
+  BEQ stkr_x
   LDY snActive,X
   BMI stkr_drop                 \ uninterruptible effect playing: discard
   STA snActive,X
@@ -132,6 +130,7 @@
 .stkr_drop
   LDA #0
   STA sndFx1,X
+.stkr_x
   RTS
 
 \ ============================================================
@@ -387,12 +386,12 @@ ASSERT HI(snFreqLo) == HI(snPhase+1)   \ one page: the copy walk below
   LDA #30                       \ (15 - level) + (15 - volume); the SEC
   SEC                           \ holds through both subtracts — the
   SBC snTmp                     \ first result is >= 15 so the second
-  SBC sndVolume                 \ can never borrow
-  CMP #16
-  BCC snfv_a2
-  LDA #15
-.snfv_a2
-  STA snTmp                     \ the attenuation this voice wants
+  SBC sndVolume                 \ can never borrow. NO CLAMP: sndVolume
+  STA snTmp                     \ is pinned at 15 until the volume keys
+                                \ land, so this never exceeds 15 — and
+                                \ AdjustVolume's port MUST restore the
+                                \ CMP #16 / BCC / LDA #15 clamp here
+                                \ (docs/layer-11e-sound.md §8)
   LDA snFreqLo,X
   STA snCvL
   LDA snFreqHi,X
@@ -420,12 +419,13 @@ ASSERT HI(snFreqLo) == HI(snPhase+1)   \ one page: the copy walk below
   JSR SndConv
   LDY #2                        \ pitch on (silent) tone 2
   JSR snf_per
-  LDA #&E7                      \ white noise, clocked by tone 2 — stage 0.
-  CMP snNzCtl                   \ (Periodic bass would be &E3 via the flag
-  BEQ snfv_nc                   \ low bits; no instrument uses it since KC
-  STA snNzCtl                   \ reverted the hum — dd108a2 has the code.)
-  JSR SndWrByte                 \ Cached hard: a noise-register write
-                                \ resets the chip LFSR mid-hiss
+  LDA snCvNz                    \ noise control from the instrument flags:
+  AND #7                        \ &E7 white (explosions, fire) or &E3
+  ORA #&E0                      \ periodic (the disruptor and the bump —
+  CMP snNzCtl                   \ KC's bass buzz). Cached hard: a noise-
+  BEQ snfv_nc                   \ register write resets the chip LFSR
+  STA snNzCtl                   \ mid-hiss
+  JSR SndWrByte
 .snfv_nc
   LDY #3
 \ fall through: the noise attenuation

@@ -351,7 +351,10 @@ plumbing in `TiWait`, and it should follow once the driver is proven, not gate i
   place of `$D41B`. The three effect records can ship with the rest when wanted.
 - **Pause and the ± volume keys.** The port has no pause feature; `DoPause` (`$3B7C`) and
   `AdjustVolume` (`$0CB4`) are one small piece of work together — pause writes `sndState`
-  0/`$12` around itself and the driver already honours both.
+  0/`$12` around itself and the driver already honours both. **AdjustVolume's port MUST
+  restore the attenuation clamp in `snf_voice`** (`CMP #16 / BCC / LDA #15` after the
+  subtracts) — round nine dropped it because `sndVolume` is pinned at 15, and a lower master
+  volume without it wraps the attenuation nibble into garbage.
 - **Sub-122 Hz effects** — stage 1's review list: fx04 disruptor (100% of its ticks below the
   floor), fx26 (100%), fx23 (73%), fx16 (48%), fx17 (41%), fx06 (40%). **KC 2026-08-21:
   periodic noise clocked by tone 2 is the preferred cure** — it reaches ~15× below the tone
@@ -411,6 +414,15 @@ plumbing in `TiWait`, and it should follow once the driver is proven, not gate i
   channel), funded by folding `SndAmbient`'s two energy tests and dropping a provably
   redundant `AND #&3F`. Verified: mid-explosion CH1 reads attenuation 15, and after the cut
   all four channels are silent until the hum re-posts.
+  **Round nine — the disruptor and the bump go periodic** (KC: both "very pedestrian, a dull
+  bong" — they share instrument 11, 100% sub-floor, so both clamped to a flat 122 Hz).
+  `PERIODIC_BASS = {11}`: the pulse-train fundamental under the /16 noise scale lands within
+  7% of the SID pitch, so both play their real 60–105 Hz warble. The driver's noise-control
+  byte comes from the instrument flags again (`&E7` white / `&E3` periodic), funded by the
+  request-pickup sharing its exit RTS and **dropping the attenuation clamp — safe ONLY while
+  `sndVolume` is pinned at 15; AdjustVolume's port must restore it** (noted at its §8
+  bullet). Verified: noise register 3, CH2 warbling N 76–109, clean release, the hum
+  untouched on CH1 throughout. Bank 4: 4 bytes free.
   **The same session found a real driver bug**: `SndConv` counted its shifts in X, and the
   flush picks the channel from X after converting — every in-range voice-1 tone was landing
   on channel 0. The hum had escaped because its clamp path skips the shift loops. Counters
