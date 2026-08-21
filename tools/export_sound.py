@@ -116,6 +116,20 @@ TICK_MS = 20                  # 50 Hz driver tick
 # now; stage 4 may voice the disruptor this way.
 PERIODIC_BASS = set()
 
+# Per-effect record overrides - the ONLY place ported sound data is
+# allowed to differ from the C64's bytes, each entry a deliberate,
+# eared decision with its reason here.
+#
+# fx24 (the hum) initial frequency: the C64 starts its long first
+# segment - the characteristic rising "wee" - at F=256 (15 Hz) and
+# sweeps 20-odd ticks up to ~300 Hz. Our tone floor is 122 Hz, so
+# started verbatim the first 7 ticks fell below it and the wee faded
+# in mid-glide, reading as just another wub (KC). Re-basing the start
+# just under the floor keeps the whole 20-tick glide audible:
+# 122 Hz up to ~395 Hz, peaking clearly above the wubs' ~220 Hz.
+# 1836 = 2081 (the floor's F) minus one tick of slide. Tune by ear.
+FX_OVERRIDES = {24: {'f0': 1836}}
+
 # Tone instruments whose sub-floor content MUTES instead of clamping.
 # The wiki's sn76489 page: N=1 is a 125 kHz square - out of audible
 # range, effectively silent, and the LM324N strips the carrier - so the
@@ -255,6 +269,10 @@ def simulate(e, noise, max_ticks=600):
 
 
 def convert_effect(n, raw, instruments):
+    ov = FX_OVERRIDES.get(n, {})
+    if 'f0' in ov:
+        raw = bytes(raw[:1]) + bytes([ov['f0'] & 0xFF, ov['f0'] >> 8]) \
+            + bytes(raw[3:])
     e = {
         'n': n, 'raw': raw, 'inst': raw[0],
         'f0': raw[1] | (raw[2] << 8), 'slide': s16(raw[3], raw[4]),
