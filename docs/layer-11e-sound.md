@@ -357,6 +357,15 @@ plumbing in `TiWait`, and it should follow once the driver is proven, not gate i
   periodic noise clocked by tone 2 is the preferred cure** — it reaches ~15× below the tone
   floor and is an iconic BBC sound. Tuned by ear in stage 4, effect by effect, minding that it
   shares the one noise channel with the explosions.
+  **The per-deck hum took the cure first (2026-08-21)**: KC's first play found its opening
+  segment clamped into a loud flat 122 Hz note over the throb (F starts at 256 = 15 Hz).
+  Instrument 3 is now `PERIODIC_BASS` in the exporter — flags carry the SN noise-control bits
+  (`&83` periodic / `&87` white), the driver derives the control byte from them (and got
+  *smaller*: the two `snCvNz` setters unified), and a periodic-noise fundamental of tone/15
+  sits within 6% of the white-noise scale, so one conversion path serves both. Verified on the
+  chip: noise register 3, tone 2 sweeping N 30–75, no clamp anywhere in the hum's cycle.
+  The same one-line exporter change (`PERIODIC_BASS`) is how the other five join in stage 4 —
+  minding that each moves its effect onto the shared noise channel.
 - **PWM bass as an extension possibility** (KC 2026-08-21): a higher-frequency timer toggling
   one channel's volume gives crude PWM below the floor — but it steals gameplay cycles, so it
   is a costed extension for later, not part of this layer. Belongs beside

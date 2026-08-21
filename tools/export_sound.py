@@ -70,8 +70,12 @@ data uses it (asserted below), so the driver has no chain path either.
 If a different release ever chains, this assert is where it surfaces.
 
 Emitted instrument, 6 bytes:
-  [0]     flags: bit 7 = noise voice (SN channel 3 + silenced tone 2),
-          low bits = SID waveform nibble (ctrl>>4) for reference
+  [0]     flags: 0 = tone voice. Bit 7 = noise voice (SN channel 3 +
+          silenced tone 2), with the SN noise-control low bits in bits
+          0-2: 7 = white, 3 = PERIODIC - the buzzy bass that renders a
+          sub-floor SID tone at pitch (fundamental ~ tone/15, within 6%
+          of the white-noise scale, so one conversion path serves both).
+          PERIODIC_BASS below lists which instruments take it.
   [1]     attack step, level-per-tick in 0-255 space (255 = instant)
   [2]     decay step
   [3]     sustain level, 0-255
@@ -105,6 +109,15 @@ NOISE_SHIFT = 4               # noise voices: N >> 4 more (= /16) - TUNABLE
 TONE_FLOOR_HZ = 125000 / 1023  # ~122.2 Hz - lowest SN tone
 
 TICK_MS = 20                  # 50 Hz driver tick
+
+# Instruments rendered as PERIODIC noise - KC's preferred voice for the
+# sub-floor effects (docs/layer-11e-sound.md section 8). Instrument 3 is
+# the per-deck hum's (effect 24 only): its sweep spends its opening
+# segment at 15-120 Hz, which on a tone channel clamped into a loud flat
+# 122 Hz note over the top of the throb. As periodic noise the whole
+# sweep renders at pitch. Stage 4 decides whether 8 and 11 (fx06/04/26)
+# join it.
+PERIODIC_BASS = {3}
 
 # SID envelope rate tables, ms for the full 0->peak / peak->0 ramp
 ATTACK_MS = [2, 8, 16, 24, 38, 56, 68, 80, 100, 250, 500, 800,
@@ -181,10 +194,11 @@ def env_step(ms):
 
 def convert_instrument(idx, raw):
     ctrl, ad, sr, dur = raw[4], raw[5], raw[6], raw[7]
-    noise = bool(ctrl & 0x80)
+    noise = bool(ctrl & 0x80) or idx in PERIODIC_BASS
     return {
         'idx': idx, 'raw': raw, 'ctrl': ctrl, 'noise': noise,
-        'flags': (0x80 if noise else 0) | (ctrl >> 4),
+        'flags': ((0x80 | (3 if idx in PERIODIC_BASS else 7))
+                  if noise else 0),
         'atk': env_step(ATTACK_MS[ad >> 4]),
         'dec': env_step(DECAY_MS[ad & 15]),
         'sus': (sr >> 4) * 17,

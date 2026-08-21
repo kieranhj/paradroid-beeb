@@ -382,24 +382,23 @@ ASSERT HI(snFreqLo) == HI(snPhase+1)   \ one page: the copy walk below
   STA snCvL
   LDA snFreqHi,X
   STA snCvH
-  LDA snInstFl,X
-  BMI snfv_nz
-  LDA #0                        \ tone voice: channel = voice number
-  STA snCvNz
-  JSR SndConv
-  TXA
+  LDA snInstFl,X                \ 0 = tone; bit 7 = noise, and then the
+  STA snCvNz                    \ low bits are the SN noise-control bits
+  BMI snfv_nz                   \ (7 white, 3 periodic bass) — SndConv
+  JSR SndConv                   \ only cares that it is zero or not
+  TXA                           \ tone voice: channel = voice number
   TAY
   JSR snf_per
   JMP snf_att
 .snfv_nz
   CPX snNzOwn                   \ only the owner drives the noise channel
   BNE snfv_x
-  LDA #1
-  STA snCvNz
   JSR SndConv
   LDY #2                        \ pitch on (silent) tone 2
   JSR snf_per
-  LDA #&E7                      \ white noise, clocked by tone 2 — stage 0.
+  LDA snCvNz                    \ noise control: &E7 white or &E3 periodic,
+  AND #7                        \ from the instrument flags — stage 0
+  ORA #&E0                      \ verified both paths of the register.
   CMP snNzCtl                   \ Cached hard: a noise-register write
   BEQ snfv_nc                   \ resets the chip LFSR mid-hiss
   STA snNzCtl
