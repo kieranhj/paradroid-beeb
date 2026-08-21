@@ -22,7 +22,7 @@ From the rupture block in `main.asm`. P is the start of the panel cycle; a scanl
   P+64       fire 2        unblank — the play area's visible TOP edge
              ...           the play area is on screen, 120 scanlines
   P+184      fire 3        blank — visible BOTTOM edge; sets drawFlag, ruptState = 3
-  P+208      tail cycle    13 rows, none displayed; VSync at P+272
+  P+208      tail cycle    13 rows, none displayed; VSync at P+248 (row TAIL_R7)
   P+312      next P
 ```
 

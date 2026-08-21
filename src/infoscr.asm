@@ -25,6 +25,11 @@
 \ PrintTokenString's prntX 9 / prntY 12 is line 1, column 9. See the
 \ geometry block in condb.asm. [DECISION 1]
 \
+\ SINCE 2026-08-21 THAT TABLE STARTS ON BUFFER ROW 1 and these pages
+\ moved down with it, onto the rows the C64 draws them on. IsStart shows
+\ the play area's sixteenth row to make room — the transfer board and
+\ the console already did. [DECISION 8]
+\
 \ WHAT IT CAN AND CANNOT REACH: main RAM freely — the font, the PN_TABS
 \ droid mirrors, the play buffer, keydown — and bank 4 not at all. The
 \ screen id and the two droid types come in through main RAM, the way
@@ -171,6 +176,16 @@ IS_BLANK = &FF                  \ IsEntry's third door, and not a screen
   STA colCount
   JSR SetCRTCStart
 
+\ ---- and sixteen rows, the console's own --------------------
+\ These pages are laid out on the database page's line table and it now
+\ starts on buffer row 1, which is where the C64 puts row 10 of its
+\ sixteen. So the sixteenth row has to be shown or the last content line
+\ falls off the bottom. ReframeView puts it back — for IS_ACT_GAME on the
+\ way out of here, and for IS_ACT_BOARD after the transfer game, which
+\ sets it again for itself. See T1_I3X in main.asm.
+  LDA #HI(T1_I3X)               \ the high byte alone — see T1_I3X
+  STA t1i3Hi
+
   JSR DbClear                   \ $36BE ClearGameScreen, and it resets
                                 \ poLastType so the portrait repaints
 
@@ -262,8 +277,8 @@ IS_BLANK = &FF                  \ IsEntry's third door, and not a screen
 \ ============================================================
 \ dType $17 and TWO PLAIN STRINGS, not tokens: "Transmission" at the
 \ C64's prntY 10 / prntX 13 and "Terminated" at prntY 22 / prntX 14 —
-\ which are our lines 0 and 6, the name line and the last content line,
-\ with the portrait between them. The 999 is the only droid in the game
+\ which are our lines 0 and 6, the name line and the last content line —
+\ buffer rows 1 and 13, the C64's own two — with the portrait between. The 999 is the only droid in the game
 \ the player has not necessarily seen, and that is the point of it.
 \
 \ $37E8's `STA loc_0_365E+1` IS THE SPRITE'S X, not a colour: 160 in

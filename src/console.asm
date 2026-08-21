@@ -12,7 +12,7 @@
 \ the whole display and draws the menu as hardware sprites. Ours is three
 \ CRTC cycles with a scrolled 10K strip in the middle, and suspending
 \ that is a bigger change than this layer should carry. Taking the play
-\ area instead costs nothing: it is 40 characters by 15 rows, and the
+\ area instead costs nothing: it is 40 characters by 16 rows, and the
 \ original's five lines fit in thirteen of them with room to spare — see
 \ the layout below. Leaving the panel up keeps the status visible, which
 \ is what the C64 does too, since GotoHires does not touch its status
@@ -43,15 +43,21 @@ CON_TYPES = 24
 \ Its console area starts at screen row 8, so those are deck rows 2, 4, 7,
 \ 10 and 13 — and rows 0 and 1 are empty. **KC: plot from the top row**,
 \ so everything moves up by two and the five lines land on buffer rows
-\ 0, 2, 5, 8 and 11 of our fifteen, with three to spare at the bottom.
-\ The 2/3/3/3 spacing is the original's and is what leaves a blank row
-\ between the lower four.
+\ 0, 2, 5, 8 and 11. The 2/3/3/3 spacing is the original's and is what
+\ leaves a blank row between the lower four.
+\
+\ THE AREA IS SIXTEEN ROWS since 2026-08-21 and this layout did NOT move
+\ with it: KC's rule is to plot from the top row, and the top row is
+\ still row 0. The recovered row is the fourth spare one at the bottom.
+\ The pages that DID move down a row are the ported ones — the database,
+\ the information screens and the game over — because sixteen rows is
+\ what the C64 lays them out in. See condb.asm's geometry block.
 CON_ROW_UNIT  = 0
 CON_ROW_ACC   = 2
 CON_ROW_SHIP  = 5
 CON_ROW_DECK  = 8
 CON_ROW_ALERT = 11
-ASSERT CON_ROW_ALERT + 2 <= PLAY_VIS_ROWS
+ASSERT CON_ROW_ALERT + 2 <= PLAY_ROWS
 
 CON_COL_UNIT  = 2               \ UnitType_txt's own prntX
 CON_COL_TEXT  = 12              \ and $6E00's
@@ -72,7 +78,7 @@ CON_TOK_ALERT  = 208            \ green, yellow, amber, red
 \ rows 12, 15, 18 and 21 — so each icon sits level with a line, three
 \ rows apart, which is exactly the spacing of the four lower lines here.
 \ They therefore go on OUR rows 2, 5, 8 and 11, one per line, and the
-\ last ends at row 13 of fifteen.
+\ last ends at row 13 of sixteen.
 \ X IS IN 4-PIXEL UNITS, not characters. Sprite X 52 and 40 are 28 and 16
 \ pixels from the left edge, which is 7 and 4 units — not a whole number
 \ of characters either way, and it does not need to be: the buffer's
@@ -167,9 +173,10 @@ CON_DROID_D  = BUF_BASE + 2 * ROW_BYTES + 7 * UNIT_BYTES
 \ ============================================================
 \ ConClear — blank the play area
 \ ============================================================
-\ PLAY_VIS_ROWS rows, not the strip's 16: the last row is the one the
-\ smooth vertical scroll uses and it is never displayed at line = 0,
-\ which ConsoleOpen has just forced.
+\ ALL SIXTEEN ROWS. It used to be PLAY_VIS_ROWS, because the last row
+\ was the smooth scroll's spare and never displayed; ConsoleOpen now
+\ shows it (T1_I3X), so leaving it would put a strip of the deck along
+\ the bottom of every console screen.
 \ A ROW IS 640 BYTES, WHICH IS TWO PAGES AND A HALF — 2 x 256 + 128 —
 \ and the first version cleared one page and the 128, left the last 256
 \ of every row standing, and stepped 512 instead of 640. The deck showed
@@ -178,7 +185,7 @@ CON_DROID_D  = BUF_BASE + 2 * ROW_BYTES + 7 * UNIT_BYTES
 .ConClear
   LDA #LO(BUF_BASE) : STA pnDst
   LDA #HI(BUF_BASE) : STA pnDst+1
-  LDX #PLAY_VIS_ROWS
+  LDX #PLAY_ROWS
 .con_c_row
   LDA pnDst   : STA pnTmpW
   LDA pnDst+1 : STA pnTmpW+1
@@ -226,6 +233,16 @@ CON_DROID_D  = BUF_BASE + 2 * ROW_BYTES + 7 * UNIT_BYTES
   STA bandDo                    \ nothing the last move exposed is wanted
   STA colCount
   JSR SetCRTCStart
+
+\ SIXTEEN ROWS FOR THE WHOLE SESSION. The play area displays 16 and the
+\ R8 blank at fire 3 hides the last one, which is the smooth scroll's
+\ spare; with the scroll flattened above it is real buffer, so the
+\ console takes it — as the transfer board, the lift's deck select and
+\ the information screens do. It covers the two pages as well, which is
+\ why the deck plan no longer switches it for itself. ReframeView puts
+\ it back when the console closes. See T1_I3X in main.asm.
+  LDA #HI(T1_I3X)               \ the high byte alone — see T1_I3X
+  STA t1i3Hi
   JMP ConDraw
 
 \ THE MENU IS NOT HERE. conWaitInput's port — the $80-$83 selection,

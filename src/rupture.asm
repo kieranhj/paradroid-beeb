@@ -62,7 +62,7 @@ ENDIF
 \ WHERE THE TWO WRITES GO, and why neither is anywhere else:
 \
 \   the panel's, at the END of RuptVSync. The tail cycle displays
-\   nothing and the panel starts 40 scanlines later, so there is no
+\   nothing and the panel starts 64 scanlines later, so there is no
 \   deadline — but it must come AFTER the T1 restart, because delaying
 \   that would shift every fire in the frame by however long this takes.
 \
@@ -155,11 +155,18 @@ ENDMACRO
 
 \ Fire 2 -> fire 3, as a variable — see the note at the write in fire 1.
 \ Main RAM, read inside the interrupt, so it must never move into a bank.
+\
+\ ONLY t1i3Hi IS A VARIABLE. The two intervals differ by one character
+\ row, which is &200 ticks, so the low byte is the same for both and the
+\ ASSERT beside T1_I3X in main.asm says so. t1i3Lo is read every frame
+\ and written by nothing.
 .t1i3Lo EQUB LO(T1_I3)
 .t1i3Hi EQUB HI(T1_I3)
 
 \ ============================================================
-\ RuptVSync — IRQ on CA1, at P+272, row 8 of the tail cycle
+\ RuptVSync — IRQ on CA1, at P+248, row TAIL_R7 of the tail cycle
+\ (row 5 since FRAME_DROP_ROWS moved the picture down; it was row 8,
+\ P+272, and moving it is what drops the picture on the tube)
 \ ============================================================
 .RuptVSync
 IF DEBUG_RASTER
@@ -170,11 +177,32 @@ ENDIF
   LDA #4  : STA CRTC_ADDR : LDA #TAIL_R4 : STA CRTC_DATA
   LDA #5  : STA CRTC_ADDR : LDA #0       : STA CRTC_DATA
 
-\ R6 for the PANEL cycle, which starts in 40 scanlines. The tail
-\ displays nothing, so raising it now costs nothing there.
+\ R6 for the PANEL cycle, which starts in 64 scanlines — 40 plus the
+\ 24 FRAME_DROP_ROWS moved VSync back by. The tail displays nothing,
+\ so raising it now costs nothing there.
   LDA #6  : STA CRTC_ADDR : LDA #PANEL_ROWS : STA CRTC_DATA
 
-\ Unblank for the panel, which starts in 40 scanlines. Safe to do
+\ R7 = 255 for the PANEL cycle: no VSync in the panel or the play
+\ cycle, only in the tail. IT IS HERE AND NOT AT FIRE 1, and that is
+\ what FRAME_DROP_ROWS cost. Fire 1 is at P+44, row 5 of the 7-row
+\ panel cycle, and writing R7 there worked only while TAIL_R7 was 8 —
+\ a 7-row cycle can never reach row 8, so the stale value was harmless
+\ for five rows. Once TAIL_R7 drops to 7 or below it is NOT: at 4 the
+\ panel cycle reaches row 4 at P+32 and at 5 it reaches row 5 at P+40,
+\ both of them before fire 1, and it fires a VSync of its own. That
+\ re-enters this handler mid-frame, which restarts T1 and zeroes
+\ ruptState, so fire 1 never runs, the play cycle is never set up or
+\ unblanked, and the play area is simply BLACK with the panel sitting
+\ alone on a rolling picture. Measured at 4, not reasoned about.
+\
+\ Here it is safe by the file's own rule: the tail cycle is the panel's
+\ PREVIOUS cycle, and the panel does not start for another 64
+\ scanlines. The tail's own VSync has already fired — that is why we
+\ are in this handler — and the 6845 counts the pulse out of R3
+\ independently of R7.
+  LDA #7  : STA CRTC_ADDR : LDA #255        : STA CRTC_DATA
+
+\ Unblank for the panel, which starts in 64 scanlines. Safe to do
 \ now: the tail displays nothing either way.
   LDA #8  : STA CRTC_ADDR : LDA #R8_ON   : STA CRTC_DATA
 
@@ -233,10 +261,10 @@ ENDIF
 
   LDA #4  : STA CRTC_ADDR : LDA #PANEL_R4 : STA CRTC_DATA
 
-\ No VSync in the panel or play cycles. The panel's own display
-\ ended 12 scanlines ago (PANEL_ROWS = 4, so P+32), so R6 is free
-\ to become the play cycle's.
-  LDA #7  : STA CRTC_ADDR : LDA #255      : STA CRTC_DATA
+\ R6 for the play cycle. The panel's own display ended 12 scanlines
+\ ago (PANEL_ROWS = 4, so P+32), so R6 is free to become the play
+\ cycle's. R7 IS NOT HERE any more — it is at VSync, and the note
+\ there says why moving the picture down forced that.
   LDA #6  : STA CRTC_ADDR : LDA #PLAY_R6  : STA CRTC_DATA
 
 \ R5 for the panel cycle, sampled at its end 12 scanlines from now.
@@ -252,9 +280,10 @@ ENDIF
   LDA #12 : STA CRTC_ADDR : LDA crtcHi : STA CRTC_DATA
   LDA #13 : STA CRTC_ADDR : LDA crtcLo : STA CRTC_DATA
 
-  LDA t1i3Lo : STA SYS_VIA_T1LL \ a variable, not the constant: the
-  LDA t1i3Hi : STA SYS_VIA_T1LH \ transfer game shows the 16th row by
-                                \ moving fire 3 down — see T1_I3X
+  LDA t1i3Lo : STA SYS_VIA_T1LL \ the HIGH byte is a variable, not the
+  LDA t1i3Hi : STA SYS_VIA_T1LH \ constant: every screen that is not the
+                                \ deck shows the 16th row by moving fire
+                                \ 3 down a character row — see T1_I3X
 
 \ The deck's palette, last of all — see the header. The panel stopped
 \ displaying twelve scanlines ago and the play cycle is at least seven

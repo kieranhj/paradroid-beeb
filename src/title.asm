@@ -55,12 +55,43 @@ tigd  = svp                     \ and where it lands
   JMP TiWait                    \ and its RTS
 
 \ ---- the display -------------------------------------------
-\ R6 alone changes the picture's height; R4, R5 and R7 keep the 39-row,
-\ 312-line, 50 Hz frame SetupMode set up, so the 200 displayed lines sit
-\ at the top of the frame rather than centred. Centring is R7's job and
-\ is left to Layer 14 with the rest of the title's look.
+\ R6 sets the picture's height and R7 sets where it sits; R4 and R5 keep
+\ the 39-row, 312-line, 50 Hz frame SetupMode set up.
+\
+\ THE TITLE HAS TO MOVE WITH THE GAME. The rupture's picture is placed by
+\ FRAME_DROP_ROWS — see the note beside it in main.asm — and this display
+\ is not the rupture, so nothing there reaches it. Aligned by arithmetic
+\ rather than by eye:
+\
+\   game   VSync is TAIL_R7 rows into the 13-row tail cycle, and the
+\          panel starts when that cycle ends, so the gap is
+\          TAIL_CYC_ROWS - TAIL_R7  =  5 + FRAME_DROP_ROWS rows
+\   title  VSync is at row R7 of a 39-row frame and the display starts
+\          at row 0 of the next, so the gap is  39 - R7  rows
+\
+\ Equate them and R7 = 34 - FRAME_DROP_ROWS. At zero that is 34, which is
+\ the OS's own MODE 1 value — which is exactly why the two pictures were
+\ level before the game's moved, and why the title was left behind when
+\ it did. This closes the "centring is R7's job" note that stood here.
+\
+\ THE 25-ROW PICTURE IS WHAT MAKES IT POSSIBLE. The OS leaves R6 at 32
+\ with VSync at 34, two blank rows of headroom, so R7 could not drop far
+\ without VSync landing inside the displayed rows. TITLE_ROWS is 25, so
+\ there are fourteen — the ASSERT is what says so, and what will fail if
+\ the title ever grows past the room its own sync leaves it.
+\
+\ VSYNC STILL HAPPENS, which matters more here than anywhere: TitleSeq
+\ *LOADs PARAFNT and PARALOW AFTER this runs, and the MOS's disc code
+\ spins forever in the 8271 poll without VSync. R7 = 31 is well inside a
+\ 39-row frame, so the sync arrives every field exactly as before; it is
+\ only the rupture's tail value that stops it. SetupRupture puts R7 back.
+MODE1_R7 = 34                   \ what the OS leaves MODE 1 at
+TITLE_R7 = MODE1_R7 - FRAME_DROP_ROWS
+ASSERT TITLE_R7 >= TITLE_ROWS   \ VSync must fall after the last row shown
+
 .TiCRTC
   CRTC 6, TITLE_ROWS
+  CRTC 7, TITLE_R7
   CRTC 12, HI(TI_BASE / 8)
   CRTC 13, LO(TI_BASE / 8)
   RTS

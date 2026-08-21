@@ -64,7 +64,17 @@ re-authoring.
    - **ESCAPE is made an ordinary key** with `OSBYTE 229, 1` in `GameStartInfo`. Without it the MOS
      raises an escape *condition* on the same press, and the next filing-system call — which is
      `GoTitle`'s own `*LOAD`s, on the way out of the game ESCAPE just ended — fails with Escape.
-6. **Not deviations, but worth recording:** the transfer's page turn happens *inside* bank 7
+6. **[DECISION] All four screens, and the wash, take the play area's sixteenth row** (KC,
+   2026-08-21), with the ported pages moved down one row onto the C64's own. The full reasoning,
+   the single restore point in `ReframeView` and the `t1i3Lo`-is-a-constant economy are in
+   `docs/layer-9-hud.md` §6g, because the console family is the larger half of the same change.
+   What it means here: `IsStart` sets `T1_I3X` and the `dbLineLo/Hi` shift puts the name line on
+   buffer row 1 and the content on 3, 5 … 13 — which is `prntY` 10 and 12 … 22 exactly, so
+   [DECISION 1]'s "the same shape line for line" is now the same *rows* as well. `IsOverDraw`'s two
+   strings land on rows 1 and 13, and the portrait between them follows `DB_IMG_ROW`. The wash
+   needed nothing but the switch: `GoWashRow` has always run X = 0–15, because the C64's fills its
+   whole screen area, and the blank at fire 3 was the only thing hiding the last row.
+7. **Not deviations, but worth recording:** the transfer's page turn happens *inside* bank 7
    (`IsDone` chains straight into page 2) because that needs no paging and no main-RAM arm; and the
    screens never write the panel, so — unlike the console — there is no `PanelSetup` on the way out.
 
@@ -190,7 +200,8 @@ tone channels at 15, and on the 999 page CH0 reads `vol=3` with the noise back a
 
 ## 8. Still to do
 
-- Verify the two transfer pages and the game-over page in play.
+- Verify the two transfer pages in play. The **game-over page is verified** (2026-08-21): ESCAPE →
+  explosion → wash → 999 → title → new game → the 001 page, driven in jsbeeb.
 - The deck-clear arm (`RunDroids` `$17DC`): `CPY #1`, the 250+250 bonus, `notInDeck`, and the
   cleared-deck repaint agreed on 2026-08-21. `dru_done` has none of it yet.
 - `ShowShipClear` and the ship-complete path, deferred by KC on 2026-08-21.

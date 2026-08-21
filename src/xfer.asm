@@ -2147,6 +2147,15 @@ GO_HOLD      = 88               \ $3802: xfer_plySpriteX counts 88 down
   STA colCount
   JSR SetCRTCStart
 
+\ AND THE SIXTEENTH ROW, which this screen has always painted and never
+\ shown: GoWashRow runs X = 0-15 because the C64's wash fills all sixteen
+\ rows of its screen area, and only the R8 blank at fire 3 was hiding the
+\ last one. Nothing else here changes. The 999 page follows and keeps it;
+\ the title comes after that, and GameStart's first ReframeView is what
+\ finally puts the deck's fifteen back. See T1_I3X in main.asm.
+  LDA #HI(T1_I3X)               \ the high byte alone — see T1_I3X
+  STA t1i3Hi
+
   LDX #15
 .gw_all
   STX goBoil

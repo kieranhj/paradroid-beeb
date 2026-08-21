@@ -70,9 +70,10 @@
 \ ============================================================
 \ con_ShipInfo ($3062): DrawSideview minus the lift — the cross-section
 \ with the CURRENT deck lit and NO shaft mark, drawn once and static.
-\ The console has already flattened the scroll; the panel line stays
-\ the console's. Rows 13-15 of the view are blank, so the console's
-\ 15 visible rows lose nothing and t1i3 is left alone.
+\ The console has already flattened the scroll AND taken the sixteenth
+\ row (ConsoleOpen), so this page draws the same sixteen the lift's does
+\ and needs no display work of its own; the panel line stays the
+\ console's. Rows 13-15 of the view are blank either way.
 .LvShip7
   JSR LvBuildGlyphOf
   JSR LvClearShadows

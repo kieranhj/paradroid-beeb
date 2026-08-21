@@ -2581,9 +2581,7 @@ ENDIF
   DEX
   BPL xe4_pal
 
-  LDA #LO(T1_I3X)
-  STA t1i3Lo
-  LDA #HI(T1_I3X)
+  LDA #HI(T1_I3X)               \ the high byte alone — see T1_I3X
   STA t1i3Hi
   LDA #1
   STA xferActive
@@ -2649,12 +2647,8 @@ ENDIF
   STA palPlay,X
   DEX
   BPL xx4_pal
-  LDA #LO(T1_I3)
-  STA t1i3Lo
-  LDA #HI(T1_I3)
-  STA t1i3Hi
-  LDA #0
-  STA xferActive
+  LDA #0                        \ t1i3 is NOT put back here: the ReframeView
+  STA xferActive                \ this ends on does it — see T1_I3X
   STA xferDroid
   STA xfmDone
   LDA #MM_MOBILE
@@ -2922,9 +2916,7 @@ XF_PHYS_NEUT = 0                \ black   — logical 3, structure/unclaimed
   DEX
   BPL lve_pal
 
-  LDA #LO(T1_I3X)
-  STA t1i3Lo
-  LDA #HI(T1_I3X)
+  LDA #HI(T1_I3X)               \ the high byte alone — see T1_I3X
   STA t1i3Hi
   LDA #2                        \ liftMode 2: the view has the machine
   STA liftMode
@@ -3009,12 +3001,11 @@ XF_PHYS_NEUT = 0                \ black   — logical 3, structure/unclaimed
   STA palPlay,X
   DEX
   BPL lvx_pal
-  LDA #LO(T1_I3)
-  STA t1i3Lo
-  LDA #HI(T1_I3)
-  STA t1i3Hi
-  LDA #0
-  STA liftMode
+  LDA #0                        \ t1i3 is NOT put back here: both endings
+  STA liftMode                  \ reach ReframeView — the same-deck arm
+                                \ directly, the loading one through
+                                \ LoadDeck — and that is where it goes
+                                \ back. See T1_I3X
   LDA #MM_MOBILE
   STA moveMode
   LDA #MM_DELAY
@@ -3190,23 +3181,12 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
 \ copy this shim used to make at SPR_SAVE is gone: ConDeck7 walks the
 \ tile map in place, and this is only the display work.
 \
-\ THE PLAN IS 16 ROWS and the console displays 15 — so the page
-\ borrows the transfer game's t1i3 trick: with the scroll flat the
-\ 16th buffer row is real content and only the fire-3 interval hides
-\ it. Decks 2, 10, 11 and 12 have map in row 15; the C64 shows it.
-.ConDeckEnter4
-  LDA #LO(T1_I3X)
-  STA t1i3Lo
-  LDA #HI(T1_I3X)
-  STA t1i3Hi
-  RTS
-
-.ConDeckExit4                   \ the 16th row back under the blank
-  LDA #LO(T1_I3)
-  STA t1i3Lo
-  LDA #HI(T1_I3)
-  STA t1i3Hi
-  RTS
+\ THE PLAN IS 16 ROWS and so, since 2026-08-21, is the whole console:
+\ ConsoleOpen sets t1i3 to T1_I3X for the session and ReframeView puts
+\ it back on the way out, so the page needs no display work of its own
+\ and ConDeckEnter4/ConDeckExit4 are gone with it — ConsoleTick calls
+\ ConDeck7 directly. Decks 2, 10, 11 and 12 have map in row 15; the C64
+\ shows it, and now so does every other console page.
 
 \ ---- the marker: a white bar beside the selected icon -------
 \ One 4-px column, eight scanlines, at unit 1 — clear of the icons at
