@@ -3,8 +3,8 @@
 `NewShipInfo` (`$36B9`), `ShowXferInfo` (`$3734`) and `EndGame`'s hires page (`$37DC`): the four
 full-screen pages that show one droid's picture beside a paragraph of the original's own prose.
 
-**Status:** the 001 screen is **built and verified in jsbeeb, 2026-08-21**. The two transfer pages
-and the game-over page are built and wired but **not yet verified**.
+**Status:** the 001 screen and the two transfer pages are **built and verified in jsbeeb,
+2026-08-21**. The game-over page is built and wired but **not yet verified**.
 
 ## 1. The printer was already here
 
@@ -83,7 +83,36 @@ low overlay has the same hazard.
 instantly" because L was still held from the title, or stuck down in the emulator harness. Test the
 screens through `DEBUG_RESTART`'s R instead — it reaches `GameStartInfo` without touching fire.
 
-## 5. Still to do
+## 5. How the transfer reaches its two pages
+
+`Capture` calls `ShowXferInfo` before `SubGameSelectSide`, so the pages go **in front of**
+`XferEnter`, not inside it. The main loop's `xferDroid` trigger now opens page 1 instead of the
+board, and the chain is:
+
+```
+  trigger  ->  gather drType[xferDroid] into xfmTgtType   (main RAM: the one
+               place bank 4's table is still reachable)
+           ->  page 1, the unit you control     (type from pmType)
+           ->  page 2, the unit you want        (type from xfmTgtType)   IsDone chains it
+           ->  IS_ACT_BOARD -> XferEnter -> XferEnter4 + XfStart
+```
+
+Two things fall out of that and both are deliberate. The **player's** type comes from `pmType`,
+PanelTick's mirror, rather than from a gather — one fewer thing for main RAM to do. And
+`XferEnter4` re-gathers both types a moment later, which is harmless: it is the same read of the
+same table, and leaving it alone means Layer 10's entry is untouched.
+
+Verified 2026-08-21 by poking `xferDroid` — the byte the loop tests is the whole trigger, so it is
+also the whole test harness. Page 1 showed the 001, page 2 the 296 the poked index pointed at, and
+the board came up behind them with the side-select counter running.
+
+**Seen while testing, NOT investigated:** coming back out of a completed transfer leaves a band of
+noise along the bottom of the play area — buffer row 15, the one `RedrawAll` does not draw and
+`DbClear` does not clear. It looks like the transfer's `t1i3` (which moves fire 3 down a row so the
+16th row shows) not being fully undone, which would make it Layer 10's and older than this work,
+but that has not been confirmed either way.
+
+## 6. Still to do
 
 - Verify the two transfer pages and the game-over page in play.
 - The deck-clear arm (`RunDroids` `$17DC`): `CPY #1`, the 250+250 bonus, `notInDeck`, and the
