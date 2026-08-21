@@ -1448,24 +1448,22 @@ XF_REPLAY_PASSES = 50
   AND #1
   BNE xct_x
   LDA xfTime
-  BNE xct_run
-  LDA #8                        \ $2106 posts $1B here — but at 50 Hz,
-  STA sndFx2                    \ which restarts the zipper EVERY tick and
-  RTS                           \ pins it to a steady ~240 Hz drone. Our
-                                \ pass-rate repost lets the zipper's wrap
-                                \ scream through (KC: "a bit intense"), so
-                                \ the time-up borrows the ALARM instead:
-                                \ at this cadence it plays as a near-steady
-                                \ ~490 Hz warble — the C64's character, an
-                                \ octave up. An exact-240 custom record is
-                                \ the 11-byte alternative if ever wanted
-.xct_run
-  SED
-  SEC
+  BEQ xct_x                     \ already out: NOTHING — $20E0's own early
+  SED                           \ exit, and it matters: the time-up posts
+  SEC                           \ exactly ONCE, below
   SBC #1
   STA xfTime
   CLD
   JSR XfTimeText
+  LDA xfTime
+  BNE xct_x
+  LDA #&1B                      \ $2104: the countdown JUST hit zero — one
+  STA sndFx2                    \ post, one zipper, which then fades out
+                                \ over its ~3 s release. A first port of
+                                \ this posted it every other pass from the
+                                \ already-zero arm: full volume forever, no
+                                \ fade — KC heard both the intensity and
+                                \ the missing fade
 .xct_x
   RTS
 
