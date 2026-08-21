@@ -2044,6 +2044,13 @@ ENDMACRO
   JSR PageTabsIn                \ and, with it up, the four droid tables the
                                 \ panel needs and cannot reach from bank 6
 
+  LDX #IS_BLANK                 \ Layer 11d: black the strip BEFORE the
+  JSR InfoCall                  \ rupture starts showing it. &5800-&7FFF
+                                \ still holds the title's framebuffer,
+                                \ and with the 001 screen holding
+                                \ LoadDeck's redraw back nothing else
+                                \ writes there until the page prints
+
   JSR SetupRupture              \ NOW the CRTC goes into the rupture's
                                 \ shape: it stops VSync, so it has to be
                                 \ after the last filing-system call

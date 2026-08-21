@@ -66,6 +66,33 @@ DB_COL_TOKEN = 9
 
 IS_OVER_TYPE = 23               \ $37E4: dType = $17, the 999
 
+IS_BLANK = &FF                  \ IsEntry's third door, and not a screen
+
+\ ============================================================
+\ IsBlank — black the play area before the rupture shows it
+\ ============================================================
+\ THE TITLE'S FRAMEBUFFER IS &4000-&7E7F AND THE PLAY BUFFER IS INSIDE
+\ IT. TitleSeq rebuilds the panel and the &5400 tables over their share
+\ of that ground, but nothing owns &5800-&7FFF until something draws
+\ there — and with the 001 screen now holding LoadDeck's redraw back,
+\ that is not until the page is printed. In between, SetupRupture starts
+\ displaying the strip, and what it displays is the title, smeared.
+\
+\ So TitleSeq blanks it on the way past, and the page prints onto black.
+\ It is DbClear because DbClear is already exactly this — and because the
+\ page is about to call it again anyway, which costs 60,000 cycles once
+\ and buys not having a second clear in main RAM, where there is no room
+\ for one.
+\
+\ infoAct IS SET so that InfoCall's continuation reads $FF and does
+\ nothing. At this point in the boot the byte has never been written —
+\ lowbss is SKIPped, not loaded — and a garbage 0 there would send the
+\ shim into ReframeView before there is a deck to draw.
+.IsBlank
+  LDA #&FF
+  STA infoAct
+  JMP DbClear                   \ and its RTS
+
 \ ============================================================
 \ IsEntry — one door, because paging is expensive in BYTES
 \ ============================================================
@@ -78,11 +105,18 @@ IS_OVER_TYPE = 23               \ $37E4: dType = $17, the 999
 \ survive the paging that happens between the caller setting it and this
 \ reading it, and A does not — passed in A, every tick arrived as 7 and
 \ redrew screen 6 instead, forever.
+\
+\ X = $FF is a third door, and it opens no screen: it is the blank the
+\ rupture needs — see IsBlank.
 .IsEntry
   TXA
   BNE is_en_start
   JMP IsTick
 .is_en_start
+  CPX #IS_BLANK
+  BNE is_en_scr
+  JMP IsBlank
+.is_en_scr
   SEC
   SBC #1
                                 \ falls into IsStart
