@@ -26,9 +26,10 @@
 \ both are in bank 6, which had 63 bytes free, and only one bank is
 \ visible at a time. Main RAM had 53 bytes and bank 4 about 300, so
 \ neither could take the page either. Bank 7 had 6K, so the page lives
-\ here and the string table and the droid icon are emitted a second time
-\ by their own generators (strings7.asm, droidicon7.asm) rather than
-\ copied by hand. See docs/layer-9-hud.md.
+\ here — beside portrait.asm and the pool it draws the droid's picture
+\ from. (The string table moved to main RAM in Layer 13a, and the
+\ droid-icon second copy went with the rotor-and-digits stand-in when
+\ the real portrait landed.) See docs/layer-9-hud.md.
 \
 \ WHAT IT CAN AND CANNOT REACH. Main RAM freely â€” the font at FONT_ADDR,
 \ the droid tables at PN_TABS, the play buffer, the panel, keydown. Bank
@@ -74,14 +75,13 @@ DB_VAL_WEIGHT = 9
 DB_DESC_BREAK = &FE             \ a sentence break: a full stop, then a capital
 DB_DESC_END   = &FF
 
-\ ---- the droid image ----------------------------------------
-\ Sprite X 40 is 16 pixels in, which is unit 4; the image goes level with
-\ the first content lines and clear of the text, which starts at column 9.
+\ ---- the droid portrait -------------------------------------
+\ Sprite X 40 is 16 pixels in, which is unit 4, and sprite Y 144 puts
+\ the 48 x 84 picture level with the content lines — buffer rows 2-12,
+\ units 4-15 — clear of the stat text, which starts at column 9.
+\ portrait.asm draws it; these two anchor its rectangle.
 DB_IMG_ROW  = 2
 DB_IMG_UNIT = 4
-DB_IMG_D    = BUF_BASE + DB_IMG_ROW * ROW_BYTES + DB_IMG_UNIT * UNIT_BYTES
-DB_IMG_ROWS = 3                 \ 21 scanlines is three character rows
-DB_IMG_LINES = 21
 
 \ ============================================================
 \ DbTick â€” con_DroidInfo ($2CC6), once a pass
@@ -929,6 +929,8 @@ DB_DESC_MAX = &38 - &10         \ sub_0_2DCD's own bound, rebased to 0
 \ ConClear's twin, and the same three blocks for the same reason: a row
 \ is 640 bytes, which is two pages and a half.
 .DbClear
+  LDA #&FF                      \ the portrait went with the screen:
+  STA poLastType                \ DbImage's guard must not skip the repaint
   LDA #LO(BUF_BASE) : STA pnDst
   LDA #HI(BUF_BASE) : STA pnDst+1
   LDX #PLAY_VIS_ROWS
@@ -960,154 +962,26 @@ DB_DESC_MAX = &38 - &10         \ sub_0_2DCD's own bound, rebased to 0
   RTS
 
 \ ============================================================
-\ DbImage â€” the droid being read about
+\ DbImage â€” the droid being read about: the C64's own portrait
 \ ============================================================
-\ BuildIntroSprites ($3629) draws a 48 x 84 multicolour PORTRAIT here,
-\ built from four sprite images the record names and their mirrors. The
-\ port has no portrait: its droid artwork is compiled into the sprite
-\ banks and cannot be read back, which is decision 16 in
-\ docs/layer-9-hud.md â€” so this draws the same rotor-and-digits image the
-\ console's own menu icon does, for dbType instead of the player.
+\ BuildIntroSprites ($3629) composes a 48 x 84 PORTRAIT here from four
+\ sprite images the record names plus their mirrors, and since Layer 13d
+\ so do we: PoDraw in portrait.asm, from the pool portraits.asm carries
+\ verbatim. The rotor-and-digits stand-in this used to draw is gone,
+\ and droidicon7.asm with it.
 \
-\ ConDroid and ConSprite, transliterated: bank 6 owns those and this bank
-\ cannot call them. The X-expansion is not here â€” the droid is not one of
-\ the two wide icons â€” and neither is the row table, because the image is
-\ always the droid.
+\ GUARDED, unlike the C64's call: theirs writes eight sprite registers,
+\ ours repaints ~1K of buffer through a mask, so the browser only pays
+\ when the type it shows changes. DbClear invalidates poLastType â€” a
+\ cleared screen must repaint whatever the type â€” and page 3's re-entry
+\ call comes through the same guard, after the same clear.
 .DbImage
-  LDY dbType
-  LDA pnTabCent,Y
-  STA dbDig+0
-  LDA pnTabNum,Y
-  LSR A : LSR A : LSR A : LSR A
-  STA dbDig+1
-  LDY dbType
-  LDA pnTabNum,Y
-  AND #&0F
-  STA dbDig+2
-
-  LDA #LO(DB_IMG_D) : STA pnDst
-  LDA #HI(DB_IMG_D) : STA pnDst+1
-  LDA #0
-  STA dbImgRow
-.db_i_crow
-  LDA #0
-  STA dbImgY
-.db_i_row
-  JSR DbImageRow
-  JSR DbImagePut
-  INC dbImgRow
-  INC dbImgY
-  LDA dbImgY
-  CMP #8
-  BNE db_i_row
-  CLC
-  LDA pnDst   : ADC #LO(ROW_BYTES) : STA pnDst
-  LDA pnDst+1 : ADC #HI(ROW_BYTES) : STA pnDst+1
-  LDA dbImgRow
-  CMP #DB_IMG_ROWS * 8
-  BNE db_i_crow
-  RTS
-
-\ ---- one row of the droid, as three C64 sprite bytes ---------
-\ Rows 0-4 rotor top, 6-13 the digits, 15-19 rotor bottom. Rows 5, 14 and
-\ 20 are written by neither routine on the C64 either, so they stay
-\ blank, and 21-23 are past the sprite.
-.DbImageRow
-  LDA #0
-  LDX #2
-.db_ir_blank
-  STA dbSrcRow,X
-  DEX
-  BPL db_ir_blank
-
-  LDA dbImgRow
-  CMP #5
-  BCC db_ir_rotor
-  CMP #6
-  BCC db_ir_x
-  CMP #14
-  BCC db_ir_digits
-  CMP #15
-  BCC db_ir_x
-  CMP #20
-  BCS db_ir_x
-  SEC                           \ 15-19 are rotor rows 5-9
-  SBC #10
-.db_ir_rotor
-  STA dbTmp                     \ index * 3
-  ASL A
-  CLC : ADC dbTmp
-  TAY
-  LDX #0
-.db_ir_rcopy
-  LDA conDrRotor7,Y
-  STA dbSrcRow,X
-  INY
-  INX
-  CPX #3
-  BNE db_ir_rcopy
-.db_ir_x
-  RTS
-
-\ Each digit is eight rows of ONE byte, so the three go straight into the
-\ three bytes of the row.
-.db_ir_digits
-  SEC
-  SBC #6
-  STA dbTmp
-  LDX #0
-.db_ir_dloop
-  STX dbTmp2
-  LDA dbDig,X                   \ digit * 8 bytes a glyph
-  ASL A : ASL A : ASL A
-  CLC : ADC dbTmp
-  TAY
-  LDX dbTmp2
-  LDA conDrDigits7,Y
-  STA dbSrcRow,X
-  INX
-  CPX #3
-  BNE db_ir_dloop
-  RTS
-
-\ ---- three C64 bytes to six MODE 1 --------------------------
-\ A hires sprite byte is eight 1-bit pixels and the image is drawn in
-\ LOGICAL 3, which is BOTH colour planes â€” so four pixels are one
-\ nibble and the conversion is a shift and a mask.
-\
-\ THE SOURCE IS ROW MAJOR AND THE BUFFER IS NOT: a 4-pixel column's eight
-\ bytes are eight consecutive SCANLINES, so the scanline is the offset
-\ within a column and the columns are eight bytes apart.
-.DbImagePut
-  LDA dbImgY
-  STA dbDstOfs
-  LDX #0
-.db_ip_byte
-  STX dbTmp2
-  LDA dbSrcRow,X
-  LSR A : LSR A : LSR A : LSR A \ pixels 0-3
-  JSR db_ip_nib
-  LDX dbTmp2
-  LDA dbSrcRow,X
-  AND #&0F                      \ pixels 4-7
-  JSR db_ip_nib
-  LDX dbTmp2
-  INX
-  CPX #3
-  BNE db_ip_byte
-  RTS
-.dbNib3                         \ a nibble into BOTH colour planes
-  EQUB &00,&11,&22,&33,&44,&55,&66,&77
-  EQUB &88,&99,&AA,&BB,&CC,&DD,&EE,&FF
-
-.db_ip_nib
-  TAX                           \ the ink is logical 3, not the low plane
-  LDA dbNib3,X                  \ alone as when white was logical 1
-  LDY dbDstOfs
-  STA (pnDst),Y
-  LDA dbDstOfs
-  CLC : ADC #UNIT_BYTES
-  STA dbDstOfs
+  LDA dbType
+  CMP poLastType
+  BEQ db_i_same
+  STA poLastType
+  JMP PoDraw                    \ bank 7 to bank 7: a plain JSR-less tail
+.db_i_same
   RTS
 
 \ ============================================================
@@ -1153,7 +1027,7 @@ NEXT
 
 ASSERT DB_LINE_LAST < DB_LINES
 ASSERT (DB_LINE_LAST * 2) + 2 <= PLAY_VIS_ROWS
-ASSERT DB_IMG_ROW + DB_IMG_ROWS <= PLAY_VIS_ROWS
+ASSERT DB_IMG_ROW + 11 <= PLAY_VIS_ROWS  \ the 84-scanline portrait: rows 2-12
 
 \ ---- state --------------------------------------------------
 \ conDbReq is in MAIN RAM with the console's other bridge bytes, because
@@ -1170,11 +1044,6 @@ ASSERT DB_IMG_ROW + DB_IMG_ROWS <= PLAY_VIS_ROWS
 .dbIx      EQUB 0
 .dbTmp     EQUB 0
 .dbTmp2    EQUB 0
-.dbDig     EQUB 0, 0, 0
-.dbSrcRow  EQUB 0, 0, 0
-.dbImgRow  EQUB 0
-.dbImgY    EQUB 0
-.dbDstOfs  EQUB 0
 .dbPrevF   EQUB 0
 .dbPrevU   EQUB 0
 .dbPrevD   EQUB 0

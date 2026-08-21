@@ -222,12 +222,15 @@ listing (the empty sprite at `$4000`); the game sets them dynamically.
 > exported with bounding boxes into bank 5, 0/31 round-trip mismatches. The 80 main definitions
 > remain unported.
 >
-> **The droid database's portrait is in that unported block.** `BuildIntroSprites` (`$3629`) builds
-> a 48 × 84 multicolour picture per type from four images the type's `DroidInfo_dat` record names
-> (bytes 0-7) plus their mirrors — image *N* meaning `$4000 + N*64`, so `$66`-`$90` land in
-> `$5400-$67FF`. Twenty-four types of it is ~6 K raw, which is the whole of bank 7's free space, so
-> the console's database draws the runtime-composed rotor-and-digits droid instead and
-> `export_droidinfo.py` does not export bytes 0-7 at all. See `docs/layer-9-hud.md` §6f, decision 2.
+> **The droid portrait IS ported (2026-08-20).** `BuildIntroSprites` (`$3629`) builds a 48 × 84
+> picture per type from four images the type's `DroidInfo_dat` record names (bytes 0-7) plus their
+> mirrors — image *N* meaning `$4000 + N*64`. `tools/export_portraits.py` extracts the unique pool
+> those records reach — **63 images, 4,032 bytes, verbatim** — plus the per-type index and the
+> multicolour→MODE 1 expansion tables, into `src/data/portraits.asm` for bank 7; `src/portrait.asm`
+> composes them at draw time (mirrors, `rptLen` stacking and hires images included) and the
+> console's database page draws the result. Verified byte-for-byte against a Python replay of
+> `BuildIntroSprites`. `export_droidinfo.py` still does not export bytes 0-7 — the portrait
+> exporter owns them now. See `docs/layer-9-hud.md` §6f, decision 2.
 
 ---
 

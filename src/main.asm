@@ -2615,9 +2615,12 @@ INCLUDE "src/condeck.asm"
 INCLUDE "src/condb.asm"
 \ The title screen is NOT here any more: it is the PARTITL disc overlay,
 \ assembled at TITLE_ADDR after the PARAFNT block below. Layer 13d took
-\ it out to fund the droid portrait pool.
+\ it out to fund the droid portrait pool — which is this:
+INCLUDE "src/data/portraits.asm"
+INCLUDE "src/portrait.asm"
+\ droidicon7.asm is gone with the rotor-and-digits stand-in: the
+\ database draws the C64's own portrait now.
 INCLUDE "src/data/droidinfo.asm"
-INCLUDE "src/data/droidicon7.asm"
 INCLUDE "src/data/plandata.asm"
 INCLUDE "src/data/sideview.asm"
 .xfer_end

@@ -569,26 +569,25 @@ The decisions, in the pages' pattern:
    originals, from the same byte lists, so the copies cannot drift — the plandata.asm precedent.
    Cost: bank 7 goes from 6,170 bytes free to **2,074**; bank 6 and bank 4 are untouched, and
    main RAM pays 33 bytes for the conductor's arm and one flag.
-2. **[DECISION — REVISIT: the portrait is still to come, KC 2026-08-17]** The image is the
-   port's droid, **not the C64's portrait**, and that is a gap rather than a settled answer: the
-   database is complete except for its artwork. `BuildIntroSprites`
-   (`$3629`) draws a **48 × 84 multicolour portrait** built from four sprite images the record
-   names (bytes 0-7) plus their mirrors. The port has no portrait: that artwork is in the C64's
-   `$5400-$67FF` block, which is not ported, and 24 types of it is ~6 K — the whole of bank 7's
-   free space. So the page draws the same runtime-composed rotor-and-digits image the console's
-   own menu icon draws, for the type being read about. **This is decision 16 again**, and the
-   same reasoning: the C64's console icon is itself a runtime-built droid sprite. Record bytes
-   0-7 are therefore not exported, which is what takes the data from 1,536 bytes to 711.
-
-   > **What it would take, when the portrait is done.** The record's four image numbers index
-   > `$4000 + N*64`, so the pixels are `rip_graphics.py`'s to extract and a new exporter's to
-   > convert; the mirrored right half is `MirrorSprite`'s, and the band heights are bit 5-0 of
-   > each sprite's 64th byte with bit 7 the multicolour flag (`$3670`-`$367C`). It is
-   > **multicolour**, so it needs the deck-independent palette question answered as well as the
-   > space: 24 types at 4 × 63 bytes is 6,048 raw, which is three times what bank 7 has left, so
-   > it wants either its own bank or a per-type load. Record bytes 0-7 would come back into
-   > `export_droidinfo.py` at that point. Until then the page is right in every respect except
-   > what the droid looks like.
+2. **[DECISION — RESOLVED 2026-08-20: the page draws the C64's portrait.]** The revisit this
+   entry used to carry is done: KC reversed the deferral, the title moved out to the `PARTITL`
+   disc overlay to fund it, and `portrait.asm` + `portraits.asm` in bank 7 now compose
+   `BuildIntroSprites`' (`$3629`) **48 × 84 portrait** in `DbImage`'s place. The costing that
+   deferred it was wrong: only the LEFT column of the 2 × 4 sprite grid is stored (the right is
+   `MirrorSprite`'s at runtime, ours as theirs), the 24 records share their images, and the
+   unique pool is **63 sprites = 4,032 bytes verbatim** — not 6 K, and never 24 K, because one
+   multicolour pair is exactly two MODE 1 pixels and `PoDraw` expands at draw time the way
+   `FontCell` does. Byte 63 of each image is bit 7 = multicolour, bits 0-4 = `rptLen`, the
+   stacking step ($3670$-$367C$); pairs overlap when it is under 21 and the upper sprite wins,
+   so `PoDraw` composes bottom-up through `SPR_MASKTAB` transparency. The rectangle is the
+   stand-in's own: rows 2-12, units 4-15 — sprite X 40 / Y 144, translated. **Verified
+   byte-for-byte** against a Python replay of `BuildIntroSprites` (types 0, 14, 23 — mirror,
+   explicit-right and hires paths — 0 of 1,008 bytes differing each). The rotor-and-digits
+   stand-in and `droidicon7.asm` are deleted; `DbImage` is now a guard (repaint only when the
+   type or a clear demands) in front of `PoDraw`. The page palette maps each 2-bit value to its
+   logical colour; the C64's per-type sprite colour themes are Layer 14's with every other
+   palette. Still owed: an in-game play-check of the page, and a parameterised rectangle so
+   `NewShipInfo`, `ShowXferInfo` and the game-over 999 can share the renderer.
 3. **[DECISION] `More...` goes in the STATUS LINE, as `More_txt` (`$6C08`) says.** Its own
    `prntY`/`prntX` are 2 and 2 — the mode word's field, where `Console` is — and `$2D4F` puts
    `Console_txt` back when the stick continues. Bank 7 already writes that field (the transfer
