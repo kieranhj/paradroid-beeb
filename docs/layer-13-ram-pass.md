@@ -33,7 +33,9 @@ holds less game than the C64's 64 K:
    to, where the C64's screen RAM *is* its tile map.
 3. **2bpp doubling, ≈ +5 K.** MODE 1 doubles the charset (2,192 against 1,096, and the 1bpp source
    is kept too, to rebuild per deck), the text font, the effect artwork and every bank-7 glyph set.
-4. **The bank tax, ≈ +4–5 K.** One bank visible at a time, so `constrings7`, `droidicon7` and
+4. **The bank tax, ≈ +4–5 K.** One bank visible at a time, so `constrings7`, `droidicon7` (both
+   since gone — TASK 7 took the strings to one main-RAM copy, and 13d deleted `droidicon7` with
+   the portrait stand-in) and
    `conDrDigits7` are literal second copies (~1.8 K); the transfer and lift glyph sets ship
    pre-recoloured variants (~1.1 K); the shadow screen was 2 K of bank rather than a reuse; plus
    shims, paging and ~900 bytes of alignment holes.

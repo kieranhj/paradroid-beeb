@@ -108,7 +108,8 @@ code. Redirecting **stdout** alone is safe, which is how `build.ps1` captures th
 `2>&1` that does the damage. From the Bash tool, `./bin/beebasm.exe ... 2>&1` is fine.
 
 **beebasm's `SAVE` writes a loose host file whenever it has no disc image to put it in**, so any
-run without a working `-do` drops `PARA`, `PARADAT`, `PARASPR`, `PARSPR2`, `PARXFER` and `PARAFNT`
+run without a working `-do` drops `PARA`, `PARADAT`, `PARASPR`, `PARSPR2`, `PARXFER`, `PARAFNT`,
+`PARALOW` and `PARTITL`
 in the project root. They are gitignored. Two things follow: a `-do` path that cannot be written leaves a
 build that *looks* like it worked, and the symbol dump below litters unless you give it one.
 
@@ -119,7 +120,7 @@ Symbol addresses come from
 ```
 
 which dumps every global label as one long line of `'name':decimal` — the quick way to find a
-variable's runtime address for an emulator poke. `-do` is there only to stop the six loose files.
+variable's runtime address for an emulator poke. `-do` is there only to stop the eight loose files.
 
 ## Confirmed hardware facts (measured, not assumed)
 

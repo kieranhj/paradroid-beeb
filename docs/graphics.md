@@ -38,20 +38,19 @@ These emit BeebASM sources into `src/data/` (gitignored — converted game artwo
 | `export_bbc.py` | `chardata.asm` | C64 bitmaps, palette slots, code→index remap — the charset is built from this at deck load, not shipped |
 | | `colours.asm` | 8 scheme records, deck→scheme, per-deck colour maps |
 | | `tiledefs.asm` | 32 tile definitions, byte-identical |
-| | `levels.asm` | 16 deck maps RLE + pointers + metadata, byte-identical |
+| | `levels.asm` | 16 deck maps, decoded offline and ZX0-compressed (`tools/zx0.py`), plus pointers and metadata; the decoded maps are byte-identical — Layer 13d |
 | | `plandata.asm` | the deck plan's 31 char bitmaps plus the per-deck ink table, bank 7 |
 | `export_droids.py` | `droids.asm` | 24 droid types × 8 rotor phases, as compiled 6502 plus stored rows |
 | | `droidgame.asm` | The game-data half: speeds, waypoints, per-deck type base |
-| `export_strings.py` | `strings.asm` | The `$C000` string table, translated to port glyph indices, bank 6 |
-| | `strings7.asm` | The same bytes again under a second label, for the droid database in bank 7 |
-| `export_droidicon.py` | `droidicon.asm` | The console's composed droid icon: one rotor phase and ten digits, bank 6 |
-| | `droidicon7.asm` | The same bytes again, for bank 7 |
+| `export_strings.py` | `strings.asm` | The `$C000` string table, translated to port glyph indices — ONE copy, main RAM in the `PARAFNT` file since Layer 13a, read from banks 6 and 7 alike |
+| `export_droidicon.py` | `droidicon.asm` | The console's composed droid icon: one rotor phase and ten digits, bank 6. (It used to emit a bank-7 second copy, `droidicon7.asm`; that went with the rotor-and-digits stand-in when the real portrait landed, Layer 13d) |
 | `export_droidinfo.py` | `droidinfo.asm` | `DroidInfo_dat` (`$EB00`) less its portrait sprite images: per-type stats and the packed descriptions, bank 7 |
+| `export_portraits.py` | `portraits.asm` | The droid portrait pool: the 63 unique sprite images `BuildIntroSprites` composes from, verbatim, plus the per-type index and the multicolour→MODE 1 tables, bank 7 — Layer 13d |
 | `verify_bbc.py` | — | Round-trips the generated sources back to C64 form and diffs against the listing |
 
-**Two tables exist twice on purpose.** The console is in bank 6 and the droid database in bank 7,
-only one bank is visible at a time, and both print from the string table and draw the same droid
-icon. Each pair is written by one tool from one list of bytes, so the copies cannot drift.
+**Nothing exists twice any more.** The string table went to one main-RAM copy in Layer 13a, and
+the droid icon's bank-7 twin went with the database's stand-in in 13d — the pages that used to
+need duplicates now read main RAM, or draw the real portrait from its own pool.
 
 ### Visualising the C64 original
 

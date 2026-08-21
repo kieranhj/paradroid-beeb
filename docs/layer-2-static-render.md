@@ -4,6 +4,12 @@
 
 `BuildLevel` RLE-decodes a deck into a tile map; `DrawScreen` renders the viewport from it.
 
+> **Superseded in one respect, 2026-08-20 (Layer 13d):** the RLE and its decoder are gone. The
+> maps now ship ZX0-compressed (decoded offline by `export_bbc.py`, byte-identical) and
+> `BuildLevel` is pointer setup in front of `Zx0Unpack`. Everything below about the RLE is the
+> historical record; the tile map it produces is unchanged. See
+> [`layer-13d-space.md`](layer-13d-space.md) §3.
+
 **Divergence from the C64 — the map buffer.** The original expands every tile into a 256×64
 *character* map at `$8000` (16K) and `DrawScreen` just copies characters from it to screen RAM.
 We keep only the **64×16 tile map (1K)** and expand tiles to characters at draw time:

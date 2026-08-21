@@ -53,13 +53,6 @@ from pathlib import Path
 PROJECT = Path(__file__).resolve().parent.parent
 OUT = PROJECT / 'src' / 'data' / 'strings.asm'
 
-# THE SAME BYTES AGAIN, FOR BANK 7. The droid database reads the table
-# too, and it is in bank 7 while the console that owns this copy is in
-# bank 6 -- only one bank is visible at a time, so the table has to exist
-# twice. Emitting both from here is what stops the two drifting apart:
-# they are the same list, written out under two labels.
-OUT7 = PROJECT / 'src' / 'data' / 'strings7.asm'
-
 TABLE = 0xC000
 
 # C64 code -> port glyph index. The alphabet is arithmetic; everything

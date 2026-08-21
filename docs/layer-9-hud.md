@@ -569,6 +569,10 @@ The decisions, in the pages' pattern:
    originals, from the same byte lists, so the copies cannot drift — the plandata.asm precedent.
    Cost: bank 7 goes from 6,170 bytes free to **2,074**; bank 6 and bank 4 are untouched, and
    main RAM pays 33 bytes for the conductor's arm and one flag.
+   *(Since superseded on both counts: Layer 13a TASK 7 took the string table to ONE main-RAM
+   copy in the `PARAFNT` file, and Layer 13d deleted `droidicon7.asm` with the portrait
+   stand-in. The costing above is the historical record of why duplication was right when
+   bank 7 was the plentiful resource.)*
 2. **[DECISION — RESOLVED 2026-08-20: the page draws the C64's portrait.]** The revisit this
    entry used to carry is done: KC reversed the deferral, the title moved out to the `PARTITL`
    disc overlay to fund it, and `portrait.asm` + `portraits.asm` in bank 7 now compose
