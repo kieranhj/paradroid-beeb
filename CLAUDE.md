@@ -73,7 +73,7 @@ proves no instruction was added, removed or reordered.
 
 | | |
 |---|---|
-| Machine | BBC Model B / B+ with **4 × 16K sideways RAM banks** (4 = data + level draw + droid AI + combat, 5 and 6 = the blitter's four compiled shifts plus Layer 9's panel/console in 6, 7 = the transfer minigame, lift screen and console pages) |
+| Machine | BBC Model B / B+ with **4 × 16K sideways RAM banks** (4 = data + level draw + droid AI + combat + the SN76489 sound driver, 5 and 6 = the blitter's four compiled shifts plus Layer 9's panel/console in 6, 7 = the transfer minigame, lift screen and console pages) |
 | CPU | Plain 6502 — `CPU 0` in BeebASM, no 65C12 opcodes |
 | Display | MODE 1, 4 colours. **Not a plain frame:** a 4-row static panel at `&4A00` above a 320 × 120 scrolled play area, driven by a three-cycle vertical rupture |
 | Play area | 10K circular strip at `&5800`, **10K hardware wrap**, scrolled by the CRTC — 4 px horizontally, 1 scanline vertically |
@@ -171,20 +171,24 @@ addresses from the `beebasm` output rather than from any document.** In outline:
 | `&4A00–&53FF` | Panel — 4 rows × 640, displayed by rupture cycle 1 |
 | `&5500–&57FF` | Character-address and sprite-mask tables, built at startup |
 | `&5800–&7FFF` | Play buffer: circular strip, 16 rows × 640 |
-| SWRAM bank 4 | `PARADAT` — tiles, levels, palettes, droid game data, **the level-draw code, the droid AI and Layer 10's entry/exit** |
+| SWRAM bank 4 | `PARADAT` — tiles, levels, palettes, droid game data, **the level-draw code, the droid AI, Layer 10's entry/exit and Layer 11e's sound driver**. The char bitmaps ship ZX0-packed; `BuildCharset` unpacks them into the idle sprite save areas at deck load |
 | SWRAM bank 5 | `PARASPR` — the blitter, shifts 0 and 1 px |
 | SWRAM bank 6 | `PARSPR2` — shifts 2 and 3 px, same layout, plus Layer 9's panel/console and the 912 B `dfsSave` snapshot — **full** (63 B) |
 | SWRAM bank 7 | `PARXFER` — Layer 10's transfer minigame, Layer 8b's lift screen, the console's ship, deck-plan and droid-database pages, and Layer 11's game over. The title is NOT here any more — it is the `PARTITL` disc overlay. **5,690 B free, reserved for the droid portrait pool** |
 
-**RAM is the binding constraint as of 2026-08-20**: main RAM **161 B in five pieces** (110 below
-`&3000`), bank 4 **1,161 B** (the ZX0 deck maps, Layer 13d). Banks 5, 6 and 7 have 1,033 / 63 / 826 B and are all paged out during
+**RAM is the binding constraint as of 2026-08-21**: main RAM 140 B in pieces (87 below
+`&3000`), bank 4 **78 B** — the sound driver and its data took the
+rest even after the char bitmaps were ZX0-packed to pay for it. The build PRINTs bank 4's fuel
+gauge every run. Banks 5, 6 and 7 have 1,033 / 63 / 826 B and are all paged out during
 play, so none of it is reachable from the main loop. Anything new needs something moved first —
 `docs/memory-map.md`'s free-RAM section lists what is left and where it can come from.
 
 **Only one bank is visible at a time.** `SprRestoreAll` and `SprDrawAll` page their own bank in and
-the data bank back out around themselves, so `SWRAM_DATA` is the resting state. This is safe only
-because the two halves are never wanted at once and **the IRQ reads neither** — check that again
-before putting anything else in a bank.
+the data bank back out around themselves, so `SWRAM_DATA` is the resting state. This is safe
+because the two halves are never wanted at once and the IRQ pages for itself: **the one thing the
+IRQ does with banks is Layer 11e's sound tick**, which saves `ROMSHAD`, pages `SWRAM_DATA` around
+`SndTick` and restores what it found — legal because `PAGEBANK` writes the shadow first. Anything
+else in the IRQ must still read no bank; check that again before putting anything else in one.
 
 All four bank files are staged through `&3000` by `*LOAD` and copied up, because the MOS has the DFS ROM
 paged in at `&8000` during a filing-system call. `*LOAD` must also happen **before** `InstallIrq` —

@@ -71,6 +71,11 @@
   LDA #HI(tilemap) : STA mapptr+1
   JMP Zx0Unpack                 \ and its RTS
 
+\ The ALERT lamp character's raw C64 bitmap, cached out of the packed
+\ stream by BuildCharset for lowcode.asm's live re-colours.
+.lampSrc
+  SKIP 8
+
 \ ============================================================
 \ BuildCharset — convert the C64 characters to MODE 1 for a deck
 \   A = deck number
@@ -88,7 +93,43 @@
 \ ============================================================
 .BuildCharset
   STA bcDeck
-  TAY
+
+\ The bitmaps ship ZX0-packed (layer-11e stage 2 took the room for the
+\ sound driver), so unpack them first — into the sprite background save
+\ areas, which are dead here: LoadDeck is the only caller, SprInit or
+\ DroidsInit re-deal every slot before anything restores, and the whole
+\ view is redrawn before the next frame. Same zero-page loan as
+\ BuildLevel's use of the depacker: the level draw has not run yet.
+  LDA #LO(charSrcPak) : STA src
+  LDA #HI(charSrcPak) : STA src+1
+  LDA #LO(SPR_SAVE) : STA mapptr
+  LDA #HI(SPR_SAVE) : STA mapptr+1
+  JSR Zx0Unpack
+
+\ And the ALERT lamp's 8 source bytes into lampSrc, because
+\ BuildLampChar re-colours the lamp DURING PLAY, when this scratch is
+\ long gone. lowcode.asm reads the cache, never charSrc.
+  LDX #ALERT_LAMP_CHAR
+  LDA charRemap,X
+  ASL A                         \ index * 8 — NUM_CHARS is 137, so the
+  STA bcTmp                     \ 16-bit form matters
+  LDA #0
+  ROL A
+  ASL bcTmp : ROL A
+  ASL bcTmp : ROL A
+  CLC
+  ADC #HI(SPR_SAVE)
+  STA bcSrc+1
+  LDA bcTmp
+  STA bcSrc                     \ SPR_SAVE is page-aligned: LO add is free
+  LDY #7
+.bc_lamp
+  LDA (bcSrc),Y
+  STA lampSrc,Y
+  DEY
+  BPL bc_lamp
+
+  LDY bcDeck
   LDA deckScheme,Y              \ recOfs = scheme * 12
   ASL A : ASL A
   STA bcTmp
@@ -106,8 +147,8 @@
   LDA colourMap,X : STA bcBg    \ all sixteen. See tools/export_bbc.py.
   JSR BuildLUTs
 
-  LDA #LO(charSrc) : STA bcSrc
-  LDA #HI(charSrc) : STA bcSrc+1
+  LDA #LO(SPR_SAVE) : STA bcSrc \ the bitmaps, unpacked above
+  LDA #HI(SPR_SAVE) : STA bcSrc+1
   LDA #LO(charset) : STA bcDst
   LDA #HI(charset) : STA bcDst+1
   CLC

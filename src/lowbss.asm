@@ -49,7 +49,8 @@ ORG LOWBSS_ADDR
 \ ---- the alert lamp -----------------------------------------
 .lampWant   SKIP 1
 .lampHave   SKIP 1
-.lampTmp    SKIP 2
+\ lampTmp (2 B) freed 2026-08-21: BuildLampChar now reads the lampSrc
+\ cache in bank 4 instead of computing a charSrc offset here.
 
 \ ---- the disruptor -----------------------------------------
 .disruptorCnt   SKIP 1          \ counts 4 down to 0 while a burst runs

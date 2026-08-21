@@ -477,21 +477,39 @@ def main():
         src.extend(mem[CHARSET_ADDR + code * 8:CHARSET_ADDR + code * 8 + 8])
         slots.append(mem[CHARCOLOR + code] >> 4)
 
+    # The bitmaps ship ZX0-packed (layer-11e stage 2: bank 4 needed the
+    # room for the sound driver). BuildCharset depacks them into the idle
+    # sprite save areas at deck-load time and reads them from there; the
+    # ALERT lamp's live re-colours read the 8-byte lampSrc cache that
+    # BuildCharset fills, never the packed stream. charSlot and charRemap
+    # stay raw - both are read outside the depack window.
+    import zx0
+    src_packed = zx0.compress(bytes(src))
+    assert zx0.decompress(bytes(src_packed)) == bytes(src), \
+        'chardata zx0 round-trip failed'
+
     path = OUT_DIR / 'chardata.asm'
     with open(path, 'w') as f:
         f.write(BANNER.format(
             name='chardata.asm',
-            desc='C64 bitmaps for the %d characters the tiles use, plus their '
-                 'palette slots and a code->index remap' % len(used)))
+            desc='C64 bitmaps for the %d characters the tiles use (ZX0), '
+                 'plus their palette slots and a code->index remap'
+                 % len(used)))
         f.write('\nNUM_CHARS = %d\n' % len(used))
-        f.write('\n.charSrc\n')
-        emit_bytes(f, src)
-        f.write('\n.charSlot\n')
-        emit_bytes(f, slots)
+        f.write('CHARSRC_SIZE = %d\n' % len(src))
+        # charRemap FIRST: it needs page alignment, and this file opens
+        # the bank at &8000, so leading with it makes the ALIGN free.
+        # Trailing it cost 200 B of padding once the bitmaps packed.
         f.write('\nALIGN &100\n.charRemap\n')
         emit_bytes(f, remap)
-    print('  chardata.asm  %5d bytes (%d of 256 chars used by tiles)'
-          % (len(src) + len(slots) + 256, len(used)))
+        f.write('\n.charSrcPak\n')
+        emit_bytes(f, src_packed)
+        f.write('\n.charSlot\n')
+        emit_bytes(f, slots)
+    print('  chardata.asm  %5d bytes (%d of 256 chars used by tiles; '
+          'bitmaps %d -> %d zx0)'
+          % (len(src_packed) + len(slots) + 256, len(used),
+             len(src), len(src_packed)))
 
     # Per-deck colour data. colourMap is deck*16 + C64 colour -> MODE 1
     # logical 0-3, precomputed here so the 6502 needs no search.

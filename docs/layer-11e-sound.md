@@ -209,12 +209,46 @@ range, share of ticks below the tone floor.
   competes with the explosion noise — stage 4's call, with KC, by ear.
 - All three weapon-fire noise sweeps and both explosions land comfortably in range.
 
-### Stage 2 — the driver core
+### Stage 2 — the driver core — DONE 2026-08-21
 
-`src/sound.asm`, assembled into the `PARADAT` block beside its data. `SndTick`, `SndReset`
-(the `sndState` machine), the register-write layer with the port A save/restore, the envelope.
-The IRQ shim (save `ROMSHAD` / page / `JSR SndTick` / restore) in `main.asm`. First audible
-milestone: poke `sndFx1` from the debugger, hear effect `$12`.
+`src/sound.asm` (1,018 B) in the `PARADAT` block beside its 508 B of data; the IRQ shim
+(save `ROMSHAD` / page bank 4 / `JSR SndTick` / restore both) at the end of `IrqHandler`'s
+VSync branch; `sndFx1/sndFx2/sndState/sndVolume` as main-RAM request bytes. **Verified in
+jsbeeb**: boot → title → game with the tick live throughout, effect `$12` poked into `sndFx1`
+produced the full droid explosion on the capture — noise claimed with `&E7`, period starting
+at N=263 (the maths says 260) sweeping to 487 as the pitch falls, instant attack, 8-tick gate
+hold, release stepping one attenuation every 4 ticks: instrument 5's exact shape.
+
+**Making it fit — where §6's overrun went.** The budget said 150–300 over; reality was 629.
+Three moves closed it, in order of size:
+
+1. **`chardata`'s bitmaps ship ZX0-packed** (1,096 → 640 B). `BuildCharset` unpacks them into
+   the sprite background save areas — dead at every `LoadDeck`, its only caller — with the
+   depacker already in the bank, then converts from there. The ALERT lamp's live re-colours
+   (`BuildLampChar`, lowcode) read an 8-byte `lampSrc` cache BuildCharset fills, since the
+   scratch is gone by play time; that also deleted the lamp's offset arithmetic and freed
+   `lampTmp`. Emission order matters: `charRemap` (page-aligned) now leads the file, because
+   trailing it cost 200 B of `ALIGN` padding once the bitmaps packed. **Verified**: title,
+   first deck and a `DEBUG_DECK` hop all render correctly from the packed set.
+2. **The chain byte and its code path are gone** (11-byte records): no record in the data
+   chains — `export_sound.py` asserts it stays true.
+3. **The conversion table halved to 64 entries** (midpoint divisors, max pitch error 0.78%,
+   under the chip's own quantisation at the top end).
+
+Bank 4 ends `&BFB2` — **78 B free**, and `main.asm` now PRINTs the bank-4 fuel gauge on
+every build.
+
+**One real bug caught by the first capture**: `SndConv`'s F<2048 clamp shortcut is a *tone*
+rule, and it flattened the (noise) explosion to N=1023. Noise voices now pre-scale F×16 with
+saturation and take the tone path — smaller and correct.
+
+**Measured tick costs** (breakpoint pairs over the shim, per `raster-timing.md`'s method):
+**475 cycles idle**, **1,161 active** (explosion playing: convert + two tone writes + the
+occasional attenuation), **2,425 on the effect-start tick** (request pickup + record and
+instrument copy, one-off). All far inside the VSync → fire 1 gap of ~10,700; against window
+A's 2,959 spare the active tick leaves ~1,800, and the idle cost is the permanent price of
+having ears. If that ever pinches, the first optimisations are `SndWrByte`'s generous ~15 µs
+hold (the chip needs ~8) and the flush's three-channel scan.
 
 ### Stage 3 — the triggers
 
@@ -234,20 +268,22 @@ combat, lift, console and transfer, listening for the per-deck hum changing betw
 
 ## 6. Where the RAM comes from
 
-| | budget | note |
-|---|---|---|
-| Driver code, bank 4 | 550–700 B | transliterated `Sound` + register layer + envelope |
-| Effect records, bank 4 | 372 B | 31 × 12 (16 minus the four pulse bytes), measured |
-| Instruments, bank 4 | 72 B | 12 × 6, measured |
-| Frequency→period table, bank 4 | 256 B | stage 1's wrap discovery bought this |
-| Sequencer state, bank 4 BSS | ~48 B | |
-| **bank 4 total** | **~1,300–1,450 B** | **against 1,161 B free — 150–300 B OVER** |
+**As built (stage 2, 2026-08-21):**
 
-**The stage-1 budget is over, and stage 2 settles it.** The table's 256 B were not in the
-original estimate. Recovery options, in preference order: the driver coming in small (the
-transliteration is more direct now the slide maths went); the three chatter records (36 B);
-halving the table to 64 entries (128 B, pitch granularity ±1%); and after that
-`layer-13-ram-pass.md`'s bank-4 candidates. Decide against the driver's real size, not now.
+| | measured | note |
+|---|---|---|
+| Driver code + state, bank 4 | 1,018 B | `sound.asm`, state and scratch included |
+| Effect records, bank 4 | 308 B | 28 × 11 — chatter and chain dropped, see stage 2 |
+| Instruments, bank 4 | 72 B | 12 × 6 |
+| Frequency→period table, bank 4 | 128 B | 64 entries, midpoint divisors |
+| `chardata` bitmaps repack | **−456 B** | + ~−200 B of `ALIGN` padding, see stage 2 |
+| Request bytes + IRQ shim, main RAM | ~29 B | `sndFx1/2`, `sndState`, `sndVolume`, the shim |
+| **bank 4 after all of it** | ends `&BFB2` | **78 B free** — the build PRINTs this now |
+
+The original estimate was 150–300 over and reality was 629 (the driver ran 1,090 B, not
+550–700, and the align padding ate part of the chardata win until the reorder). KC chose the
+ZX0-chardata route over force-fitting on 2026-08-21 — full precision was kept until the last
+128 B, and the bank keeps a real margin.
 | Request bytes, main RAM | 4 B | in an existing hole |
 | IRQ shim, main RAM | ~40 B | 110 B exist below `&3000` in pieces; the shim is the only new main-RAM code |
 
@@ -283,6 +319,12 @@ plumbing in `TiWait`, and it should follow once the driver is proven, not gate i
 
 - **Title chatter** — [DECISION 4]. Needs a `TiWait` tick throttled by VSync and an LFSR in
   place of `$D41B`. The three effect records can ship with the rest when wanted.
-- **Sub-122 Hz effects** — any effect the exporter reports clamping hard gets reviewed
-  individually (periodic noise is the usual voice for a deep rumble), rather than solved
-  generically now.
+- **Sub-122 Hz effects** — stage 1's review list: fx04 disruptor (100% of its ticks below the
+  floor), fx26 (100%), fx23 (73%), fx16 (48%), fx17 (41%), fx06 (40%). **KC 2026-08-21:
+  periodic noise clocked by tone 2 is the preferred cure** — it reaches ~15× below the tone
+  floor and is an iconic BBC sound. Tuned by ear in stage 4, effect by effect, minding that it
+  shares the one noise channel with the explosions.
+- **PWM bass as an extension possibility** (KC 2026-08-21): a higher-frequency timer toggling
+  one channel's volume gives crude PWM below the floor — but it steals gameplay cycles, so it
+  is a costed extension for later, not part of this layer. Belongs beside
+  `docs/master-extensions.md`'s entries if it is ever wanted.

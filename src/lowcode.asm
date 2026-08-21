@@ -8,7 +8,7 @@
 \
 \ THE RULES FOR WHAT MAY LIVE HERE:
 \   - it is MAIN RAM, so bank 4 may JSR in and so may the code image;
-\   - it may read bank 4 (drType, tiledefs, LUTs, charSrc) only where
+\   - it may read bank 4 (drType, tiledefs, LUTs, lampSrc) only where
 \     SWRAM_DATA is paged, which is the resting state and therefore true
 \     everywhere in the main loop — but NOT inside SprDrawAll and NOT at
 \     boot before PARADAT lands. Same one-way rule as bufcore.asm's;
@@ -471,17 +471,10 @@
   ASL A : ASL A : ASL A : ASL A \ the LUT for that foreground colour
   STA bcLutOfs
 
-  LDX #ALERT_LAMP_CHAR          \ the source bitmap: charSrc + index * 8
-  LDA charRemap,X
-  STA lampTmp
-  LDA #0
-  STA lampTmp+1
-  ASL lampTmp : ROL lampTmp+1
-  ASL lampTmp : ROL lampTmp+1
-  ASL lampTmp : ROL lampTmp+1
-  CLC
-  LDA lampTmp   : ADC #LO(charSrc) : STA bcSrc
-  LDA lampTmp+1 : ADC #HI(charSrc) : STA bcSrc+1
+  LDA #LO(lampSrc)              \ the source bitmap: the 8-byte cache
+  STA bcSrc                     \ BuildCharset fills at deck load —
+  LDA #HI(lampSrc)              \ charSrc itself ships ZX0-packed now
+  STA bcSrc+1                   \ and only exists unpacked in that window
 
   LDX #ALERT_LAMP_CHAR          \ and the destination, both halves
   LDA CHAR_PTR_LO,X : STA bcDst

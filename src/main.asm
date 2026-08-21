@@ -71,14 +71,18 @@ SWRAM_BASE = &8000
 \ out around themselves, so the data bank is what everything else
 \ sees and no caller has to know. Two swaps a pass, 8 cycles each.
 \
-\ The IRQ is the thing that would break this, and does not: RuptVSync
-\ and RuptTimer touch the CRTC, the VIA and their own variables, and
-\ read nothing out of either bank. Checked, because an interrupt that
-\ read tile data would corrupt at random with the sprite bank in.
+\ The IRQ is the thing that would break this, and mostly does not:
+\ RuptVSync and RuptTimer touch the CRTC, the VIA and their own
+\ variables, and read nothing out of either bank. THE ONE SANCTIONED
+\ BREACH is Layer 11e's sound tick: the VSync branch of IrqHandler
+\ saves ROMSHAD, pages SWRAM_DATA, runs SndTick and restores what it
+\ found — legal precisely BECAUSE every PAGEBANK writes the shadow
+\ first, so the shadow always names the bank the interrupted code
+\ intends, even between the pair's two stores.
 MACRO PAGEBANK bank
   LDA #bank
-  STA ROMSHAD                   \ both, always — see the note above
-  STA ROMSEL
+  STA ROMSHAD                   \ both, always — see the note above:
+  STA ROMSEL                    \ the IRQ restores from the SHADOW
 ENDMACRO
 
 CHAR_BYTES = 16                 \ a character is 16 bytes: two 8-byte halves
@@ -757,6 +761,16 @@ SYS_VIA_IER  = &FE4E
 USR_VIA_IER  = &FE6E
 USR_VIA_T1CL = &FE64            \ free-running 1 MHz counter — DEBUG_TIME
 USR_VIA_T1CH = &FE65
+
+\ ---- the SN76489's route in: System VIA port A --------------
+\ The same port the keyboard matrix uses, which is why sound.asm's
+\ SndWrOpen/Close save and restore DDRA and ORA around every burst
+\ of writes — verified against OSBYTE &81 in tools/sndtest.asm,
+\ layer-11e stage 0. The strobe is addressable-latch bit 0 via
+\ port B; writes 0/8 touch no other latch bit.
+SND_PORTB = &FE40
+SND_DDRA  = &FE43
+SND_ORA   = &FE4F
 
 \ ---- scratch, above the panel and below the play buffer ----
 \ &5480-&57FF is the ~900 bytes left over between the panel's last
@@ -2160,6 +2174,23 @@ ASSERT FRAME_LOCK >= 2
   INC vsyncCount
   JSR RuptVSync
 
+\ ---- the sound tick: 50 Hz, bank 4, from inside the IRQ -----
+\ Layer 11e [DECISION 1]. Safe on two measured facts: VSync to
+\ fire 1 is 84 scanlines (~10,700 cycles), an order of magnitude
+\ more than a worst-case tick; and ROMSHAD always names the bank
+\ the interrupted code intends (PAGEBANK writes it first), so
+\ save-shadow / page / restore-both is exact. T1 is continuous,
+\ so the stage cadence is immune to however long this takes.
+  LDA ROMSHAD
+  PHA
+  LDA #SWRAM_DATA
+  STA ROMSHAD
+  STA ROMSEL
+  JSR SndTick
+  PLA
+  STA ROMSHAD
+  STA ROMSEL
+
 .ih_done
   PLA : TAY
   PLA : TAX
@@ -2374,6 +2405,18 @@ ENDIF
 .sprSplit  EQUB 0               \ this pass is drawing the pool in two
 .passF0    EQUB 0               \ the window this pass started in
 .vsyncCount EQUB 0              \ bumped by IrqHandler once per field
+
+\ ---- the sound driver's request interface -------------------
+\ MAIN RAM on purpose: written by code in banks 6 and 7 (console,
+\ transfer) as well as bank 4 and here, read by SndTick in bank 4.
+\ sndFx1/sndFx2 MUST stay adjacent — SndTick indexes them by voice,
+\ the same trick the C64 plays with $91/$92. Values are the C64's:
+\ effect 1-31, bit 7 = uninterruptible; sndState 0 silent, $12 =
+\ initialise game FX (drops to 2); sndVolume 0-15, 15 = full.
+.sndFx1    EQUB 0
+.sndFx2    EQUB 0
+.sndState  EQUB 0
+.sndVolume EQUB 15
 .gameTick  EQUB 0               \ the C64's frameCount, once per ITERATION
 .oldIrq1V  EQUW 0
 .oldSysIer EQUB 0               \ the MOS's VIA state, saved by InstallIrq
@@ -2469,6 +2512,7 @@ INCLUDE "src/data/colours.asm"
 INCLUDE "src/data/tiledefs.asm"
 INCLUDE "src/data/levels.asm"
 INCLUDE "src/data/droidgame.asm"
+INCLUDE "src/data/sounddata.asm"
 
 \ ---- bank-resident working storage --------------------------
 \ Main RAM below &3000 ran out during Layer 8b. These two are the
@@ -2501,15 +2545,22 @@ INCLUDE "src/data/droidgame.asm"
 \ here with the sprite bank in would land in compiled sprite rows and
 \ there is no diagnostic for that.
 \
-\ The IRQ is safe by inspection: it touches rupture.asm and the CRTC
-\ registers, and nothing here. That was already the condition for
-\ having two banks at all.
+\ The IRQ touches rupture.asm and the CRTC registers — and, since
+\ Layer 11e, THIS BANK: IrqHandler's VSync branch pages SWRAM_DATA
+\ in around SndTick and restores the interrupted bank from ROMSHAD.
+\ That is the one sanctioned breach of "the IRQ reads neither bank",
+\ and it is why sound.asm and its data must stay in THIS bank.
 INCLUDE "src/screen.asm"
 INCLUDE "src/scroll.asm"
 INCLUDE "src/level.asm"
 INCLUDE "src/zx0depack.asm"    \ Layer 13d: BuildLevel's decompressor
 INCLUDE "src/droid.asm"
+.snd_code_start
+INCLUDE "src/sound.asm"        \ Layer 11e: the SN76489 driver — IRQ-called
 .data_end
+\ Layer 11e filled this bank to the brim (docs/layer-11e-sound.md §6);
+\ the line below is the fuel gauge, printed every build.
+PRINT "bank4 ends", ~data_end, "- free", &C000-data_end, "B (sound", data_end-snd_code_start, "B)"
 
 \ SAVED HERE, NOT AT THE BOTTOM. SAVE writes out whatever the assembled
 \ image holds at the time it runs, and the sprite bank below is about to
