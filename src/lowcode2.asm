@@ -178,7 +178,19 @@ ENDIF
 \
 \ IT IS HERE, IN THE SECOND LOW BLOCK, because &1100-&3000 had nine
 \ bytes left and the ReframeView guard wanted six of them.
+\ ESCAPE IS MADE AN ORDINARY KEY HERE, and it has to be: the self-destruct
+\ reads it with OSBYTE &81, but the MOS would also raise an escape
+\ CONDITION on the same press — and the next filing-system call, which is
+\ GoTitle's own `*LOAD`s on the way out of the game it just ended, would
+\ fail with Escape. OSBYTE 229 with X=1 stops the condition being raised
+\ and leaves the key readable. Done per game start rather than once at
+\ boot because it costs nothing here and cannot be missed.
 .GameStartInfo
+  LDA #229
+  LDX #1
+  LDY #0
+  JSR OSBYTE
+
   LDA #1
   STA infoActive
   JSR GameStart

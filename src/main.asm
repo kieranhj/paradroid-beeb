@@ -171,7 +171,6 @@ MAP_CHAR_H = MAP_ROWS * 4       \ 64 character rows
 \   DEBUG_ENERGY   ok    same, plus a mirror for its two bank-4 bytes
 \   DEBUG_INVULN   ok
 \   DEBUG_XFERWIN  ok    on by default
-\   DEBUG_RESTART  ok    on by default
 \   DEBUG_DECK     ok    on by default
 \   DEBUG_RASTER   ok    was 59 bytes over the code image
 \   DEBUG_DRAW     ok    was 83 over
@@ -404,17 +403,12 @@ DEBUG_MAPGUARD = FALSE
 \ Losing on purpose needs no key: stop steering.
 DEBUG_XFERWIN = TRUE
 
-\ DEBUG_RESTART is the second key that changes what the GAME does rather
-\ than what it draws: R throws the current game away and starts a new one
-\ through GameStart, exactly as Layer 11's game over will.
-\
-\ It exists because 11a is otherwise untestable. Splitting boot into a
-\ cold half and a per-game half is invisible until something calls the
-\ per-game half twice, and the failure mode if a default was missed is
-\ not a crash but a second game that quietly inherits the first's console
-\ state, top speed or half-pressed keys. R is how that gets found before
-\ 11b and 11c depend on it.
-DEBUG_RESTART = TRUE
+\ DEBUG_RESTART IS GONE, 2026-08-21. R threw the game away and started
+\ another, which was how Layer 11a's boot split got tested before there
+\ was a game over to test it with. ESCAPE replaces it — a real feature
+\ rather than a debug key, and a stronger test besides, because it goes
+\ through the whole of the death, the wash, the 999 page and the title
+\ rather than jumping straight back to GameStart. See the loop.
 
 \ DEBUG_DECK is the third: cursor UP and DOWN hop the player straight to
 \ the deck above or below, one deck a press, without a lift. It predates
@@ -892,7 +886,7 @@ KEY_DOWN   = &D6                \ -42
 KEY_SPACE  = &9D                \ -99
 KEY_L      = &A9                \ -87, the fire button
 KEY_W      = &DE                \ -34, DEBUG_XFERWIN only
-KEY_R      = &CC                \ -52, DEBUG_RESTART only
+KEY_ESCAPE = &8F                \ -113, the self-destruct
 
 \ ---- zero page ---------------------------------------------
 \ &70-&8F was the original allocation and is full. With BASIC not
@@ -1207,22 +1201,6 @@ ENDIF
 \ — the one point EVERY arm of the pass converges on, the four modal
 \ ones included — rather than beside the droid AI, which the modal arms
 \ jump over.
-IF DEBUG_RESTART
-\ DEBUG: throw this game away and start another, the way Layer 11's game
-\ over will. ABOVE the three modal blocks below, not down with the other
-\ debug keys: each of those ends the pass with a JMP ml_passend, so a
-\ restart placed after them could not be reached from the console, the
-\ lift view or the transfer game — which are exactly the states worth
-\ testing it from, and exactly the states a game can end in.
-\ No edge latch of its own. GameStart clears every latch in the game, so
-\ a held R restarts once a pass and a released one settles.
-  LDX #KEY_R
-  JSR keydown
-  BNE ml_notR
-  JSR GameStartInfo
-.ml_notR
-ENDIF
-
 \ ============================================================
 \ ...or the game is over
 \ ============================================================
@@ -1294,6 +1272,39 @@ ENDIF
   JSR LiftViewTick
   JMP ml_passend
 .ml_nolview
+
+\ ============================================================
+\ ESCAPE — the influence device destroys itself
+\ ============================================================
+\ A WAY OUT OF A GAME, and the port's own: the C64 has no equivalent —
+\ its only abort is the RUN/STOP that DoPause reads, which pauses. KC
+\ asked for one 2026-08-21 and it is a game feature, not a debug key.
+\ It replaces DEBUG_RESTART's R, which threw the game away and started
+\ another; this ends it properly, through everything a real death runs.
+\
+\ IT KILLS HIM AS A 001, whatever he was riding. CbCheckDeath's $144D
+\ arm is the whole mechanism — a captured droid falls back to a 001 and
+\ plays on, and a 001 has nothing to fall back on, so the game is over —
+\ and forcing the type is how "end the game" is said in that language.
+\ The explosion, the sound, the wash, the 999 page and the title all
+\ follow from it with nothing else added.
+\
+\ BELOW the four modal arms, unlike the R it replaces: each of those
+\ ends the pass, so this cannot fire while the console, the lift view,
+\ the transfer game or an information screen owns the machine. That is
+\ deliberate — those states have their own way out, and a half-finished
+\ transfer applying its outcome to a player who is already dead is a
+\ tangle with no reason to exist.
+\
+\ No edge latch. Both writes are idempotent, and once overPhase is set
+\ the game-over arm above takes the pass before this is reached again.
+  LDX #KEY_ESCAPE
+  JSR keydown
+  BNE ml_notEsc
+  LDA #0
+  STA drType
+  STA drEnergy
+.ml_notEsc
 
   \ Z / X left-right, K / M up-down. The keys feed a direction pair
   \ and the direction pair feeds an accelerating speed, so the view
@@ -3118,7 +3129,7 @@ SAVE "PARA",    start,      code_end, start
 \ ------------------------------------------------------------------
 DEBUG_ANY1 = DEBUG_RASTER OR DEBUG_DRAW OR DEBUG_POS OR DEBUG_VSYNC
 DEBUG_ANY2 = DEBUG_TIME OR DEBUG_ENERGY OR DEBUG_MAPGUARD OR DEBUG_XFERWIN
-DEBUG_ANY3 = DEBUG_RESTART OR DEBUG_INVULN OR DEBUG_DECK
+DEBUG_ANY3 = DEBUG_INVULN OR DEBUG_DECK
 DEBUG_ANY  = DEBUG_ANY1 OR DEBUG_ANY2 OR DEBUG_ANY3
 
 CLEAR &7E00, &7F00
@@ -3153,9 +3164,6 @@ EQUS " MAPGUARD"
 ENDIF
 IF DEBUG_XFERWIN
 EQUS " XFERWIN"
-ENDIF
-IF DEBUG_RESTART
-EQUS " RESTART"
 ENDIF
 IF DEBUG_INVULN
 EQUS " INVULN"

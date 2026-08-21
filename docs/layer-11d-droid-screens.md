@@ -47,7 +47,24 @@ re-authoring.
    (there is a guard on `ReframeView` saying so); the deck is drawn when the screen is dismissed,
    by the `ReframeView` in `InfoCall`'s `IS_ACT_GAME` arm. Without it the level appeared, the page
    covered it, and the level came back.
-5. **Not deviations, but worth recording:** the transfer's page turn happens *inside* bank 7
+5. **[DECISION] ESCAPE self-destructs and ends the game** (KC, 2026-08-21). **The C64 has no
+   equivalent** — its only abort is the RUN/STOP that `DoPause` reads, and that pauses — so this is
+   the port's own feature and is recorded as such. It replaces `DEBUG_RESTART`'s R, which threw the
+   game away and jumped to `GameStart`; this ends it properly instead, through everything a real
+   death runs, which also makes it a stronger test of Layer 11a's boot split than R was.
+   - **It kills him as a 001**, whatever he was riding: `CbCheckDeath`'s `$144D` arm already says
+     "a captured droid falls back to a 001, a 001 has nothing to fall back on and the game is
+     over", so forcing `drType` to 0 alongside `drEnergy` is how *end the game* is spelled in that
+     language. Nothing else is added — the explosion, the sound, the wash, the 999 page and the
+     title all follow.
+   - **It sits BELOW the four modal arms**, unlike the R it replaces. R was above them so a restart
+     could be reached from the console, the lift view or the transfer; a player-facing quit wants
+     the opposite, because those states have their own way out and a half-finished transfer
+     applying its outcome to a player who is already dead is a tangle with no reason to exist.
+   - **ESCAPE is made an ordinary key** with `OSBYTE 229, 1` in `GameStartInfo`. Without it the MOS
+     raises an escape *condition* on the same press, and the next filing-system call — which is
+     `GoTitle`'s own `*LOAD`s, on the way out of the game ESCAPE just ended — fails with Escape.
+6. **Not deviations, but worth recording:** the transfer's page turn happens *inside* bank 7
    (`IsDone` chains straight into page 2) because that needs no paging and no main-RAM arm; and the
    screens never write the panel, so — unlike the console — there is no `PanelSetup` on the way out.
 
@@ -81,7 +98,10 @@ low overlay has the same hazard.
 
 **Fire cutting the wait short looks like a bug and is not.** Several test runs "dismissed
 instantly" because L was still held from the title, or stuck down in the emulator harness. Test the
-screens through `DEBUG_RESTART`'s R instead — it reaches `GameStartInfo` without touching fire.
+screens with something that is not fire: **ESCAPE** self-destructs and takes the whole chain — the
+death, the wash, the 999 page, the title, a new game, the 001 screen. (`DEBUG_RESTART`'s R did this
+more directly and was removed on 2026-08-21 when ESCAPE replaced it.) The transfer pages have a
+shorter route still: poke `xferDroid`.
 
 ## 5. How the transfer reaches its two pages
 

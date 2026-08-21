@@ -37,7 +37,8 @@ Recharge pads turn under the player and the ALERT signs light as the ship gets a
 charset animations repainted onto the tiles in view.
 
 **Keys:** Z/X left/right, K/M up/down, L fire — and, through the original's own `moveMode` machine,
-the lift, console and transfer trigger. Cursor up/down is a debug deck hop — `DEBUG_DECK`, on by default — and SPACE a forced redraw.
+the lift, console and transfer trigger. **ESCAPE self-destructs and ends the game** — the port's
+own, since the C64 has no abort. Cursor up/down is a debug deck hop — `DEBUG_DECK`, on by default — and SPACE a forced redraw.
 
 **The frame budget:** the eight sprite slots cost ~36,000 cycles of the 79,872 in a pass and the
 droid AI another ~17,000, so the loop keeps roughly a third spare.
@@ -167,6 +168,7 @@ settled which Paradroid this listing is. Per-layer decisions are numbered in eac
 | Sprite colour is not baked in | The artwork is logical 3, so choosing a colour is choosing a nibble, and eleven zero page bytes carry it. Enemies black, player white, the deck's highlight in transfer mode, a 4-field flash below energy 8 | 2026-08-19 |
 | Player top speed | **8 px a pass, not the C64's 7** (`CAM_TOPSPD`). 7 cannot divide the CRTC's 4 px step, so the camera dithers. 14 % fast, bought deliberately | 2026-08-14 |
 | Player speed on a *slow* ride | **4 px a pass** (`CAM_SLOWSPD`) for `PlayerSpeed_t`'s 5 and 6 alike, which dithered the same way and made a slow droid jerkier than a fast one. `plySpdTab` is now `0,4,4,0,8,0,0,0,8` — a ride is fast or slow, nothing between. With `CAM_TOPSPD` these are the only movement numbers not from the original; enemy `DSpeed_t` is untouched. [layer-10 DECISION 11] | 2026-08-21 |
+| **ESCAPE ends the game** | The port's own feature, not the C64's — its only abort is the RUN/STOP `DoPause` reads, which pauses. ESCAPE kills the player **as a 001**, so `CbCheckDeath`'s existing "a 001 has nothing to fall back on" arm ends the game through the whole death, wash, 999 page and title. It replaced `DEBUG_RESTART`, which is gone. `OSBYTE 229,1` makes ESCAPE an ordinary key so the escape condition cannot break `GoTitle`'s loads. [layer-11d DECISION 5] | 2026-08-21 |
 | The disruptor's screen shake | **Not ported.** The strip is 16 rows in one hardware wrap, so a CRTC jitter fetches rows that were never drawn. Palette flash alone | 2026-08-19 |
 | The ALERT lamp's four colours | **Four states, not four hues** — MODE 1 has no fifth colour. Black, the deck's highlight, white, white blinking. The blink is a deviation; **KC 2026-08-21: it stays for now and gets another look in layer 14**, once every palette is settled in one sitting | 2026-08-20, revisit in 14 |
 | Code may live below `&1100` | The reclaimed DFS/OS workspace at `&0C90`–`&10FF`, staged and copied after the last `*LOAD`. Page `&0D`'s NMI half stays untouched | 2026-08-20 |
