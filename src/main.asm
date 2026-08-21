@@ -764,13 +764,36 @@ T1_I1 = 84 * SL - 2 + T1_TUNE - T1_PROBE
 T1_I2 = 20 * SL - 2 + T1_PROBE  \ fire 1 -> fire 2, P+44 -> P+64
 T1_I3 = PLAY_VIS_ROWS * 8 * SL - 2   \ fire 2 -> fire 3, the visible height
 
-\ The transfer game's fire 3, one character row later: with the scroll
-\ flat, all 16 buffer rows are real content and the R8 blank at fire 3
-\ is the ONLY thing hiding the 16th — the display window is already 16
-\ rows (PLAY_R6). The rupture reads the interval from t1i3Lo/Hi so
-\ XferEnter can move the bottom edge down a row and XferExit put it
-\ back. Agreed with KC: the board uses all 16 rows.
+\ EVERY NON-GAMEPLAY SCREEN'S fire 3, one character row later: with the
+\ scroll flat, all 16 buffer rows are real content and the R8 blank at
+\ fire 3 is the ONLY thing hiding the 16th — the display window is
+\ already 16 rows (PLAY_R6). The rupture reads the interval from
+\ t1i3Lo/Hi, so a screen that owns the buffer can move the bottom edge
+\ down a row.
+\
+\ THE SCREENS SET IT AND ReframeView PUTS IT BACK. Only the scrolled deck
+\ wants 15 rows; the transfer board, the lift's deck select, the console
+\ and all its pages, the four information screens and the game over's
+\ wash all want 16. So the sixteen-row state is set at each screen's
+\ entry — XferEnter4, LiftViewEnter, ConsoleOpen, IsStart, GoWashStart —
+\ and restored in ONE place, ReframeView, which every path back to the
+\ deck goes through. The per-screen exits used to restore it themselves;
+\ that was three copies of these four instructions in bank 4, which has
+\ no bytes to spare, and one of them (the deck plan's) had to be undone
+\ by the console's own the moment the page closed.
+\ Agreed with KC 2026-08-21: all the non-gameplay screens use 16 rows.
 T1_I3X = (PLAY_VIS_ROWS + 1) * 8 * SL - 2
+
+\ ONLY THE HIGH BYTE OF THE INTERVAL EVER CHANGES, and that is structural
+\ rather than lucky: the two differ by one character row, a row is 8
+\ scanlines, and a scanline is SL = 64 ticks — so the difference is &200
+\ exactly, and the low byte of every whole-row interval is the same. So
+\ t1i3Lo is a constant the rupture reads and nobody writes, and switching
+\ the bottom edge is five bytes instead of ten. That matters: there are
+\ six sites, one of them in main RAM, which had FOUR bytes free when this
+\ was built. The ASSERT is what keeps it true if SL or the row height
+\ ever moves.
+ASSERT LO(T1_I3) == LO(T1_I3X)
 
 SYS_VIA_T1CL = &FE44
 SYS_VIA_T1CH = &FE45
@@ -1895,8 +1918,9 @@ ENDMACRO
 \ itself. Both pages are their C64 selves: drawn once, static, fire
 \ returns to the console main screen. The ship page swaps the palette
 \ around itself; the deck plan keeps the deck's own, as con_DeckInfo
-\ does, and instead moves the display's bottom edge down a row (t1i3)
-\ because its map is 16 rows where the console shows 15.
+\ does. NEITHER touches the display any more: the whole console session
+\ is sixteen rows from ConsoleOpen, so the plan's 16-row map needs no
+\ switch of its own — see T1_I3X.
 .ConsoleTick
   LDA conShipReq
   CMP #2
@@ -1921,7 +1945,6 @@ ENDMACRO
   LDA conDeckReq
   CMP #1
   BNE ct_noship
-  JSR ConDeckEnter4             \ bank 4: stage the RLE, 16th row shown
   PAGEBANK SWRAM_XFER
   JSR ConDeck7                  \ bank 7: the plan, and the white marker
   PAGEBANK SWRAM_DATA
@@ -1950,7 +1973,6 @@ ENDMACRO
   JSR ConPageKeys4
   LDA conDeckReq
   BNE ct_x
-  JSR ConDeckExit4              \ bank 4: the 16th row hidden again
 .ct_back
   PNMIRROR                      \ and the console main screen again
   PAGEBANK SWRAM_SPR2
@@ -2391,6 +2413,16 @@ ASSERT FRAME_LOCK >= 2
   BEQ rv_go
   RTS
 .rv_go
+\ The deck is a FIFTEEN-row view and every screen that is not the deck is
+\ a sixteen-row one, so this is where the bottom edge comes back up —
+\ see T1_I3X. Every way back to the deck passes through here: the
+\ console's close, the information screens' IS_ACT_GAME, the transfer's
+\ exit, the lift's, and LoadDeck. The guard above is the reason it is
+\ after the label and not before it: while an information screen is up
+\ this returns early, and the screen must keep its sixteenth row.
+  LDA #HI(T1_I3)                \ the high byte alone — see T1_I3X
+  STA t1i3Hi
+
   LDA mapHX
   AND #1
   ASL A : ASL A : ASL A         \ 0 or 8

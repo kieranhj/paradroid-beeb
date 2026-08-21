@@ -41,10 +41,21 @@ DB_INK   = PN_INK_WHITE         \ white: logical 3 on every deck
 
 \ ---- the page's geometry ------------------------------------
 \ A glyph is 8 x 16, so a text line is TWO buffer rows and the console's
-\ fifteen hold seven lines. The C64 puts the name at screen row 10 and
-\ steps the content lines 12, 14 ... 22 â€” six of them, because $2DC4
-\ stops at 24 â€” so its page and ours are the same shape line for line,
-\ and no line had to be dropped or moved.
+\ sixteen hold seven lines and a spare row. The C64 puts the name at
+\ screen row 10 and steps the content lines 12, 14 ... 22 â€” six of them,
+\ because $2DC4 stops at 24 â€” so its page and ours are the same shape
+\ line for line, and no line had to be dropped or moved.
+\
+\ AND THE PAGE NOW SITS EXACTLY WHERE THE C64 PUTS IT. Its screen area
+\ is rows 9-24, so row 10 is the SECOND row of the area and rows 12-23
+\ are rows 3-14 of it. When the console showed only fifteen rows this
+\ page had to start at row 0 and every line came out one row high; with
+\ the sixteenth row back (T1_I3X, ConsoleOpen) dbLineLo/Hi carry the
+\ missing row and line n is buffer row 2n + 1 â€” the name on row 1, the
+\ content on 3, 5 ... 13, and row 15 blank, as it is on the C64.
+\ Agreed with KC 2026-08-21. The information screens and the game over
+\ ride on this table, so they moved with it.
+DB_LINE_ROW0  = 1               \ the buffer row line 0 starts on
 DB_LINES      = 7
 DB_LINE_LAST  = 6               \ $2DC4's "prntY < 24"
 DB_LINE_FIRST = 1               \ byte_0_46, the first content line
@@ -77,10 +88,11 @@ DB_DESC_END   = &FF
 
 \ ---- the droid portrait -------------------------------------
 \ Sprite X 40 is 16 pixels in, which is unit 4, and sprite Y 144 puts
-\ the 48 x 84 picture level with the content lines — buffer rows 2-12,
+\ the 48 x 84 picture level with the content lines — buffer rows 3-13,
 \ units 4-15 — clear of the stat text, which starts at column 9.
-\ portrait.asm draws it; these two anchor its rectangle.
-DB_IMG_ROW  = 2
+\ portrait.asm draws it; these two anchor its rectangle. The row moved
+\ down with the text when the page took its sixteenth row.
+DB_IMG_ROW  = DB_LINE_ROW0 + 2
 DB_IMG_UNIT = 4
 
 \ ============================================================
@@ -933,7 +945,7 @@ DB_DESC_MAX = &38 - &10         \ sub_0_2DCD's own bound, rebased to 0
   STA poLastType                \ DbImage's guard must not skip the repaint
   LDA #LO(BUF_BASE) : STA pnDst
   LDA #HI(BUF_BASE) : STA pnDst+1
-  LDX #PLAY_VIS_ROWS
+  LDX #PLAY_ROWS                \ all sixteen — ConClear's note says why
 .db_cl_row
   LDA pnDst   : STA pnSrc
   LDA pnDst+1 : STA pnSrc+1
@@ -1024,16 +1036,16 @@ DB_LC = PN_LOWER_A
 \ console's icon destinations are.
 .dbLineLo
 FOR n, 0, DB_LINES-1
-  EQUB LO(BUF_BASE + n * 2 * ROW_BYTES)
+  EQUB LO(BUF_BASE + (n * 2 + DB_LINE_ROW0) * ROW_BYTES)
 NEXT
 .dbLineHi
 FOR n, 0, DB_LINES-1
-  EQUB HI(BUF_BASE + n * 2 * ROW_BYTES)
+  EQUB HI(BUF_BASE + (n * 2 + DB_LINE_ROW0) * ROW_BYTES)
 NEXT
 
 ASSERT DB_LINE_LAST < DB_LINES
-ASSERT (DB_LINE_LAST * 2) + 2 <= PLAY_VIS_ROWS
-ASSERT DB_IMG_ROW + 11 <= PLAY_VIS_ROWS  \ the 84-scanline portrait: rows 2-12
+ASSERT (DB_LINE_LAST * 2) + DB_LINE_ROW0 + 2 <= PLAY_ROWS
+ASSERT DB_IMG_ROW + 11 <= PLAY_ROWS      \ the 84-scanline portrait: rows 3-13
 
 \ ---- state --------------------------------------------------
 \ conDbReq is in MAIN RAM with the console's other bridge bytes, because

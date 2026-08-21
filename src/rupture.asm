@@ -155,6 +155,11 @@ ENDMACRO
 
 \ Fire 2 -> fire 3, as a variable — see the note at the write in fire 1.
 \ Main RAM, read inside the interrupt, so it must never move into a bank.
+\
+\ ONLY t1i3Hi IS A VARIABLE. The two intervals differ by one character
+\ row, which is &200 ticks, so the low byte is the same for both and the
+\ ASSERT beside T1_I3X in main.asm says so. t1i3Lo is read every frame
+\ and written by nothing.
 .t1i3Lo EQUB LO(T1_I3)
 .t1i3Hi EQUB HI(T1_I3)
 
@@ -252,9 +257,10 @@ ENDIF
   LDA #12 : STA CRTC_ADDR : LDA crtcHi : STA CRTC_DATA
   LDA #13 : STA CRTC_ADDR : LDA crtcLo : STA CRTC_DATA
 
-  LDA t1i3Lo : STA SYS_VIA_T1LL \ a variable, not the constant: the
-  LDA t1i3Hi : STA SYS_VIA_T1LH \ transfer game shows the 16th row by
-                                \ moving fire 3 down — see T1_I3X
+  LDA t1i3Lo : STA SYS_VIA_T1LL \ the HIGH byte is a variable, not the
+  LDA t1i3Hi : STA SYS_VIA_T1LH \ constant: every screen that is not the
+                                \ deck shows the 16th row by moving fire
+                                \ 3 down a character row — see T1_I3X
 
 \ The deck's palette, last of all — see the header. The panel stopped
 \ displaying twelve scanlines ago and the play cycle is at least seven

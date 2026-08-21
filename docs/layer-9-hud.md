@@ -632,6 +632,55 @@ The clamp was checked at its boundary by poking the player's own type: with `drT
 > One console glyph disappeared this way and was chased with a write watchpoint before the cause
 > was found. It is an artefact of the hook, not of any page — but it will waste an hour again.
 
+## 6g. Sixteen rows for the whole console — 2026-08-21
+
+The play area **displays** sixteen rows and only fifteen are visible: the sixteenth carries the
+smooth scroll's sub-row fraction, and the `R8` blank at fire 3 is all that hides it. With the
+scroll flattened — which every screen that takes the buffer over does first — that row is real
+buffer and can simply be shown, by moving fire 3 down one character row. `T1_I3X` in `main.asm` is
+that interval; the transfer board (Layer 10), the lift's deck select (8b) and the deck plan (6e)
+already used it.
+
+13. **[DECISION] Every non-gameplay screen uses all sixteen rows** (KC, 2026-08-21). Only the
+    scrolled deck wants fifteen. So the console — its main screen and all three pages — the four
+    information screens and the game over's wash now take the sixteenth row too.
+14. **[DECISION] The ported pages moved down one row onto the C64's own** (KC, 2026-08-21, over
+    "extra row at the bottom, layouts untouched"). The C64's screen area is its rows 9–24; it puts
+    the database's name line at row 10 and the content at 12, 14 … 22 — buffer rows 1 and 3, 5 …
+    13. At fifteen rows this page had to start at row 0 and every line came out one row high.
+    `DB_LINE_ROW0 = 1` in `condb.asm` carries the missing row into `dbLineLo/Hi`, and `DB_IMG_ROW`
+    follows it, so the portrait moves with the text. The information screens and the game-over page
+    ride on the same table and moved with it.
+15. **[DECISION] The console main screen did NOT move.** KC's earlier rule is to plot from the top
+    row (§6a) and the top row is still row 0; the recovered row is a fourth spare one at the
+    bottom. This is the one place where the port and the original still differ by a row, and
+    deliberately.
+
+**Where the switch is set, and where it is put back.** The four instructions used to be copied into
+each screen's *exit* — three of them in bank 4, which had three bytes free — and the deck plan's
+had to be undone by the console's own the moment the page closed. They are now set on entry
+(`XferEnter4`, `LiftViewEnter`, `ConsoleOpen`, `IsStart`, `GoWashStart`) and restored in **one**
+place: `ReframeView`, which every path back to the deck goes through — the console's close, the
+information screens' `IS_ACT_GAME`, the transfer's exit, the lift's both arms (the same-deck one
+directly, the loading one through `LoadDeck`). `ConDeckEnter4`/`ConDeckExit4` are gone entirely.
+That freed **47 bytes of bank 4**, which had none.
+
+**Only the high byte of the interval is a variable**, and structurally so: the two intervals differ
+by one character row, a row is 8 scanlines and a scanline is `SL = 64` ticks, so the difference is
+exactly `&200` and the low byte is shared. `t1i3Lo` is now a constant the rupture reads and nobody
+writes; `ASSERT LO(T1_I3) == LO(T1_I3X)` beside `T1_I3X` keeps that true. It halves each of the six
+sites, which mattered: the main-RAM code image had **four** bytes left, and writing both bytes in
+`ReframeView` took it to zero.
+
+**The clears had to grow with the display.** `ConClear` and `DbClear` cleared `PLAY_VIS_ROWS`
+because the last row was never shown; leaving them would have put a strip of the deck along the
+bottom of every console screen. Both are `PLAY_ROWS` now. The wash needed no such change — it has
+always painted all sixteen (`GoWashRow`, X = 0–15), because the C64's fills its whole screen area.
+
+Verified in jsbeeb by walking to a console on deck 2 (tile 19 at map row 3, col 18): console main,
+database browser and stats page, deck plan, then the close — `t1i3Hi` reads `&1F` throughout and
+`&1D` again the moment `ReframeView` runs, and the bottom row is clean on every page.
+
 ## 7. Decisions to revisit
 
 Decisions 3, 4 and 9 are **reversed**, and 7 is **closed**, by KC's ruling of 2026-08-16: the
