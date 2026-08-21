@@ -423,6 +423,16 @@ plumbing in `TiWait`, and it should follow once the driver is proven, not gate i
   `sndVolume` is pinned at 15; AdjustVolume's port must restore it** (noted at its §8
   bullet). Verified: noise register 3, CH2 warbling N 76–109, clean release, the hum
   untouched on CH1 throughout. Bank 4: 4 bytes free.
+  **Round ten — three more from KC's playtest.** The ram-kill (fx23, 73% sub-floor) goes
+  periodic via a new exporter mechanism, `FX_PERIODIC`: its instrument is shared with the
+  transfer zippers (right as tones), so the exporter **clones** the instrument with periodic
+  flags and retargets just that record — the dive now plays 177 Hz down to ~8 Hz pulse
+  clicks. The bullet-hit's droning down-stroke: instrument 2 joins `MUTE_SUBFLOOR`, ending
+  the chirp crisp (its sibling, the collision-damage riser, gains hum-style one-tick gaps at
+  its resets). And the game-start smear — fx6 and fx7 played simultaneously where the C64
+  spreads fx6/$B/7 across seconds of countdown and screens we lack — is cut to **fx7 alone**;
+  6 and $B return with the 001 screen (11d). Verified: fx23 on noise register 3, CH2 climbing
+  through the dive. Bank 4: 3 free (the 13th instrument cost 6).
   **The same session found a real driver bug**: `SndConv` counted its shifts in X, and the
   flush picks the channel from X after converting — every in-range voice-1 tone was landing
   on channel 0. The hum had escaped because its clamp path skips the shift loops. Counters

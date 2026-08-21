@@ -134,6 +134,15 @@ PERIODIC_BASS = {11}
 # 1836 = 2081 (the floor's F) minus one tick of slide. Tune by ear.
 FX_OVERRIDES = {24: {'f0': 1836}}
 
+# Effects voiced as periodic bass WITHOUT moving their siblings: the
+# effect's instrument is CLONED with periodic-noise flags and the record
+# retargeted at the clone. fx23 (ram-kill) dives 165 Hz into the
+# subsonic - 73% sub-floor, a flat bong as a clamped tone (KC) - but its
+# instrument 9 is shared with the transfer-entry and time-up zippers,
+# which are right as tones. As periodic bass the dive plays 177 Hz down
+# to ~8 Hz pulse clicks: a machine winding down.
+FX_PERIODIC = {23}
+
 # Tone instruments whose sub-floor content MUTES instead of clamping.
 # The wiki's sn76489 page: N=1 is a 125 kHz square - out of audible
 # range, effectively silent, and the LM324N strips the carrier - so the
@@ -143,9 +152,13 @@ FX_OVERRIDES = {24: {'f0': 1836}}
 # loud flat drone layered over the throb (KC, first play). Muted, the
 # hum fades in as the sweep crosses the floor, and the near-floor
 # segment resets (F=2048, 120 Hz) still sound via the ordinary clamp.
-# Effects that live ENTIRELY below the floor (the disruptor) must NOT
-# go here - they would vanish; they keep the 1023 buzz pending stage 4.
-MUTE_SUBFLOOR = {3}
+# Instrument 2 (fx17 bullet-hit, fx25 collision damage): the hit's
+# down-stroke fell through the floor and droned (KC); muted it ends
+# crisp, and the damage riser gains hum-style one-tick gaps at its
+# sub-floor segment resets.
+# Effects that live ENTIRELY below the floor must NOT go here - they
+# would vanish; they go periodic (PERIODIC_BASS / FX_PERIODIC) instead.
+MUTE_SUBFLOOR = {2, 3}
 
 # SID envelope rate tables, ms for the full 0->peak / peak->0 ramp
 ATTACK_MS = [2, 8, 16, 24, 38, 56, 68, 80, 100, 250, 500, 800,
@@ -313,6 +326,21 @@ def main():
     instruments = [convert_instrument(i, bytes(mem[INST_BASE + i * 8:
                                                    INST_BASE + (i + 1) * 8]))
                    for i in range(n_inst)]
+
+    # FX_PERIODIC: clone the effect's instrument as periodic bass and
+    # retarget the record, sharing one clone per source instrument
+    clones = {}
+    for n in sorted(FX_PERIODIC):
+        src_i = fx_raw[n - 1][0]
+        if src_i not in clones:
+            c = dict(instruments[src_i])
+            c['idx'] = len(instruments)
+            c['noise'] = True
+            c['flags'] = 0x80 | 3
+            instruments.append(c)
+            clones[src_i] = c['idx']
+        fx_raw[n - 1] = bytes([clones[src_i]]) + fx_raw[n - 1][1:]
+    n_inst = len(instruments)
 
     effects = [convert_effect(i + 1, fx_raw[i], instruments)
                for i in range(NUM_FX)]

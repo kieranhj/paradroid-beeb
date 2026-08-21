@@ -369,12 +369,13 @@ ENDIF
   ADC #DECK_START_LO
   STA deck
 
-  LDA #&12                      \ $1250: the driver into game-FX mode,
-  STA sndState                  \ $126D's start-of-game effect, and
-  LDA #6                        \ $1334's deck materialise on voice 2 so
-  STA sndFx1                    \ the two sound together. ($1284's fx $B
-  LDA #7                        \ belongs to the score-countdown loop the
-  STA sndFx2                    \ port does not have.)
+  LDA #&12                      \ $1250: the driver into game-FX mode, and
+  STA sndState                  \ $1334's deck materialise. ONLY that one:
+  LDA #7                        \ the C64 spreads fx 6, $B and 7 across
+  STA sndFx1                    \ seconds of score countdown and screens
+                                \ the port does not have yet, and played
+                                \ together they smear (KC). fx 6 and $B
+                                \ return with the 001 screen, 11d
   JMP LoadDeck                  \ and its RTS
 
 .NewShipDroids
