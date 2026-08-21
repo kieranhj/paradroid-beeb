@@ -106,12 +106,18 @@ port A the keyboard matrix uses, which drives §4's contention rules.
 | Pulse width + pulse slide | Dropped — bytes 8–11 of each record are not carried |
 | Voice 3 as RNG (`$D41B`) | The port's existing LFSRs (`DrRandom`, `XfRand`) |
 | Master volume (`$D418` nibble) | Attenuation offset added per channel; +/− keys as on the C64 |
-| Frequencies | `N = 2129000 / F_SID`, computed **offline** per record — [DECISION 2]. Sub-122 Hz content clamps to N=1023; the exporter reports every effect's range so offenders can be reviewed (moving them to periodic noise is the usual cure) |
+| Frequencies | Records stay in **SID-frequency space, verbatim**; the driver converts to an SN period **at chip-write time** through a generated 128-entry normalise-and-lookup table (`N = tab[(F<<s)>>8] >> (8-s)`, ±0.5%, ~60 cycles). See below for why — a stage-1 discovery amended [DECISION 2]'s mechanism |
 
-A SID linear-in-frequency slide is not linear in SN period. The exporter converts per segment:
-compute the segment's start and end frequency, convert both, and emit a linear period slide
-between them. Over one segment of one effect the curvature difference is inaudible; it keeps the
-runtime free of division.
+**Why frequency-space records (stage 1 finding).** The plan first called for offline conversion
+to period space with fitted linear period slides. The exporter's trajectory simulation killed
+that: the C64 sequencer adds the slide to a 16-bit frequency **mod 65536** (`$05E0`), and
+several effects depend on the wrap — fx9 slides −8192/tick from F=11520, wrapping every 8
+ticks, and the sound *is* that repeating downward zipper (fx5 wraps 39 times). No linear period
+slide can express it. Keeping the C64's own arithmetic on the C64's own bytes is both more
+faithful (records are verbatim minus the four pulse bytes) and simpler; the price is a 256-byte
+conversion table and ~60 cycles per changed frequency, which the budget absorbs. [DECISION 2]'s
+intent — offline tool, mechanical derivation, no runtime division — stands; the division became
+a table.
 
 ## 4. The driver
 
@@ -179,13 +185,29 @@ the game build and moves to the head of stage 2, where the IRQ shim it measures 
    clean over the worst pass (full sprite pool + level draw). **Moved to stage 2**, whose shim
    is the thing being measured.
 
-### Stage 1 — `tools/export_sound.py`
+### Stage 1 — `tools/export_sound.py` — DONE 2026-08-21
 
-Reads `prgs/` (original release), extracts the 31 × 16 records at `$C610` and the 8 × 8
-instruments at `$EAA0`, converts per §3, emits `src/data/sounddata.asm` (gitignored, regenerated
-like the rest). Also emits a human-readable dump — effect number, instrument, waveform,
-frequency range, segment structure, chain — which is how each inventory row in §2 gets its
-sound checked against what the data says it should be. Reports every sub-122 Hz clamp.
+Reads `paradroid_ce.lst` via `rip_levels.parse_listing` (the same source as every exporter,
+with a hard fail if either table range is unfilled), and emits `src/data/sounddata.asm`
+(gitignored, regenerated): the 31 records verbatim-minus-pulse at 12 bytes each (372 B), **12**
+instruments — not 8; the records name 0–11 — converted to envelope steps (72 B), and the
+128-entry frequency→period table (256 B). **700 B of data, assembles clean.**
+`tools/output/sound_dump.txt` (gitignored) is the review dump: per effect, the decoded record
+*and a simulation of the C64 sequencer's actual trajectory* — Hz range, wrap count, SN period
+range, share of ticks below the tone floor.
+
+**Findings that fed back into the design:**
+
+- **The wrap discovery** (§3): slides run mod 65536 and the zipper effects depend on it —
+  records therefore stay in frequency space and the driver converts at write time.
+- **The per-deck hum survives intact.** fx24 spends only 7% of its ticks below the SN tone
+  floor — its rising ramps live mostly above 122 Hz.
+- **The review list** (§8): six tone effects spend ≥40% of their time below the floor and will
+  play flat-at-122 Hz until treated: **fx04 the disruptor (100%!)**, fx26 collision bump
+  (100%), fx23 ramming kill (73%), fx16 lift blip (48%), fx17 bullet-hit (41%), fx06 new-game
+  (40%). Periodic noise clocked by tone 2 reaches ~15× lower and is the likely cure, but it
+  competes with the explosion noise — stage 4's call, with KC, by ear.
+- All three weapon-fire noise sweeps and both explosions land comfortably in range.
 
 ### Stage 2 — the driver core
 
@@ -215,10 +237,17 @@ combat, lift, console and transfer, listening for the per-deck hum changing betw
 | | budget | note |
 |---|---|---|
 | Driver code, bank 4 | 550–700 B | transliterated `Sound` + register layer + envelope |
-| Effect records, bank 4 | 372 B | 31 × 12 (16 minus the four pulse bytes) |
-| Instruments + envelopes, bank 4 | ~100 B | 8 instruments |
+| Effect records, bank 4 | 372 B | 31 × 12 (16 minus the four pulse bytes), measured |
+| Instruments, bank 4 | 72 B | 12 × 6, measured |
+| Frequency→period table, bank 4 | 256 B | stage 1's wrap discovery bought this |
 | Sequencer state, bank 4 BSS | ~48 B | |
-| **bank 4 total** | **~1,070–1,220 B** | **against 1,161 B free** |
+| **bank 4 total** | **~1,300–1,450 B** | **against 1,161 B free — 150–300 B OVER** |
+
+**The stage-1 budget is over, and stage 2 settles it.** The table's 256 B were not in the
+original estimate. Recovery options, in preference order: the driver coming in small (the
+transliteration is more direct now the slide maths went); the three chatter records (36 B);
+halving the table to 64 entries (128 B, pitch granularity ±1%); and after that
+`layer-13-ram-pass.md`'s bank-4 candidates. Decide against the driver's real size, not now.
 | Request bytes, main RAM | 4 B | in an existing hole |
 | IRQ shim, main RAM | ~40 B | 110 B exist below `&3000` in pieces; the shim is the only new main-RAM code |
 
