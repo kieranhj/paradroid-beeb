@@ -110,14 +110,24 @@ TONE_FLOOR_HZ = 125000 / 1023  # ~122.2 Hz - lowest SN tone
 
 TICK_MS = 20                  # 50 Hz driver tick
 
-# Instruments rendered as PERIODIC noise - KC's preferred voice for the
-# sub-floor effects (docs/layer-11e-sound.md section 8). Instrument 3 is
-# the per-deck hum's (effect 24 only): its sweep spends its opening
-# segment at 15-120 Hz, which on a tone channel clamped into a loud flat
-# 122 Hz note over the top of the throb. As periodic noise the whole
-# sweep renders at pitch. Stage 4 decides whether 8 and 11 (fx06/04/26)
-# join it.
-PERIODIC_BASS = {3}
+# Instruments rendered as PERIODIC noise (a 1/15 duty-cycle pulse train
+# per the wiki's sn76489 page - a buzz, not a hiss). Tried for the hum
+# and REVERTED by KC 2026-08-21: the tone hum sounded right. Empty for
+# now; stage 4 may voice the disruptor this way.
+PERIODIC_BASS = set()
+
+# Tone instruments whose sub-floor content MUTES instead of clamping.
+# The wiki's sn76489 page: N=1 is a 125 kHz square - out of audible
+# range, effectively silent, and the LM324N strips the carrier - so the
+# driver clamps these to N=1 where others pin at N=1023 (~122 Hz).
+# Instrument 3 is the per-deck hum's (effect 24 only): its opening
+# segment sweeps up from 15 Hz, and the 1023-clamp played that as a
+# loud flat drone layered over the throb (KC, first play). Muted, the
+# hum fades in as the sweep crosses the floor, and the near-floor
+# segment resets (F=2048, 120 Hz) still sound via the ordinary clamp.
+# Effects that live ENTIRELY below the floor (the disruptor) must NOT
+# go here - they would vanish; they keep the 1023 buzz pending stage 4.
+MUTE_SUBFLOOR = {3}
 
 # SID envelope rate tables, ms for the full 0->peak / peak->0 ramp
 ATTACK_MS = [2, 8, 16, 24, 38, 56, 68, 80, 100, 250, 500, 800,
@@ -195,10 +205,13 @@ def env_step(ms):
 def convert_instrument(idx, raw):
     ctrl, ad, sr, dur = raw[4], raw[5], raw[6], raw[7]
     noise = bool(ctrl & 0x80) or idx in PERIODIC_BASS
+    if noise:
+        flags = 0x80 | (3 if idx in PERIODIC_BASS else 7)
+    else:
+        flags = 0x40 if idx in MUTE_SUBFLOOR else 0
     return {
         'idx': idx, 'raw': raw, 'ctrl': ctrl, 'noise': noise,
-        'flags': ((0x80 | (3 if idx in PERIODIC_BASS else 7))
-                  if noise else 0),
+        'flags': flags,
         'atk': env_step(ATTACK_MS[ad >> 4]),
         'dec': env_step(DECAY_MS[ad & 15]),
         'sus': (sr >> 4) * 17,

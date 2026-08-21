@@ -357,15 +357,20 @@ plumbing in `TiWait`, and it should follow once the driver is proven, not gate i
   periodic noise clocked by tone 2 is the preferred cure** — it reaches ~15× below the tone
   floor and is an iconic BBC sound. Tuned by ear in stage 4, effect by effect, minding that it
   shares the one noise channel with the explosions.
-  **The per-deck hum took the cure first (2026-08-21)**: KC's first play found its opening
-  segment clamped into a loud flat 122 Hz note over the throb (F starts at 256 = 15 Hz).
-  Instrument 3 is now `PERIODIC_BASS` in the exporter — flags carry the SN noise-control bits
-  (`&83` periodic / `&87` white), the driver derives the control byte from them (and got
-  *smaller*: the two `snCvNz` setters unified), and a periodic-noise fundamental of tone/15
-  sits within 6% of the white-noise scale, so one conversion path serves both. Verified on the
-  chip: noise register 3, tone 2 sweeping N 30–75, no clamp anywhere in the hum's cycle.
-  The same one-line exporter change (`PERIODIC_BASS`) is how the other five join in stage 4 —
-  minding that each moves its effect onto the shared noise channel.
+  **The hum's story, 2026-08-21, two rounds.** KC's first play found its opening segment
+  clamped into a loud flat 122 Hz drone over the throb (F starts at 256 = 15 Hz). Round one
+  rendered the whole hum as periodic noise — **reverted by KC**: the tone hum was right, only
+  the drone was wrong (`dd108a2` keeps the periodic machinery for stage 4). Round two, from
+  the wiki's sn76489 page: **N=1 is a 125 kHz square, out of audible range and stripped by
+  the LM324N** — a sanctioned in-period-domain mute. Instrument 3 is `MUTE_SUBFLOOR` in the
+  exporter (flags bit 6): its sub-floor content clamps to N=1 instead of N=1023, so the hum
+  fades in as its sweep crosses the floor and each segment reset gets a one-tick articulation
+  gap. Effects living *entirely* below the floor (the disruptor) must NOT take this flag —
+  they would vanish; they keep the 1023 buzz pending stage 4.
+  **The same session found a real driver bug**: `SndConv` counted its shifts in X, and the
+  flush picks the channel from X after converting — every in-range voice-1 tone was landing
+  on channel 0. The hum had escaped because its clamp path skips the shift loops. Counters
+  moved to `snTm2`; the capture now shows the hum's whole cycle on channel 1.
 - **PWM bass as an extension possibility** (KC 2026-08-21): a higher-frequency timer toggling
   one channel's volume gives crude PWM below the floor — but it steals gameplay cycles, so it
   is a costed extension for later, not part of this layer. Belongs beside

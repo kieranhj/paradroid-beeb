@@ -98,19 +98,15 @@
   LDA snQuiet                   \ state 0: silence the chip once, then
   BNE stk_x                     \ free-run silent — the C64 ResetSIDs
   JMP SndSilence                \ every tick, ours needs only the once
-.stk_x
-  RTS
 .stk_on
-  AND #&10                      \ $1x = (re)initialise, drop to $0x — the
-  BEQ stk_run                   \ C64's _initGameFX shape ($0526). Only
-  JSR SndSilence                \ $12 exists until the chatter lands, so
-  LDA #2                        \ the AND #$0F is spent on a constant
-  STA sndState
-  RTS
-.stk_run
-  LDA sndState
-  CMP #2                        \ only game-FX mode exists; state 1 is the
-  BEQ stk_go                    \ title chatter, deferred [DECISION 4]
+  CMP #2
+  BEQ stk_go                    \ running: the common case
+  JSR SndSilence                \ any other nonzero value is an init
+  LDA #2                        \ request — the C64's $1x shape ($0526),
+  STA sndState                  \ collapsed to its one surviving value:
+                                \ $12 is all there is until the chatter
+                                \ lands [DECISION 4]
+.stk_x
   RTS
 .stk_go
   LDA #0                        \ chip is (about to be) live again, so the
@@ -396,13 +392,12 @@ ASSERT HI(snFreqLo) == HI(snPhase+1)   \ one page: the copy walk below
   JSR SndConv
   LDY #2                        \ pitch on (silent) tone 2
   JSR snf_per
-  LDA snCvNz                    \ noise control: &E7 white or &E3 periodic,
-  AND #7                        \ from the instrument flags — stage 0
-  ORA #&E0                      \ verified both paths of the register.
-  CMP snNzCtl                   \ Cached hard: a noise-register write
-  BEQ snfv_nc                   \ resets the chip LFSR mid-hiss
-  STA snNzCtl
-  JSR SndWrByte
+  LDA #&E7                      \ white noise, clocked by tone 2 — stage 0.
+  CMP snNzCtl                   \ (Periodic bass would be &E3 via the flag
+  BEQ snfv_nc                   \ low bits; no instrument uses it since KC
+  STA snNzCtl                   \ reverted the hum — dd108a2 has the code.)
+  JSR SndWrByte                 \ Cached hard: a noise-register write
+                                \ resets the chip LFSR mid-hiss
 .snfv_nc
   LDY #3
 \ fall through: the noise attenuation
@@ -492,40 +487,52 @@ ASSERT HI(snFreqLo) == HI(snPhase+1)   \ one page: the copy walk below
 \ N = sndFreq[(F<<s)>>8 - 128] >> (8-s), clamped to 1..1023;
 \ snCvNz nonzero shifts 4 more (the noise scaling, exporter hdr).
 \ ============================================================
+\ COUNTERS LIVE IN snTm2, NOT X — X is the caller's voice number and
+\ must survive this routine: the first flush build counted its shifts
+\ in X and sent every in-range voice-1 tone to CHANNEL 0, because the
+\ flush picks the channel from X after converting. (Y is clobbered
+\ freely — both callers set their channel after the call.)
 .SndConv
-  LDA snCvNz                    \ a noise voice divides by 16F, which is
-  BEQ snc_tone                  \ the tone maths on F*16 — pre-scale, and
-  LDX #4                        \ saturate: F >= &1000 means N <= 32, and
-.snc_nzsc                       \ a saturated &FFFF converts to N=32 too
+  LDA snCvNz                    \ 0 / &40 = tone; bit 7 = noise, which
+  BPL snc_tone                  \ divides by 16F — the tone maths on F*16
+  LDA #4
+  STA snTm2
+.snc_nzsc
   ASL snCvL
   ROL snCvH
   BCC snc_nzok
-  LDA #&FF
-  STA snCvL
+  LDA #&FF                      \ saturate: F >= &1000 means N <= 32, and
+  STA snCvL                     \ a saturated &FFFF converts to N=32 too
   STA snCvH
   BNE snc_tone                  \ always
 .snc_nzok
-  DEX
+  DEC snTm2
   BNE snc_nzsc
 .snc_tone
   LDA snCvH
   CMP #8                        \ F < 2048 can only clamp: skip the maths.
   BCS snc_go                    \ (2048-2080 also land on 1023 — exact)
 .snc_max
-  LDA #&FF
-  STA snCvL
-  LDA #3
-  STA snCvH
+  LDA #&FF                      \ the audible clamp: N=1023, ~122 Hz
+  LDY #3
+  BIT snCvNz                    \ flags bit 6 (V after BIT) = mute the
+  BVC snc_set                   \ sub-floor instead — the hum's instrument:
+  LDA #1                        \ N=1 is a 125 kHz square, out of audible
+  LDY #0                        \ range and stripped by the LM324N (the
+.snc_set                        \ wiki's sn76489 page). NEVER period 0 —
+  STA snCvL                     \ undocumented on this chip
+  STY snCvH
   RTS
 .snc_go
-  LDX #8                        \ X = 8 - s, counted down as we normalise
+  LDA #8                        \ snTm2 = 8 - s, counted down as we
+  STA snTm2                     \ normalise
 .snc_norm
   LDA snCvH
   BMI snc_look
   ASL snCvL
   ROL snCvH
-  DEX
-  BNE snc_norm                  \ hi >= 8 → at most 4 shifts, X >= 4
+  DEC snTm2
+  BNE snc_norm                  \ hi >= 8 → at most 4 shifts, so >= 4 left
 .snc_look
   LDA snCvH
   SEC
@@ -540,7 +547,7 @@ ASSERT HI(snFreqLo) == HI(snPhase+1)   \ one page: the copy walk below
 .snc_sh
   LSR snCvH
   ROR snCvL
-  DEX
+  DEC snTm2
   BNE snc_sh
   LDA snCvH
   CMP #4                        \ > 1023?

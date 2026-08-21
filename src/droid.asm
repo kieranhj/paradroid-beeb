@@ -2860,7 +2860,8 @@ XF_PHYS_NEUT = 0                \ black   — logical 3, structure/unclaimed
   BNE sam_x                     \ so no ambient cues under the cloud
   LDA gameTick
   AND #&0F
-  CMP #8                        \ the hum's phase, offset from the alarm's
+  TAY                           \ the pass phase, held for all three cues
+  CPY #8                        \ the hum's phase, offset from the alarm's
   BNE sam_1
   LDA snActive+1
   ORA sndFx2
@@ -2874,8 +2875,7 @@ XF_PHYS_NEUT = 0                \ black   — logical 3, structure/unclaimed
   CMP #8
   BCS sam_x
 .sam_alarm
-  LDA gameTick
-  AND #&0F                      \ every 16 passes = the C64's 32 frames
+  TYA                           \ every 16 passes = the C64's 32 frames
   BNE sam_x
   LDA #8
   STA sndFx2
@@ -2885,7 +2885,7 @@ XF_PHYS_NEUT = 0                \ black   — logical 3, structure/unclaimed
   LDA drEnergy
   CMP #8
   BCC sam_alarm
-  LDA gameTick
+  TYA
   AND #3                        \ every 4 passes = the C64's 8 frames
   BNE sam_x
   LDA #&1C
