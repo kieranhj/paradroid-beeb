@@ -58,6 +58,14 @@ ORG LOWBSS_ADDR
 .cbNoScore      SKIP 1          \ DrKillDroid: this kill pays nobody
 .disrFlash      SKIP 1          \ SetPalPlay forces logical 0 white
 
+\ ---- Layer 11d's information screens -----------------------
+\ The only two bytes of theirs that main RAM has to see: the loop tests
+\ one and the trampoline acts on the other. Everything else is in bank 7
+\ with infoscr.asm. HERE rather than beside xferActive because main RAM
+\ below &3000 is down to its last few dozen bytes.
+.infoActive     SKIP 1          \ non-zero: a screen owns the play area
+.infoAct        SKIP 1          \ IS_ACT_*: what to do when it is dismissed
+
 IF DEBUG_ENERGY
 \ The bank-4 bytes DbgEnergyOut cannot read for itself: bank 6 is paged
 \ while it runs. Its shim in lowcode2.asm fills these first.

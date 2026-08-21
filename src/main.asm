@@ -1162,7 +1162,7 @@ ORG &1100
 \ to GameStart, which is in bank 4 beside the droid tables it seeds.
 \ Layer 11 needs the game startable more than once — 11a in
 \ docs/layer-11-sound-title.md.
-  JSR GameStart
+  JSR GameStartInfo             \ ...and the 001 screen in front of it
 
 \ ============================================================
 \ Main loop
@@ -1219,7 +1219,7 @@ IF DEBUG_RESTART
   LDX #KEY_R
   JSR keydown
   BNE ml_notR
-  JSR GameStart
+  JSR GameStartInfo
 .ml_notR
 ENDIF
 
@@ -1254,6 +1254,19 @@ ENDIF
   JSR PanelTick
   JMP ml_passend
 .ml_noconsole
+
+\ ============================================================
+\ ...or one of Layer 11d's information screens
+\ ============================================================
+\ Same rule as the three above: the screen IS the play buffer, so
+\ nothing moves and nothing else draws. No PanelTick — these screens do
+\ not touch the panel, and the C64's status rows survive GotoHires too.
+  LDA infoActive
+  BEQ ml_noinfo
+  LDX #0                        \ IsEntry's "tick" door — X, because
+  JSR InfoCall                  \ PAGEBANK is LDA #bank and eats A
+  JMP ml_passend
+.ml_noinfo
 
 \ ============================================================
 \ The transfer game has the machine, or it does not
@@ -1558,9 +1571,19 @@ ENDIF                           \ 2026-08-20 it did not: the tint set before
 \ Capture; ours enters here and the next pass takes the xferActive arm
 \ above. The rest of this pass is skipped — the board draw is about to
 \ overwrite everything the tranches would have repaired.
+\ LAYER 11d PUTS TWO SCREENS IN FRONT OF THE BOARD — ShowXferInfo
+\ ($3734), which is where the C64 shows them too: Capture calls it
+\ before SubGameSelectSide. The target's TYPE is gathered here and not
+\ in bank 7, because drType is bank 4's and this is one of the places
+\ main RAM can still see it. The player's own comes from pmType.
+\ IsDone chains page 2, and its IS_ACT_BOARD comes back to XferEnter.
   LDA xferDroid
   BEQ ml_noxstart
-  JSR XferEnter
+  TAX
+  LDA drType,X
+  STA xfmTgtType
+  LDX #IS_SCR_XFER1+1
+  JSR InfoCall
   JMP ml_passend
 .ml_noxstart
 
@@ -2064,7 +2087,7 @@ ENDMACRO
 \ Boot does not need it: its loads all run before the first PageLowIn.
   JSR RestoreDfsWs
   JSR TitleSeq
-  JMP GameStart                 \ bank 4 — TitleSeq left SWRAM_DATA paged
+  JMP GameStartInfo             \ bank 4 — TitleSeq left SWRAM_DATA paged
 
 .GoStart7
   PAGEBANK SWRAM_XFER
@@ -2082,8 +2105,11 @@ ENDMACRO
   BEQ gt_x
   LDA #0
   STA overDone
-  JMP GoTitle                   \ the title, then GameStart — which
-                                \ clears overPhase
+  LDX #IS_SCR_OVER+1            \ $37DC: the wash has burnt out, and the
+  JMP InfoCall                  \ 999 stands behind "Transmission /
+                                \ Terminated". IS_ACT_TITLE then takes
+                                \ the title, and GameStart clears
+                                \ overPhase after it
 .gt_x
   RTS
 
@@ -2327,7 +2353,20 @@ ASSERT FRAME_LOCK >= 2
 \ HORIZONTALLY the strip starts one unit in when mapHX is odd, which is
 \ what makes the wrap fall on a character boundary — see COPYCHAR for
 \ the derivation, and for why the incremental scroll then preserves it.
+\ ---- an information screen owns the buffer: do NOT redraw ---
+\ LAYER 11d. StartGame calls NewShipInfo BEFORE the deck is on screen
+\ ($12C7, and DoNewDeck comes after), and GameStartInfo does the same by
+\ setting infoActive before GameStart — which makes LoadDeck's own
+\ ReframeView a no-op, so the 001 screen is the first thing a game
+\ shows. The deck is drawn when the screen is dismissed, by the
+\ ReframeView in InfoCall's IS_ACT_GAME arm, with infoActive back to 0.
+\ Without this the level appears, the page covers it, and the level
+\ comes back — which is what KC saw.
 .ReframeView
+  LDA infoActive
+  BEQ rv_go
+  RTS
+.rv_go
   LDA mapHX
   AND #1
   ASL A : ASL A : ASL A         \ 0 or 8
@@ -2709,6 +2748,11 @@ INCLUDE "src/condb.asm"
 \ it out to fund the droid portrait pool — which is this:
 INCLUDE "src/data/portraits.asm"
 INCLUDE "src/portrait.asm"
+
+\ Layer 11d, AFTER condb.asm and portrait.asm: it is built out of their
+\ printer, their geometry constants and PoDraw, and beebasm resolves
+\ constants in file order.
+INCLUDE "src/infoscr.asm"
 \ droidicon7.asm is gone with the rotor-and-digits stand-in: the
 \ database draws the C64's own portrait now.
 INCLUDE "src/data/droidinfo.asm"

@@ -511,3 +511,42 @@ LAMP_OFF = 1                    \ logical 1 is black on every deck
 \ another piece of the same reclaimed workspace, and uninitialised, so
 \ it costs the PARALOW file nothing. Everything in it is written before
 \ it is read: AnimTick clears the counters, AnimReset seeds lampHave.
+
+\ ============================================================
+\ InfoCall — Layer 11d's information screens, the bank-7 shim
+\ ============================================================
+\ The screens are infoscr.asm, in bank 7 with the database page they
+\ borrow their printer and their geometry from. This is everything that
+\ has to be main RAM: the paging, and the three continuations that
+\ cannot run with bank 7 in — ReframeView redraws the deck out of BANK
+\ 4, and XferEnter and GoTitle page banks of their own.
+\
+\ IT IS HERE AND NOT IN THE CODE IMAGE because &1100-&3000 had 47 bytes
+\ left and the loop's own arm wanted ten of them. This is 39, which is
+\ EXACTLY what &10D9-&1100 had: the region is now full, and the ASSERT
+\ at low_end is what will say so. Two of the economies are why it fits —
+\ IsEntry is one door because a second pair of PAGEBANKs is 16 bytes,
+\ and infoAct carries $FF for "still up" so the shim needs no second
+\ flag test of its own.
+\
+\   A = 0        run a tick
+\   A = id + 1   open that screen
+.InfoCall
+  PAGEBANK SWRAM_XFER
+  JSR IsEntry
+  PAGEBANK SWRAM_DATA
+
+  LDX infoAct                   \ $FF while the screen is still up
+  BMI ic_x
+  BEQ ic_game
+  DEX
+  BEQ ic_board
+  JMP GoTitle                   \ IS_ACT_TITLE, and GameStart after it
+.ic_board
+  JMP XferEnter                 \ IS_ACT_BOARD: on into the minigame
+.ic_game
+  JMP ReframeView               \ IS_ACT_GAME: the deck back under him.
+                                \ NO PanelSetup — unlike the console,
+                                \ these screens never write the panel
+.ic_x
+  RTS
