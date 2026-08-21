@@ -149,6 +149,17 @@ problem, and the order of the arms in the loop is the thing to check.
 `IS_ACT_TITLE` then takes `GoTitle`, which is Layer 11c's path unchanged. Verified end to end:
 death, wash, page, title, a new game, and the 001 screen on the new deck.
 
+**The 999 is CENTRED, and that is the original's own doing.** `$37E8`'s `STA loc_0_365E+1` is not a
+colour, as this file first guessed — `loc_0_365E` is `BuildIntroSprites`' `LDA #40 / STA SpriteX`,
+and EndGame patches the 40 to **160**. Less the C64's first visible column at 24 that is 136 px in,
+which puts a 48 px picture exactly in the middle of a 320 px screen; `$36B3` puts 40 back for every
+other page. So `PO_DST0` became `poBase`, a variable the caller sets — `DbImage` writes the
+database page's, `IsOverDraw` writes `PO_DSTMID` (unit 34 = 136 px). One trap on the way: **`PoDraw`
+takes the droid type in A**, and `DbImage` used to fall into it straight off `STA poLastType`; the
+two `poBase` stores in between ate the type and the portrait vanished from three of the four pages
+until A was reloaded. Same family as the `PAGEBANK` clobber above — a register quietly carrying a
+parameter across a fall-through.
+
 ## 7. Still to do
 
 - Verify the two transfer pages and the game-over page in play.

@@ -256,11 +256,19 @@ IS_BLANK = &FF                  \ IsEntry's third door, and not a screen
 \ with the portrait between them. The 999 is the only droid in the game
 \ the player has not necessarily seen, and that is the point of it.
 \
-\ $37E8's `STA loc_0_365E+1` patches BuildIntroSprites' own colour; ours
-\ has no equivalent, because the portrait composes in logical colours
-\ and the page's ink is white on every deck by construction.
+\ $37E8's `STA loc_0_365E+1` IS THE SPRITE'S X, not a colour: 160 in
+\ place of BuildIntroSprites' own 40, which is 136 px in from the first
+\ visible column and puts the 48 px picture dead centre. So the 999 is
+\ centred and the other three pages are not — poBase carries it, and
+\ PoDraw's own header has the arithmetic.
 .IsOverDraw
-  JSR DbImage
+  LDA #LO(PO_DSTMID)
+  STA poBase
+  LDA #HI(PO_DSTMID)
+  STA poBase+1
+  LDA dbType                    \ NOT DbImage: that sets the database
+  STA poLastType                \ page's rectangle back again
+  JSR PoDraw
 
   LDA #0
   STA dbLine

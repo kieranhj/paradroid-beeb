@@ -41,6 +41,20 @@ podst = svp                     \ -> the buffer byte column
 PO_DST0 = BUF_BASE + DB_IMG_UNIT * UNIT_BYTES  \ scanline 0 of the rect's row
 PO_H    = 84                    \ 4 x 21 nominal; rptLen only shrinks it
 
+\ ---- and the rectangle MOVES, because the C64's does ---------
+\ loc_0_365E+1 is BuildIntroSprites' own `LDA #40 / STA SpriteX`, and it
+\ is PATCHED per screen: $36B3 puts 40 back for the database and the
+\ information pages, and EndGame's $37E8 writes 160 for the game over.
+\ 160 - 24 (the C64's first visible column) = 136 px in, which on a 320
+\ px screen puts a 48 px picture exactly in the middle.
+\
+\ 136 px is unit 34 here, so poBase carries what was a constant. Every
+\ caller sets it; DbImage sets the database page's, and it is set rather
+\ than defaulted because the game over would otherwise inherit whatever
+\ the last page left.
+PO_UNIT_MID = 34
+PO_DSTMID = BUF_BASE + PO_UNIT_MID * UNIT_BYTES
+
 \ ============================================================
 \ PoDraw — the whole portrait for type A
 \ ============================================================
@@ -80,8 +94,8 @@ PO_H    = 84                    \ 4 x 21 nominal; rptLen only shrinks it
 .pod_crow
   LDX poRow
   CLC
-  LDA rowMulLo,X : ADC #LO(PO_DST0) : STA podst
-  LDA rowMulHi,X : ADC #HI(PO_DST0) : STA podst+1
+  LDA rowMulLo,X : ADC poBase   : STA podst
+  LDA rowMulHi,X : ADC poBase+1 : STA podst+1
   LDA #0
   LDY #(12 * UNIT_BYTES) - 1
 .pod_cbyte
@@ -238,8 +252,8 @@ PO_H    = 84                    \ 4 x 21 nominal; rptLen only shrinks it
   LSR A : LSR A : LSR A
   TAX
   CLC
-  LDA rowMulLo,X : ADC #LO(PO_DST0) : STA podst
-  LDA rowMulHi,X : ADC #HI(PO_DST0) : STA podst+1
+  LDA rowMulLo,X : ADC poBase   : STA podst
+  LDA rowMulHi,X : ADC poBase+1 : STA podst+1
   LDA poS
   AND #7
   CLC
@@ -308,6 +322,7 @@ PO_H    = 84                    \ 4 x 21 nominal; rptLen only shrinks it
 .poLastType
   EQUB &FF                      \ what the rectangle shows; &FF = nothing.
                                 \ DbImage's guard, invalidated by DbClear
+.poBase   EQUW PO_DST0        \ the rectangle's top-left, per screen
 .poIdxOfs EQUB 0
 .poYs     EQUB 0, 0, 0, 0       \ each pair's first scanline
 .poPair   EQUB 0
