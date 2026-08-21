@@ -3,8 +3,8 @@
 `NewShipInfo` (`$36B9`), `ShowXferInfo` (`$3734`) and `EndGame`'s hires page (`$37DC`): the four
 full-screen pages that show one droid's picture beside a paragraph of the original's own prose.
 
-**Status:** the 001 screen and the two transfer pages are **built and verified in jsbeeb,
-2026-08-21**. The game-over page is built and wired but **not yet verified**.
+**Status: all four are built and verified in jsbeeb, 2026-08-21**, and the loop closes — game over,
+the wash, the 999 page, the title, a new game, the 001 page.
 
 ## 1. The printer was already here
 
@@ -112,7 +112,24 @@ noise along the bottom of the play area — buffer row 15, the one `RedrawAll` d
 16th row shows) not being fully undone, which would make it Layer 10's and older than this work,
 but that has not been confirmed either way.
 
-## 6. Still to do
+## 6. The game over, and the state the wash had to give up
+
+`EndGame` goes hires after the boil and draws the 999 behind two plain strings — `$6E30`
+"Transmission" at `prntY` 10 / `prntX` 13, and `$6E3F` "Terminated" at 22 / 14, which are our
+lines 0 and 6 with the portrait between them. No tokens and no name line: `$37DC`-`$37FB` calls
+neither `ShowRobotType` nor `PrintTokenString`.
+
+**`GoTick7` now clears `overPhase` when it opens the page**, and that is not tidiness. The wash's
+arm sits *above* the screen's in the main loop and returns the pass, so with phase 2 still set the
+page was drawn and then boiled over again every pass, and `IsTick` never ran — the wash simply
+never ended. The C64 has no equivalent state to clear: `$37D9`'s loop just falls out of the bottom.
+Anything else that gives the buffer to a screen from inside another modal arm has the same shape of
+problem, and the order of the arms in the loop is the thing to check.
+
+`IS_ACT_TITLE` then takes `GoTitle`, which is Layer 11c's path unchanged. Verified end to end:
+death, wash, page, title, a new game, and the 001 screen on the new deck.
+
+## 7. Still to do
 
 - Verify the two transfer pages and the game-over page in play.
 - The deck-clear arm (`RunDroids` `$17DC`): `CPY #1`, the 250+250 bonus, `notInDeck`, and the

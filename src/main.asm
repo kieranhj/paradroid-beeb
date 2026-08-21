@@ -2112,11 +2112,17 @@ ENDMACRO
   BEQ gt_x
   LDA #0
   STA overDone
+  STA overPhase                 \ THE WASH'S OWN ARM IS ABOVE THE SCREEN'S
+                                \ in the loop and returns the pass, so
+                                \ leaving phase 2 set would repaint the
+                                \ boil over the page every pass and IsTick
+                                \ would never run. The C64 has no state to
+                                \ clear here — $37D9's loop simply ends
   LDX #IS_SCR_OVER+1            \ $37DC: the wash has burnt out, and the
   JMP InfoCall                  \ 999 stands behind "Transmission /
                                 \ Terminated". IS_ACT_TITLE then takes
                                 \ the title, and GameStart clears
-                                \ overPhase after it
+                                \ everything else after it
 .gt_x
   RTS
 
