@@ -474,11 +474,11 @@ VIA_PORTB  = &FE40
 \   panel   P            7 rows,  4 displayed, R5 = 8-line
 \   play    P+64-line   18 rows, 17 displayed, R5 = line
 \   tail    P+208       13 rows,  0 displayed, R5 = 0, VSync at row
-\                       TAIL_R7 — 4 since FRAME_DROP_ROWS, was 8
+\                       TAIL_R7 — 5 since FRAME_DROP_ROWS, was 8
 \                       ------
 \                       38 rows x 8 + 8 adjust = 312 scanlines
 \
-\ Visible play area: P+64 to P+192, and VSync at P+240 — the geometry
+\ Visible play area: P+64 to P+192, and VSync at P+248 — the geometry
 \ Layer 3c had except for where VSync falls, which is what puts the
 \ picture on the tube. See FRAME_DROP_ROWS. No RAM changes either way.
 \ ---- Layer 9's text font, in main RAM -----------------------
@@ -680,18 +680,19 @@ TAIL_R4  = TAIL_CYC_ROWS - 1    \ 12
 \ panel top).
 \
 \ At 0 the panel top is 40 scanlines after VSync and the picture sits
-\ high, with the black stacked under it. KC, 2026-08-21: FOUR ROWS down.
-\ That leaves 48 scanlines of front porch and 72 of back — both far
-\ beyond PAL's ~5 and ~25, so the set has no trouble with either.
+\ high, with the black stacked under it. KC, 2026-08-21: four rows down,
+\ then back up one — four looked LOW. That leaves 56 scanlines of front
+\ porch and 64 of back — both far beyond PAL's ~5 and ~25, so the set has
+\ no trouble with either.
 \
 \ TWO constants move together and this is why they are one: the T1 chain
 \ is restarted at VSync, so every fire in the frame is measured from it.
 \ Shift VSync without shifting T1_I1 and the whole rupture — the panel's
-\ registers, the play cycle's blank and unblank — arrives 32 scanlines
-\ into the wrong part of the frame.
-FRAME_DROP_ROWS = 4             \ character rows the picture moves DOWN
+\ registers, the play cycle's blank and unblank — arrives a rowful of
+\ scanlines into the wrong part of the frame.
+FRAME_DROP_ROWS = 3             \ character rows the picture moves DOWN
 
-TAIL_R7  = 8 - FRAME_DROP_ROWS  \ VSync at P+208+32 = P+240
+TAIL_R7  = 8 - FRAME_DROP_ROWS  \ VSync at P+208+40 = P+248
 ASSERT TAIL_R7 >= 0
 ASSERT TAIL_R7 <= TAIL_R4       \ it has to fall inside the tail cycle
 

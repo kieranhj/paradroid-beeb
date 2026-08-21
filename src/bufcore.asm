@@ -95,7 +95,7 @@
 \ Start in the TAIL cycle's shape. The picture rolls until the IRQ
 \ takes over, but the first VSync then arrives with C4 exactly
 \ where the steady state expects it — TAIL_R7 rows into a 13-row
-\ cycle, 4 since FRAME_DROP_ROWS and 8 before it — so the rupture
+\ cycle, 5 since FRAME_DROP_ROWS and 8 before it — so the rupture
 \ locks on the first field instead of thrashing for several.
 \ Handing it a normal 39-row frame instead means VSync arrives at
 \ C4 = 34 and the handler writes R4 = 12 behind it. Both registers
