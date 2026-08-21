@@ -407,6 +407,14 @@ ASSERT HI(snFreqLo) == HI(snPhase+1)   \ one page: the copy walk below
   JSR snf_per
   JMP snf_att
 .snfv_nz
+  TXA                           \ a noise voice's own TONE channel must be
+  TAY                           \ silent: taking the voice over from a tone
+  LDA #15                       \ effect (the hum) left that channel holding
+  JSR snf_attA                  \ its last note under the noise, exposed the
+                                \ moment the noise cut — KC's phantom tone.
+                                \ Cache-diffed: one write per takeover, and
+                                \ BEFORE the owner gate, because a non-owner
+                                \ noise voice has the same stale channel
   CPX snNzOwn                   \ only the owner drives the noise channel
   BNE snfv_x
   JSR SndConv
@@ -464,9 +472,8 @@ ASSERT HI(snFreqLo) == HI(snPhase+1)   \ one page: the copy walk below
   LSR A
   LSR A
   LSR A
-  ORA snTm2
-  AND #&3F                      \ data byte: N bits 4-9
-  JSR SndWrByte
+  ORA snTm2                     \ data byte: N bits 4-9 — already <= &3F,
+  JSR SndWrByte                 \ N never exceeds 1023
 .snfp_x
   RTS
 

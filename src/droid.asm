@@ -2869,27 +2869,23 @@ XF_PHYS_NEUT = 0                \ black   — logical 3, structure/unclaimed
   LDA #&18
   STA sndFx2
 .sam_1
+  LDA drEnergy                  \ entry 0: the player. Low energy sounds
+  CMP #8                        \ the alarm in EITHER mode — the C64's
+  BCC sam_alarm                 \ $3DE5 tail, its two arms folded
   LDA moveMode
-  BEQ sam_xfmode
-  LDA drEnergy                  \ entry 0: the player
-  CMP #8
-  BCS sam_x
+  BNE sam_x                     \ mobile and healthy: nothing
+  TYA
+  AND #3                        \ transfer mode: every 4 passes = the
+  BNE sam_x                     \ C64's 8 frames
+  LDA #&1C
+  STA sndFx1
+  RTS
 .sam_alarm
   TYA                           \ every 16 passes = the C64's 32 frames
   BNE sam_x
   LDA #8
   STA sndFx2
 .sam_x
-  RTS
-.sam_xfmode
-  LDA drEnergy
-  CMP #8
-  BCC sam_alarm
-  TYA
-  AND #3                        \ every 4 passes = the C64's 8 frames
-  BNE sam_x
-  LDA #&1C
-  STA sndFx1
   RTS
 
 .LvEnter4

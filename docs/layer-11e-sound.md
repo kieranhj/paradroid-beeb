@@ -402,6 +402,15 @@ plumbing in `TiWait`, and it should follow once the driver is proven, not gate i
   the way out), and idle voices run nothing at all — the only release that sounds is a
   mid-effect gate expiry, exactly the C64's semantics. Byte-neutral. Captured: the explosion
   fades through its sweep and chops dead on its final tick.
+  **Round eight — the tone-side orphan** (KC: "after the white noise ends there's a tone, so
+  it cannot be on the same channel?" — exactly right). The explosion takes over the voice the
+  HUM was playing as a tone on channel 1, and a noise voice's flush never visits its own tone
+  channel — so CH1 held the hum's last note at full level under the whole explosion, exposed
+  when the noise cut. The mirror of round six. A noise voice's flush arm now silences its own
+  tone channel (cache-diffed, before the owner gate — a non-owner has the same stale
+  channel), funded by folding `SndAmbient`'s two energy tests and dropping a provably
+  redundant `AND #&3F`. Verified: mid-explosion CH1 reads attenuation 15, and after the cut
+  all four channels are silent until the hum re-posts.
   **The same session found a real driver bug**: `SndConv` counted its shifts in X, and the
   flush picks the channel from X after converting — every in-range voice-1 tone was landing
   on channel 0. The hum had escaped because its clamp path skips the shift loops. Counters
