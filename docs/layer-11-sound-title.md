@@ -334,15 +334,22 @@ the portrait. **[DECISION 3]**
 **Not started, and it needs room first.** Bank 7 has 282 bytes and bank 4 has 15. The token-string
 printer alone is bigger than either. See §9.
 
-### 11e — Sound — NOT BUILT
+### 11e — Sound — PLANNED, not built
 
-The SN76489 driver replacing the SID engine, and the `sndFx1`/`sndState` writes stubbed out of the
-console, transfer and this layer's code. See §6 — **and note that the encoding there is still
-unverified**. It was not verified in this session either: checking it means driving the System VIA
+**Scoped with KC 2026-08-21 — the spec, the full C64 effect inventory, the SN76489 mapping, the
+four architecture decisions and the staging live in [`layer-11e-sound.md`](layer-11e-sound.md).**
+In one line: an IRQ-driven 50 Hz `SndTick` in bank 4, paged in by the IRQ itself, fed by offline-
+converted copies of the original's `$C610` effect records. See §6 below for the raw chip encoding
+— **still unverified, and stage 0 of that plan verifies it first**. It was not verified in this session either: checking it means driving the System VIA
 by hand from a test harness, and a driver built on a recalled encoding is exactly what `CLAUDE.md`
 forbids. Verify first, build second.
 
-## 6. The SN76489 encoding — recovered, NOT verified
+## 6. The SN76489 encoding — VERIFIED 2026-08-21
+
+**The encoding below was confirmed in jsbeeb by `tools/sndtest.asm`** (layer-11e stage 0): tone
+284 measured 440.1 Hz, noise modes read back correctly, and the DDRA/ORA save-restore held up
+against 16,384 OSBYTE `&81` polls with IRQ-driven writes. `layer-11e-sound.md` §5 stage 0 has
+the numbers. The paragraph is kept as written for the history:
 
 The chip is written through System VIA port A with handshake at `&FE41`; a latch byte is
 `1 cc r nnnn` and a data byte `0 0 nnnnnn`, so a tone is `&80 | (chan << 5) | (freq AND &0F)`
