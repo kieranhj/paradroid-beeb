@@ -83,24 +83,47 @@ deliverable:
   screenshot*, on the emulator that renders NuLA correctly. A `RedrawAll` diff driven over HTTP is
   the same test the MCP does today.
 
-  **Tried, 2026-08-21**, against `b2_Debug.exe` build `20260322-193052-51e70d7` with the port
-  booted from `PARADROID-200K.SSD` on a `B/Acorn 1770` config with NuLA enabled:
+  **The API is documented** — `doc/Debug-version.md` in the b2 tree, and
+  <https://github.com/tom-seddon/b2/blob/master/doc/Debug-version.md>. **Read it first**; this
+  section was originally written by reading strings out of the binary, which got the port wrong and
+  missed half the endpoints.
 
   | | |
   |---|---|
-  | port | **48075** — not the 48875 that appears in the binary's strings |
-  | address form | hex, e.g. `/peek/b2/0x1100/0x1120`; `/poke/b2/0x3000` with a binary body |
-  | endpoints seen | `reset`, `paste`, `poke`, `peek`, `mount`, `run` (no screenshot) |
+  | port | **48075** (`0xbbcb`), localhost only, debug build only |
+  | window name | `b2` for the first window, `*` for the most recent |
+  | numbers | hex or C-style — `ffff`, `0xffff`, `0177777` |
+  | `peek/WIN/BEGIN/END` | binary `application/octet-stream`; END exclusive, or `BEGIN/+SIZE` |
+  | `poke/WIN/ADDR` | binary body |
+  | `s=SUFFIX` on both | selects the memory view: `m` main, `s` shadow, `r`/`0`-`f` paged ROM, `n` ANDY, `h` HAZEL, `o` OS, **`i` standard I/O `$fc00-$feff`**, `p`/`q` parasite |
+  | `reset/WIN?config=CONFIG&boot=1` | power-on reset, optionally into a named config, SHIFT held |
+  | `load-disc/WIN?path=…&drive=N`, `mount/WIN`, `run/WIN`, `paste/WIN`, `launch?path=` | the rest |
+  | screenshot | **none** |
+
+  **Tried, 2026-08-21**, against `b2_Debug.exe` build `20260322-193052-51e70d7`, the port booted
+  from `PARADROID-200K.SSD` on a `B/Acorn 1770 w/ NULA` config:
+
+  | | |
+  |---|---|
   | `peek` fidelity | ✅ `&1100`–`&1120` byte-identical to `PARA` extracted from the SSD |
   | machine live | ✅ ZP `&15`, `&20`, `&21` tick between peeks 2 s apart |
   | `poke` to RAM | ✅ round-trips |
-  | **`poke` to I/O (`&FE23`)** | ❌ **no visible effect** — the aux-palette pair did not reach the ULA |
+  | **`poke` to I/O (`&FE23`)** | ❌ no effect — and this is expected, see below |
 
-  So `peek`/`poke` give the buffer oracle, but **register-level NuLA tests cannot be driven by
-  `poke` on this build**. Either `paste` BASIC into the machine to do the `?&FE23=`/`?&FE22=`
-  writes on the 6502 side, or build a newer b2 from source — KC's call, 2026-08-21: pull and build
-  latest when the work starts. There is no screenshot endpoint either way, so the *display* half of
-  every NuLA test needs eyes on the window; only the buffer half automates.
+  The docs say why: *"host memory-mapped I/O is not particularly well supported — if you view the
+  I/O region, it'll show up as unreadable bytes."* **`poke` writes emulated memory, not the bus.**
+  The `i` suffix exists and is worth one test on a current build, but the supported route for a
+  register-level test is **`paste` the BASIC in** and let the 6502 do the write:
+
+      curl --data-binary '?&FE22=&27
+      ' http://localhost:48075/paste/b2
+
+  So the split is: **`peek` automates the buffer half of every test, `paste` drives the register
+  half, and the display half needs eyes on the window** because there is no screenshot endpoint.
+  That is enough — the buffer is the half this project trusts anyway.
+
+  Note also `reset?config=` and `load-disc?path=`: an already-running b2 can be pointed at a config
+  and a disc over HTTP. There is no need to kill and relaunch the application to change either.
 - Optionally **patch jsbeeb's renderer** (~20 lines: a shift of the pixel output plus a left cut)
   to keep the existing MCP workflow honest; `Repos/jsbeeb-kieranhj` is already a fork on disk.
   Worth it only if the b2 HTTP route proves awkward.
@@ -431,12 +454,11 @@ Each step is separately shippable and separately verifiable, in the project's us
    deck to its true C64 colours, and poke `&FE22` code 2 to confirm the offset's sign, range and
    the left-edge behaviour with and without blanking. Compare against `ref/`. **Nothing is designed
    until this has been seen.**
-2. **Build the latest b2 from source and get its HTTP API into the verification loop** so a
-   `RedrawAll` buffer diff can be driven against the emulator that renders NuLA correctly. `peek`
-   already works on the build to hand; what needs re-testing on a current one is whether `poke`
-   reaches the I/O bus, because that is the difference between poking `&FE22` from the host and
-   having to `paste` BASIC in. Without this the scroll work is verified by eye, which is the thing
-   this project has learned not to do.
+2. **Get b2's HTTP API into the verification loop** — `peek` for the `RedrawAll` buffer diff,
+   `paste` for the register writes, `reset?config=`/`load-disc?path=` to drive a running instance.
+   All of it works on the build to hand; read `doc/Debug-version.md` before writing the harness.
+   Without this the scroll work is verified by eye, which is the thing this project has learned not
+   to do.
 3. **`NULA` build constant, second executable on the disc, boot banner, and KC's detection routine
    written down and tested on a stock machine as well as a modded one.** Nothing behind the flag
    yet — this is the seam, and it is the part that can hurt someone else's hardware, so it goes
