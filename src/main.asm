@@ -159,12 +159,15 @@ MAP_CHAR_H = MAP_ROWS * 4       \ 64 character rows
 \   DEBUG_RASTER   ok    was 59 bytes over the code image
 \   DEBUG_DRAW     ok    was 83 over
 \   DEBUG_TIME     ok    was 154 over
-\   DEBUG_MAPGUARD NO    MG_COPY is 1 K and bank 4 has 12 bytes
+\   DEBUG_MAPGUARD ok    was out of room while bank 4 had 12 bytes
 \ THE FIRST THREE CAME BACK ON 2026-08-20 with the raster-timing pass,
 \ which moved the tranche decision into bank 6 and gave the code image
-\ 323 free bytes against eleven. RASTER has been built and RUN since,
-\ and draws its four bands correctly; DRAW and TIME have been assembled
-\ but not run, so read their headers before trusting them.
+\ 323 free bytes against eleven, and MAPGUARD on 2026-08-21 with Layer
+\ 13d's ZX0 deck maps, which gave bank 4 the 1 K its MG_COPY needs.
+\ RASTER has been built and RUN since, and draws its four bands
+\ correctly; DRAW, TIME and MAPGUARD have been assembled but not run,
+\ so read their headers before trusting them. DEBUG_POS + DEBUG_ENERGY
+\ together still do not build (a low-region overlap); each alone does.
 \ READING RASTER'S BANDS: fire 2's band is the deck's OWN background, so
 \ on a deck whose background happens to be green it cannot be told from
 \ fire 1's, and on a blue deck it cannot be told from fire 3's. Deck 1
