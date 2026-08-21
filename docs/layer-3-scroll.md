@@ -650,11 +650,26 @@ counts the pulse out of R3 independently of R7.
 the margin fire 1 used to rely on — a tail value no 7-row cycle could reach — is gone for good at
 any `FRAME_DROP_ROWS` above zero.
 
-### What did NOT move: the title
+### The title follows, by the same arithmetic
 
 The title screen runs under `SetupMode`'s ordinary MODE 1 frame, not the rupture, so
-`FRAME_DROP_ROWS` does not touch it and it now sits a row or two higher than the game does.
-Matching it is **not** a matter of dropping its R7 by four: the OS frame is `R6 = 32`, `R4 = 38`,
-`R7 = 34`, which leaves only two rows of blanking between the end of the display and VSync — take
-R7 below 32 and VSync fires inside the displayed rows. Moving the title down means drawing its
-artwork lower in its own framebuffer, which is `title.asm`'s business and has not been done.
+`FRAME_DROP_ROWS` does not reach it and it was left a few rows above the game when the game's
+picture dropped. `TiCRTC` now sets R7 as well as R6, and the value is derived rather than dialled:
+
+| | rows from VSync to the top of the picture |
+|---|---|
+| game | `TAIL_CYC_ROWS - TAIL_R7` = `13 - (8 - FRAME_DROP_ROWS)` = **`5 + FRAME_DROP_ROWS`** |
+| title | display starts at row 0 of the next frame, so **`39 - R7`** |
+
+Equate them and `TITLE_R7 = 34 - FRAME_DROP_ROWS`. At zero that is 34 — the OS's own MODE 1 value —
+which is exactly why the two pictures were level before the game's moved, and why the title was
+left behind when it did. Move `FRAME_DROP_ROWS` again and both follow.
+
+**The 25-row picture is what makes it possible**, and a first look at this said it was not. The OS
+leaves MODE 1 at `R6 = 32` with VSync at 34, two blank rows of headroom, so R7 could not drop far
+without VSync landing inside the displayed rows — which is true, but `TiCRTC` has already cut R6 to
+`TITLE_ROWS` = 25, leaving fourteen. `ASSERT TITLE_R7 >= TITLE_ROWS` is what says so, and what will
+fail if the title ever grows past the room its own sync leaves it.
+
+Verified through both paths that reach `TiShow`: the boot, and the game-over seam, which comes
+through `SetupMode` (resetting R7 to 34) and sets it again.
