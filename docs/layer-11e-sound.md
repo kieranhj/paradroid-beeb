@@ -289,12 +289,24 @@ Bank 4 ends `&BFFD`: **3 bytes free**, the fullest region in the machine.
 the hum sustaining at its correct attenuation on channel 1, the fire's noise sweep on
 channels 2+3, and a rising tone sweep from a collision cue — all from unpoked gameplay.
 
-### Stage 4 — verification
+### Stage 4 — the by-ear pass with KC — largely DONE 2026-08-21
 
-Per effect: trigger in game, `start_sound_capture`, compare register traffic against the
-exporter's dump of what the record should do. Whole-game: a played pass over a deck with
-combat, lift, console and transfer, listening for the per-deck hum changing between decks.
-`DEBUG_TIME` the tick at the worst case again with everything wired.
+Ran as a live loop: KC played on accurate emulators and reported; each report was diagnosed
+against a register capture, fixed, verified in the capture, and committed — ten rounds, all
+described under stage 3's hum/explosion notes. **Signed off by KC's ear**: the per-deck hum
+(wee and wubs), droid explosions, the collision bump, the disruptor, the ram-kill, the
+bullet-hit, the lift sounds, and the game start.
+
+**Still open, KC's list:**
+
+- **The game-over set** (fx 5, $F, $13, $16) — "needs work but leave for now".
+- The transfer-verdict mapping (win/lose/tie → `$C`/`$D`/`$B`) is still the stage-3 guess —
+  A/B against VICE or the real thing when convenient.
+- The noise scale factor (`NOISE_SHIFT`) and the periodic ≈ pitch/15 approximation have
+  passed the ear test in practice; a VICE A/B remains available if anything ever sounds
+  transposed.
+- fx06 (new game) was called pedestrian before it was parked with the start-smear fix; it
+  returns — and gets its treatment — with the 001 screen (11d).
 
 ## 6. Where the RAM comes from
 
