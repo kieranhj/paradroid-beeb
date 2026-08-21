@@ -213,6 +213,8 @@ CHAR_CONSOLE = 66
   CMP maxEnergy                 \ the ceiling holds, and it is a ceiling
   BCS dcu_x                     \ that DoAging is still lowering
   INC drEnergy
+  LDA #&14                      \ $2EAD: the recharge tick
+  STA sndFx1
   LDA #5
   JMP SubScore
 .dcu_x
@@ -412,6 +414,10 @@ MM_DELAY    = 8                 \ DoMobile ($3835) loads 8
 .df_no
   RTS
 .df_go
+  LDA weaponType                \ $33E0: the shot sounds as weaponType+1,
+  CLC                           \ one effect per weapon class. The
+  ADC #1                        \ disruptor never reaches here — its $84
+  STA sndFx1                    \ is posted by CbDisruptor's first pass
 
 \ The direction index, exactly as $33E7 derives it from the pair:
 \   0  Y == X, both non-zero   the "\" diagonal
@@ -736,8 +742,12 @@ ENDIF
 \ Layer 11's 11b — docs/layer-11-sound-title.md.
   LDA drType
   BEQ ccd_gameover
+  LDA #&12                      \ $15AE: blowing up into a 001 sounds as
+  STA sndFx1                    \ a droid explosion
   RTS
 .ccd_gameover
+  LDA #&13                      \ $146B: the player's own, bigger one
+  STA sndFx1
   JMP GoStart7                  \ bank 7, and it owns the rest
 
 \ ---- and one frame a pass until the set runs out ------------
@@ -835,6 +845,9 @@ ENDIF
                                 \ of one; with a flat flash the two states
                                 \ are the same thing
 \ ---- the first iteration: the sweep ------------------------
+  LDA #&84                      \ $233C: effect 4 with bit 7 — the one
+  STA sndFx1                    \ uninterruptible sound in the game, for
+                                \ player and enemy disruptors alike
   LDX drCount
   DEX
   BEQ cbd_state2                \ the deck is empty

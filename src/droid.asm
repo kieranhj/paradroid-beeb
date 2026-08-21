@@ -184,6 +184,17 @@ DR_LOS_MAX = 96
   JSR AnimReset                 \ ...which puts the alert lamp back on its
                                 \ default colour, so the lamp must rebuild
   JSR SetPalette
+
+\ The deck's own hum: three bytes into effect 24's record, exactly the
+\ C64's $135F writes into sfx23+5/6/7 — segment timer, reload, count.
+\ The record is in THIS bank, so the patch is three plain stores.
+  LDX deck
+  LDA sndBgVar1,X
+  STA sndFxTab + 23*SND_FX_LEN + 5
+  LDA sndBgVar2,X
+  STA sndFxTab + 23*SND_FX_LEN + 6
+  LDA sndBgVar3,X
+  STA sndFxTab + 23*SND_FX_LEN + 7
   LDA deck
   JSR BuildLevel
 
@@ -358,6 +369,12 @@ ENDIF
   ADC #DECK_START_LO
   STA deck
 
+  LDA #&12                      \ $1250: the driver into game-FX mode,
+  STA sndState                  \ $126D's start-of-game effect, and
+  LDA #6                        \ $1334's deck materialise on voice 2 so
+  STA sndFx1                    \ the two sound together. ($1284's fx $B
+  LDA #7                        \ belongs to the score-countdown loop the
+  STA sndFx2                    \ port does not have.)
   JMP LoadDeck                  \ and its RTS
 
 .NewShipDroids
@@ -895,6 +912,8 @@ ENDIF
 
   LDA drCollHit                 \ $1A77: once per episode, or he sticks to the
   BNE dc_x                      \ droid shaking — drained in a second
+  LDA #&1A                      \ $1A7D: the bump, on the episode edge
+  STA sndFx1
   JSR DrPause16
   JSR DrReverse
   LDX #0                        \ the C64 negates the whole-pixel part of
@@ -1806,6 +1825,8 @@ BUL_COL_H = 10
   BEQ DrKillDroid
   BMI DrKillDroid
   STA drEnergy,X
+  LDA #&11                      \ $1C36: hit but not killed, voice 2
+  STA sndFx2
 .dpf_x
   RTS
 
@@ -1813,7 +1834,9 @@ BUL_COL_H = 10
 \ Killing something makes the ship angrier by exactly the type killed,
 \ and the score is by CLASS, so a 999 is worth ten times a 001.
 .DrKillDroid
-  LDX drIdx
+  LDA #&12                      \ $1C5A: the droid explosion, voice 2 —
+  STA sndFx2                    \ and the disruptor's kills come through
+  LDX drIdx                     \ here too, covering $23FB
   CLC
   LDA alertLvl
   ADC drType,X
@@ -2033,6 +2056,11 @@ BUL_COL_H = 10
 \ are the original's and both are kept.
 .DrAddBullet
   LDX drIdx
+  LDY drType,X                  \ $351F: the shot sounds as the firing
+  LDA drWeapon,Y                \ droid's weapon class, voice 2 — the
+  CLC                           \ mirror of DoFire's weaponType+1
+  ADC #1
+  STA sndFx2
   SEC                           \ droid - player, in characters: exactly
   LDA drCX : SBC plyCX : STA lsDx  \ what LineOfVisibility differences
   JSR DrAbsA
@@ -2233,6 +2261,8 @@ BUL_COL_H = 10
   LDA #0
 .dhp_setply
   STA drEnergy
+  LDA #&19                      \ $1B17/$1B29: the player pays energy
+  STA sndFx1
   RTS
 
 .dhp_hurtdroid
@@ -2246,6 +2276,8 @@ BUL_COL_H = 10
   STA drEnergy,X
   RTS
 .dhp_kill
+  LDA #&17                      \ $17EB: rammed to death, with the bonus
+  STA sndFx1
   STX drIdx
   LDX drIdx
   CLC
@@ -2273,6 +2305,8 @@ BUL_COL_H = 10
   LDA #0
 .dhp_bset
   STA drEnergy
+  LDA #&19                      \ same damage cue as the droid arm
+  STA sndFx1
   STX drIdx                     \ the bullet is spent
   LDX drIdx
   LDA #0
@@ -2802,6 +2836,62 @@ XF_PHYS_NEUT = 0                \ black   — logical 3, structure/unclaimed
 \ LiftFind already ran (LiftEnter set liftMode=1), so liftPos and
 \ liftNum are set. ConsoleOpen's flatten, the lift palette in, fire 3
 \ down a row for the 16th, and the selection mirrors seeded.
+\ ============================================================
+\ SndAmbient — the recurring cues: the hum, the alarm, the pulse
+\ ============================================================
+\ The port of two C64 sound tails, called once a pass from the main
+\ loop's play path (beside DoAging, whose C64 twin held one of them):
+\
+\   DoAlertAndAging's _5 arm ($3E73): re-post the per-deck hum
+\   (effect $18) whenever voice 2 is FULLY idle, on a spaced phase —
+\   this is what makes the hum continuous, and why a poked one plays
+\   once and stops.
+\   AnimateDroids' tail ($3DE5-$3E31): the low-energy alarm (fx 8,
+\   every 32 frames below 8 energy) and the transfer-mode pulse
+\   (fx $1C, every 8 frames while moveMode is 0).
+\
+\ Cadences read gameTick (25 Hz passes) at half the C64's frame
+\ masks, which lands on the same wall-clock rates. IN BANK 4 because
+\ it reads the driver's own snActive, and main RAM is the region
+\ with 50 bytes left. Runs only in play: the modal screens end their
+\ pass before the call site, and overPhase is checked here.
+.SndAmbient
+  LDA overPhase                 \ the C64's game over runs RunGame alone,
+  BNE sam_x                     \ so no ambient cues under the cloud
+  LDA gameTick
+  AND #&0F
+  CMP #8                        \ the hum's phase, offset from the alarm's
+  BNE sam_1
+  LDA snActive+1
+  ORA sndFx2
+  BNE sam_1
+  LDA #&18
+  STA sndFx2
+.sam_1
+  LDA moveMode
+  BEQ sam_xfmode
+  LDA drEnergy                  \ entry 0: the player
+  CMP #8
+  BCS sam_x
+.sam_alarm
+  LDA gameTick
+  AND #&0F                      \ every 16 passes = the C64's 32 frames
+  BNE sam_x
+  LDA #8
+  STA sndFx2
+.sam_x
+  RTS
+.sam_xfmode
+  LDA drEnergy
+  CMP #8
+  BCC sam_alarm
+  LDA gameTick
+  AND #3                        \ every 4 passes = the C64's 8 frames
+  BNE sam_x
+  LDA #&1C
+  STA sndFx1
+  RTS
+
 .LvEnter4
   LDA deck
   STA lvSelDeck
@@ -2838,6 +2928,8 @@ XF_PHYS_NEUT = 0                \ black   — logical 3, structure/unclaimed
   STA t1i3Hi
   LDA #2                        \ liftMode 2: the view has the machine
   STA liftMode
+  LDA #&16                      \ $2696: the lift screen's entry chord,
+  STA sndFx2                    \ voice 2
   RTS
 
 \ ---- LvTick4 — keys and stepping, before the bank-7 redraw --
@@ -2897,6 +2989,9 @@ XF_PHYS_NEUT = 0                \ black   — logical 3, structure/unclaimed
   CMP liftNum
   BNE lvst_x                    \ a sentinel: the end of the shaft
   STX liftPos
+  LDA #&10                      \ $271B/$2729: one blip per deck passed,
+  STA sndFx1                    \ on BOTH voices, as ChangeDeck posts it
+  STA sndFx2
   LDA liftDeck,X
   STA lvSelDeck
 .lvst_x
@@ -2997,6 +3092,8 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
   BEQ cm4_notUp                 \ clamped at the top, as $2C8C clamps
   JSR ConMarkClear
   DEC conSel
+  LDA #&15                      \ $2CF6: the menu step's beep
+  STA sndFx1
   JSR ConMarker4
   JMP cm4_notUp
 .cm4_upOff
@@ -3015,6 +3112,8 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
   BCS cm4_notDn                 \ and at the bottom, as $2C6B does
   JSR ConMarkClear
   INC conSel
+  LDA #&15                      \ and the same on the way down
+  STA sndFx1
   JSR ConMarker4
   JMP cm4_notDn
 .cm4_dnOff
@@ -3031,8 +3130,13 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
   LDA conSel
   BNE cm4_notExit
   STA conActive                 \ entry 0: back to the game — A is 0
+  LDA #&16                      \ $2CC3: the mode-change chord going out
+  STA sndFx1
   RTS
 .cm4_notExit
+  LDA #&15                      \ $2C85: a page draw's beep, all three
+  STA sndFx1
+  LDA conSel
   CMP #3
   BEQ cm4_ship
   CMP #2

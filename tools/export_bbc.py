@@ -477,39 +477,45 @@ def main():
         src.extend(mem[CHARSET_ADDR + code * 8:CHARSET_ADDR + code * 8 + 8])
         slots.append(mem[CHARCOLOR + code] >> 4)
 
-    # The bitmaps ship ZX0-packed (layer-11e stage 2: bank 4 needed the
-    # room for the sound driver). BuildCharset depacks them into the idle
-    # sprite save areas at deck-load time and reads them from there; the
+    # The bitmaps AND the code->index remap ship as one ZX0 stream
+    # (layer-11e stages 2-3: bank 4 needed the room for the sound
+    # driver). UnpackChars depacks the pair into the idle sprite save
+    # areas: bitmaps at SPR_SAVE, the remap at SPR_SAVE+CHARSRC_SIZE.
+    # Readers and their windows: BuildCharset (deck load), BuildCharPtrs
+    # (boot and the GoTitle rebuild - both preceded by UnpackChars). The
     # ALERT lamp's live re-colours read the 8-byte lampSrc cache that
-    # BuildCharset fills, never the packed stream. charSlot and charRemap
-    # stay raw - both are read outside the depack window.
+    # BuildCharset fills, never the stream. charSlot stays raw, nibble-
+    # packed.
     import zx0
-    src_packed = zx0.compress(bytes(src))
-    assert zx0.decompress(bytes(src_packed)) == bytes(src), \
-        'chardata zx0 round-trip failed'
+    stream = bytes(src) + bytes(remap)
+    src_packed = zx0.compress(stream)
+    assert zx0.decompress(bytes(src_packed)) == stream,         'chardata zx0 round-trip failed'
 
     path = OUT_DIR / 'chardata.asm'
     with open(path, 'w') as f:
         f.write(BANNER.format(
             name='chardata.asm',
-            desc='C64 bitmaps for the %d characters the tiles use (ZX0), '
-                 'plus their palette slots and a code->index remap'
+            desc='C64 bitmaps + code->index remap for the %d characters '
+                 'the tiles use (one ZX0 stream), plus their palette slots'
                  % len(used)))
         f.write('\nNUM_CHARS = %d\n' % len(used))
         f.write('CHARSRC_SIZE = %d\n' % len(src))
-        # charRemap FIRST: it needs page alignment, and this file opens
-        # the bank at &8000, so leading with it makes the ALIGN free.
-        # Trailing it cost 200 B of padding once the bitmaps packed.
-        f.write('\nALIGN &100\n.charRemap\n')
-        emit_bytes(f, remap)
         f.write('\n.charSrcPak\n')
         emit_bytes(f, src_packed)
-        f.write('\n.charSlot\n')
-        emit_bytes(f, slots)
+        # palette slots are 4-bit: two chars a byte, even char in the low
+        # nibble. BuildCharset unpicks them (layer-11e stage 3 needed the
+        # bytes back for the sound triggers).
+        packed_slots = bytearray()
+        for i in range(0, len(slots), 2):
+            lo = slots[i]
+            hi = slots[i + 1] if i + 1 < len(slots) else 0
+            packed_slots.append(lo | (hi << 4))
+        f.write('\n.charSlotP\n')
+        emit_bytes(f, packed_slots)
     print('  chardata.asm  %5d bytes (%d of 256 chars used by tiles; '
-          'bitmaps %d -> %d zx0)'
-          % (len(src_packed) + len(slots) + 256, len(used),
-             len(src), len(src_packed)))
+          'bitmaps+remap %d -> %d zx0)'
+          % (len(src_packed) + len(packed_slots), len(used),
+             len(stream), len(src_packed)))
 
     # Per-deck colour data. colourMap is deck*16 + C64 colour -> MODE 1
     # logical 0-3, precomputed here so the 6502 needs no search.

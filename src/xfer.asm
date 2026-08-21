@@ -81,6 +81,10 @@ ASSERT PLAY_VIS_ROWS + 1 == 16  \ the board needs all 16 rows
   JSR XfSelectSide              \ the board, into the shadows
   JSR XfRepaintAll              \ and once onto the screen
   JSR XfTextClear
+  LDA #9                        \ Capture's entry pair: $22C1 on voice 2
+  STA sndFx2                    \ and $22C8 on voice 1
+  LDA #&1B
+  STA sndFx1
   LDA #XF_PH_RELEASE
   STA xfPhase
   RTS
@@ -272,6 +276,9 @@ ENDIF
   JSR XfTextClear
   LDA #LO(xfTxtShort) : LDY #HI(xfTxtShort)
   JSR XfMessage
+  LDA #&B                       \ the tie — provisional mapping of
+  STA sndFx1                    \ FinishTransfer1's three posts, to be
+                                \ A/B'd against VICE in stage 4
   LDA #XF_REPLAY_PASSES
   STA xfEndCtr
   LDA #XF_PH_REPLAY
@@ -285,12 +292,16 @@ ENDIF
   BNE xpl_lost
   LDA #1
   STA xfmResult
+  LDA #&C                       \ won — provisional, see the tie's note
+  STA sndFx1
   LDA #LO(xfTxtDone) : LDY #HI(xfTxtDone)
   JSR XfMessage
   JMP xpl_endphase
 .xpl_lost
   LDA #2
   STA xfmResult
+  LDA #&D                       \ lost — provisional
+  STA sndFx1
   LDA #LO(xfTxtFail) : LDY #HI(xfTxtFail)
   JSR XfMessage
 .xpl_endphase
@@ -928,6 +939,8 @@ XF_REPLAY_PASSES = 50
   LDA (xdest),Y
   CMP xfPlyWire
   BNE xdm_x
+  LDA #&A                       \ $1DED: a pulser committed to the wire
+  STA sndFx1
   JSR XfScr2CRAM
   JSR XfDrawPulser
   JSR XfRetreatWire
@@ -1435,7 +1448,11 @@ XF_REPLAY_PASSES = 50
   AND #1
   BNE xct_x
   LDA xfTime
-  BEQ xct_x
+  BNE xct_run
+  LDA #&1B                      \ $2106: time is up — re-posted every
+  STA sndFx2                    \ other pass through the grace, so the
+  RTS                           \ warning churns exactly as the C64's
+.xct_run
   SED
   SEC
   SBC #1
@@ -2143,6 +2160,10 @@ GO_HOLD      = 88               \ $3802: xfer_plySpriteX counts 88 down
   STA overPhase
   LDA #GO_HOLD
   STA overTick
+  LDA #5                        \ $3800: the GAME OVER message's cue, and
+  STA sndFx1                    \ $14E7's transition chord on voice 2
+  LDA #&16
+  STA sndFx2
   RTS
 
 \ One pass of the hold: boil one row, and count down to the restart.
@@ -2160,6 +2181,10 @@ GO_HOLD      = 88               \ $3802: xfer_plySpriteX counts 88 down
   STA goBoil
 .gwt_row
   TAX
+  BNE gwt_paint                 \ $37BF: the wash's roar, re-posted each
+  LDA #&F                       \ time the boil wraps — every 16 passes,
+  STA sndFx1                    \ near the C64's every-76-frames refire
+.gwt_paint
   JSR GoWashRow
 
   DEC overTick

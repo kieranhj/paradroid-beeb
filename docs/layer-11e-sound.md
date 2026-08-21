@@ -1,10 +1,9 @@
 # Layer 11e — Sound: the SN76489 driver
 
-**Status: PLANNED, not built.** Scoped with KC 2026-08-21; the four architecture decisions in §7
-were taken before any code. This document is the spec and the implementation plan. Nothing below
-has been verified in the emulator yet except where a measurement is cited from another layer's
-notes — and §5 stage 0 exists precisely because the SN76489 write sequence itself is a recalled
-fact (`layer-11-sound-title.md` §6) that the standing rules forbid building on unverified.
+**Status: stages 0–3 BUILT, 2026-08-21 — the game plays with sound.** Scoped with KC the same
+day; the architecture decisions are in §7, each stage's results are inline in §5, and §8 holds
+what stage 4 (the by-ear pass with KC) and later still owe. §1–§3 are the C64 analysis and the
+mapping design, kept as written.
 
 ---
 
@@ -250,14 +249,45 @@ A's 2,959 spare the active tick leaves ~1,800, and the idle cost is the permanen
 having ears. If that ever pinches, the first optimisations are `SndWrByte`'s generous ~15 µs
 hold (the chip needs ~8) and the flush's three-channel scan.
 
-### Stage 3 — the triggers
+### Stage 3 — the triggers — DONE 2026-08-21
 
-Every §2 site has a port-side home already (`DoFire`, `KillDroid`, `CbCheckDeath`, `DoCollision`,
-`ChangeDeck`, the console, the transfer game, `GameStart`, the game-over seam, the energiser,
-the alarm ticks in the animate tail). Wire each as a `STA` of the original's number, verbatim,
-including `$84` for the disruptor and the `weaponType+1` arithmetic. `LoadDeck` gains the
-three-byte `deckBgSndVar` patch into the effect-`$18` record — which now lives in bank 4, where
-`LoadDeck` already runs. Pause writes `sndState` 0/`$12`; +/− volume keys port `AdjustVolume`.
+Every in-game site from §2 is wired as a `STA` of the original's number: `DoFire`
+(`weaponType+1`), `CbDisruptor`'s `$84`, `DrAddBullet` (the firing droid's class+1, voice 2),
+`DrPlyFireEnemy`'s hit/`DrKillDroid`'s kill (the disruptor's kills route through it, covering
+`$23FB`), the collision bump on the episode edge, `DrHurtPlayer`'s three damage arms, the
+ram-kill, the energiser tick, `CbCheckDeath`'s two deaths (`$12` fallback / `$13` game over),
+`GameStart` (`sndState = $12`, fx 6 — with fx 7 moved to voice 2 so both sound; our start is
+instantaneous where the C64's countdown loop separated them), the lift's entry chord and
+per-deck blips, the console's open/close chords and menu/page beeps, the transfer's entry
+pair, pulser commit, time-up churn and three verdicts (win `$C` / lose `$D` / tie `$B` —
+**provisional**, to be A/B'd against VICE in stage 4), the wash's message, chord and
+recurring roar — and `GoTitle` silences the chip under SEI before `UninstallIrq` stops the
+ticks. `LoadDeck` patches `deckBgSndVar` into effect 24's record, in-bank.
+
+**`SndAmbient`** (bank 4, called once a pass beside `DoAging`) is the port of the two C64
+sound tails: the hum re-post whenever voice 2 is fully idle, the low-energy alarm, and the
+transfer-mode pulse — pass-rate masks at half the C64's frame masks, gated on `overPhase`
+and, by call position, on the modal screens.
+
+**Deliberately not wired**, recorded here: fx `$E` and `$B`'s `ShowXferInfo`/ship-announce
+moments (their screens are not ported — they arrive with 11d/`PrintTokenString`); pause and
+the ± volume keys (the port has no pause feature at all — porting `DoPause` is its own small
+piece of work, listed in §8).
+
+**The RAM battle, round two.** The sites, `SndAmbient` and the 48-byte hum tables wanted ~185
+more bank-4 bytes against 78. Paid by: `charRemap` folded into the ZX0 char stream (read only
+in the depack windows; `UnpackChars` now serves `BuildCharset` and `BuildCharPtrs`, +87);
+`charSlot` nibble-packed (+56); the flush rewritten from desire-arrays to direct diffed
+writes (−66 B of driver, and `SndWrByte`'s hold became NOPs so Y survives as the channel
+number); the conversion table quartered to 32 entries (±1.6% worst, on sweeping effects);
+and a page-boundary `ASSERT` on the driver state block that buys carry-free copy stepping —
+**if a regeneration ever fires that assert, nudge the state block, don't widen the copy.**
+Bank 4 ends `&BFFD`: **3 bytes free**, the fullest region in the machine.
+
+**Verified in jsbeeb**: `sndState` reads 2 in-game unpoked; effect 24's record holds a real
+`deckBgSndVar` triple after deck load; 594 chip writes captured over five seconds of play —
+the hum sustaining at its correct attenuation on channel 1, the fire's noise sweep on
+channels 2+3, and a rising tone sweep from a collision cue — all from unpoked gameplay.
 
 ### Stage 4 — verification
 
@@ -319,6 +349,9 @@ plumbing in `TiWait`, and it should follow once the driver is proven, not gate i
 
 - **Title chatter** — [DECISION 4]. Needs a `TiWait` tick throttled by VSync and an LFSR in
   place of `$D41B`. The three effect records can ship with the rest when wanted.
+- **Pause and the ± volume keys.** The port has no pause feature; `DoPause` (`$3B7C`) and
+  `AdjustVolume` (`$0CB4`) are one small piece of work together — pause writes `sndState`
+  0/`$12` around itself and the driver already honours both.
 - **Sub-122 Hz effects** — stage 1's review list: fx04 disruptor (100% of its ticks below the
   floor), fx26 (100%), fx23 (73%), fx16 (48%), fx17 (41%), fx06 (40%). **KC 2026-08-21:
   periodic noise clocked by tone 2 is the preferred cure** — it reaches ~15× below the tone

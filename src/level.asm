@@ -76,6 +76,19 @@
 .lampSrc
   SKIP 8
 
+\ ---- UnpackChars — the char stream into the depack scratch --
+\ Bitmaps at SPR_SAVE, the remap behind them. Callers: BuildCharset
+\ (deck load) and BuildCharPtrs (boot, and GoTitle's rebuild — the
+\ title's framebuffer sat on the scratch, so it must depack again).
+\ Same zero-page loan as BuildLevel's use of the depacker: the level
+\ draw is not running at any of those moments.
+.UnpackChars
+  LDA #LO(charSrcPak) : STA src
+  LDA #HI(charSrcPak) : STA src+1
+  LDA #LO(SPR_SAVE) : STA mapptr
+  LDA #HI(SPR_SAVE) : STA mapptr+1
+  JMP Zx0Unpack                 \ and its RTS
+
 \ ============================================================
 \ BuildCharset — convert the C64 characters to MODE 1 for a deck
 \   A = deck number
@@ -94,23 +107,18 @@
 .BuildCharset
   STA bcDeck
 
-\ The bitmaps ship ZX0-packed (layer-11e stage 2 took the room for the
-\ sound driver), so unpack them first — into the sprite background save
-\ areas, which are dead here: LoadDeck is the only caller, SprInit or
-\ DroidsInit re-deal every slot before anything restores, and the whole
-\ view is redrawn before the next frame. Same zero-page loan as
-\ BuildLevel's use of the depacker: the level draw has not run yet.
-  LDA #LO(charSrcPak) : STA src
-  LDA #HI(charSrcPak) : STA src+1
-  LDA #LO(SPR_SAVE) : STA mapptr
-  LDA #HI(SPR_SAVE) : STA mapptr+1
-  JSR Zx0Unpack
+\ The bitmaps and the code→index remap ship as one ZX0 stream (layer-11e
+\ stages 2-3 took the room for the sound driver), so unpack first — into
+\ the sprite background save areas, dead here: SprInit or DroidsInit
+\ re-deal every slot before anything restores, and the whole view is
+\ redrawn before the next frame.
+  JSR UnpackChars
 
 \ And the ALERT lamp's 8 source bytes into lampSrc, because
 \ BuildLampChar re-colours the lamp DURING PLAY, when this scratch is
-\ long gone. lowcode.asm reads the cache, never charSrc.
+\ long gone. lowcode.asm reads the cache, never the stream.
   LDX #ALERT_LAMP_CHAR
-  LDA charRemap,X
+  LDA SPR_SAVE + CHARSRC_SIZE,X \ the depacked remap
   ASL A                         \ index * 8 — NUM_CHARS is 137, so the
   STA bcTmp                     \ 16-bit form matters
   LDA #0
@@ -157,8 +165,14 @@
   LDA #0 : STA bcIndex
 
 .bc_char
-  LDX bcIndex                   \ colour = schemes[recOfs + slot]
-  LDA charSlot,X
+  LDA bcIndex                   \ colour = schemes[recOfs + slot]. The
+  LSR A                         \ slots are nibble-packed two to a byte,
+  TAX                           \ even char low — layer-11e stage 3 took
+  LDA charSlotP,X               \ the spare nibbles for the sound triggers
+  BCC bc_sloteven
+  LSR A : LSR A : LSR A : LSR A
+.bc_sloteven
+  AND #&0F
   CMP #REC_LEN                  \ a few characters carry a slot beyond the
   BCS bc_slot_oob               \ 12-byte record — the C64 reads past the end
   CLC : ADC bcRecOfs            \ of clr0_top_d020 into adjacent variables, so

@@ -176,10 +176,10 @@ addresses from the `beebasm` output rather than from any document.** In outline:
 | SWRAM bank 6 | `PARSPR2` — shifts 2 and 3 px, same layout, plus Layer 9's panel/console and the 912 B `dfsSave` snapshot — **full** (63 B) |
 | SWRAM bank 7 | `PARXFER` — Layer 10's transfer minigame, Layer 8b's lift screen, the console's ship, deck-plan and droid-database pages, and Layer 11's game over. The title is NOT here any more — it is the `PARTITL` disc overlay. **5,690 B free, reserved for the droid portrait pool** |
 
-**RAM is the binding constraint as of 2026-08-21**: main RAM 140 B in pieces (87 below
-`&3000`), bank 4 **78 B** — the sound driver and its data took the
-rest even after the char bitmaps were ZX0-packed to pay for it. The build PRINTs bank 4's fuel
-gauge every run. Banks 5, 6 and 7 have 1,033 / 63 / 826 B and are all paged out during
+**RAM is the binding constraint as of 2026-08-21**: main RAM 99 B in pieces (46 below
+`&3000`), bank 4 **3 B — effectively zero** — the sound driver, its data and every trigger took
+the lot even after the char bitmaps+remap were ZX0-packed and `charSlot` nibble-packed to pay
+for it. The build PRINTs bank 4's fuel gauge every run. Banks 5, 6 and 7 have 1,033 / 63 / 826 B and are all paged out during
 play, so none of it is reachable from the main loop. Anything new needs something moved first —
 `docs/memory-map.md`'s free-RAM section lists what is left and where it can come from.
 

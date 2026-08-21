@@ -268,11 +268,19 @@ def main():
     effects = [convert_effect(i + 1, fx_raw[i], instruments)
                for i in range(NUM_FX)]
 
-    # the conversion table, HALVED to 64 entries (bank 4 pressure, layer-11e
-    # section 6): index = (m-128)>>1, divisor = the pair's midpoint. Max
-    # pitch error 1/256 ~ 0.4% (0.78% worst), under the chip's own period
-    # quantisation at the high end.
-    conv_tab = [round(CONV_NUM / (m + 0.5)) for m in range(128, 256, 2)]
+    # the per-deck hum parameters ($6E60/$6E70/$6E80): 16 bytes each of
+    # segment timer / reload / count, patched into effect 24's record at
+    # offsets +5/+6/+7 by LoadDeck, exactly as $135F does
+    bg_vars = [bytes(mem[a:a + 16]) for a in (0x6E60, 0x6E70, 0x6E80)]
+    for a in (0x6E60, 0x6E70, 0x6E80):
+        assert all(filled[a + i] for i in range(16)), \
+            f"deckBgSndVar at {a:04X} unfilled"
+
+    # the conversion table, QUARTERED to 32 entries (bank 4 pressure,
+    # layer-11e section 6): index = (m-128)>>2, divisor = the quad's
+    # midpoint. Max pitch error ~1.6% - a quarter semitone, on effects
+    # that sweep; stage 4's ear is the arbiter.
+    conv_tab = [round(CONV_NUM / (m + 1.5)) for m in range(128, 256, 4)]
 
     # ---- src/data/sounddata.asm ----
     lines = [
@@ -282,7 +290,7 @@ def main():
         "\\ Source: paradroid_ce.lst ($C610 effects, $EAA0 instruments)",
         f"\\ {NUM_FX} effects x 11 bytes (SID-frequency space, verbatim",
         f"\\ minus pulse and the never-used chain), {n_inst} instruments",
-        "\\ x 6 bytes, and the 64-entry frequency->period table. Formats",
+        "\\ x 6 bytes, and the 32-entry frequency->period table. Formats",
         "\\ and conversion: the exporter's header, docs/layer-11e-sound.md.",
         "\\ Effect n's record is sndFxTab + (n-1)*11; offsets +5/+6/+7",
         "\\ are the per-deck patch targets for effect 24, as on the C64.",
@@ -297,6 +305,17 @@ def main():
     for e in effects[:SHIP_FX]:
         lines.append("  EQUB " + ",".join(f"&{b:02X}" for b in e['bytes'])
                      + f"  \\ {e['n']:2d}: {FX_NAMES[e['n']]}")
+    lines += [
+        "",
+        "\\ effect 24's per-deck patch values, indexed by deck 0-15:",
+        "\\ segment timer / reload / count -> sndFxTab + 23*11 + 5/6/7",
+        ".sndBgVar1",
+        "  EQUB " + ",".join(f"&{b:02X}" for b in bg_vars[0]),
+        ".sndBgVar2",
+        "  EQUB " + ",".join(f"&{b:02X}" for b in bg_vars[1]),
+        ".sndBgVar3",
+        "  EQUB " + ",".join(f"&{b:02X}" for b in bg_vars[2]),
+    ]
     lines += ["", ".sndInstTab"]
     for i in instruments:
         b = [i['flags'], i['atk'], i['dec'], i['sus'], i['rel'], i['dur']]
@@ -311,11 +330,11 @@ def main():
         "\\ Split lo/hi for indexed access.",
         ".sndFreqLo",
     ]
-    for o in range(0, 64, 16):
+    for o in range(0, 32, 16):
         lines.append("  EQUB " + ",".join(f"&{t & 0xFF:02X}"
                                           for t in conv_tab[o:o + 16]))
     lines.append(".sndFreqHi")
-    for o in range(0, 64, 16):
+    for o in range(0, 32, 16):
         lines.append("  EQUB " + ",".join(f"&{t >> 8:02X}"
                                           for t in conv_tab[o:o + 16]))
     lines.append("")

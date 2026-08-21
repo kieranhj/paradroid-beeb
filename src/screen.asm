@@ -72,10 +72,15 @@
 \ Costs 512 bytes of the scratch between the panel and the strip.
 \ Nothing else wanted that space and every character drawn pays for
 \ it, on both the band and the column paths.
+\ charRemap ships inside the packed char stream since layer-11e stage 3,
+\ so this depacks first and reads the scratch copy. Both call sites —
+\ boot, and GoTitle's rebuild — are moments the sprite save areas hold
+\ nothing (and LoadDeck depacks again for itself moments later).
 .BuildCharPtrs
+  JSR UnpackChars
   LDX #0
 .bcp_loop
-  LDA charRemap,X
+  LDA SPR_SAVE + CHARSRC_SIZE,X
   PHA
   AND #&0F
   ASL A : ASL A : ASL A : ASL A

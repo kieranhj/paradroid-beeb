@@ -212,6 +212,8 @@ CON_DROID_D  = BUF_BASE + 2 * ROW_BYTES + 7 * UNIT_BYTES
 \ Called from DoCharUnder's console arm, which is the C64's own trigger:
 \ character 66 under the player, and fire.
 .ConsoleOpen
+  LDA #&16                      \ $2CB8: the mode-change chord coming in
+  STA sndFx1
   LDA #1
   STA conActive
   LDA #0

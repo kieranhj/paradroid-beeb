@@ -1554,6 +1554,9 @@ IF DEBUG_MAPGUARD
 ENDIF
   JSR CbCheckDeath              \ after the collisions that could cause it
   JSR DoAging
+  JSR SndAmbient                \ Layer 11e: the hum, the low-energy alarm
+                                \ and the transfer pulse — bank 4, resting
+                                \ state, play path only
   JSR DoCharUnder               \ and a recharge pad puts it back, at 5
                                 \ points of score each. Reads plyCX/plyCY,
                                 \ which CheckWalls left earlier in the pass
@@ -2019,6 +2022,12 @@ ENDMACRO
 \ must come first — the rupture IRQ rewrites R6/R12/R13 every field, so
 \ any display SetupMode set up would be overwritten within one.
 .GoTitle
+  LDA #0                        \ Layer 11e: UninstallIrq stops the sound
+  STA sndState                  \ ticks, so whatever the chip holds would
+  SEI                           \ drone through the whole title. Silence it
+  JSR SndSilence                \ NOW — SWRAM_DATA is paged (GoTick7), and
+                                \ masked so no tick interleaves the port A
+                                \ save/restore. UninstallIrq CLIs at its end
   JSR UninstallIrq
   JSR SetupMode
 \ Put DFS's workspace back before the first load. The low overlay has

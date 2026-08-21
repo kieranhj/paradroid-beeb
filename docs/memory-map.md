@@ -33,14 +33,14 @@ Regenerate it after any change that moves a region:
 | `&0E00–&10F1` | 753 B | `lowcode` — `DrawTileCells`, the animated-tile scan and repaint, the alert lamp, the `CollisionType` table. Staged through `LOW_STAGE` and copied down **after the last `*LOAD`**: this is DFS's own workspace while the filing system is running |
 | `&10F2–&10FF` | **15 B free** | |
 | `&1100–&2F6C` | 7,789 B | Code (`PARA`), starting below DFS's `PAGE` of `&1900`. The level draw and droid AI are in bank 4; Layers 7–10's main-RAM halves refilled the room they made |
-| `&2FA9–&2FFF` | **87 B free** | The binding constraint. Layer 11e's sound driver did NOT land here after all — the IRQ pages bank 4 for it — and left only the request bytes and the paging shim (23 B). It was 24, then 30, then 148. TASK 6 moved 192 bytes of `rowMul`/`unitMul` out to `&5400`; TASK 3 spent 82 of that on `FontCell` and TASK 8 moved those 82 into the font region. The sprite colour work then spent 94: `SprSetColour`, `sprColPat`, `sprColour` and the player's colour arms in `SprAnimateAll`, all of which have to be resident because the blitter calls them with a sprite bank paged in |
+| `&2FD2–&2FFF` | **46 B free** | The binding constraint. Layer 11e's sound driver did NOT land here — the IRQ pages bank 4 for it — but its request bytes, paging shim and stage 3's main-RAM trigger posts took 64 in all. It was 24, then 30, then 148. TASK 6 moved 192 bytes of `rowMul`/`unitMul` out to `&5400`; TASK 3 spent 82 of that on `FontCell` and TASK 8 moved those 82 into the font region. The sprite colour work then spent 94: `SprSetColour`, `sprColPat`, `sprColour` and the player's colour arms in `SprAnimateAll`, all of which have to be resident because the blitter calls them with a sprite bank paged in |
 | `&3000–&366F` | 1,648 B | Layer 9's text font, `PARAFNT` — 103 glyphs × **16 B, 1bpp**, the C64's own bytes, expanded by `FontCell` as it draws. Layer 13a TASK 3 |
 | `&3670–&36CF` | 96 B | The status box's twelve border cells, same file, also 1bpp |
 | `&36D0–&3CD5` | 1,542 B | `constrings` — the `$C000` string table, **one copy**, read by the console in bank 6 and the droid database in bank 7 alike. Same `PARAFNT` file. Layer 13a TASK 7 |
 | `&3CD6–&3D97` | 194 B | `FontCell`, `fontExpand`, `fontMask` — the 1bpp decoder — and, since 2026-08-20, `DoScore`. Main RAM that does not have to be the code image. Layer 13a TASK 8 |
 | `&3D98–&3DF7` | 96 B | The four droid tables, mirrored out of bank 4 for the panel in bank 6 |
 | `&3DF8–&3DFF` | **8 B free** | What is left of the room TASK 3 freed, after `DoScore` |
-| `&3E00–&45FF` | 2,048 B | Sprite background save areas, 8 slots × 256 — slot 7 (`&4500`) is the player's bullet. Ends exactly at the tile map. **Doubles as `BuildCharset`'s depack scratch during `LoadDeck`** (Layer 11e): the 1,096 unpacked char bitmaps land here, dead space at that moment because every slot is re-dealt before anything restores |
+| `&3E00–&45FF` | 2,048 B | Sprite background save areas, 8 slots × 256 — slot 7 (`&4500`) is the player's bullet. Ends exactly at the tile map. **Doubles as `UnpackChars`' depack scratch** (Layer 11e): the 1,352 B of char bitmaps + `charRemap` land here at `LoadDeck`, boot and the GoTitle rebuild — dead space at all three moments because every slot is re-dealt before anything restores |
 | `&4600–&49FF` | 1,024 B | Tile map, 64 × 16, page-aligned, fixed home. Ends exactly at the panel |
 
 > **Why the three moved, 2026-08-18.** Layer 11's title screen is 25 rows × 640 = **16,000
@@ -63,10 +63,9 @@ Regenerate it after any change that moves a region:
 | `&8000–&BFFF` | 16 K | Sideways bank window — one of the FOUR banks below, never more |
 | `&C000–&FFFF` | 16 K | MOS |
 
-Free main RAM totals **140 bytes** (2026-08-21, after Layer 11e's request bytes and IRQ shim
-took 23 below `&3000` and `lampTmp` gave 2 back to `lowbss`): 87 below `&3000` (`code_end` =
-`&2FA9`), 0 at the top of `lowcode`, 36 in `lowcode2`, 9 in `lowbss` and 8 in the `PARAFNT`
-tail. The seam spent ~213: `TitleSeq`, `GoTitle`, `UninstallIrq`
+Free main RAM totals **99 bytes** (2026-08-21, after Layer 11e stage 3's trigger posts and the
+`SndAmbient` call): 46 below `&3000` (`code_end` = `&2FD2`), 0 at the top of `lowcode`, 36 in
+`lowcode2`, 9 in `lowbss` and 8 in the `PARAFNT` tail. The seam spent ~213: `TitleSeq`, `GoTitle`, `UninstallIrq`
 (with the MOS VIA-state saves in `InstallIrq`), `SaveDfsWs`/`RestoreDfsWs` and the `loadtitl`
 string — all of it resident of necessity, because it pages banks and runs while the MOS owns the
 machine.
@@ -124,11 +123,13 @@ staged on the panel and copied down last — see the boot code and `layer-11-sou
 
 ## SWRAM bank 4 — `PARADAT`
 
-`&8000–&BFB2`, **78 free** (2026-08-21: Layer 11e's sound driver — 1,018 B of `sound.asm`
-plus 508 B of `sounddata.asm` — took Layer 13d's 1,161 and more; the difference came from
-ZX0-packing `chardata`'s bitmaps, which `BuildCharset` now unpacks into the sprite background
-save areas at deck load, an 8-byte `lampSrc` cache standing in for the ALERT lamp's live reads.
-`main.asm` PRINTs this bank's fuel gauge on every build — trust that over this line.)
+`&8000–&BFFD`, **3 free** (2026-08-21, layer-11e stage 3 — THE FULLEST REGION IN THE MACHINE:
+the sound driver (908 B), its data, the trigger posts, `SndAmbient` and the hum tables took
+Layer 13d's 1,161 and every squeeze after it. Paid by ZX0-packing the char bitmaps AND
+`charRemap` into one stream (`UnpackChars` → the sprite save areas; `lampSrc` caches the ALERT
+lamp's 8 bytes for live re-colours), nibble-packing `charSlot`, quartering the sound frequency
+table and rewriting the driver's flush. `main.asm` PRINTs this bank's fuel gauge on every
+build — trust that over this line.)
 Layer 13d's own note: `leveldata`'s
 3,503 RLE bytes became `deckPack`'s 2,183 plus a ~230-byte depacker, and the RLE decoder left
 `BuildLevel` — see [`layer-13d-space.md`](layer-13d-space.md) §3). Before that it was 12 free — and 111 of its apparent alignment holes are not real, see Layer 13a TASK 5. 2026-08-20 took `LUTs` (64 B) out to `&54C0` and `drVis`/`drVisNew`/`drBulFrm` (42 B) out to `&0C90`, and spent all of it and more on `DrCollPair`, the collision matrix and `DrCollAct`. Tiles, decks, palettes, droid game

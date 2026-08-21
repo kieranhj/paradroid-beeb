@@ -80,9 +80,6 @@
 .snNzOwn   EQUB &FF             \ which voice owns the noise channel; &FF none
 .snQuiet   EQUB 0               \ state-0 silence already done
 
-\ ---- desired state, rebuilt each tick then diffed -----------
-.snWantAtt EQUB 15,15,15,15
-
 \ ---- scratch (IRQ-only, so safe as absolutes) ---------------
 .snCvL     EQUB 0               \ SndConv in/out: frequency in, period out
 .snCvH     EQUB 0
@@ -105,10 +102,9 @@
   RTS
 .stk_on
   AND #&10                      \ $1x = (re)initialise, drop to $0x — the
-  BEQ stk_run                   \ C64's _initGameFX shape ($0526)
-  JSR SndSilence
-  LDA sndState
-  AND #&0F
+  BEQ stk_run                   \ C64's _initGameFX shape ($0526). Only
+  JSR SndSilence                \ $12 exists until the chatter lands, so
+  LDA #2                        \ the AND #$0F is spent on a constant
   STA sndState
   RTS
 .stk_run
@@ -149,31 +145,24 @@
   AND #&7F
   SEC
   SBC #1                        \ record index 0-30
-  STA snTmp
-  ASL A
-  STA snTm2                     \ *2
-  ASL A
-  ASL A                        \ *8 — max 240, no carry
-  CLC
-  ADC snTm2                     \ *10 — may carry
+  TAY
+  LDA #LO(sndFxTab)
   STA snsLd+1
-  LDA #0
-  ADC #0
+  LDA #HI(sndFxTab)
   STA snsLd+2
+  TYA
+  BEQ sns_ptrok                 \ walk the pointer up index * SND_FX_LEN —
+.sns_ptrstep                    \ ≤ 500 cycles, and only at effect start
   CLC
   LDA snsLd+1
-  ADC snTmp                     \ *11 — SND_FX_LEN
+  ADC #SND_FX_LEN
   STA snsLd+1
-  LDA snsLd+2
-  ADC #0
-  STA snsLd+2
-  CLC
-  LDA snsLd+1
-  ADC #LO(sndFxTab)
-  STA snsLd+1
-  LDA snsLd+2
-  ADC #HI(sndFxTab)
-  STA snsLd+2                   \ snsLd now reads this record
+  BCC sns_ptrnc
+  INC snsLd+2
+.sns_ptrnc
+  DEY
+  BNE sns_ptrstep
+.sns_ptrok
 
   LDA #LO(snFreqLo)             \ record bytes 1-10 → the ten state
   LDY #HI(snFreqLo)             \ fields — pairs, stride 2, this voice
@@ -217,6 +206,8 @@
   STX snNzOwn                   \ latest claim wins [DECISION 3]
   RTS
 
+ASSERT HI(snFreqLo) == HI(snPhase+1)   \ one page: the copy walk below
+                                       \ steps without carry handling
 \ ---- the copy machinery: everything is self-modified because ---
 \ no zero page exists for this file (see the header). snsLd's
 \ operand is the source block; snsSt's is destination base + X,
@@ -226,31 +217,24 @@
   STX snTm2
   ADC snTm2
   STA snsSt+1
-  TYA
-  ADC #0
-  STA snsSt+2
-  RTS
+  STY snsSt+2                   \ no carry: the ASSERT above holds the
+  RTS                           \ whole state block on one page
 
 .SndCopy                        \ Y = first source byte, A = end + 1
   STA snTm2
 .snc_loop
-  JSR snsLd
-  JSR snsSt
-  CLC
-  LDA snsSt+1
-  ADC #2
-  STA snsSt+1
-  BCC snc_nc
-  INC snsSt+2
-.snc_nc
+  JSR snsMove
+  INC snsSt+1                   \ stride 2, same page per the ASSERT
+  INC snsSt+1
   INY
   CPY snTm2
   BNE snc_loop
   RTS
 
+\ one byte, source to state, both operands patched
+.snsMove
 .snsLd
   LDA &FFFF,Y                   \ operand patched: record or instrument
-  RTS
 .snsSt
   STA &FFFF                     \ operand patched: the state field
   RTS
@@ -349,156 +333,130 @@
   BEQ sne_store                 \ always
 
 \ ============================================================
-\ SndFlush — desired chip state from both voices, diffed against
-\ the caches, written in one bus transaction.
+\ SndFlush — each voice written straight to its channel, diffed
+\ against the chip caches, one bus transaction.
+\ Voice X sounds on tone X; a noise voice sounds on channel 3
+\ with its pitch on silenced tone 2 — whose attenuation nothing
+\ here ever raises: SndSilence wrote it 15 and no path writes
+\ another value, so it needs no per-tick defaulting.
 \ ============================================================
 .SndFlush
-  LDA #15                       \ default: everything silent
-  STA snWantAtt+0
-  STA snWantAtt+1
-  STA snWantAtt+2               \ tone 2 is the noise clock and NEVER sounds
-  STA snWantAtt+3
-
+  JSR SndWrOpen
   LDX #0
   JSR snf_voice
   LDX #1
   JSR snf_voice
-  JMP snf_write
+  JMP SndWrClose
 
-\ one voice's contribution: an attenuation, and a period if audible
 .snf_voice
   LDA snLevel,X
   BNE snfv_on
-  RTS                           \ silent: leave the defaults
+  LDA #15                       \ silent: the channel to attenuation 15,
+  STA snTmp                     \ once — the cache eats the repeats
+  LDA snInstFl,X
+  BMI snfv_offnz
+  TXA
+  TAY
+  JMP snf_att
+.snfv_offnz
+  CPX snNzOwn
+  BNE snfv_x
+  LDY #3
+  BNE snf_att                   \ always
 .snfv_on
   LSR A
   LSR A
   LSR A
   LSR A
   STA snTmp                     \ level nibble 0-15
-  LDA #15
-  SEC
-  SBC snTmp
-  STA snTmp                     \ 15 - level
-  LDA #15
-  SEC
-  SBC sndVolume                 \ + (15 - master volume)
-  CLC
-  ADC snTmp
+  LDA #30                       \ (15 - level) + (15 - volume); the SEC
+  SEC                           \ holds through both subtracts — the
+  SBC snTmp                     \ first result is >= 15 so the second
+  SBC sndVolume                 \ can never borrow
   CMP #16
-  BCC snfv_att
+  BCC snfv_a2
   LDA #15
-.snfv_att
+.snfv_a2
   STA snTmp                     \ the attenuation this voice wants
-  CMP #15
-  BEQ snfv_x                    \ fully attenuated: nothing to place
-
   LDA snFreqLo,X
   STA snCvL
   LDA snFreqHi,X
   STA snCvH
-
   LDA snInstFl,X
-  BMI snfv_noise
+  BMI snfv_nz
   LDA #0                        \ tone voice: channel = voice number
   STA snCvNz
   JSR SndConv
-  LDA snCvL
-  STA snWantPL,X
-  LDA snCvH
-  STA snWantPH,X
-  LDA snTmp
-  STA snWantAtt,X
-.snfv_x
-  RTS
-.snfv_noise
+  TXA
+  TAY
+  JSR snf_per
+  JMP snf_att
+.snfv_nz
   CPX snNzOwn                   \ only the owner drives the noise channel
   BNE snfv_x
   LDA #1
   STA snCvNz
   JSR SndConv
-  LDA snCvL
-  STA snWantPL+2                \ pitch on (silent) tone 2
-  LDA snCvH
-  STA snWantPH+2
-  LDA snTmp
-  STA snWantAtt+3
-  RTS
-
-.snWantPL  EQUB &FF,&FF,&FF     \ desired tone periods; &FF,&FF = "keep"
-.snWantPH  EQUB &FF,&FF,&FF
-.snChanB   EQUB &00,&20,&40     \ channel number in latch bits 5-6
-
-\ ---- diff and write ----------------------------------------
-.snf_write
-  JSR SndWrOpen
-  LDX #0
-.snfw_tone
-  LDA snWantPH,X
-  CMP #&FF
-  BEQ snfw_att                  \ no desire registered: leave the period
-  CMP snChPerH,X
-  BNE snfw_per
-  LDA snWantPL,X
-  CMP snChPerL,X
-  BEQ snfw_att
-.snfw_per
-  LDA snWantPL,X                \ latch byte: 1 cc0 dddd, low 4 bits of N
-  AND #&0F
-  ORA snChanB,X                 \ channel bits 5-6, from the table below
-  ORA #&80
-  JSR SndWrByte
-  LDA snWantPH,X                \ data byte: N bits 4-9
-  ASL A
-  ASL A
-  ASL A
-  ASL A
-  STA snTmp
-  LDA snWantPL,X
-  LSR A
-  LSR A
-  LSR A
-  LSR A
-  ORA snTmp
-  AND #&3F
-  JSR SndWrByte
-  LDA snWantPL,X
-  STA snChPerL,X
-  LDA snWantPH,X
-  STA snChPerH,X
-.snfw_att
-  LDA snWantPH,X                \ desires are one-tick: reset to "keep"
-  ORA #&FF
-  STA snWantPH,X
-  LDA snWantAtt,X
-  CMP snChAtt,X
-  BEQ snfw_next
-  STA snChAtt,X
-  ORA snChanB,X
-  ORA #&90                      \ attenuation latch: 1 cc1 aaaa
-  JSR SndWrByte
-.snfw_next
-  INX
-  CPX #3
-  BCC snfw_tone
-
-  LDA snWantAtt+3               \ the noise channel: control, then volume
-  CMP #15
-  BEQ snfw_nzatt                \ silent: no need to touch the control
-  LDA #&E7                      \ white noise, clocked by tone 2 — stage 0
-  CMP snNzCtl
-  BEQ snfw_nzatt
+  LDY #2                        \ pitch on (silent) tone 2
+  JSR snf_per
+  LDA #&E7                      \ white noise, clocked by tone 2 — stage 0.
+  CMP snNzCtl                   \ Cached hard: a noise-register write
+  BEQ snfv_nc                   \ resets the chip LFSR mid-hiss
   STA snNzCtl
   JSR SndWrByte
-.snfw_nzatt
-  LDA snWantAtt+3
-  CMP snChAtt+3
-  BEQ snfw_done
-  STA snChAtt+3
-  ORA #&F0
+.snfv_nc
+  LDY #3
+\ fall through: the noise attenuation
+
+\ ---- attenuation snTmp -> channel Y, diffed -----------------
+.snf_att
+  LDA snTmp
+  CMP snChAtt,Y
+  BEQ snfv_x
+  STA snChAtt,Y
+  ORA snChanB,Y
+  ORA #&90                      \ attenuation latch: 1 cc1 aaaa
   JSR SndWrByte
-.snfw_done
-  JMP SndWrClose
+.snfv_x
+  RTS
+
+\ ---- period snCvL/H -> tone channel Y, diffed ---------------
+\ SndWrByte no longer touches Y (the NOP hold), so Y survives
+\ across both writes.
+.snf_per
+  LDA snCvH
+  CMP snChPerH,Y
+  BNE snfp_wr
+  LDA snCvL
+  CMP snChPerL,Y
+  BEQ snfp_x
+.snfp_wr
+  LDA snCvL
+  STA snChPerL,Y
+  AND #&0F                      \ latch byte: 1 cc0 dddd, low 4 bits of N
+  ORA snChanB,Y
+  ORA #&80
+  JSR SndWrByte
+  LDA snCvH
+  STA snChPerH,Y
+  ASL A
+  ASL A
+  ASL A
+  ASL A
+  STA snTm2
+  LDA snCvL
+  LSR A
+  LSR A
+  LSR A
+  LSR A
+  ORA snTm2
+  AND #&3F                      \ data byte: N bits 4-9
+  JSR SndWrByte
+.snfp_x
+  RTS
+
+.snChanB
+  EQUB &00,&20,&40,&60          \ channel number in latch bits 5-6
 
 \ ============================================================
 \ SndSilence — every channel to attenuation 15, caches reset.
@@ -508,7 +466,8 @@
   JSR SndWrOpen
   LDX #3
 .sns_hush
-  LDA snsAtt15,X
+  LDA snChanB,X                 \ channel bits | attenuation-15 latch
+  ORA #&9F
   JSR SndWrByte
   DEX
   BPL sns_hush
@@ -528,8 +487,6 @@
   LDA #1
   STA snQuiet
   RTS
-.snsAtt15
-  EQUB &9F,&BF,&DF,&FF
 
 \ ============================================================
 \ SndConv — SID frequency (snCvL/H) to SN period (snCvL/H).
@@ -574,8 +531,9 @@
   LDA snCvH
   SEC
   SBC #128
-  LSR A                         \ 64-entry table: two m values share an
-  TAY                           \ entry cut at their midpoint (exporter)
+  LSR A                         \ 32-entry table: four m values share an
+  LSR A                         \ entry cut at their midpoint (exporter)
+  TAY
   LDA sndFreqHi,Y
   STA snCvH
   LDA sndFreqLo,Y
@@ -608,12 +566,10 @@
   STA SND_ORA
   LDA #0
   STA SND_PORTB                 \ sound /WE low — the chip samples the bus
-  LDY #6
-.snwb_dly
-  DEY
-  BNE snwb_dly                  \ ~31 cycles ≈ 15 µs; the chip needs ~8
-  LDA #8
-  STA SND_PORTB
+  NOP : NOP : NOP : NOP         \ 16 cycles + the LDA/STA around them is
+  NOP : NOP : NOP : NOP         \ ~12 µs of hold; the chip needs ~8. NOPs
+  LDA #8                        \ rather than a loop so Y SURVIVES — the
+  STA SND_PORTB                 \ flush holds its channel number in it
   RTS
 
 .SndWrClose
