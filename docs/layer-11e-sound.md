@@ -363,10 +363,19 @@ plumbing in `TiWait`, and it should follow once the driver is proven, not gate i
   the drone was wrong (`dd108a2` keeps the periodic machinery for stage 4). Round two, from
   the wiki's sn76489 page: **N=1 is a 125 kHz square, out of audible range and stripped by
   the LM324N** — a sanctioned in-period-domain mute. Instrument 3 is `MUTE_SUBFLOOR` in the
-  exporter (flags bit 6): its sub-floor content clamps to N=1 instead of N=1023, so the hum
-  fades in as its sweep crosses the floor and each segment reset gets a one-tick articulation
-  gap. Effects living *entirely* below the floor (the disruptor) must NOT take this flag —
-  they would vanish; they keep the 1023 buzz pending stage 4.
+  exporter (flags bit 6): its sub-floor content MUTES, so the hum fades in as its sweep
+  crosses the floor and each segment reset gets a one-tick articulation gap. Effects living
+  *entirely* below the floor (the disruptor) must NOT take this flag — they would vanish;
+  they keep the 1023 buzz pending stage 4.
+  **Round three (same day): the mute must be the VOLUME, not the period.** Writing N=1 with
+  the envelope live still clicked on real-accuracy emulators — each attenuation write shifts
+  the chip's volume-derived DC offset, which is literally the chip's sample-playback
+  mechanism (the wiki page's own explanation), and the hum's instant attack was a one-sample
+  PCM pop. `SndConv` now signals "muted" in carry and the flush routes it into the existing
+  silent-voice path: attenuation 15, period untouched. Unmuting writes the period before the
+  volume, so the tone re-enters cleanly. Verified in the capture: the reset tick is a single
+  `atten=15`, the return is period-then-`atten=10`, and the muted opening writes nothing at
+  all.
   **The same session found a real driver bug**: `SndConv` counted its shifts in X, and the
   flush picks the channel from X after converting — every in-range voice-1 tone was landing
   on channel 0. The hum had escaped because its clamp path skips the shift loops. Counters

@@ -347,6 +347,7 @@ ASSERT HI(snFreqLo) == HI(snPhase+1)   \ one page: the copy walk below
 .snf_voice
   LDA snLevel,X
   BNE snfv_on
+.snfv_off
   LDA #15                       \ silent: the channel to attenuation 15,
   STA snTmp                     \ once — the cache eats the repeats
   LDA snInstFl,X
@@ -380,10 +381,11 @@ ASSERT HI(snFreqLo) == HI(snPhase+1)   \ one page: the copy walk below
   STA snCvH
   LDA snInstFl,X                \ 0 = tone; bit 7 = noise, and then the
   STA snCvNz                    \ low bits are the SN noise-control bits
-  BMI snfv_nz                   \ (7 white, 3 periodic bass) — SndConv
-  JSR SndConv                   \ only cares that it is zero or not
-  TXA                           \ tone voice: channel = voice number
-  TAY
+  BMI snfv_nz                   \ (7 white, 3 periodic bass)
+  JSR SndConv
+  BCS snfv_off                  \ muted sub-floor: VOLUME off, period
+  TXA                           \ untouched — the silent path is exactly
+  TAY                           \ the mute the DC offset needs
   JSR snf_per
   JMP snf_att
 .snfv_nz
@@ -513,16 +515,23 @@ ASSERT HI(snFreqLo) == HI(snPhase+1)   \ one page: the copy walk below
   CMP #8                        \ F < 2048 can only clamp: skip the maths.
   BCS snc_go                    \ (2048-2080 also land on 1023 — exact)
 .snc_max
-  LDA #&FF                      \ the audible clamp: N=1023, ~122 Hz
-  LDY #3
   BIT snCvNz                    \ flags bit 6 (V after BIT) = mute the
-  BVC snc_set                   \ sub-floor instead — the hum's instrument:
-  LDA #1                        \ N=1 is a 125 kHz square, out of audible
-  LDY #0                        \ range and stripped by the LM324N (the
-.snc_set                        \ wiki's sn76489 page). NEVER period 0 —
-  STA snCvL                     \ undocumented on this chip
-  STY snCvH
+  BVS snc_mute                  \ sub-floor instead — the hum's instrument
+  LDA #&FF                      \ the audible clamp: N=1023, ~122 Hz
+  STA snCvL
+  LDA #3
+  STA snCvH
+  CLC
   RTS
+.snc_mute
+  SEC                           \ muted: NO period, and the caller must
+  RTS                           \ hold the VOLUME at 15 too. The first cut
+                                \ wrote N=1 (ultrasonic, silent per the
+                                \ wiki's sn76489 page) with the envelope
+                                \ live — and each attenuation step shifted
+                                \ the chip's volume-derived DC offset,
+                                \ which IS the chip's sample-playback
+                                \ mechanism: KC heard the click
 .snc_go
   LDA #8                        \ snTm2 = 8 - s, counted down as we
   STA snTm2                     \ normalise
@@ -552,7 +561,8 @@ ASSERT HI(snFreqLo) == HI(snPhase+1)   \ one page: the copy walk below
   LDA snCvH
   CMP #4                        \ > 1023?
   BCS snc_max
-  RTS
+  CLC                           \ carry protocol: clear = play the period,
+  RTS                           \ set = muted (snc_mute alone sets it)
 
 \ ============================================================
 \ The chip bus — the stage-0-verified sequence, batched: DDRA
