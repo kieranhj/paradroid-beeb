@@ -62,7 +62,7 @@ ENDIF
 \ WHERE THE TWO WRITES GO, and why neither is anywhere else:
 \
 \   the panel's, at the END of RuptVSync. The tail cycle displays
-\   nothing and the panel starts 40 scanlines later, so there is no
+\   nothing and the panel starts 72 scanlines later, so there is no
 \   deadline — but it must come AFTER the T1 restart, because delaying
 \   that would shift every fire in the frame by however long this takes.
 \
@@ -164,7 +164,9 @@ ENDMACRO
 .t1i3Hi EQUB HI(T1_I3)
 
 \ ============================================================
-\ RuptVSync — IRQ on CA1, at P+272, row 8 of the tail cycle
+\ RuptVSync — IRQ on CA1, at P+240, row TAIL_R7 of the tail cycle
+\ (row 4 since FRAME_DROP_ROWS moved the picture down; it was row 8,
+\ P+272, and moving it is what drops the picture on the tube)
 \ ============================================================
 .RuptVSync
 IF DEBUG_RASTER
@@ -175,11 +177,31 @@ ENDIF
   LDA #4  : STA CRTC_ADDR : LDA #TAIL_R4 : STA CRTC_DATA
   LDA #5  : STA CRTC_ADDR : LDA #0       : STA CRTC_DATA
 
-\ R6 for the PANEL cycle, which starts in 40 scanlines. The tail
-\ displays nothing, so raising it now costs nothing there.
+\ R6 for the PANEL cycle, which starts in 72 scanlines — 40 plus the
+\ 32 FRAME_DROP_ROWS moved VSync back by. The tail displays nothing,
+\ so raising it now costs nothing there.
   LDA #6  : STA CRTC_ADDR : LDA #PANEL_ROWS : STA CRTC_DATA
 
-\ Unblank for the panel, which starts in 40 scanlines. Safe to do
+\ R7 = 255 for the PANEL cycle: no VSync in the panel or the play
+\ cycle, only in the tail. IT IS HERE AND NOT AT FIRE 1, and that is
+\ what FRAME_DROP_ROWS cost. Fire 1 is at P+44, row 5 of the 7-row
+\ panel cycle, and writing R7 there worked only while TAIL_R7 was 8 —
+\ a 7-row cycle can never reach row 8, so the stale value was harmless
+\ for five rows. At TAIL_R7 = 4 it is NOT: the panel cycle reaches row
+\ 4 at P+32, twelve scanlines before fire 1, and fires a VSync of its
+\ own. That re-enters this handler mid-frame, which restarts T1 and
+\ zeroes ruptState, so fire 1 never runs, the play cycle is never set
+\ up or unblanked, and the play area is simply BLACK with the panel
+\ sitting alone on a rolling picture. Measured, not reasoned about.
+\
+\ Here it is safe by the file's own rule: the tail cycle is the panel's
+\ PREVIOUS cycle, and the panel does not start for another 72
+\ scanlines. The tail's own VSync has already fired — that is why we
+\ are in this handler — and the 6845 counts the pulse out of R3
+\ independently of R7.
+  LDA #7  : STA CRTC_ADDR : LDA #255        : STA CRTC_DATA
+
+\ Unblank for the panel, which starts in 72 scanlines. Safe to do
 \ now: the tail displays nothing either way.
   LDA #8  : STA CRTC_ADDR : LDA #R8_ON   : STA CRTC_DATA
 
@@ -238,10 +260,10 @@ ENDIF
 
   LDA #4  : STA CRTC_ADDR : LDA #PANEL_R4 : STA CRTC_DATA
 
-\ No VSync in the panel or play cycles. The panel's own display
-\ ended 12 scanlines ago (PANEL_ROWS = 4, so P+32), so R6 is free
-\ to become the play cycle's.
-  LDA #7  : STA CRTC_ADDR : LDA #255      : STA CRTC_DATA
+\ R6 for the play cycle. The panel's own display ended 12 scanlines
+\ ago (PANEL_ROWS = 4, so P+32), so R6 is free to become the play
+\ cycle's. R7 IS NOT HERE any more — it is at VSync, and the note
+\ there says why moving the picture down forced that.
   LDA #6  : STA CRTC_ADDR : LDA #PLAY_R6  : STA CRTC_DATA
 
 \ R5 for the panel cycle, sampled at its end 12 scanlines from now.

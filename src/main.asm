@@ -473,12 +473,14 @@ VIA_PORTB  = &FE40
 \
 \   panel   P            7 rows,  4 displayed, R5 = 8-line
 \   play    P+64-line   18 rows, 17 displayed, R5 = line
-\   tail    P+208       13 rows,  0 displayed, R5 = 0, VSync at row 8
+\   tail    P+208       13 rows,  0 displayed, R5 = 0, VSync at row
+\                       TAIL_R7 — 4 since FRAME_DROP_ROWS, was 8
 \                       ------
 \                       38 rows x 8 + 8 adjust = 312 scanlines
 \
-\ Visible play area: P+64 to P+192, and VSync at P+272 — the same
-\ geometry Layer 3c had, so nothing moves and no RAM changes.
+\ Visible play area: P+64 to P+192, and VSync at P+240 — the geometry
+\ Layer 3c had except for where VSync falls, which is what puts the
+\ picture on the tube. See FRAME_DROP_ROWS. No RAM changes either way.
 \ ---- Layer 9's text font, in main RAM -----------------------
 \ IT IS IN MAIN RAM RATHER THAN A BANK because the panel engine lives in
 \ bank 4 and the font in bank 6, and only one bank is visible at a time.
@@ -667,7 +669,31 @@ TAIL_CYC_ROWS  = 13
 PANEL_R4 = PANEL_CYC_ROWS - 1   \ 6
 PLAY_R4  = PLAY_CYC_ROWS - 1    \ 17
 TAIL_R4  = TAIL_CYC_ROWS - 1    \ 12
-TAIL_R7  = 8                    \ VSync at P+208+64 = P+272
+
+\ ---- WHERE THE PICTURE SITS ON THE TUBE ---------------------
+\ The television locks to VSync and counts down from it, so moving VSync
+\ EARLIER in our frame moves the picture DOWN: everything after it is
+\ then further from the sync the set is measuring against. The frame is
+\ still 312 scanlines and the three cycles are untouched — all that
+\ changes is how the 120 scanlines of blanking are split between the
+\ front porch (picture bottom -> VSync) and the back porch (VSync ->
+\ panel top).
+\
+\ At 0 the panel top is 40 scanlines after VSync and the picture sits
+\ high, with the black stacked under it. KC, 2026-08-21: FOUR ROWS down.
+\ That leaves 48 scanlines of front porch and 72 of back — both far
+\ beyond PAL's ~5 and ~25, so the set has no trouble with either.
+\
+\ TWO constants move together and this is why they are one: the T1 chain
+\ is restarted at VSync, so every fire in the frame is measured from it.
+\ Shift VSync without shifting T1_I1 and the whole rupture — the panel's
+\ registers, the play cycle's blank and unblank — arrives 32 scanlines
+\ into the wrong part of the frame.
+FRAME_DROP_ROWS = 4             \ character rows the picture moves DOWN
+
+TAIL_R7  = 8 - FRAME_DROP_ROWS  \ VSync at P+208+32 = P+240
+ASSERT TAIL_R7 >= 0
+ASSERT TAIL_R7 <= TAIL_R4       \ it has to fall inside the tail cycle
 
 \ 18 rows but only 16 displayed, so row 16 turns display off by
 \ ordinary means. Displaying more would leave R6 > R4, where the
@@ -729,7 +755,9 @@ R8_BLANK = &30
 \ line is available and a write in the displayed part cuts that
 \ scanline part-way across.
 \
-\ VSync (P+272) -> fire 1 (P+312+44) is 84 scanlines.
+\ VSync -> fire 1 is 84 scanlines with the picture where the CRTC's own
+\ geometry puts it, and 8 more for every row FRAME_DROP_ROWS moves it
+\ down: VSync comes earlier, the panel does not move, so the gap grows.
 SL = 64                         \ 1 scanline = 64 us = 64 T1 ticks
 \ -4 scanlines: the VSync CA1 interrupt is serviced about 4 scanlines
 \ after the vsync edge, so every fire needs shifting back by that.
@@ -760,7 +788,7 @@ T1_TUNE = -4 * SL - 22
 \ the framebuffer, and the crop scales differently per build.
 T1_PROBE = 0
 
-T1_I1 = 84 * SL - 2 + T1_TUNE - T1_PROBE
+T1_I1 = (84 + FRAME_DROP_ROWS * 8) * SL - 2 + T1_TUNE - T1_PROBE
 T1_I2 = 20 * SL - 2 + T1_PROBE  \ fire 1 -> fire 2, P+44 -> P+64
 T1_I3 = PLAY_VIS_ROWS * 8 * SL - 2   \ fire 2 -> fire 3, the visible height
 

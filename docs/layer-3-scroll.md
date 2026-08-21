@@ -358,12 +358,14 @@ cancel:
 |---|---|---|---|---|---|---|
 | panel | static | 7 (6) | 5 | 255 | `8 - line` | `&4800 / 8` |
 | play | scrolled | 18 (17) | **16** | 255 | `line` | `(&5800 + scrollS) / 8` |
-| tail | nothing, holds VSync | 13 (12) | 0 | 8 | 0 | — |
+| tail | nothing, holds VSync | 13 (12) | 0 | `TAIL_R7` = 4 | 0 | — |
 | | | **38 ✓** | | | **+8 ✓** | |
 
 `38 × 8 + 8 = 312`, confirmed by counting VSyncs: **1000 fields in 39,936,000 cycles, exactly.**
 With `P` = start of the panel cycle: the play cycle starts at `P+64-line`, the visible top edge is at
-`P+64` and the bottom at `P+184`, and VSync lands at `P+272`.
+`P+64` and the bottom at `P+184`, and VSync lands at `P+240`. It landed at `P+272` until
+`FRAME_DROP_ROWS` moved it four rows earlier to push the picture down the tube — see the section
+at the end of this file.
 
 **18 cycle rows rather than 17 is deliberate.** It makes row 16 non-displayed, so display-enable
 turns off by ordinary means and we never depend on the murky "R6 > R4" behaviour where the VADJ
@@ -402,20 +404,22 @@ Each write has to land in the gap between the sample it must not disturb and the
 
 | must read | at | so write it |
 |---|---|---|
-| `0` | `P+312` (tail end) | at VSync, `P+272` |
+| `0` | `P+312` (tail end) | at VSync, `P+240` |
 | `8 - line` | `P+56` (panel end) | at fire 1, `P+44` |
 | `line` | `P+200` (play end) | at fire 2, `P+64` |
 
 R4/R6/R7 are **not** latched, so each cycle's values must be written *inside* that cycle, after it
 starts and before `C4` reaches the new R4. That is why the tail cycle's own registers are written at
-VSync (tail row 8) rather than earlier.
+VSync (tail row `TAIL_R7`) rather than earlier. **R7 is the exception and no longer
+follows that rule:** it is written at VSync for the *panel* cycle, because at `TAIL_R7` = 4 a
+7-row panel cycle would otherwise reach the stale value and fire a VSync of its own.
 
 ### IRQ schedule
 
 | Event | Position | Actions | Tolerance |
 |---|---|---|---|
-| VSync (CA1) | `P+272` | R8←on; R5←0; tail R4/R6/R7; R12/R13←panel; `iline←line`; restart T1 | ~40 rows |
-| T1 fire 1 | `P+44` | R8←blank; R5←`8-iline`; panel R4/R6/R7; R12/R13←play | 8 scanlines |
+| VSync (CA1) | `P+240` | R8←on; R5←0; tail R4/R5; **panel R6 and R7**; R12/R13←panel; `iline←line`; restart T1 | ~72 rows |
+| T1 fire 1 | `P+44` | R8←blank; R5←`8-iline`; panel R4, play R6; R12/R13←play | 8 scanlines |
 | T1 fire 2 | `P+64` | R8←on; R5←`iline`; play R4/R6/R7 | **1 scanline** |
 | T1 fire 3 | `P+192` | R8←blank; `drawFlag`←1 | **1 scanline** |
 
@@ -603,3 +607,51 @@ state tracking — is moot rather than fixed. `DrawColumn` still uses the genera
   lookups dominate. Caching the current source row's 40 pointers (80 bytes, rebuilt every 8
   scanlines) makes a strip a straight indexed copy. That is the difference between smooth scrolling
   costing *less* than today's row draw and costing ~2.5× more at full speed.
+
+## Where the picture sits on the tube — `FRAME_DROP_ROWS`, 2026-08-21
+
+The rupture's three cycles put the panel and the play area at a fixed place in a 312-scanline
+frame, and where that lands on the screen is decided by one thing: **where VSync falls**. The set
+locks to VSync and counts down from it, so moving VSync *earlier* in our frame moves the picture
+*down*. Nothing else changes — the frame is still 312 lines and the three cycles are untouched; all
+that moves is how the 120 scanlines of blanking are split between the front porch (picture bottom →
+VSync) and the back porch (VSync → panel top).
+
+`FRAME_DROP_ROWS` in `main.asm` is that number, in character rows. **KC, 2026-08-21: four**, the
+picture having sat high with the black stacked under it. `TAIL_R7` becomes `8 - FRAME_DROP_ROWS`,
+so VSync moves from `P+272` to `P+240` and the panel top from 40 scanlines after VSync to 72.
+
+**Two constants move together, which is why they are one.** The T1 chain is restarted at VSync, so
+every fire in the frame is measured from it: `T1_I1 = (84 + FRAME_DROP_ROWS * 8) * SL - 2 + T1_TUNE`.
+Shift VSync without shifting `T1_I1` and the whole rupture arrives 32 scanlines into the wrong part
+of the frame.
+
+### The trap: R7 = 255 had to move to VSync
+
+`R7 = 255` — no VSync in the panel or play cycles, only in the tail — was written at **fire 1**,
+`P+44`. That is row 5 of the 7-row panel cycle, so for the first five rows of every frame R7 still
+held the tail's value. It was harmless only because that value was **8**, and a 7-row cycle can
+never reach row 8.
+
+At `TAIL_R7 = 4` it is not harmless. The panel cycle reaches row 4 at `P+32`, twelve scanlines
+before fire 1, and fires **a second VSync of its own**. That re-enters `RuptVSync` mid-frame, which
+restarts T1 and zeroes `ruptState`, so fire 1 never runs, the play cycle is never set up or
+unblanked, and the symptom is the panel sitting alone on a rolling picture with the **play area
+completely black**. Found by building it, not by reasoning about it.
+
+The fix is the file's own rule, applied properly: R7 belongs to the *previous* cycle, and the tail
+cycle is the panel's previous cycle. `RuptVSync` writes it, 72 scanlines before the panel starts.
+The tail's own VSync has already fired by then — that is why we are in the handler — and the 6845
+counts the pulse out of R3 independently of R7.
+
+**So `TAIL_R7` may not be raised back above `PANEL_CYC_ROWS` and left there carelessly**: the code
+is now correct for any value, but the *reason* fire 1 used to get away with it is gone.
+
+### What did NOT move: the title
+
+The title screen runs under `SetupMode`'s ordinary MODE 1 frame, not the rupture, so
+`FRAME_DROP_ROWS` does not touch it and it now sits about two rows higher than the game does.
+Matching it is **not** a matter of dropping its R7 by four: the OS frame is `R6 = 32`, `R4 = 38`,
+`R7 = 34`, which leaves only two rows of blanking between the end of the display and VSync — take
+R7 below 32 and VSync fires inside the displayed rows. Moving the title down means drawing its
+artwork lower in its own framebuffer, which is `title.asm`'s business and has not been done.
