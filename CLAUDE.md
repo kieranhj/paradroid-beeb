@@ -172,14 +172,13 @@ addresses from the `beebasm` output rather than from any document.** In outline:
 | `&5800–&7FFF` | Play buffer: circular strip, 16 rows × 640 |
 | SWRAM bank 4 | `PARADAT` — tiles, levels, palettes, droid game data, **the level-draw code, the droid AI and Layer 10's entry/exit** |
 | SWRAM bank 5 | `PARASPR` — the blitter, shifts 0 and 1 px |
-| SWRAM bank 6 | `PARSPR2` — shifts 2 and 3 px, same layout, plus Layer 9's panel/console — **full** |
-| SWRAM bank 7 | `PARXFER` — Layer 10's transfer minigame, Layer 8b's lift screen, the console's ship, deck-plan and droid-database pages, and Layer 11's game over and title screen |
+| SWRAM bank 6 | `PARSPR2` — shifts 2 and 3 px, same layout, plus Layer 9's panel/console and the 912 B `dfsSave` snapshot — **full** (63 B) |
+| SWRAM bank 7 | `PARXFER` — Layer 10's transfer minigame, Layer 8b's lift screen, the console's ship, deck-plan and droid-database pages, and Layer 11's game over. The title is NOT here any more — it is the `PARTITL` disc overlay. **5,690 B free, reserved for the droid portrait pool** |
 
-**RAM is the binding constraint as of 2026-08-20** and it is tighter than it has ever been: main
-RAM **77 B in five pieces**, bank 4 **12 B**. Banks 5, 6 and 7 have 1,033 / 1,609 / 4,410 B and are
-all paged out during play, so none of it is reachable from the main loop. Anything new needs
-something moved first — `docs/memory-map.md`'s free-RAM section lists what is left and where it can
-come from.
+**RAM is the binding constraint as of 2026-08-20**: main RAM **161 B in five pieces** (110 below
+`&3000`), bank 4 **1,161 B** (the ZX0 deck maps, Layer 13d). Banks 5, 6 and 7 have 1,033 / 63 / 826 B and are all paged out during
+play, so none of it is reachable from the main loop. Anything new needs something moved first —
+`docs/memory-map.md`'s free-RAM section lists what is left and where it can come from.
 
 **Only one bank is visible at a time.** `SprRestoreAll` and `SprDrawAll` page their own bank in and
 the data bank back out around themselves, so `SWRAM_DATA` is the resting state. This is safe only
@@ -191,9 +190,17 @@ paged in at `&8000` during a filing-system call. `*LOAD` must also happen **befo
 taking over IRQ1V stops the MOS servicing the filing system.
 
 **`PARALOW` is a sixth disc file and is loaded LAST, after `PARAFNT`.** It carries the low overlay,
-which lands on DFS's own workspace at `&0E00–&10FF`: copy it down before the last `*LOAD` and that
-load hangs in the 8271 poll with the ROM's variables underneath it. It stages on the panel rather
-than at `&3000`, because `PARAFNT` owns `&3000` and has to load first.
+which lands on DFS's own workspace at `&0E00–&10FF` **and, via `lowcode2`, on the MOS's extended
+vector table at `&0D9F+` — the route DFS 1.2's FILEV takes into its ROM**. Copy it down before the
+last `*LOAD` and that load hangs in the 8271 poll; make ANY filing-system call after `PageLowIn`
+and it crashes through the trampled vectors. The game-over → title seam does exactly that, which is
+why `SaveDfsWs` snapshots `&0D60–&0DEF` and `&0E00–&10FF` into bank 6 (`dfsSave`, 912 B) right
+before `PageLowIn` and `GoTitle` restores them before its loads. `PARALOW` stages on the panel rather than at `&3000`,
+because `PARAFNT` owns `&3000` and has to load first.
+
+**`PARTITL` is a seventh disc file — the title screen**, assembled at `&3000` over `PARAFNT`'s
+ground and loaded by `TitleSeq` when the title is wanted: at boot, and again on the way back from a
+game over. `PARAFNT` reloads over it the moment it is done; the two are never wanted at once.
 
 ## Source organisation (`src/`)
 
@@ -210,8 +217,8 @@ without the GUARD an overrun assembles silently and corrupts `PARAFNT` at run ti
 stops with *Guard point hit* at `sprScan0` means the code image is full. **Everything in `src/` is in the build** — the five inherited Master/HAL files that
 were not have been deleted, so nothing there is dead. Keep it that way.
 
-**Four files assemble into SWRAM bank 4, not main RAM**: `screen.asm`, `scroll.asm`, `level.asm` and
-`droid.asm` are included from inside the `PARADAT` block, next to the tile, deck and waypoint data
+**Five files assemble into SWRAM bank 4, not main RAM**: `screen.asm`, `scroll.asm`, `level.asm`,
+`zx0depack.asm` and `droid.asm` are included from inside the `PARADAT` block, next to the tile, deck and waypoint data
 they read. That costs no
 paging, because the data bank is the resting state. The rule it depends on is one-way and undiagnosed
 if broken — bank code may call main RAM freely, but main RAM may call *in* only with `SWRAM_DATA`

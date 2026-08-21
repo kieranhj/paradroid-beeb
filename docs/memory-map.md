@@ -63,10 +63,12 @@ Regenerate it after any change that moves a region:
 | `&8000–&BFFF` | 16 K | Sideways bank window — one of the FOUR banks below, never more |
 | `&C000–&FFFF` | 16 K | MOS |
 
-Free main RAM totals **389 bytes** (2026-08-20, after the raster-timing pass), in five pieces: 323 below `&3000`, 0 at the top of
-`lowcode`, 36 in `lowcode2`, 7 in `lowbss` and 8 in the `PARAFNT` tail. **This is the tightest the
-port has ever been**, and the reason is the disruptor: 245 bytes of new main-RAM code against a
-code image with 90 free.
+Free main RAM totals **161 bytes** (2026-08-20, after the game-over → title seam), in five pieces:
+110 below `&3000` (`code_end` = `&2F92`), 0 at the top of `lowcode`, 36 in `lowcode2`, 7 in
+`lowbss` and 8 in the `PARAFNT` tail. The seam spent ~213: `TitleSeq`, `GoTitle`, `UninstallIrq`
+(with the MOS VIA-state saves in `InstallIrq`), `SaveDfsWs`/`RestoreDfsWs` and the `loadtitl`
+string — all of it resident of necessity, because it pages banks and runs while the MOS owns the
+machine.
 
 **The 1,136 free bytes at `&0C90` are gone**, spent on the low overlay, and with them the 64 above
 the panel (`LUTs`) and 112 of the `PARAFNT` tail (`DoScore`). What made that possible is that
@@ -115,7 +117,9 @@ already satisfy it.
 
 ## SWRAM bank 4 — `PARADAT`
 
-`&8000–&BFF3`, **12 free** (2026-08-20) — and 111 of its apparent alignment holes are not real, see Layer 13a TASK 5. 2026-08-20 took `LUTs` (64 B) out to `&54C0` and `drVis`/`drVisNew`/`drBulFrm` (42 B) out to `&0C90`, and spent all of it and more on `DrCollPair`, the collision matrix and `DrCollAct`. Tiles, decks, palettes, droid game
+`&8000–&BB77`, **1,161 free** (2026-08-20, after Layer 13d's ZX0 deck maps: `leveldata`'s
+3,503 RLE bytes became `deckPack`'s 2,183 plus a ~230-byte depacker, and the RLE decoder left
+`BuildLevel` — see [`layer-13d-space.md`](layer-13d-space.md) §3). Before that it was 12 free — and 111 of its apparent alignment holes are not real, see Layer 13a TASK 5. 2026-08-20 took `LUTs` (64 B) out to `&54C0` and `drVis`/`drVisNew`/`drBulFrm` (42 B) out to `&0C90`, and spent all of it and more on `DrCollPair`, the collision matrix and `DrCollAct`. Tiles, decks, palettes, droid game
 data — and the code that reads them: the level draw (2026-08-14), the droid AI (2026-08-15),
 Layer 7's combat and kill chain, Layers 10 and 8b's entry/exit shims, `CalcAxis`/`CalcSpeed`, and
 the console menu and page shims. This bank is the resting state of the latch, so a call into it
@@ -136,7 +140,7 @@ past the 2,437 bytes recorded — regenerate before trusting a code address.
 | `&8800` | 512 | `tiledefs` — 16-byte tile definitions |
 | `&8A00` | 128 | Per-deck metadata: `deckOffsetLo`/`Hi`, `deckY`, `deckX`, `deckHeight`, `deckWidth`, `deckColour`, `deckDroids` |
 | `&8A80` | 128 | *free — alignment gap* |
-| `&8B00` | 3,207 | `leveldata` — RLE deck maps, all 16 |
+| — | 2,183 | `deckPack` — the 16 deck maps, decoded offline and ZX0-compressed; `Zx0Unpack` rebuilds the tile map straight from them. Replaced `leveldata`'s 3,207 B of RLE (Layer 13d) |
 | `&9787` | 1,743 | `drSprData` — the droid artwork, 249 rows × 7 bytes. Moved here 2026-08-14: only `SprFetchRow` reads it, and the sprite bank is the scarce one |
 | `&9E56` | 336 | `drOfsLo`/`Hi` — offset into `drSprData` per (phase, row) |
 | `&9FA6` | 120 | `drSpeed`, `drSpeedF`, `drSpeedFHi`, `wpCount`, `wpOfsLo`/`Hi` |
@@ -160,7 +164,7 @@ interpreted effect path reads them every row.
 
 ## SWRAM bank 6 — `PARSPR2` (shifts 2 and 3 px)
 
-`&8000–&BC31`, **975 free** (2026-08-20 — `src/sprsplit.asm`, the tranche decision, moved in from the code image; it was 1,609) — it was 40. TASK 6's `PnClear` fix gave 7, TASK 3's shared `FontCell` 20, and TASK 7's single string table the other 1,542. **No longer the tight bank**. The other two shifts, laid out
+`&8000–&BFC1`, **63 free** (2026-08-20, after the 912 B `dfsSave` snapshot moved in — see bank 7 below; before that 975 — `src/sprsplit.asm`, the tranche decision, moved in from the code image; it was 1,609) — it was 40. TASK 6's `PnClear` fix gave 7, TASK 3's shared `FontCell` 20, and TASK 7's single string table the other 1,542. **No longer the tight bank**. The other two shifts, laid out
 identically, plus Layer 9's panel engine, HUD, console, strings and icons.
 
 **Both sprite banks share one layout**: a fixed section of tables at the same addresses in each,
@@ -189,12 +193,20 @@ reads none of the artwork, and the wrap fallback is the only thing that does.
 
 ## SWRAM bank 7 — `PARXFER`
 
-`&8000–&AEC6`, **4,410 free** (2026-08-19) — it was 282 before Layer 13a. TASK 1 moved the 2 K shadow screen onto the sprite save areas and TASK 2 deleted 544 bytes of duplicated lift-view glyphs. **This is what unblocks 11d**, whose token-string printer would not fit in 282 bytes. Layer 10's transfer game and
+`&8000–&BCC6`, **826 free** (2026-08-20). It was 282 before Layer 13a; 2026-08-20 took the title
+OUT (1,345 B — it is the `PARTITL` disc overlay at `&3000` again, [DECISION 6] restored) and spent
+the room on what it was freed for: **the droid portrait** — `portraits.asm` (the 63-image pool,
+the per-type index and the multicolour→MODE 1 tables, 5,240 B) and `portrait.asm` (`PoDraw`,
+~530 B), with `droidicon7.asm` and the rotor-and-digits stand-in deleted against it. The `dfsSave` snapshot lives in bank 6, not here: 912 B of
+`&0D60`–`&0DEF` + `&0E00`–`&10FF`, captured by `SaveDfsWs` after TitleSeq's last `*LOAD` and put
+back by `RestoreDfsWs` for the game-over loads — without it the first filing call after
+`PageLowIn` jumps through the low overlay's bytes where DFS's workspace and the MOS's extended
+vector table used to be. Layer 10's transfer game and
 Layer 8b's lift screen, sharing the shadow screen/colour RAM, the glyph page and the renderer
 pattern; plus both glyph sets, the console's ship page, the deck plan (`condeck.asm`,
-`plandata.asm`), and the droid database (`condb.asm`, `droidinfo.asm`) with its second copies of
-the string table and the droid icon — second copies because the first ones live in bank 6 and only
-one bank is visible at a time. The internal layout is in
+`plandata.asm`), and the droid database (`condb.asm`, `droidinfo.asm`) with its second copy of the
+droid icon — a second copy because the first lives in bank 6 and only one bank is visible at a
+time. The internal layout is in
 [`layer-10-transfer.md`](layer-10-transfer.md) and [`layer-9-hud.md`](layer-9-hud.md) §6e–6f.
 
 ## Two things this map says that the summaries do not
@@ -232,7 +244,8 @@ that makes the bank-4 files safe is in `bufcore.asm`'s header.
 | `lift.asm` | main RAM | `LiftFind`, lift mode, stepping a shaft, `LiftPlace` |
 | `screen.asm` | bank 4 | `DrawHalf`, `BuildCharPtrs`, `BandSetRow`, `ColSetup`, `MapChar`, `RedrawAll` |
 | `scroll.asm` | bank 4 | `DrawColumn`, `DrawBandRows`, `CopyCell`, `ScrollAddS`, `DoRedraws` |
-| `level.asm` | bank 4 | Deck decode, `BuildCharset`, `BuildLUTs`, `SetPalette` |
+| `level.asm` | bank 4 | Deck decompress (`BuildLevel`), `BuildCharset`, `BuildLUTs`, `SetPalette` |
+| `zx0depack.asm` | bank 4 | `Zx0Unpack` — the ZX0 (v2) decompressor `BuildLevel` tail-calls; format notes in its header, compressor in `tools/zx0.py` |
 | `droid.asm` | bank 4 | The ship roster, waypoints, `DroidsUpdate`, line of sight, collision, the kill chain, `ConMenu4` |
 | `panel.asm` | bank 6 | Layer 9's panel text engine and HUD |
 | `console.asm` | bank 6 | The console screen, its strings and icons |
@@ -240,6 +253,7 @@ that makes the bank-4 files safe is in `bufcore.asm`'s header.
 | `liftview.asm` | bank 7 | Layer 8b's deck-selection screen |
 | `condeck.asm` | bank 7 | The console's deck plan page |
 | `condb.asm` | bank 7 | The console's droid database page |
+| `title.asm` | `PARTITL` at `&3000` | Layer 11's title screen — a disc overlay, loaded by `TitleSeq` at boot and after a game over, destroyed by `PARAFNT`'s reload |
 
 `src/data/` is generated by the exporters in `tools/` and is gitignored — regenerate it rather
 than editing it.
