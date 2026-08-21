@@ -12,12 +12,15 @@ have taken one. Recharge pads turn under you and the ALERT signs light as the sh
 The status line and the console are the original's, down to the deck being called `Reactor` rather
 than `5`, and the console carries the ship diagram, the deck plan and the droid database. The
 transfer minigame plays too: prime with fire, touch a droid, pick a side and fight the circuit board
-for it — win and you *are* that droid, with its weapon and speed. Die as a 001 and the ship burns
-out under a dissolve and a game-over message.
+for it — win and you *are* that droid, with its weapon and speed. It has a voice, through an
+SN76489 driver with every in-game trigger wired. And it has the droid information screens the
+original opens and closes on: the 001 briefing that starts a game, the two pages the transfer shows
+you before the board, and the 999 Command Cyborg behind "Transmission / Terminated" when the ship
+burns out under a dissolve.
 
-**Sound is what is left**, plus the 001 briefing screen, the high-score table, the intro manual and
-the pre-game droid info screens the transfer skips for now. See [`PLAN.md`](PLAN.md) for the layered
-build plan, the memory map, decisions taken and current status.
+**What is left** is the high-score table, the intro manual, and the balance and visual passes. See
+[`PLAN.md`](PLAN.md) for the layered build plan, the memory map, decisions taken and current
+status.
 
 ## Target
 
@@ -43,6 +46,7 @@ converts mechanically from the ripped data with nothing redrawn.
 | K / M | up / down — and, on the lift screen, move along the shaft |
 | L | fire; on a lift platform it opens the ship's deck-selection screen, and fire again commits |
 | Cursor up/down | debug deck hop |
+| ESCAPE | self-destruct — ends the game. The port's own; the C64 has no abort |
 | SPACE | force a full redraw (also the verification oracle) |
 
 Some keys are debug builds only and are listed by `!BOOT` when they are compiled in — see the
@@ -63,9 +67,10 @@ emulator before the next begins:
 7. **Combat** — ✅ done; including the disruptor, friendly fire and the animated deck tiles
 8. **Doors, lifts, decks** — ✅ done, taken ahead of 6 and 7 so droid AI has a ship to route through
 9. **HUD and console** — ✅ done
-10. **Transfer minigame** — ✅ done; in a fourth sideways bank, minus the pre-game info screens
-11. **Title, game over, sound** — title screen and the death/game-over sequence ✅ done; sound and
-    the 001 briefing screen outstanding
+10. **Transfer minigame** — ✅ done; in a fourth sideways bank, with its two pre-game info screens
+11. **Title, game over, sound and the droid screens** — ✅ done: the title, the death and game-over
+    sequence, the SN76489 sound driver, and the four information screens. The high-score table
+    between the game over and the title is the one piece outstanding
 12. Balance, fidelity and feel
 13. **Memory and machine compatibility** — the RAM pass ✅ done; sideways-RAM detection and
     testing on real machines outstanding
@@ -171,6 +176,8 @@ python tools/export_xfer.py       # the transfer board, three ownership sets -> 
 python tools/export_sideview.py   # the lift screen's ship cross-section -> src/data/
 python tools/export_droidinfo.py  # the droid database's stats and descriptions -> src/data/
 python tools/export_title.py      # the title screen's own glyphs and RLE -> src/data/
+python tools/export_portraits.py  # the 48 x 84 droid portrait pool -> src/data/
+python tools/export_sound.py      # the effect and instrument tables -> src/data/
 ```
 
 The tools require Python 3 and Pillow. Regenerate `src/data/` rather than editing it.

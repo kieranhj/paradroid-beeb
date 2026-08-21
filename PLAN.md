@@ -34,7 +34,10 @@ Sprites are coloured the C64's way — enemies black, the player white, the deck
 transfer mode, flashing below energy 8.
 
 Recharge pads turn under the player and the ALERT signs light as the ship gets angrier: both are
-charset animations repainted onto the tiles in view.
+charset animations repainted onto the tiles in view. **It has a voice** — the SN76489 driver in
+bank 4, every in-game trigger wired and tuned by ear with KC. And it has **the droid information
+screens**: the 001 briefing a game opens on, the two pages the transfer shows before the board, and
+`EndGame`'s 999 behind "Transmission / Terminated".
 
 **Keys:** Z/X left/right, K/M up/down, L fire — and, through the original's own `moveMode` machine,
 the lift, console and transfer trigger. **ESCAPE self-destructs and ends the game** — the port's
