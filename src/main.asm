@@ -130,6 +130,19 @@ FRAME_LOCK = 2
 \ judged worth 14 % of fidelity.
 CAM_TOPSPD = 8
 
+\ ---- the SLOW ride, same argument one step down --------------
+\ CAM_TOPSPD fixes the 001 and every other DSpeed_t 4 or 8 droid, but
+\ PlayerSpeed_t's other two entries dither for exactly the same reason:
+\ 5 settles into 4, 4, 8, 4 and 6 into 8, 4, 8, 4. Riding a slow droid
+\ was therefore JERKIER than riding a fast one, which is backwards.
+\ 4 is the only dither-free value below 8, so both collapse onto it.
+\ KC's call (2026-08-21): smoothness over the 5/6 distinction. The
+\ cost is that DSpeed_t 1 and 2 droids now feel identical under the
+\ player, and the 1s are 20 % faster than the C64 makes them. Enemy
+\ droids are untouched — they move in whole pixels, not by scrolling
+\ the camera, so they never dithered. [DECISION]
+CAM_SLOWSPD = 4
+
 \ ---- Layer 7 effect frames ---------------------------------
 \ The explosion's frames are 0 to EF_EXPLODE_N-1 of the effect set, in
 \ order, so stepping it is an INC. Declared HERE rather than in the

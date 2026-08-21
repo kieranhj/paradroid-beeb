@@ -114,7 +114,23 @@ is `WinningColor == LeftColor`.
     trampolines and six mirror bytes stay in main RAM: **bank-4 code cannot page bank 7
     in under its own feet**, and `PanelSetup` (a bank-6 trampoline) is likewise called
     from main RAM after `XferExit4` returns.
-11. Small timing stand-ins, faithful in rate if not mechanism: the select countdown ticks
+11. **[DECISION] All four player speeds are dither-free** (KC, 2026-08-21 — amends 9).
+    Decision 9 mapped `PlayerSpeed_t`'s two 7s onto `CAM_TOPSPD`; the 5 and the 6 were left
+    alone and dithered for exactly the same reason. The camera scrolls in 4 px units once per
+    2-field pass, so 5 settles into 4, 4, 8, 4 and 6 into 8, 4, 8, 4 — which made riding a
+    **slow** droid jerkier than riding a fast one, backwards from what the speed suggests.
+    4 is the only dither-free value below 8, so both collapse onto it: `CAM_SLOWSPD`, a new
+    constant beside `CAM_TOPSPD` in `main.asm` and carrying the same argument. The table in
+    `droid.asm` is now `0,4,4,0,8,0,0,0,8` and the C64's row is recorded above it.
+    - **The cost, accepted:** `DSpeed_t` 1 and 2 are indistinguishable under the player — a
+      123 rides like a 751 — and both are slower against the 001 than the C64 makes them
+      (4 vs 8 where the original had 5 vs 7 and 6 vs 7). KC's reading is that "you either get
+      a fast one or a slow one" is a fine model for the ride, and worth the judder going away.
+    - Enemy droids are **untouched**. They move in whole pixels rather than by scrolling the
+      camera, so `DSpeed_t` never dithered for them and stays verbatim.
+    - `CAM_TOPSPD` and `CAM_SLOWSPD` are now the only movement numbers in the port not taken
+      from the C64, and between them they replace every live `PlayerSpeed_t` entry.
+12. Small timing stand-ins, faithful in rate if not mechanism: the select countdown ticks
     every other pass (~8 s for 99 BCD, near the original's `DelayScore(80)` pacing); the
     play counter every other iteration as `$20DA` does; `DoScore` keeps dribbling banked
     points during the game where the C64's modal loop froze them.

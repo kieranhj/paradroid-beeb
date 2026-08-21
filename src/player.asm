@@ -91,10 +91,15 @@ C64_DECEL  = 176                \ DecelerationNeg_ $6954, per iteration
 \
 \ CAM_TOPSPD overrides it, and is currently 8, so that the camera's
 \ 4 px step divides the top speed exactly and the 8,8,8,4 dither goes
-\ away. This is THE ONE MOVEMENT NUMBER NOT TAKEN FROM THE C64 — a
-\ deliberate 14 % fidelity loss bought to stop the scroll stuttering.
-\ The reasoning is on the constant in main.asm; the value lives there
-\ because everything else in this block derives from it.
+\ away. That is a deliberate 14 % fidelity loss bought to stop the
+\ scroll stuttering. The reasoning is on the constant in main.asm; the
+\ value lives there because everything else in this block derives
+\ from it.
+\
+\ CAM_TOPSPD and CAM_SLOWSPD are THE ONLY MOVEMENT NUMBERS NOT TAKEN
+\ FROM THE C64, and between them they replace all four of
+\ PlayerSpeed_t's live entries — see plySpdTab in droid.asm. They
+\ apply to the PLAYER only; enemy droids still walk DSpeed_t.
 C64_MAXSPD = CAM_TOPSPD
 
 \ The C64's numbers are per ITERATION; ours are applied once per

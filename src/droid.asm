@@ -2672,9 +2672,9 @@ ENDIF
   LDY drType
   LDA drWeapon,Y
   STA weaponType
-  LDX drSpeed,Y                 \ DSpeed_t, then PlayerSpeed_t — with the
-  LDA plySpdTab,X               \ C64's 7 mapped to CAM_TOPSPD like the
-  STA plyMaxHi                  \ 001's always has been
+  LDX drSpeed,Y                 \ DSpeed_t, then PlayerSpeed_t — with all
+  LDA plySpdTab,X               \ four entries mapped onto the camera's
+  STA plyMaxHi                  \ dither-free speeds, as the 001's always was
   EOR #&FF
   CLC
   ADC #1
@@ -2685,10 +2685,13 @@ ENDIF
   RTS
 
 \ PlayerSpeed_t ($6D97): 0,5,6,0,7,0,0,0,7 — indexed by DSpeed_t values
-\ 1, 2, 4 and 8. The two 7s become CAM_TOPSPD (8) for the reason on that
-\ constant: the camera steps in 4s, and 7 dithers.
+\ 1, 2, 4 and 8. EVERY entry is remapped here, because the camera steps
+\ in 4s and 5, 6 and 7 all dither: the two 7s become CAM_TOPSPD (8) and
+\ the 5 and the 6 become CAM_SLOWSPD (4). Both constants carry the
+\ reasoning, in main.asm. This table is the whole deviation — the C64's
+\ values are in the line above, and nothing else reads them.
 .plySpdTab
-  EQUB 0, 5, 6, 0, CAM_TOPSPD, 0, 0, 0, CAM_TOPSPD
+  EQUB 0, CAM_SLOWSPD, CAM_SLOWSPD, 0, CAM_TOPSPD, 0, 0, 0, CAM_TOPSPD
 
 \ ---- the transfer game's palette ---------------------------
 \ Written INTO palPlay around the game, so the rupture needs no fourth
