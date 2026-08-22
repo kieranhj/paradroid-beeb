@@ -86,6 +86,9 @@ proves no instruction was added, removed or reordered.
 .\build.ps1 -Run     # assemble and launch in b-em
 ```
 
+**`make.bat` and `make.sh` are thin wrappers over `build.ps1`** (arguments pass through, so
+`make -Run` works) and KC uses them — keep both working whenever the build changes.
+
 **Everything the build produces goes in `build/`, which is gitignored:**
 
 | | |
