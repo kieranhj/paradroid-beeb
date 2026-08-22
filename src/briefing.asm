@@ -129,13 +129,11 @@ BR_EXIT_OFF   = 1               \ off the end of the last page: the title
 \ the CRTC every field — then the plain frame, then DFS's workspace
 \ back before the first load.
   JSR UninstallIrq
-  JSR SetupPlain                \ bank 4; BrRun left SWRAM_DATA paged
-  LDA #6                        \ and BLANK it (KC, 2026-08-22): the
-  STA CRTC_ADDR                 \ plain frame points at the strip, which
-  LDA #0                        \ still holds the scroll, panel-less, for
-  STA CRTC_DATA                 \ the whole reload. R6 = 0 shows nothing;
-                                \ SetupRupture (fire) or TiCRTC (title)
-                                \ gives the display back
+  JSR SetupPlain                \ bank 4; BrRun left SWRAM_DATA paged.
+                                \ The plain frame is BLANK now — R6 = 0
+                                \ in its own table — so the reload shows
+                                \ nothing; SetupRupture (fire) or TiCRTC
+                                \ (title) gives the display back
   JSR RestoreDfsWs
 
   LDX #LO(loaddepk)             \ the depacker at &3000, over the font —

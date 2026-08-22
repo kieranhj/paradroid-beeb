@@ -488,8 +488,14 @@
 .spVal
   EQUB PLAIN_R4                 \ a plain 39-row, 312-line, 50 Hz frame
   EQUB 0
-  EQUB PLAY_ROWS                \ all sixteen: the 999 page uses them
-  EQUB PLAIN_R7                 \ VSync back, which the loads need
+  EQUB 0                        \ R6 = 0: the frame is BLANK (KC,
+                                \ 2026-08-22). Nothing wants this display
+                                \ visible any more — the entry screen
+                                \ brings its own rupture — and a plain
+                                \ window over the strip showed each
+                                \ load's wreckage. SetupRupture or
+                                \ TiCRTC give the display back
+  EQUB PLAIN_R7                 \ VSync alive, which the loads need
   EQUB 0                        \ R8: no blanking, no interlace
-  EQUB HI(BUF_BASE / 8)         \ and pointed at the play buffer, so what
-  EQUB LO(BUF_BASE / 8)         \ was on screen stays on screen
+  EQUB HI(BUF_BASE / 8)         \ R12/13 park on the play buffer; moot
+  EQUB LO(BUF_BASE / 8)         \ while R6 shows nothing

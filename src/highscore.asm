@@ -97,13 +97,30 @@ HS_COL_INI    = 31              \ $E6E8's
 \ Bank 7 holds the table AND the arm flag, so one paging pair covers the
 \ whole screen; nothing in here wants bank 4. At boot hsArmed is zero —
 \ the assembled value — so the sequence runs straight through.
+\ AND IT WEARS THE GAME'S OWN FRAME (KC, 2026-08-22): the entry used
+\ to run on SetupPlain's bare strip — no header. The rupture gives the
+\ 4-row panel, the gap and the 16-row window for free, and it is legal
+\ here because HsRun makes no filing call: loadtitl is done, the next
+\ load is TiShow's, and the teardown below restores VSync first. The
+\ panel still holds the finished game's box — Mobile, logo, the final
+\ score — which is exactly the right header for this screen. The IRQ
+\ must come with it (the rupture is IRQ-driven), and that is safe with
+\ the low overlay absent: the handler and its sound shim live in the
+\ code image and page bank 4 for themselves.
 .HsEntry
   PAGEBANK SWRAM_XFER
   LDA hsArmed
   BEQ hs_en_x
   LDA #0
   STA hsArmed
+  JSR SetupRupture              \ panel + gap + window; scroll is parked
+  JSR InstallIrq
   JSR HsRun
+  JSR UninstallIrq              \ and back to a frame with VSync, BEFORE
+  PAGEBANK SWRAM_DATA           \ the title's loads — SetupPlain is
+  JMP SetupPlain                \ bank 4's, so the data bank first. Its
+                                \ frame is BLANK (R6 = 0 in its table)
+                                \ until TiCRTC shows the title — and RTS
 .hs_en_x
   PAGEBANK SWRAM_DATA
   RTS
