@@ -883,6 +883,11 @@ DB_DESC_MAX = &38 - &10         \ sub_0_2DCD's own bound, rebased to 0
   LDA #DB_INK
   STA fontMask
   JSR FontCell                  \ the top cell
+  JSR DitherCell                \ FontCell STOREs the cell, background and
+                                \ all, so a glyph would punch a solid hole
+                                \ in the dithered field. Dithering per
+                                \ glyph keeps the per-pass cost down to
+                                \ what was actually drawn
 
   CLC                           \ the bottom cell, one character row on
   LDA pnDst   : ADC #LO(ROW_BYTES) : STA pnDst
@@ -892,6 +897,7 @@ DB_DESC_MAX = &38 - &10         \ sub_0_2DCD's own bound, rebased to 0
   LDA pnSrc+1 : ADC #0 : STA pnSrc+1
 
   JSR FontCell
+  JSR DitherCell
 
   SEC                           \ back up, then on to the next column
   LDA pnDst   : SBC #LO(ROW_BYTES - 16) : STA pnDst
@@ -971,7 +977,11 @@ DB_DESC_MAX = &38 - &10         \ sub_0_2DCD's own bound, rebased to 0
   LDA pnSrc+1 : ADC #HI(ROW_BYTES) : STA pnDst+1
   DEX
   BNE db_cl_row
-  RTS
+  JMP DitherBuf                 \ and its RTS. The field is cleared to
+                                \ logical 0, which is the deck's floor —
+                                \ dither it here and every caller gets it,
+                                \ the database pages and the 001 screens
+                                \ alike. Once per screen, not per pass
 
 \ ============================================================
 \ DbImage â€” the droid being read about: the C64's own portrait

@@ -153,7 +153,87 @@
   DEY
   BPL cd7_mfill
 .cd7_x
+  JMP DitherBuf                 \ and its RTS. The plan is drawn once, so
+                                \ the whole-screen pass is the cheap way
+                                \ to reach 640 cells' worth of background
+                                \ — and the marker is already down, in
+                                \ logical 3, which the dither cannot touch
+
+\ ============================================================
+\ DitherCell / DitherBuf — Layer 14's floor dither, bank 7
+\ ============================================================
+\ DitherChar (src/level.asm) again, for the STATIC SCREENS: the deck
+\ plan, the droid database and the 001 pages all put the deck's logical 0
+\ down as their background, and a solid one beside a dithered deck is
+\ exactly the harshness the dither exists to remove. KC, 2026-08-22.
+\
+\ THE MASKS ARE MAIN RAM. dcMask is in lowbss.asm rather than in bank 4
+\ with BuildCharset that writes it, because this bank cannot see bank 4 —
+\ the same reason the string table and the droid mirrors are main RAM.
+\ Both bytes are ZERO on a deck that keeps a solid floor, so everything
+\ here is a no-op then with no test of its own.
+\
+\ The rule is the deck's: set the LOW colour plane on a pixel that has no
+\ colour at all, in a 2x2 checker. SPR_MASKTAB answers "which pixels are
+\ logical 0"; the mask is low nibble only, so a logical 2 pixel cannot be
+\ turned white. Parity is bit 0 of the address, and every base here is
+\ even — a cell is 16-aligned and a page is not odd — so Y alone gives it.
+\
+\ TWO ENTRY POINTS because the two costs are different. DitherCell is 16
+\ bytes and rides on DbGlyph, so text pays only for the glyphs it draws.
+\ DitherBuf is the whole 10K play area at about 170 ms, which is fine
+\ once after a clear and would not be fine every pass.
+\ ============================================================
+.DitherCell                     \ 16 bytes at (pnDst) — one glyph cell
+  LDY #15
+.dcl_b
+  LDA (pnDst),Y
+  STA dclTmp
+  TAX
+  LDA SPR_MASKTAB,X             \ set bit = this pixel is logical 0
+  STA dclTmp2
+  TYA
+  AND #1                        \ the scanline's parity
+  TAX
+  LDA dcMask,X
+  AND dclTmp2
+  ORA dclTmp
+  STA (pnDst),Y
+  DEY
+  BPL dcl_b
   RTS
+
+.DitherBuf                      \ the whole play area, BUF_BASE upwards
+  LDA dcMask
+  BEQ dbf_x                     \ this deck keeps a solid floor
+  STA dbfMask                   \ page 0 starts on an EVEN address
+  LDA #0            : STA pnSrc
+  LDA #HI(BUF_BASE) : STA pnSrc+1
+.dbf_page
+  LDY #0
+.dbf_b
+  LDA (pnSrc),Y
+  STA dclTmp
+  TAX
+  LDA SPR_MASKTAB,X
+  AND dbfMask
+  ORA dclTmp
+  STA (pnSrc),Y
+  LDA dbfMask                   \ &05 <-> &0A. A page is 256 bytes, which
+  EOR #&0F                      \ is even, so the phase carries into the
+  STA dbfMask                   \ next one
+  INY
+  BNE dbf_b
+  INC pnSrc+1
+  LDA pnSrc+1
+  CMP #HI(BUF_BASE) + ((PLAY_ROWS * ROW_BYTES) DIV 256)
+  BNE dbf_page
+.dbf_x
+  RTS
+
+.dclTmp  EQUB 0
+.dclTmp2 EQUB 0
+.dbfMask EQUB 0
 
 \ ---- one cell: lvChar at (lvRow, A) -------------------------
 \ The hires conversion, done as the cell is plotted: each of the 8

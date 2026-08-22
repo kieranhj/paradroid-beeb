@@ -96,9 +96,19 @@ PO_DSTMID = BUF_BASE + PO_UNIT_MID * UNIT_BYTES
   CLC
   LDA rowMulLo,X : ADC poBase   : STA podst
   LDA rowMulHi,X : ADC poBase+1 : STA podst+1
-  LDA #0
+\ Layer 14's floor dither, written straight into the clear rather than
+\ passed over afterwards: this is logical 0, the deck's floor, and a
+\ solid rectangle of it behind the picture is exactly what the dither
+\ exists to soften. dcMask is main RAM (lowbss.asm) and is ZERO on a deck
+\ that keeps a solid floor, so the pair is #0, #0 there. Bit 0 of the
+\ address is the scanline parity and podst is even, so Y alone gives it.
+\ X is free here: poRow's use of it is done by now and pod_crow reloads.
   LDY #(12 * UNIT_BYTES) - 1
 .pod_cbyte
+  TYA
+  AND #1
+  TAX
+  LDA dcMask,X
   STA (podst),Y
   DEY
   CPY #&FF
