@@ -60,12 +60,105 @@ BR_EXIT_OFF   = 1               \ off the end of the last page: the title
   LDA #HI(SWRAM_BASE)  : STA swDst+1
   LDX #PARMAN_PAGES
   JSR PageCopyAt
+  JSR BrPatchScores
   PAGEBANK SWRAM_DATA
   RTS
 
 .brLoadMan
   EQUS "LOAD PARMAN"
   EQUB 13
+
+\ ============================================================
+\ BrPatchScores — the live table into page 5's two lines
+\ ============================================================
+\ UpdateTextScore ($E5AC) moved to the read side [11f DECISION 7]: the
+\ C64 writes the score into the packed text at $DD89/$DDB4 and the text
+\ persists; ours is reloaded from disc each time, so the patch happens
+\ here, on the fresh copy in bank 5, before anything draws it. The
+\ layout is the original's: eight BCD digits at glyph offsets 0-7 with
+\ leading zeros as spaces (the last digit never blanked), initials at
+\ 11-13. make_briefing.py labels the two records br_hiscore/br_loscore.
+\
+\ The table is bank 7's and the text is bank 5's, so the fourteen bytes
+\ go through brSc in this overlay — the same one-bank-at-a-time dance
+\ as everything else. hsHigh..hsLoIni are contiguous: 4+3+4+3.
+.BrPatchScores
+  PAGEBANK SWRAM_XFER
+  LDX #13
+.bps_copy
+  LDA hsHigh,X
+  STA brSc,X
+  DEX
+  BPL bps_copy
+  PAGEBANK SWRAM_SPR
+  LDA #LO(br_hiscore+1)         \ +1: past the record's column byte
+  STA brp
+  LDA #HI(br_hiscore+1)
+  STA brp+1
+  LDX #0                        \ brSc: the high score's 4+3
+  JSR BrPatchLine
+  LDA #LO(br_loscore+1)
+  STA brp
+  LDA #HI(br_loscore+1)
+  STA brp+1
+  LDX #7                        \ and the low score's
+.BrPatchLine
+  LDA #0
+  STA brT2                      \ still in the leading zeros
+  LDY #0
+.bpl_byte
+  LDA brSc,X                    \ one BCD byte, two digits
+  PHA
+  LSR A : LSR A : LSR A : LSR A
+  JSR bpl_dig
+  PLA
+  AND #&0F
+  JSR bpl_dig
+  INX
+  CPY #8
+  BCC bpl_byte
+  INY                           \ glyphs 8-10 are ' - ', left alone
+  INY
+  INY
+.bpl_ini
+  LDA brSc,X                    \ a letter index 0-26, 26 the space
+  CMP #26
+  BCC bpl_letter
+  LDA #PN_SPACE                 \ which is ZERO, so no BNE-always here —
+  JMP bpl_iput                  \ that mistake shipped once
+.bpl_letter
+  CLC
+  ADC #PN_UPPER_A
+.bpl_iput
+  STA (brp),Y
+  INX
+  INY
+  CPY #14
+  BCC bpl_ini
+  RTS
+
+.bpl_dig                        \ A = the digit, Y = the glyph position
+  BNE bpld_show
+  LDA brT2                      \ a zero: blanked while leading, except
+  BNE bpld_zero                 \ the last digit, which always shows
+  CPY #7
+  BEQ bpld_zero
+  LDA #PN_SPACE                 \ ZERO — a BNE-always here never branches
+  JMP bpld_put
+.bpld_zero
+  LDA #PN_DIGIT0
+  BNE bpld_put                  \ always
+.bpld_show
+  STA brT
+  LDA #1
+  STA brT2
+  LDA brT
+  CLC
+  ADC #PN_DIGIT0
+.bpld_put
+  STA (brp),Y
+  INY
+  RTS
 
 \ ============================================================
 \ BrDispatch — where TitleSeq's callers land instead of the game
@@ -124,11 +217,26 @@ BR_EXIT_OFF   = 1               \ off the end of the last page: the title
 \ pages the text in and stays on it; keydown is safe with a bank up
 \ because OSBYTE restores from ROMSHAD.
 \
-\ F4 SHAPE: static pages. M steps forward — off the end of page 5 is
-\ the way out to the title, which is the C64's own exit — K steps back,
-\ L starts the game at any point, as fire does on the C64. F5 replaces
-\ the stepping with the C64's smooth vertical scroll and dwell; the
-\ K/M/L roles stay (KC, 2026-08-22).
+\ THE SHAPE IS THE C64's OWN LOOP, $1184-$123F, transcribed:
+\
+\   per page:  reset the scroll, paint the window, then
+\   _4/_5      wait for down to be RELEASED (the page-skip debounce)
+\   _6/_7      dwell at the top — 256 fields, down skips it
+\   _8..$1214  scroll a field at a time: ySpd+1 = $FF - joyYDir and
+\              MoveScreen SUBTRACTS it, so centred is 1 px a field,
+\              down ($1204's +1) is 2, up (-1) is 0 — a pause. The
+\              travel ends at ScreenPosY = $168 = 360 scanlines, and
+\              360 is exactly this port's (60 - 15) rows too
+\   $120A      dwell at the bottom — 128 fields, down skips it
+\   _12        next page; page 6 is the way out to the title
+\   any fire   the game, from anywhere in all of that
+\
+\ K and M are the port's up and down, L is fire — the game's own keys.
+\ One field here is one C64 field: the step waits on fieldCount, which
+\ the rupture IRQ bumps at fire 3.
+BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
+                                \ at the top, 15 visible, content to 59
+
 .BrRun
   LDA #0
   STA scrollS
@@ -139,6 +247,16 @@ BR_EXIT_OFF   = 1               \ off the end of the last page: the title
   STA colCount
   JSR SetCRTCStart
   STA brPage                    \ A is still 0: page 1
+
+\ THE WINDOW IS 15 ROWS, the scrolled deck's own, because a window that
+\ scrolls by scanlines spans a 16th partial row and the strip has only
+\ 16. Every modal screen wants T1_I3X; the two paths here disagree
+\ about what they left behind (boot never set it, a game over left the
+\ wash's 16), so the briefing states its own. GameStartInfo -> IsStart
+\ sets it back to 16 for the 001 page on the way out, and ReframeView
+\ restores the deck's 15 after that, so nothing needs undoing.
+  LDA #HI(T1_I3)
+  STA t1i3Hi
 
 \ The play area's palette is the briefing's to state: palPlay is built
 \ by SetPalette at DECK LOAD, so at briefing time it holds whatever the
@@ -154,65 +272,173 @@ BR_EXIT_OFF   = 1               \ off the end of the last page: the title
   BPL br_pal
 
   PAGEBANK SWRAM_SPR
+
+\ ---- per page: $1184's block --------------------------------
+.br_page
+  LDA #0
+  STA scrollS
+  STA scrollS+1
+  STA line
+  STA brTop
+  STA brBufRow
+  JSR SetCRTCStart
   JSR BrDrawPage
 
-.br_loop
+\ the _4/_5 release wait: a held M must not eat the next page too
+.br_deb
+  JSR BrWaitField
+  LDX #KEY_L
+  JSR keydown
+  BNE br_nofire                 \ br_fire is past a branch's reach here
+  JMP br_fire
+.br_nofire
+  LDX #KEY_M
+  JSR keydown
+  BEQ br_deb
+
+\ ---- the top dwell: _6/_7, 256 fields, down skips it --------
+  LDA #0
+  STA brDwell
+.br_dw1
+  JSR BrWaitField
   LDX #KEY_L
   JSR keydown
   BEQ br_fire
   LDX #KEY_M
   JSR keydown
-  BEQ br_next
-  LDX #KEY_K
-  JSR keydown
-  BEQ br_prev
-  JMP br_loop
+  BEQ br_scroll
+  INC brDwell
+  BNE br_dw1
 
-.br_next
+\ ---- the scroll: _8 to $1208 --------------------------------
+.br_scroll
+  JSR BrWaitField
+  LDX #KEY_L
+  JSR keydown
+  BEQ br_fire
+  LDX #KEY_K                    \ up: ySpd+1 becomes 0 — hold still
+  JSR keydown
+  BEQ br_scroll
+  JSR BrStep
+  LDX #KEY_M                    \ down: $FF - 1 = -2 — a second step
+  JSR keydown
+  BNE br_moved
+  JSR BrStep
+.br_moved
+  JSR SetCRTCStart
+  LDA brTop
+  CMP #BR_TRAVEL
+  BCC br_scroll
+  LDA line
+  BNE br_scroll
+
+\ ---- the bottom dwell: $120A, 128 fields, down skips it -----
+  LDA #&80
+  STA brDwell
+.br_dw2
+  JSR BrWaitField
+  LDX #KEY_L
+  JSR keydown
+  BEQ br_fire
+  LDX #KEY_M
+  JSR keydown
+  BEQ br_turn
+  INC brDwell
+  BNE br_dw2
+
+\ ---- _12: the next page, or out to the title ----------------
+.br_turn
   INC brPage
   LDA brPage
   CMP #BR_PAGES
-  BCS br_off                    \ past the last page: back to the title
-  JSR BrDrawPage
-.brn_rel
-  LDX #KEY_M
-  JSR keydown
-  BEQ brn_rel
-  JMP br_loop
-
-.br_prev
-  LDA brPage
-  BEQ br_loop                   \ already on the first
-  DEC brPage
-  JSR BrDrawPage
-.brp_rel
-  LDX #KEY_K
-  JSR keydown
-  BEQ brp_rel
-  JMP br_loop
-
+  BCS br_out
+  JMP br_page
+.br_out
+  PAGEBANK SWRAM_DATA
+  LDA #BR_EXIT_OFF
+  RTS
 .br_fire
   PAGEBANK SWRAM_DATA
   LDA #BR_EXIT_FIRE
   RTS
-.br_off
-  PAGEBANK SWRAM_DATA
-  LDA #BR_EXIT_OFF
+
+\ ---- one scanline down the canvas ---------------------------
+\ line 0-7 within the row at scrollS; on the wrap the window's top row
+\ advances and the row about to enter at the BOTTOM edge — brTop+15,
+\ the staged 16th — is painted before any of it is displayed. Stops
+\ dead once the travel is done so a second BrStep in the same field
+\ cannot overshoot.
+.BrStep
+  LDA brTop
+  CMP #BR_TRAVEL
+  BCC brs_go
+  RTS
+.brs_go
+  INC line
+  LDA line
+  CMP #8
+  BCC brs_x
+  LDA #0
+  STA line
+  CLC                           \ scrollS on a row, wrapped at the strip
+  LDA scrollS   : ADC #LO(ROW_BYTES) : STA scrollS
+  LDA scrollS+1 : ADC #HI(ROW_BYTES) : STA scrollS+1
+  CMP #HI(BUF_SIZE)             \ BUF_SIZE is a whole number of pages
+  BCC brs_row
+  SEC
+  LDA scrollS   : SBC #LO(BUF_SIZE) : STA scrollS
+  LDA scrollS+1 : SBC #HI(BUF_SIZE) : STA scrollS+1
+.brs_row
+  INC brTop
+  LDA brBufRow
+  CLC
+  ADC #1
+  AND #15
+  STA brBufRow
+  ADC #15                       \ the staged row is 15 on from the top;
+  AND #15                       \ carry is clear, 0-15 + 15 cannot wrap
+  STA brStrip
+  LDA brTop
+  CLC
+  ADC #15
+  JSR BrPaintRow
+.brs_x
+  RTS
+
+\ ---- one field's edge on the rupture's counter --------------
+.BrWaitField
+  LDA fieldCount
+.bwf_w
+  CMP fieldCount
+  BEQ bwf_w
   RTS
 
 \ ============================================================
-\ BrDrawPage — all sixteen strip rows of page brPage
+\ BrDrawPage — the whole window of page brPage, scroll at 0
 \ ============================================================
-\ Strip row R shows canvas row R — the top of the page — until F5 adds
-\ the scroll offset. A canvas row is painted from ITS record list drawn
-\ top-half plus the row above's drawn bottom-half, because a record
-\ occupies the row it names and the one below: the top cells of its
-\ 8 x 16 glyphs, then the bottom ones. That is UpTextChar's dest+$100,
-\ done at read time.
+\ Sixteen buffer rows: the 15 the window shows and the staged 16th,
+\ which the first BrStep of the scroll starts revealing.
 .BrDrawPage
   LDA #0
-  STA brRow
+  STA brStrip
 .bdp_row
+  LDA brStrip                   \ scroll parked: buffer row = canvas row
+  JSR BrPaintRow
+  INC brStrip
+  LDA brStrip
+  CMP #16
+  BCC bdp_row
+  RTS
+
+\ ============================================================
+\ BrPaintRow — canvas row A into buffer row brStrip
+\ ============================================================
+\ A canvas row is painted from ITS record list drawn top-half plus the
+\ row above's drawn bottom-half, because a record occupies the row it
+\ names and the one below: the top cells of its 8 x 16 glyphs, then
+\ the bottom ones. That is UpTextChar's dest+$100, done at read time.
+.BrPaintRow
+  STA brRow
   JSR BrClearRow
   LDA #0                        \ top halves of this row's records
   STA brHalf
@@ -223,18 +449,13 @@ BR_EXIT_OFF   = 1               \ off the end of the last page: the title
   LDA brRow
   SEC
   SBC #1
-  JSR BrRowList
-  INC brRow
-  LDA brRow
-  CMP #16
-  BCC bdp_row
-  RTS
+  JMP BrRowList                 \ and its RTS
 
 \ ---- one strip row to black --------------------------------
 \ 640 bytes, 256 + 256 + 128. The record lists are sparse, so a page
 \ turn must clear what the last page left.
 .BrClearRow
-  LDX brRow
+  LDX brStrip
   LDA brRowBLo,X : STA swDst
   LDA brRowBHi,X : STA swDst+1
   LDA #0
@@ -295,7 +516,7 @@ BR_EXIT_OFF   = 1               \ off the end of the last page: the title
   ASL brT : ROL A
   ASL brT : ROL A
   STA brT2
-  LDX brRow
+  LDX brStrip
   CLC
   LDA brRowBLo,X : ADC brT  : STA swDst
   LDA brRowBHi,X : ADC brT2 : STA swDst+1
@@ -428,8 +649,14 @@ BR_EXIT_OFF   = 1               \ off the end of the last page: the title
 .brFlag  EQUB 0                 \ 0 the title fired; 1 it timed out and
                                 \ PARMAN is in bank 5
 .brPage  EQUB 0                 \ 0-4: which page is up
-.brRow   EQUB 0                 \ the strip row being painted
+.brRow   EQUB 0                 \ the CANVAS row being painted
+.brStrip EQUB 0                 \ the BUFFER row (0-15) it lands in
+.brTop   EQUB 0                 \ canvas row at the window's top, 0-45
+.brBufRow EQUB 0                \ buffer row holding brTop
+.brDwell EQUB 0                 \ the dwell counter, C64 frameCount's role
 .brHalf  EQUB 0                 \ 0 top cells, 8 bottom cells
 .brT     EQUB 0
 .brT2    EQUB 0
 .brY     EQUB 0
+.brSc    SKIP 14                \ BrPatchScores' ferry: bank 7's table on
+                                \ its way to bank 5's text

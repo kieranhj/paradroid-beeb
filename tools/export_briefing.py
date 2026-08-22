@@ -65,8 +65,9 @@ PAGE_COL0 = 2
 
 # The two records UpdateTextScore ($E5AC) patches in place: the high and
 # low score lines of page 5. The driver needs to find them, so they are
-# labelled in the output.
-LABELS = {0xDD89: 'hiscore', 0xDDB4: 'loscore'}
+# labelled in the output. Matched on their decoded TEXT — the layer
+# document's $DD89/$DDB4 addresses turned out not to be the records'.
+LABELS = {'    6809 - AEB': 'hiscore', '    6502 - BAD': 'loscore'}
 
 # Characters the shared font has not got, whose bitmaps therefore ride in
 # briefing.txt as `glyph` lines: comma, apostrophe, semicolon. export_bbc
@@ -188,8 +189,8 @@ def main():
         out.append('page %d' % (page + 1))
         for row, col, addr, codes in sorted(by_page[page]):
             text = ''.join(to_text(c) for c in codes)
-            if addr in LABELS:
-                out.append('label %s' % LABELS[addr])
+            if text in LABELS:
+                out.append('label %s' % LABELS[text])
             out.append('%2d %2d |%s' % (row, col, text))
 
     out.append('')
