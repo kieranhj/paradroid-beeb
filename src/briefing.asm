@@ -123,11 +123,17 @@ BR_EXIT_OFF   = 1               \ off the end of the last page: the title
   JSR BrRun
   PHA                           \ BR_EXIT_FIRE or BR_EXIT_OFF
 
-\ The teardown is GoTitle's own, minus SndSilence: the chatter is
-\ deferred (F2), so nothing has sounded since the last silence and the
-\ chip is already quiet. UninstallIrq first — the rupture IRQ rewrites
-\ the CRTC every field — then the plain frame, then DFS's workspace
-\ back before the first load.
+\ The teardown is GoTitle's own, and now including its SndSilence: the
+\ chatter HAS been sounding, and UninstallIrq stops the ticks, so
+\ whatever the chip holds would drone through the loads and into the
+\ game or the title behind them. Silence it here, masked so no tick
+\ interleaves the port A save/restore, with SWRAM_DATA paged — both
+\ of BrRun's exits page it before they return. UninstallIrq CLIs at
+\ its end, exactly as it does for GoTitle.
+  LDA #0
+  STA sndState
+  SEI
+  JSR SndSilence
   JSR UninstallIrq
   JSR SetupPlain                \ bank 4; BrRun left SWRAM_DATA paged.
                                 \ The plain frame is BLANK now — R6 = 0
@@ -221,6 +227,24 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
   JSR PnBriefing
 
   PAGEBANK SWRAM_SPR
+
+\ ---- the chatter starts, $115B ------------------------------
+\ The C64 writes $11 here; this port has no $11, because its chatter
+\ is not inside the driver — BmChatter's header says why — so it asks
+\ for the ordinary initialise ($12, which SndTick collapses to 2) and
+\ drives the requests itself. [11f DECISION 11]
+\
+\ PARMAN IS RELOADED FROM DISC FOR EVERY BRIEFING — BrTimeout is the
+\ only way here — so brChCnt arrives assembled at zero and needs no
+\ store. The seed does: the same fresh load would otherwise hand every
+\ briefing the same byte and the same burble. fieldCount has been
+\ running since InstallIrq and carries the disc's own timing; ORA #1
+\ because an LFSR that reaches zero stays there.
+  LDA #&12
+  STA sndState
+  LDA fieldCount
+  ORA #1
+  STA brChSeed
 
 \ ---- per page: $1184's block --------------------------------
 .br_page
@@ -396,11 +420,71 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
   RTS
 
 \ ---- one field's edge on the rupture's counter --------------
+\ EVERY loop in BrRun waits here, exactly once per field, which makes
+\ it the one place the chatter can tick at the C64's own 50 Hz. The
+\ page turns do not pass through it — BrDrawPage paints sixteen rows
+\ without waiting — so the counter stalls for those few fields while
+\ whatever blip is playing carries on; the driver is sequencing that
+\ from the IRQ and neither notices.
 .BrWaitField
   LDA fieldCount
 .bwf_w
   CMP fieldCount
   BEQ bwf_w
+\ fall through into the chatter, and its RTS
+
+\ ============================================================
+\ BrChatter — the bank-4 half of the briefing's soundtrack
+\ ============================================================
+\ BmChatter (bank 5, and its header is where the C64 routine is
+\ explained) does everything that can be done without paging: the
+\ counter, the LFSR, the lift blip on voice 2, and the choice of which
+\ blip record to play. What is left needs the DATA bank, which is why
+\ it is here in main RAM: bank code cannot page itself out.
+\
+\ NO SEI. The rupture's T1 stages are deadline-driven and this runs
+\ every field, so blocking the IRQ across an eleven-byte copy is the
+\ one thing that must not happen. Three races were considered and all
+\ three are safe:
+\   - ROMSHAD/ROMSEL: written shadow-first, so an IRQ that lands
+\     between them sees a consistent claim and restores it — the same
+\     argument the sound shim in IrqHandler already rests on
+\   - the scratch slot: the request is posted AFTER the copy, and a
+\     blip already playing has long since had the record loaded into
+\     its voice state, so nothing reads the slot mid-copy
+\   - the slide nudge: SndTick can negate the same byte between the
+\     load and the store. One lost step of a random walk, once in a
+\     while, on a deliberately random warble
+\ THE BANK IS 5 ON THE WAY IN AND 5 ON THE WAY OUT, stated rather than
+\ saved: BrWaitField is reached only from BrRun's loops, whose resting
+\ state is the text bank — BrPortrait is the one excursion and it pages
+\ 5 back itself before it returns.
+.BrChatter
+  JSR BmChatter
+  BEQ brch_x                    \ 0 nothing, $FF nudge, else the blip
+  PHA
+  PAGEBANK SWRAM_DATA
+  PLA
+  BMI brch_nudge
+
+  LDY #BR_CHAT_PRE-1            \ the varying head of the record; the
+.brch_copy                      \ tail is common to all three blips and
+  LDA brChRec,Y                 \ the slot ships holding it (sndchat.asm)
+  STA sndFxChat,Y
+  DEY
+  BPL brch_copy
+  LDA #SND_FX_CHAT
+  STA sndFx1                    \ voice 1, as $0565 does
+  JMP BrChBack
+
+.brch_nudge
+  LDA brChRec                   \ BmChatter left the signed delta here
+  CLC
+  ADC snSlideHi                 \ voice 1's slide hi = the C64's $C3
+  STA snSlideHi
+.BrChBack
+  PAGEBANK SWRAM_SPR
+.brch_x
   RTS
 
 \ ============================================================
@@ -645,3 +729,8 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
 .brY     EQUB 0
 .brSc    SKIP 14                \ BrPatchScores' ferry: bank 7's table on
                                 \ its way to bank 5's text
+.brChRec SKIP BR_CHAT_PRE       \ the chatter's mailbox: bank 5 fills it,
+                                \ BrChatter empties it into bank 4. Main
+                                \ RAM because neither bank can see the
+                                \ other, and this is the ferry between.
+                                \ Byte 0 doubles as the slide nudge
