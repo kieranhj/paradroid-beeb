@@ -184,18 +184,23 @@ addresses from the `beebasm` output rather than from any document.** In outline:
 | `&5500–&57FF` | Character-address and sprite-mask tables, built at startup |
 | `&5800–&7FFF` | Play buffer: circular strip, 16 rows × 640 |
 | SWRAM bank 4 | `PARADAT` — tiles, levels, palettes, droid game data, **the level-draw code, the droid AI, Layer 10's entry/exit and Layer 11e's sound driver**. The char bitmaps ship ZX0-packed; `BuildCharset` unpacks them into the idle sprite save areas at deck load |
-| SWRAM bank 5 | `PARASPR` — the blitter, shifts 0 and 1 px |
+| SWRAM bank 5 | `PARASPR` — the blitter, shifts 0 and 1 px. **Evicted for the briefing**, which loads `PARMAN` over it: the manual's text, `briefman.asm` and the chatter's effect records. Both exits reload the blitter |
 | SWRAM bank 6 | `PARSPR2` — shifts 2 and 3 px, same layout, plus Layer 9's panel/console and the 912 B `dfsSave` snapshot — **full** (63 B) |
 | SWRAM bank 7 | `PARXFER` — Layer 10's transfer minigame, Layer 8b's lift screen, the console's ship, deck-plan and droid-database pages, and Layer 11's game over. The title is NOT here any more — it is the `PARTITL` disc overlay. **5,690 B free, reserved for the droid portrait pool** |
 
-**RAM is the binding constraint. Measured from the build of 2026-08-21**, not remembered: the
-main-RAM code image ends at `&2FFB`, so **5 bytes** below `&3000` — that is the tightest thing in
-the project, and any figure elsewhere claiming 47 is stale. Bank 4 has **60 B**, which the
-sixteen-row change bought back by collapsing three copies of the `t1i3` restore into one in
-`ReframeView` (see `docs/layer-9-hud.md` §6g); before that it was 3, effectively zero, the sound
-driver having taken the lot even after the char bitmaps+remap were ZX0-packed and `charSlot`
-nibble-packed to pay for it. The build PRINTs bank 4's fuel gauge every run; the other three come
-from `&C000` minus the end addresses it also PRINTs. Banks 5, 6 and 7 have 1,033 / 53 / 314 B and
+**RAM is the binding constraint. Measured from the build of 2026-08-22**, not remembered: the
+main-RAM code image ends at `&2FFE`, so **2 bytes** below `&3000`, and **bank 4 has 4 B** — those
+two are the tightest things in the project, and any figure elsewhere claiming 47 or 60 is stale.
+Layer 11f's front end spent bank 4's margin down again (the sixteen-row change had bought it back
+to 60 by collapsing three copies of the `t1i3` restore into one in `ReframeView` — see
+`docs/layer-9-hud.md` §6g). The build PRINTs bank 4's fuel gauge every run; the other three come
+from `&C000` minus the end addresses it also PRINTs.
+
+**The `PARBRF` overlay at `&0400` has a hard ceiling of `&0800` and 3 bytes free**, and the
+ceiling is measured, not caution: `&0800-&08FF` is the MOS's sound workspace and its IRQ writes
+there through the front end's loads. Anything of the briefing's that need not be main RAM belongs
+in `src/briefman.asm`, bank 5. Documents quoting ~1,188 B spare there measured to `&0C90` and are
+wrong by a factor of fifteen. Banks 5, 6 and 7 have 1,033 / 53 / 314 B and
 are all paged out during play, so none of it is reachable from the main loop. Anything new needs
 something moved first — `docs/memory-map.md`'s free-RAM section lists what is left and where it can
 come from.

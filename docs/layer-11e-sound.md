@@ -93,7 +93,7 @@ Voice 1 unless stated. Addresses are the `STA sndFx1`/`SndFx2` sites in
 | $1A | `DoCollision` `$1A7D` | Collision bump |
 | $1B | `xferDoCounter` `$2106` (v2); `Capture` `$22C8` | Transfer time-up warning / start |
 | $1C | `AnimateDroids` tail `$3E2F` (every 8 ticks in transfer move mode) | Two-droids-joined pulse |
-| $1D–$1F | `Sound._chatter` `$0565` (pitch class picked by `$D41B` random) | Title chatter blips — **deferred**, §8 |
+| $1D–$1F | `Sound._chatter` `$0565` (pitch class picked by `$D41B` random) | The **briefing's** chatter blips, not the title's — built 2026-08-22, §8 |
 
 ## 3. SN76489 vs SID — what maps and what compromises
 
@@ -365,11 +365,21 @@ permanently silent.
 **[DECISION 4]** **In-game sound first.** Title chatter (`sndState $11`, effects `$1D`–`$1F`)
 is deferred: the title runs under the MOS IRQ with no pass structure, so it needs its own tick
 plumbing in `TiWait`, and it should follow once the driver is proven, not gate it.
+*(Discharged 2026-08-22, and the reasoning about `TiWait` was mistaken — see §8's first bullet.
+The port has no `sndState $11`: 11f [DECISION 11].)*
 
 ## 8. Deferred
 
-- **Title chatter** — [DECISION 4]. Needs a `TiWait` tick throttled by VSync and an LFSR in
-  place of `$D41B`. The three effect records can ship with the rest when wanted.
+- ~~**Title chatter** — [DECISION 4]. Needs a `TiWait` tick throttled by VSync and an LFSR in
+  place of `$D41B`. The three effect records can ship with the rest when wanted.~~
+  **BUILT 2026-08-22 — `docs/layer-11f-frontend.md` §4f.** Both halves of that sentence were
+  wrong. It is **not the title's**: `TitleLoop` zeroes `sndState` before `ShowTitle` and only
+  writes `$11` after it returns, so the logo screen is silent and the chatter plays under the
+  briefing — which runs after `InstallIrq` and was already being ticked at 50 Hz, so `TiWait`
+  needed nothing. And the records did not ship with the rest: bank 4 carries **one rewritable
+  scratch slot** (`sndFxChat`, effect 29) and the three real records live in bank 5 beside the
+  briefing text. `SndTick` is unchanged — it walks to effect 29 like any other. The LFSR is
+  bank 5's `brChSeed`.
 - **Pause and the ± volume keys.** The port has no pause feature; `DoPause` (`$3B7C`) and
   `AdjustVolume` (`$0CB4`) are one small piece of work together — pause writes `sndState`
   0/`$12` around itself and the driver already honours both. **AdjustVolume's port MUST

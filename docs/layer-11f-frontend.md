@@ -230,24 +230,34 @@ save four tenths of a second, once, on a path the player chose by *not* pressing
 ## 4. Front-end sound
 
 Three pieces, all deferred rather than unknown, and layer-11e already costed them.
+**The chatter is now built — §4f — and this section is the plan it was built against, wrong in
+two places that §4f corrects.** Read them together.
 
 **Title chatter** — `sndState $11`, effects `$1D`–`$1F` and `$10`. `Sound._chatter` (`$054A`) is
 20 lines: a counter, every 128 ticks pick one of three blips by a random third, at two counter
-phases fire `$10` on channel 2, and every 16 ticks nudge channel 3's frequency slide by a
+phases fire `$10` on channel 2, and every 16 ticks nudge **voice 1's** frequency slide by a
 random amount. The three effect records were **dropped from the export** to save 36 B in bank 4
 (11e stage 2) — they come back. `$D41B` becomes an LFSR; `DrRandom` is bank 4's and must stay
 one sequence, so the chatter needs its own.
 
+> **Two corrections, 2026-08-22.** The nudge is voice 1's slide (`snd_C3`), not "channel 3" —
+> voice 3 is the C64's RNG and is never sounded. And it is **not the title's**: `TitleLoop`
+> writes `$11` after `ShowTitle` returns, so the logo screen is silent and this plays under the
+> briefing. §4f has the evidence and what followed from it.
+
 **The tick.** [DECISION 4 of 11e] deferred this because the title runs under the MOS IRQ with no
 pass structure. Two fixes, and they are different for the two screens:
 
-- The **title** (`TiShow`/`TiWait`) still runs before `InstallIrq`. Throttle `TiWait`'s loop on
+- ~~The **title** (`TiShow`/`TiWait`) still runs before `InstallIrq`. Throttle `TiWait`'s loop on
   VSync and call `SndTick` with `SWRAM_DATA` paged — **not across the `*LOAD`s**, which need the
   bank out and the chip silent. Note that VSync-throttling changes the timeout: `TiWait`'s
   present escape is a 16-bit *iteration* wrap, and at 50 Hz that would be 21 minutes. Count
   **256 fields**, which is the C64's own `$291B` timeout, and keep a fast inner counter for the
-  `drSeed` entropy `TiWait` currently supplies. [DECISION 8]
-- The **briefing** runs after `InstallIrq` (§3d), so it gets the 50 Hz tick for free.
+  `drSeed` entropy `TiWait` currently supplies. [DECISION 8]~~ **Not needed** — the logo screen
+  has nothing to tick. `TiWait` is untouched.
+- The **briefing** runs after `InstallIrq` (§3d), so it gets the 50 Hz tick for free. **This is
+  the whole of it**: `BrWaitField` is called exactly once per field by every loop in the
+  briefing, and the chatter hangs off it.
 
 **Pause and the ± volume keys — DEFERRED.** KC, 2026-08-21: leave them, we look at them later.
 They stay where 11e §8 put them, and nothing in this layer waits on them. Two consequences to
@@ -457,8 +467,109 @@ branches — `PN_SPACE` is zero. The leading zeros printed as `0`s until it beca
   are the box borders and the logo, and `DoScore` (forced by a net-zero
   `INC scoreAdd`/`INC scoreSub`) draws the one score, the *last game's*, zero at a cold boot.
   `StartGame` clears it on the way into a game.
-- **F2** (title chatter) deferred as agreed; **F6** (exit-load trim) deferred per KC's
-  "optimise the loading later" — the naive exits cost ~1.1 s into a game, ~0.6 s back to title.
+- ~~**F2** (title chatter) deferred as agreed~~ **BUILT AND VERIFIED 2026-08-22 — see §4f.**
+  **F6** (exit-load trim) deferred per KC's "optimise the loading later" — the naive exits cost
+  ~1.1 s into a game, ~0.6 s back to title.
+
+## 4f. F2 as built — the chatter, 2026-08-22
+
+**BUILT AND VERIFIED.** It was blocked on 33 bytes of effect records against a bank 4 that has 4,
+and it landed anyway, because the premise underneath the block turned out to be wrong.
+
+### The finding: there is no title chatter
+
+`TitleLoop` (`$10D3`) zeroes `sndState` at `$10E1`, calls `Sound`, and only *then* calls
+`ShowTitle`. The `$11` that starts the chatter is written at `$115B` — **after `ShowTitle` has
+returned**, in the block that sets `ScreenPosX/Y` up for the scrolling manual. `ShowTitle`'s own
+wait loop (`$2907`) is field-locked on `irqToggle` and calls `Sound` every field, which is why the
+driver is listed as one of its callers, but the state it ticks on is 0: silence.
+
+**So the C64's logo screen is silent and the burbling belongs to the briefing.** Everything this
+document and 11e wrote about "title chatter" is right in name only. Two consequences:
+
+- **[DECISION 8] is struck.** VSync-throttling `TiWait`, moving its timeout to 256 fields and
+  finding a fast inner counter for `drSeed`'s entropy were all needed *only* to give the logo
+  screen a 50 Hz tick. The logo screen does not want one. `TiWait` is untouched.
+- The tick was free. `BrRun` runs after `InstallIrq`, so `SndTick` is already ticking at 50 Hz,
+  and `BrWaitField` is called exactly once per field by every loop in the briefing — the one
+  place the chatter can hang without any new plumbing at all. It falls through into `BrChatter`.
+
+### What it plays
+
+`Sound._chatter` (`$054A`), on a counter running down every field:
+
+| phase | action |
+|---|---|
+| `AND $7F` = 0 | one of three blips by a random third → `sndFx1` |
+| `AND $3F` = `$22` or `$30` | `$10`, the lift blip, → `sndFx2` |
+| `AND $0F` = 8 | voice 1's frequency slide high byte `+=` a signed random ±16 |
+
+The blips (fx 29–31) are one 125-tick segment each, sliding down 6,144–14,592 per tick from
+F = 8192/4096/3072 — the slide **wraps mod 65536 every ten ticks or so** and the sound is that
+repeating zipper, which is exactly the wrap the driver already keeps (11e §3). The random walk on
+the slide is what makes it chatter rather than drone. Instruments 7, 6 and 8: triangle, sawtooth,
+pulse, **all three already shipped** and all three tone voices, so the noise channel is never
+claimed and the briefing cannot collide with an explosion.
+
+### Where it lives, and why it is in two files
+
+Bank 4 had **15 bytes free** and three records are 33, so:
+
+| | |
+|---|---|
+| The three records | `src/data/sndchat.asm` → **PARMAN, bank 5**, beside the text |
+| `BmChatter` — counter, LFSR, phases, the lift blip, the choice | `src/briefman.asm`, **bank 5** |
+| `brChRec` — the mailbox between the banks | **PARBRF**, 5 bytes |
+| `BrChatter` — the bank-4 half: land the record, post it, or nudge | `src/briefing.asm`, **PARBRF** |
+| `sndFxChat` — the scratch record slot, effect 29 | **bank 4**, 11 bytes |
+
+Neither bank can see the other, so the work splits at the paging boundary: bank 5 does everything
+that touches only main RAM and itself (`briefman.asm`'s standing rule, unbroken), hands the answer
+to a main-RAM mailbox, and `BrChatter` — main RAM, and so allowed to page — pages the data bank in
+to finish. `SndTick` is **not modified by any of it**: it walks to effect 29 through the ordinary
+`sndFxTab` arithmetic and never knows the slot's contents move.
+
+**Three squeezes made it fit PARBRF, whose real ceiling is `&0800` — 81 bytes, not the 1,188 the
+handover claims** (that figure is for `&0C90`, which the MOS's sound workspace took back):
+
+1. The bank is **stated, not saved**: `BrWaitField` is reached only from `BrRun`'s loops, whose
+   resting state is bank 5 — `BrPortrait` is the one excursion and it pages 5 back itself.
+2. **Only the 5 bytes of a record that vary are ferried.** All three blips share every byte from
+   the segment timer on (`7D 00 01 00 00 00`) and the slot ships holding them. `export_sound.py`
+   **asserts** it, so a release whose blips differ in the tail fails the build rather than the
+   sound.
+3. `brChCnt` is not zeroed — `PARMAN` is reloaded from disc for every briefing and brings it
+   assembled at 0. `brChSeed` *is* reseeded, from `fieldCount`, for the opposite reason: the same
+   fresh load would otherwise hand every briefing the same byte and the same burble.
+
+**No SEI anywhere in it.** The rupture's T1 stages are deadline-driven and this runs every field,
+so masking across an eleven-byte copy was the one thing that must not happen. The three races that
+buys are all harmless and `BrChatter`'s header argues each: `ROMSHAD`/`ROMSEL` written
+shadow-first (the sound shim's own argument), the request posted *after* the copy, and a nudge
+lost to `SndTick`'s slide negate now and again — one step of a deliberately random walk.
+
+### Verified in jsbeeb, 2026-08-22
+
+- **The tick is exactly one per field**: `brChCnt` fell 203 → 153 across 50 frames, and `brChSeed`
+  moved with it.
+- **The lift blips land on the C64's own phases**: attack writes 559,102 cycles apart (14 fields,
+  `$30`−`$22`), then 1,996,794 (50 fields), repeating — two per 64-field cycle, exactly.
+- **The blips restart on the 128-field cycle** with the ~3 fields of silence a 125-tick effect
+  leaves, and CH0's period jumps every field: the zipper wrapping.
+- **CH2 and CH3 are never written** — the noise channel stays free, as the tone instruments say.
+- **The exits are silent**: fire out of the briefing left all four channels at attenuation 15 and
+  `sndState` at 0 before the loads. `BrDispatch`'s teardown got its `SndSilence` back; the comment
+  saying nothing had sounded is no longer true.
+- **The game is unharmed**: a deck loaded behind it with `sndState` 2 and the per-deck hum on CH1
+  at 219.7 Hz, and `sndFxChat` read back `08 00 0C 00 CD 7D 00 01 00 00 00` — blip C's prefix on
+  the shipped tail, the last thing the briefing played.
+
+**Left for KC**: the by-ear pass, 11e stage 4's method. The simulated sub-floor shares are 6% / 4%
+/ 0%, so no blip should need periodic-noise treatment, and any that does must go through
+`FX_PERIODIC`'s instrument cloning — instruments 6, 7 and 8 are shared with in-game effects.
+
+**Costs**: bank 4 15 → **4 B**, PARBRF 81 → **3 B**, PARMAN ~120 B of eleven K, **main RAM zero**
+(`code_end` unmoved at `&2FFE`). Roughly 30 cycles a field in the briefing and nothing in-game.
 
 ## 5. Staging
 
@@ -467,7 +578,7 @@ Each step ends with something visible, and the order is chosen so nothing waits 
 | | | |
 |---|---|---|
 | **F1** | `DoHighScore` in bank 7, the `IS_ACT_TITLE` seam, the two default entries | PLAN.md's last unbuilt in-play item. Verified by memory check + the entry screen at a game over |
-| **F2** | Title chatter: the tick in `TiWait`, the field timeout, the LFSR, the three effect records back into the export | **BLOCKED 2026-08-21**: the three records are 33 B (11 each) and bank 4 has 26. The chatter's *code* can live in the title overlay, which has 112 B, but `SndTick` reads its records from bank 4's table, so those 33 B must be resident. Seven short |
+| **F2** | The chatter: the tick, the LFSR, the three effect records back into the export | **BUILT 2026-08-22, §4f.** The block was real — 33 B of records against bank 4's 15 — and dissolved twice over: the chatter is the *briefing's*, so the tick was already running, and one rewritable scratch slot serves all three records. Neither `TiWait` nor `SndTick` was touched |
 | **F3** | `tools/export_briefing.py` → `src/data/briefing.asm`, plus the comma/apostrophe glyphs | Offline; verified by decoding back to text and diffing against `$D000` |
 | **F4** | `PARMAN` in bank 5: row painter, page draw, one static page on the strip, and the exit rebuild in its **naive four-load form** | The first thing seen. No scrolling yet, and slow coming back |
 | **F5** | Scroll, dwell, page turns, fire-to-play, the page-5 portrait, the score lines | The briefing proper |
@@ -513,20 +624,49 @@ and optimise the loading after — so F4 may ship the four-load form and F6 trim
 table rather than the table being written *into* the text. Necessary here: the port's briefing
 text is in a ROM-like overlay reloaded from disc every time, so a patch would not persist.
 
-**[DECISION 8]** `TiWait`'s timeout becomes 256 fields (the C64's own) instead of a 16-bit
-iteration wrap, with a fast inner counter kept for `drSeed`'s entropy.
+~~**[DECISION 8]** `TiWait`'s timeout becomes 256 fields (the C64's own) instead of a 16-bit
+iteration wrap, with a fast inner counter kept for `drSeed`'s entropy.~~ **STRUCK 2026-08-22**:
+the whole of it existed to give the logo screen a 50 Hz tick for a chatter the logo screen does
+not play. See §4f. `TiWait` keeps its iteration wrap and its entropy.
 
 **[DECISION 9]** Pause and the ± volume keys are **deferred** (KC, 2026-08-21) and stay in
 11e §8. Because briefing page 5 prints the C64's key legend — RUN/STOP, CLR/HOME, f7, f8 —
 and none of it is true here, the exporter carries a **text-override table** and those two blocks
 are replaced or dropped until pause exists. The replacement wording is KC's, later.
 
+### Taken with KC on 2026-08-22, before F2 was built
+
+**[DECISION 10]** **The logo screen stays silent** and the chatter is the *briefing's* sound,
+because that is what `TitleLoop` does — the evidence is in §4f. Every "title chatter" in these
+documents means the briefing's.
+
+**[DECISION 11]** **The chatter lives outside `SndTick`**, in PARBRF and bank 5, ticked from
+`BrWaitField`, because bank 4 has four bytes and the chatter is about 120. So **the port has no
+`sndState $11`**: the briefing asks for the ordinary `$12` and drives the requests itself. A
+mechanism deviation with no audible consequence — the same effects, on the same voices, on the
+same counter phases.
+
+**[DECISION 12]** **The blips reach the driver through an 11-byte scratch record slot in bank 4**
+(`sndFxChat`, effect 29) that the chatter rewrites before each request, rather than shipping three
+resident records. Two alternatives were costed and rejected: shipping all three (33 B against 15)
+and making `sndFxTab`'s base a patchable pointer (6 B, but a global that corrupts every in-game
+effect if it is ever left stale). The refinement that only the varying 5 bytes are ferried came
+later, forced by PARBRF's ceiling, and is asserted in the exporter.
+
+**[DECISION 13]** **The chatter gets its own LFSR** (`brChSeed`, bank 5) where the C64 read the
+voice-3 oscillator `$D41B`. Bank 4's `DrRandom` must stay one sequence for the starting deck's
+sake, so it cannot be shared.
+
+**[DECISION 14]** **`BrDispatch`'s teardown regains its `SndSilence`.** It was dropped when the
+chatter was deferred, on the grounds that nothing had sounded; now something has, and
+`UninstallIrq` stops the ticks that would otherwise leave it droning through the loads.
+
 ## 7. RAM ledger
 
 | | |
 |---|---|
 | `DoHighScore` + table | ~264 B, **bank 7** (314 free) |
-| Chatter: three effect records + tick shim | ~36 B bank 4 (60 free) + ~40 B main RAM (5 free below `&3000`, ~50 in pieces) — **the main-RAM shim is the risk** |
+| Chatter: three effect records + tick shim | ~~~36 B bank 4 (60 free) + ~40 B main RAM~~ **as built**: 11 B bank 4 (one scratch slot), ~78 B PARBRF, ~120 B bank 5, **0 B new main RAM** — §4f |
 | Briefing driver + text | **0 resident** — `PARMAN` lands on two holes that are rebuilt after it: `&3E00`–`&49FF` by `GameStart`/`LoadDeck`, `&5400`–`&57FF` by the three table builders. 3,385 B of data + ~711 B for the driver, in 4,096 |
 | Three font glyphs | 96 B of `PARAFNT`'s 104 spare |
 | Pause + volume | **not in this layer** — deferred, 11e §8 |

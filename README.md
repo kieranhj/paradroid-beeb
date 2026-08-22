@@ -23,8 +23,7 @@ own speeds and dwells, with the live score table and a random droid portrait on 
 manual's text is hand-editable (`src/data/briefing.txt`), and every front-end screen wears the
 palette of the last deck played.
 
-**What is left** is the title chatter, the balance and visual passes, and trimming the front end's
-disc loads. See [`PLAN.md`](PLAN.md) for the layered build plan, the memory map, decisions taken
+**What is left** is the balance and visual passes, and trimming the front end's disc loads. See [`PLAN.md`](PLAN.md) for the layered build plan, the memory map, decisions taken
 and current status.
 
 ## Target
@@ -75,8 +74,8 @@ emulator before the next begins:
 10. **Transfer minigame** — ✅ done; in a fourth sideways bank, with its two pre-game info screens
 11. **Title, game over, sound and the droid screens** — ✅ done: the title, the death and game-over
     sequence, the SN76489 sound driver, the four information screens, and the front end — the
-    high-score entry and the scrolling intro manual. The title chatter and a faster reload out of
-    the manual are the pieces outstanding
+    high-score entry and the scrolling intro manual, which burbles to itself as it scrolls just
+    as the original's does. A faster reload out of the manual is the piece outstanding
 12. Balance, fidelity and feel
 13. **Memory and machine compatibility** — the RAM pass ✅ done; sideways-RAM detection and
     testing on real machines outstanding
