@@ -46,6 +46,13 @@ OUT = PROJECT / 'src' / 'data' / 'briefing.asm'
 
 PAGE_COLS = 40
 
+# The text is nudged right so the WIDEST lines sit centred in the
+# 40-cell window (KC, 2026-08-22): the widest record extent is 36
+# cells, so two cells each side. Applied here, to the emitted columns,
+# so the renderer stays a straight copy and the width check below
+# guards the margin too.
+MARGIN = 2
+
 # The shared font's layout - export_font.py's order, checked against
 # panel.asm's PN_* constants.
 PN_SPACE, PN_DIGIT0, PN_UPPER_A, PN_LOWER_A = 0, 1, 11, 63
@@ -119,13 +126,15 @@ def main():
     pages, extras, order = parse(SRC)
 
     # validate width against the page, counting wide characters twice
+    # and the centring margin once
     for page, row, (col, text, label, n) in order:
         width = sum(2 if c in WIDE else 1 for c in text)
-        if col + width > PAGE_COLS:
+        if MARGIN + col + width > PAGE_COLS:
             raise SystemExit(
-                'briefing.txt:%d: line is %d cells from column %d, past the '
-                "page's %d (capitals except I, and m and w, are two cells)"
-                % (n, width, col, PAGE_COLS))
+                'briefing.txt:%d: line is %d cells from column %d plus the '
+                "%d-cell margin, past the page's %d (capitals except I, and "
+                'm and w, are two cells)'
+                % (n, width, col, MARGIN, PAGE_COLS))
 
     row_lo = min(r for p in pages.values() for r in p)
     row_hi = max(r for p in pages.values() for r in p)
@@ -187,7 +196,7 @@ def main():
             if label:
                 out.append('.br_%s' % label)
             out.append('  ' + bs + ' "%s"' % text)
-            out.append('  EQUB %d' % col)
+            out.append('  EQUB %d' % (col + MARGIN))
             for j in range(0, len(gl), 12):
                 out.append('  EQUB ' + ', '.join(str(v) for v in gl[j:j + 12]))
             out.append('  EQUB &FE')
