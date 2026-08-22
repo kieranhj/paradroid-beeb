@@ -460,6 +460,21 @@
   INX
   CPX #7
   BNE sp_reg
+
+\ AND THE LAST DECK'S PALETTE, deliberately: the front end inherits it
+\ (KC, 2026-08-22). Without this the ULA holds whichever REGION palette
+\ the rupture wrote last before UninstallIrq — palPanel or palPlay by
+\ raster luck — so the 999 page, the entry screen and the title were
+\ mostly deck-coloured and occasionally panel-coloured. This makes it
+\ always the deck's. palPlay is main RAM (rupture.asm) and survives the
+\ teardown; its assembled default covers the path before any deck has
+\ loaded.
+  LDX #15
+.sp_pal
+  LDA palPlay,X
+  STA VIDEO_ULA_PAL
+  DEX
+  BPL sp_pal
   RTS
 
 \ R8 IS IN HERE AND IT IS NOT OPTIONAL. The rupture blanks rows with it

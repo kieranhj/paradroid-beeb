@@ -195,18 +195,12 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
   LDA #HI(T1_I3)
   STA t1i3Hi
 
-\ The play area's palette is the briefing's to state: palPlay is built
-\ by SetPalette at DECK LOAD, so at briefing time it holds whatever the
-\ assembler left in it, and the rupture reapplies it every frame — the
-\ ULA writes TiPal did are overwritten within a field. The values are
-\ the OS's MODE 1 default, the same statement TiPal makes: black, red,
-\ yellow, white, so fontMask &FF is white on black.
-  LDX #15
-.br_pal
-  LDA brPal,X
-  STA palPlay,X
-  DEX
-  BPL br_pal
+\ The palette is NOT touched: the briefing inherits the last deck's
+\ (KC, 2026-08-22). The rupture reapplies palPlay every frame, and
+\ palPlay still holds what SetPalette built at the last deck load —
+\ or, before any deck has ever loaded, its assembled default, which
+\ rupture.asm now makes the MODE 1 set rather than zeros for exactly
+\ this moment.
 
 \ The box's content: bars, logo, "Briefing" in the mode-word field and
 \ the last game's score — TitleLoop's $6917/$1193/$1151. PanelInit is
@@ -617,13 +611,6 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
   INC swDst+1
 .brcl_x
   RTS
-
-\ ---- the briefing's palette --------------------------------
-.brPal
-  PALENT  0, 0 : PALENT  1, 0 : PALENT  4, 0 : PALENT  5, 0
-  PALENT  2, 1 : PALENT  3, 1 : PALENT  6, 1 : PALENT  7, 1
-  PALENT  8, 3 : PALENT  9, 3 : PALENT 12, 3 : PALENT 13, 3
-  PALENT 10, 7 : PALENT 11, 7 : PALENT 14, 7 : PALENT 15, 7
 
 \ ---- the strip's row bases, scroll parked ------------------
 .brRowBLo

@@ -53,7 +53,6 @@ tigd  = svp                     \ and where it lands
   JSR TiLoadBrf                 \ Layer 11f: the briefing driver, FIRST —
                                 \ a filing call, so before any of the
                                 \ display work and long before PageLowIn
-  JSR TiPal
   JSR TiCRTC
   JSR TiPaint
   JMP TiWait                    \ and its RTS
@@ -73,32 +72,14 @@ tigd  = svp                     \ and where it lands
   EQUS "LOAD PARBRF"
   EQUB 13
 
-\ ---- the palette, and why it is here now --------------------
-\ [DECISION 9] said white on black "for now", on the grounds that the
-\ title runs before any deck is loaded so MODE 1's DEFAULT palette gives
-\ it that for free. That was true only because SetupMode's VDU 22 reset
-\ the ULA on the way in. Layer 11f took the VDU 22 out of the game-over
-\ path — it was clearing &3000-&7FFF and destroying the 999 page the
-\ high-score entry draws on — so nothing resets the palette any more and
-\ the title would come up in whatever colours the last deck left.
-\ So the title states its own, which is what Layer 14 wants of every
-\ screen anyway. The values ARE the OS's MODE 1 default: black, red,
-\ yellow, white. Grouped four ULA entries to a logical colour, exactly
-\ as palPanel is.
-.TiPal
-  LDX #15
-.tipl_loop
-  LDA tiPal,X
-  STA VIDEO_ULA_PAL
-  DEX
-  BPL tipl_loop
-  RTS
-
-.tiPal
-  PALENT  0, 0 : PALENT  1, 0 : PALENT  4, 0 : PALENT  5, 0
-  PALENT  2, 1 : PALENT  3, 1 : PALENT  6, 1 : PALENT  7, 1
-  PALENT  8, 3 : PALENT  9, 3 : PALENT 12, 3 : PALENT 13, 3
-  PALENT 10, 7 : PALENT 11, 7 : PALENT 14, 7 : PALENT 15, 7
+\ ---- the palette is INHERITED, deliberately -----------------
+\ TiPal used to state the MODE 1 default here; KC, 2026-08-22: the
+\ front end inherits the palette from the last deck played instead.
+\ At a cold boot SetupMode's VDU 22 has left the MODE 1 default; on
+\ the game-over path SetupPlain applies palPlay — the deck's own —
+\ deterministically, which also covers the 999 page and the entry
+\ screen shown before this overlay paints. So there is nothing for
+\ the title to set.
 
 \ ---- the display -------------------------------------------
 \ R6 sets the picture's height and R7 sets where it sits; R4 and R5 keep
