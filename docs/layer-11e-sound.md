@@ -473,9 +473,9 @@ The port has no `sndState $11`: 11f [DECISION 11].)*
   - **attenuation 15 on CH3 at the end: nothing left stuck**, and the per-deck hum re-posted on
     CH1 immediately after
 
-  So the mechanism is sound and the only open question is taste: one blip per deck instead of a
-  doubled one, quieter, at its real pitch. **Still wants KC's ear on an actual lift ride** — a
-  change to a stage-4 sign-off, on top of the level drop already sanctioned. **KC 2026-08-21:
+  So the mechanism is sound, and the taste question — one blip per deck instead of a doubled one,
+  quieter, at its real pitch — went to KC on a real lift ride: **"in-game lift sounds fine",
+  2026-08-22.** Re-signed off, and fx16 is closed. **KC 2026-08-21:
   periodic noise clocked by tone 2 is the preferred cure** — it reaches ~15× below the tone
   floor and is an iconic BBC sound. Tuned by ear in stage 4, effect by effect, minding that it
   shares the one noise channel with the explosions.

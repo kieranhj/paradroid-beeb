@@ -560,12 +560,16 @@ lost to `SndTick`'s slide negate now and again — one step of a deliberately ra
 - **The exits are silent**: fire out of the briefing left all four channels at attenuation 15 and
   `sndState` at 0 before the loads. `BrDispatch`'s teardown got its `SndSilence` back; the comment
   saying nothing had sounded is no longer true. **The other exit — off the end of page 5 to the
-  title — is covered by inspection, not by test**: the silence happens in `BrDispatch` before the
-  `brd_title`/`ts_loads` branch, so both exits run the same instructions, but only the fire path
-  has actually been walked.
+  title — was walked by KC, 2026-08-22**: "the briefing chatter ends on return to the title
+  screen." Which is the whole of the expectation, the title being silent by [DECISION 10]; the
+  silence happens in `BrDispatch` before the `brd_title`/`ts_loads` branch, so both exits run the
+  same instructions and both are now confirmed rather than one being argued from the other.
 - **The game is unharmed**: a deck loaded behind it with `sndState` 2 and the per-deck hum on CH1
   at 219.7 Hz, and `sndFxChat` read back `08 00 0C 00 CD 7D 00 01 00 00 00` — blip C's prefix on
   the shipped tail, the last thing the briefing played.
+
+**SIGNED OFF BY KC'S EAR, 2026-08-22**, over three rounds below, plus the in-game lift the
+change reaches and both of the briefing's exits. Nothing is outstanding on F2.
 
 **The by-ear pass, round one — KC, 2026-08-22.** The blips themselves were fine (6% / 4% / 0%
 sub-floor, as simulated); what was wrong was the **`$10` the chatter posts on voice 2** — the lift
