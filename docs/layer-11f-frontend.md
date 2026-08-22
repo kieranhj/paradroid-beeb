@@ -369,6 +369,79 @@ buffers are `&0900`–`&0BFF`. The port already treats `&0400`–`&0C90` as its 
 a `*LOAD` *into* part of it while DFS is running has not been tried — verify a load lands intact
 before building on it, exactly as `PARALOW` had to be staged rather than loaded.
 
+## 4d. F4 as built — the briefing on screen, 2026-08-22
+
+**BUILT AND VERIFIED**, and the plumbing came out simpler than §4c hoped, because two things
+composed: `&0400` really is loadable (KC: language workspace, no language resident), and
+TitleSeq's tail could be re-entered rather than copied.
+
+| | | |
+|---|---|---|
+| `PARBRF` | `src/briefing.asm`, ORG `&0400`, its own disc file | 1,004 B of 2,192. **Loaded by `TiShow` on every title**, so its entry points are always valid |
+| `PARMAN` | `src/data/briefing.asm` in bank 5, raw on disc | 4,596 B; *LOADs at `DEPK_STREAM` over the dead title overlay, copied up by `BrTimeout` |
+| The hooks | `TiWait`'s wrap → `JMP BrTimeout` (RTSes into the tail); both post-title `GameStartInfo` calls → `BrDispatch` | **0 net bytes of main RAM** — the only resident cost of the whole layer is the `.ts_loads` label |
+
+**The seam mechanics, because they are the part that took thought:**
+
+- `BrTimeout` is entered by `JMP` from the overlay with `TiShow`'s return address still stacked,
+  so its RTS lands at `ts_loads` exactly as `TiWait`'s would have. It must be a JMP: the PARMAN
+  stream lands on the overlay it came from.
+- **The exit-to-game re-enters `ts_loads`** (TitleSeq's own tail) after the teardown and the
+  bank-5 reload, so fonts, low overlay, rupture, tables and IRQ are rebuilt by the one copy of
+  that code. The teardown is GoTitle's minus `SndSilence` (nothing has sounded — chatter is F2).
+- **BOTH exits reload `PARASPR`** (the naive `PARDEPK` + stream + `UnpackBankIn` dance), not just
+  fire-to-game: a fire at the *next* title would otherwise start a game whose blitter is
+  briefing text.
+- The renderer paints a canvas row from its list top-half plus the row above's bottom-half,
+  through `FontCell` from the resident font, `DrawChar`'s wide rule applied at draw time, the
+  three extra glyphs read from bank 5 while it is paged. `palPlay` is stated explicitly — nothing
+  else sets it before a deck loads, and the two entry paths disagree about what they left in it.
+
+**The text pipeline became two stages** (KC, 2026-08-22): `export_briefing.py` decodes the C64
+text ONCE into `src/data/briefing.txt` — hand-editable, verbatim, the pause-key legend included,
+`--force` required to overwrite — and `make_briefing.py` converts it every build (build.ps1 runs
+it), validating the character set and page widths and round-tripping the emitted indices back
+against the input. This supersedes [DECISION 9]'s override table: the wording is edited in the
+text file directly. **`briefing.txt` is gitignored with the rest of `src/data/`** (it is the
+original's copyrighted text), so hand edits live outside git — worth a decision if that ever
+chafes.
+
+## 4e. F5 as built — the scroll, 2026-08-22
+
+The run loop is `$1184`–`$123F` transcribed — per page: release-debounce, 256-field top dwell,
+the scroll, 128-field bottom dwell, next page; page 6 exits to the title; fire exits to the game
+from anywhere. The speed arithmetic was decoded from the listing rather than trusted from §3e:
+**`MoveScreen` ($3878) SUBTRACTS `ySpd+1`**, and the briefing sets `ySpd+1 = $FF - joyYDir`, so
+centred is +1 scanline a field, down is +2, up is 0 — K pauses, M doubles and skips both dwells.
+The travel is 45 rows = 360 scanlines, which is the C64's own `$0168` stop value exactly.
+
+The step is `line`/`scrollS` on the rupture's `fieldCount`, applied by `SetCRTCStart`; the window
+is the deck's 15 rows (`t1i3Hi = HI(T1_I3)`, set by the briefing itself), and each row advance
+paints the incoming 16th row at the bottom edge — one short list walk, nowhere near a raster race
+in practice.
+
+**Page 5's score lines are live**: `BrPatchScores` (in `BrTimeout`, on the fresh copy in bank 5)
+is `UpdateTextScore` on the read side — [DECISION 7] as designed, eight BCD digits with leading
+zeros blanked and the last never, initials at offsets 11–13. The records are found by
+`.br_hiscore`/`.br_loscore` labels the exporter now emits by **text match** — the addresses this
+document quoted in §1 ($DD89/$DDB4) were not the records'. Verified with a real game: ESCAPE at
+score 0, AAA entered, and page 5 shows `Top score of the day: 6809 - AEB` over
+`Worst score of the day: 0 - AAA`.
+
+**One bug shipped and came back out the same night**: `LDA #PN_SPACE : BNE always` never
+branches — `PN_SPACE` is zero. The leading zeros printed as `0`s until it became a JMP.
+
+**Still open in this layer:**
+
+- **The page-5 portrait is a design question, not a task.** `BuildIntroSprites` puts the droid up
+  as a *hardware sprite floating over the scroll*; the port's briefing has no sprites — bank 5 is
+  the text. Options: scroll it with the text (integrate `PoDraw` output into the row painter — a
+  visible deviation), redraw it over the buffer each field (costly), or drop it. **KC's call.**
+- **The panel during the briefing** still shows the game's empty status box; the C64 writes HIGH
+  and LOW into it and "Briefing" on its text line ($1193). Bank-6 `PnStr` plumbing from `PARBRF`.
+- **F2** (title chatter) deferred as agreed; **F6** (exit-load trim) deferred per KC's
+  "optimise the loading later" — the naive exits cost ~1.1 s into a game, ~0.6 s back to title.
+
 ## 5. Staging
 
 Each step ends with something visible, and the order is chosen so nothing waits on the big one.
