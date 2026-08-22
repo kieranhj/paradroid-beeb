@@ -387,7 +387,34 @@ The port has no `sndState $11`: 11f [DECISION 11].)*
   subtracts) — round nine dropped it because `sndVolume` is pinned at 15, and a lower master
   volume without it wraps the attenuation nibble into garbage.
 - **Sub-122 Hz effects** — stage 1's review list: fx04 disruptor (100% of its ticks below the
-  floor), fx26 (100%), fx23 (73%), fx16 (48%), fx17 (41%), fx06 (40%). **KC 2026-08-21:
+  floor), fx26 (100%), fx23 (73%), fx16 (48%), fx17 (41%), fx06 (40%). **All but fx06 are now
+  treated; the list the exporter prints is down to fx06 and fx17** (fx17 is muted rather than
+  clamped, which was its cure).
+
+  **Round eleven — fx16 goes periodic, and the chatter is what found it** (KC, 2026-08-22:
+  the briefing's "background two tones are too loud and too monotonous... perhaps try periodic
+  bass instead"). fx16 is the lift blip and the chatter reuses it on voice 2 (`$056A`), which
+  plays it for **54 fields in every 64** — sparse in a lift, near-continuous under the briefing,
+  and that exposure is the only reason a 48% sub-floor effect signed off in stage 4 came back.
+  Its bounce **straddles the floor**: F 1840–2960 is 108–174 Hz, so the clamp collapsed a bass
+  warble into an alternation between N=1023 and N=967 — two notes, 122 and 134 Hz, at
+  attenuation 0. Exactly what KC described, and audible in the capture as a repeating 967/1023
+  pair on CH1. `FX_PERIODIC` gains 16: instrument 10 is **cloned** rather than moved, because
+  fx21 (the console beep, 254–346 Hz) shares it and is right as a tone. Now N 44–72 on the noise
+  channel, **sub-floor 0%**, and the flush's round-eight rule silences CH1 so the old drone is
+  gone rather than layered under. Verified in the capture: noise register 3, the pitch on
+  silenced CH2 sweeping N 58–72, CH1 at attenuation 15.
+
+  **The clone cost no RAM, which is why it could land at all** — bank 4 has four bytes and an
+  instrument is six. `export_sound.py` now allocates clones into instrument slots **no record
+  references** before extending the table: the C64's table has gaps (nothing names instrument 1)
+  and a contiguous emitted table pays for them either way. The fx23 clone moved into slot 1 and
+  fx16's took the slot it vacated at the end.
+
+  **One in-game consequence for the ear, not yet heard**: `ChangeDeck` posts fx16 on **both**
+  voices, and two noise claims share the one noise channel ([DECISION 3], latest wins), so the
+  lift's doubled blip becomes a single one. Analysed as safe — each voice's flush silences its
+  own tone channel and the owner rule cleans up — but it is a change to a stage-4 sign-off. **KC 2026-08-21:
   periodic noise clocked by tone 2 is the preferred cure** — it reaches ~15× below the tone
   floor and is an iconic BBC sound. Tuned by ear in stage 4, effect by effect, minding that it
   shares the one noise channel with the explosions.

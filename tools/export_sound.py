@@ -168,7 +168,18 @@ FX_OVERRIDES = {24: {'f0': 1836}}
 # instrument 9 is shared with the transfer-entry and time-up zippers,
 # which are right as tones. As periodic bass the dive plays 177 Hz down
 # to ~8 Hz pulse clicks: a machine winding down.
-FX_PERIODIC = {23}
+#
+# fx16, the lift blip, joined it 2026-08-22 on KC's ear. The briefing
+# chatter reuses it on voice 2 ($056A) and plays it for 54 fields in
+# every 64, which is what finally exposed it: it is meant to bounce
+# 108-174 Hz, 48% of that is under the tone floor, and the bounce
+# STRADDLES the floor - so the clamp collapsed a bass warble into an
+# alternation between N=1023 and N=967, two notes 122 and 134 Hz apart,
+# at attenuation 0, nearly continuously. KC: "too loud and too
+# monotonous... perhaps try periodic bass instead". Its instrument 10 is
+# shared with fx21, the console beep, which is well above the floor and
+# right as a tone - hence the clone rather than PERIODIC_BASS.
+FX_PERIODIC = {16, 23}
 
 # Tone instruments whose sub-floor content MUTES instead of clamping.
 # The wiki's sn76489 page: N=1 is a 125 kHz square - out of audible
@@ -356,15 +367,28 @@ def main():
 
     # FX_PERIODIC: clone the effect's instrument as periodic bass and
     # retarget the record, sharing one clone per source instrument
+    # A clone takes an instrument slot NO record references before it
+    # extends the table. The C64's table has gaps - nothing names
+    # instrument 1 - and the emitted table has to be contiguous to keep
+    # every other index valid, so those slots are being paid for either
+    # way. In a bank with four bytes free, a free 6-byte slot is the
+    # difference between a fix landing and not. Slots are taken in
+    # order, so the mapping only moves when FX_PERIODIC does.
+    referenced = {r[0] for r in fx_raw}
+    free_slots = [i for i in range(n_inst) if i not in referenced]
     clones = {}
     for n in sorted(FX_PERIODIC):
         src_i = fx_raw[n - 1][0]
         if src_i not in clones:
             c = dict(instruments[src_i])
-            c['idx'] = len(instruments)
             c['noise'] = True
             c['flags'] = 0x80 | 3
-            instruments.append(c)
+            if free_slots:
+                c['idx'] = free_slots.pop(0)
+                instruments[c['idx']] = c
+            else:
+                c['idx'] = len(instruments)
+                instruments.append(c)
             clones[src_i] = c['idx']
         fx_raw[n - 1] = bytes([clones[src_i]]) + fx_raw[n - 1][1:]
     n_inst = len(instruments)

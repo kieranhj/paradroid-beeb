@@ -564,9 +564,15 @@ lost to `SndTick`'s slide negate now and again — one step of a deliberately ra
   at 219.7 Hz, and `sndFxChat` read back `08 00 0C 00 CD 7D 00 01 00 00 00` — blip C's prefix on
   the shipped tail, the last thing the briefing played.
 
-**Left for KC**: the by-ear pass, 11e stage 4's method. The simulated sub-floor shares are 6% / 4%
-/ 0%, so no blip should need periodic-noise treatment, and any that does must go through
-`FX_PERIODIC`'s instrument cloning — instruments 6, 7 and 8 are shared with in-game effects.
+**The by-ear pass, round one — KC, 2026-08-22.** The blips themselves were fine (6% / 4% / 0%
+sub-floor, as simulated); what was wrong was the **`$10` the chatter posts on voice 2** — the lift
+blip, 48% sub-floor, its bounce straddling the floor, clamped into two notes at attenuation 0 for
+54 fields in every 64. KC: "too loud and too monotonous... perhaps try periodic bass instead."
+It is now periodic bass on a cloned instrument and plays its real 108–174 Hz warble; the full
+account, including the in-game lift consequence still to be heard, is 11e §8's **round eleven**.
+
+Anything further must go through `FX_PERIODIC`'s cloning too — instruments 6, 7 and 8 are shared
+with in-game effects, so no blip's instrument can be edited in place.
 
 **Costs**: bank 4 15 → **4 B**, PARBRF 81 → **3 B**, PARMAN ~120 B of eleven K, **main RAM zero**
 (`code_end` unmoved at `&2FFE`). Roughly 30 cycles a field in the briefing and nothing in-game.
