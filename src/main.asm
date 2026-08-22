@@ -3131,6 +3131,8 @@ INCLUDE "src/data/briefing.asm"
 \ The briefing's bank-half: the score-patch writer, the portrait
 \ snapshot and the band copy, which run with this bank paged and keep
 \ PARBRF under its &0800 ceiling. See briefman.asm's header.
+INCLUDE "src/data/sndchat.asm" \ the chatter's three records: 33 B, and
+                               \ bank 4 had 15 — see BmChatter's header
 INCLUDE "src/briefman.asm"
 .man_end
 SAVE "PARMAN", man_start, man_end, DEPK_STREAM, DEPK_STREAM

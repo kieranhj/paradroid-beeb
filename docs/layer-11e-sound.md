@@ -93,7 +93,7 @@ Voice 1 unless stated. Addresses are the `STA sndFx1`/`SndFx2` sites in
 | $1A | `DoCollision` `$1A7D` | Collision bump |
 | $1B | `xferDoCounter` `$2106` (v2); `Capture` `$22C8` | Transfer time-up warning / start |
 | $1C | `AnimateDroids` tail `$3E2F` (every 8 ticks in transfer move mode) | Two-droids-joined pulse |
-| $1D–$1F | `Sound._chatter` `$0565` (pitch class picked by `$D41B` random) | Title chatter blips — **deferred**, §8 |
+| $1D–$1F | `Sound._chatter` `$0565` (pitch class picked by `$D41B` random) | The **briefing's** chatter blips, not the title's — built 2026-08-22, §8 |
 
 ## 3. SN76489 vs SID — what maps and what compromises
 
@@ -365,19 +365,117 @@ permanently silent.
 **[DECISION 4]** **In-game sound first.** Title chatter (`sndState $11`, effects `$1D`–`$1F`)
 is deferred: the title runs under the MOS IRQ with no pass structure, so it needs its own tick
 plumbing in `TiWait`, and it should follow once the driver is proven, not gate it.
+*(Discharged 2026-08-22, and the reasoning about `TiWait` was mistaken — see §8's first bullet.
+The port has no `sndState $11`: 11f [DECISION 11].)*
 
 ## 8. Deferred
 
-- **Title chatter** — [DECISION 4]. Needs a `TiWait` tick throttled by VSync and an LFSR in
-  place of `$D41B`. The three effect records can ship with the rest when wanted.
-- **Pause and the ± volume keys.** The port has no pause feature; `DoPause` (`$3B7C`) and
-  `AdjustVolume` (`$0CB4`) are one small piece of work together — pause writes `sndState`
-  0/`$12` around itself and the driver already honours both. **AdjustVolume's port MUST
-  restore the attenuation clamp in `snf_voice`** (`CMP #16 / BCC / LDA #15` after the
-  subtracts) — round nine dropped it because `sndVolume` is pinned at 15, and a lower master
-  volume without it wraps the attenuation nibble into garbage.
+- ~~**Title chatter** — [DECISION 4]. Needs a `TiWait` tick throttled by VSync and an LFSR in
+  place of `$D41B`. The three effect records can ship with the rest when wanted.~~
+  **BUILT 2026-08-22 — `docs/layer-11f-frontend.md` §4f.** Both halves of that sentence were
+  wrong. It is **not the title's**: `TitleLoop` zeroes `sndState` before `ShowTitle` and only
+  writes `$11` after it returns, so the logo screen is silent and the chatter plays under the
+  briefing — which runs after `InstallIrq` and was already being ticked at 50 Hz, so `TiWait`
+  needed nothing. And the records did not ship with the rest: bank 4 carries **one rewritable
+  scratch slot** (`sndFxChat`, effect 29) and the three real records live in bank 5 beside the
+  briefing text. `SndTick` is unchanged — it walks to effect 29 like any other. The LFSR is
+  bank 5's `brChSeed`.
+- **The ± volume keys — WANTED, KC 2026-08-22: "we'll definitely want that volume control."**
+  Promoted out of this deferred list on the strength of the chatter's loudness rounds: three of
+  them went into turning one effect down, and some of "too loud" is really "no way to turn it
+  down". It should land **before** any further eared level deviations, because a working master
+  volume may make some of them unnecessary — `FX_LEVEL`'s fx16 entry above is the first thing to
+  re-listen to once it exists.
+
+  `sndVolume` is already a main-RAM byte, already applied per voice, already pinned at 15. Two
+  things stand in the way:
+
+  1. **The attenuation clamp round nine deleted must come back.** `snf_voice` computes
+     `30 - levelNibble - sndVolume`, which is 0–30; with `sndVolume` pinned at 15 it can never
+     exceed 15, and round nine spent the clamp to pay for the periodic-bass control byte. Lower
+     the master volume without it and the nibble wraps into garbage. The obvious form is the
+     C64's `CMP #16 / BCC / LDA #15`, **6 bytes**; a **4-byte** form looks available — `CMP #16 /
+     BCS snfv_off`, routing an inaudible result into the silent path that already writes 15 and
+     already picks the right channel. Bank 4 has 4 bytes, so the cheap form is the difference
+     between this landing and another RAM hunt. **Costed, not tested**: check the branch range
+     and that `snfv_off` is right for a live noise voice before relying on it.
+  2. **The key poll needs a home, and every region is full**: main RAM 2 B, bank 4 4 B, PARBRF
+     3 B, the low overlay 2 B, `lowcode2` 8 B (measured 2026-08-22). It wants somewhere that runs
+     once a pass in game — `SndAmbient` is already called there, in the right bank — and once a
+     field in the briefing, where `BrWaitField` is now the established hook. See
+     `docs/memory-map.md`'s free-RAM section and `docs/layer-13-ram-pass.md` for where bytes can
+     come from.
+
+- **Pause.** The port has no pause feature; `DoPause` (`$3B7C`) writes `sndState` 0/`$12` around
+  itself and the driver already honours both. Still deferred (11f [DECISION 9]), and no longer
+  bundled with the volume keys, which are wanted sooner.
 - **Sub-122 Hz effects** — stage 1's review list: fx04 disruptor (100% of its ticks below the
-  floor), fx26 (100%), fx23 (73%), fx16 (48%), fx17 (41%), fx06 (40%). **KC 2026-08-21:
+  floor), fx26 (100%), fx23 (73%), fx16 (48%), fx17 (41%), fx06 (40%). **All but fx06 are now
+  treated; the list the exporter prints is down to fx06 and fx17** (fx17 is muted rather than
+  clamped, which was its cure).
+
+  **Round eleven — fx16 goes periodic, and the chatter is what found it** (KC, 2026-08-22:
+  the briefing's "background two tones are too loud and too monotonous... perhaps try periodic
+  bass instead"). fx16 is the lift blip and the chatter reuses it on voice 2 (`$056A`), which
+  plays it for **54 fields in every 64** — sparse in a lift, near-continuous under the briefing,
+  and that exposure is the only reason a 48% sub-floor effect signed off in stage 4 came back.
+  Its bounce **straddles the floor**: F 1840–2960 is 108–174 Hz, so the clamp collapsed a bass
+  warble into an alternation between N=1023 and N=967 — two notes, 122 and 134 Hz, at
+  attenuation 0. Exactly what KC described, and audible in the capture as a repeating 967/1023
+  pair on CH1. `FX_PERIODIC` gains 16: instrument 10 is **cloned** rather than moved, because
+  fx21 (the console beep, 254–346 Hz) shares it and is right as a tone. Now N 44–72 on the noise
+  channel, **sub-floor 0%**, and the flush's round-eight rule silences CH1 so the old drone is
+  gone rather than layered under. Verified in the capture: noise register 3, the pitch on
+  silenced CH2 sweeping N 58–72, CH1 at attenuation 15.
+
+  **The clone cost no RAM, which is why it could land at all** — bank 4 has four bytes and an
+  instrument is six. `export_sound.py` now allocates clones into instrument slots **no record
+  references** before extending the table: the C64's table has gaps (nothing names instrument 1)
+  and a contiguous emitted table pays for them either way. The fx23 clone moved into slot 1 and
+  fx16's took the slot it vacated at the end.
+
+  **Round eleven, part two — and the level, which is a new mechanism.** KC on the rebuild: the
+  pitch was right, "still too loud", and — asked directly — the in-game lift may go quieter with
+  it. The C64 sustains fx16 at full (SR nibble `F`), which put it at **attenuation 0, 6 dB above
+  the chatter blips it is supposed to sit behind**. `FX_LEVEL`, the second sanctioned place
+  ported sound data may differ from the C64's bytes, sets its sustain instead: **nibble 9 =
+  attenuation 6**, so it now sits 6 dB *below* them — a 12 dB swing from what KC heard. The
+  100 ms attack ramp is untouched, so the blip keeps its swell — captured on CH3 as
+  **12, 9, 6, 3, 0, then 6**.
+
+  **A third round went further and was reverted.** Nibble 6 (attenuation 9, another 6 dB) on
+  KC's "turn it down some more" put it 12 dB below the chatter, and KC took it back the same
+  evening: too far. **Nibble 9 is the eared value** and the range either side of it is now known
+  — 0 too loud, 9 too quiet. Do not drift it downwards again without asking.
+
+  **If it ever reads as loud again, the transient is the thing to look at, not the body**: at
+  attenuation 6 sustained, the one 20 ms tick at 0 is the loudest part by 12 dB. It is
+  structural — the envelope climbs in `snAtk` steps until it overflows, so the peak is always
+  full level, and the only way to lose it is an instant attack (`atk` 255), which lands straight
+  on the sustain and costs the swell. KC's call if it comes to that.
+
+  **`FX_LEVEL` is keyed by EFFECT, not by instrument**, and that is load-bearing: clone
+  allocation moves instrument indices, so an index-keyed table would silently retarget the next
+  time `FX_PERIODIC` changes. The exporter resolves the effect's instrument at emit time and
+  **asserts every other effect sharing it asks for the same level**, so an override cannot leak
+  into a sibling — the failure mode `FX_PERIODIC`'s cloning exists to prevent, caught at build
+  time instead.
+
+  **The in-game consequence, verified in the registers 2026-08-22.** `ChangeDeck` posts fx16 on
+  **both** voices, and two noise claims share the one noise channel ([DECISION 3], latest wins),
+  so the lift's doubled blip becomes a single one. Tested directly rather than reasoned about —
+  `sndFx1` and `sndFx2` both poked to 16 during play, which is what `$271B`/`$2729` do:
+
+  - the hum's tone channel went to attenuation 15 the moment the noise voice took its voice over
+    (round eight's rule), and CH0 needed no write because it was already silent
+  - one `Noise: 3` control write, one envelope on CH3 — **12, 9, 6, 3, 0, then 6** — and CH2
+    sweeping the pitch for the full 27 ticks
+  - **attenuation 15 on CH3 at the end: nothing left stuck**, and the per-deck hum re-posted on
+    CH1 immediately after
+
+  So the mechanism is sound, and the taste question — one blip per deck instead of a doubled one,
+  quieter, at its real pitch — went to KC on a real lift ride: **"in-game lift sounds fine",
+  2026-08-22.** Re-signed off, and fx16 is closed. **KC 2026-08-21:
   periodic noise clocked by tone 2 is the preferred cure** — it reaches ~15× below the tone
   floor and is an iconic BBC sound. Tuned by ear in stage 4, effect by effect, minding that it
   shares the one noise channel with the explosions.

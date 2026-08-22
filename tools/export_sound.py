@@ -7,13 +7,32 @@ records at $C610 and the instrument table at $EAA0 out of paradroid_ce.lst
 (the same source every other exporter uses; decisions.md carries the evidence
 that the listing matches the original/CE releases byte for byte) and emits:
 
-  src/data/sounddata.asm     - 31 effect records (SID-frequency space,
-                               verbatim minus the pulse fields), the
+  src/data/sounddata.asm     - the shipped effect records (SID-frequency
+                               space, verbatim minus the pulse fields), the
                                instruments as envelope steps, and the
                                frequency->period conversion table
+  src/data/sndchat.asm       - the three chatter records, for the PARMAN
+                               bank rather than bank 4; see the note below
   tools/output/sound_dump.txt- the review dump: each effect's simulated
                                frequency trajectory, wraps and all, in both
                                SID and SN terms, plus the sub-floor list
+
+The chatter records live OUTSIDE the driver's table
+---------------------------------------------------
+Effects 29-31 are the chatter blips the C64 plays under the scrolling
+briefing (TitleLoop writes sndState $11 at $115B, AFTER ShowTitle returns -
+the logo screen is silent). Bank 4 had 15 bytes free when this landed and
+three records are 33, so they are emitted into src/data/sndchat.asm and
+assembled into PARMAN - bank 5, beside the briefing's text - while bank 4
+carries ONE 11-byte scratch slot: .sndFxChat, effect number 29. BmChatter
+(bank 5) copies its chosen blip into a main-RAM mailbox and BrChatter
+(PARBRF) pages the data bank in and lands it in the slot before posting the
+request. The driver is untouched by any of it: it starts effect 29 through
+the ordinary sndFxTab walk and neither knows nor cares that the slot's
+contents change. docs/layer-11f-frontend.md section 4f.
+
+The scratch slot ships holding blip A verbatim, so a build that never runs
+the chatter still has a valid record there.
 
 Why the records stay in SID-frequency space
 -------------------------------------------
@@ -94,13 +113,21 @@ from rip_levels import parse_listing  # noqa: E402
 PROJECT = Path(__file__).resolve().parent.parent
 LST_FILE = PROJECT / 'paradroid_ce.lst'
 OUT_ASM = PROJECT / 'src' / 'data' / 'sounddata.asm'
+OUT_CHAT = PROJECT / 'src' / 'data' / 'sndchat.asm'
 OUT_DUMP = PROJECT / 'tools' / 'output' / 'sound_dump.txt'
 
 FX_BASE = 0xC610
 NUM_FX = 31                   # in the C64 table
-SHIP_FX = 28                  # shipped: 29-31 are title chatter, deferred
-                              # with the chatter mode [DECISION 4] - flip
-                              # this to NUM_FX when the chatter lands
+SHIP_FX = 28                  # in-game records, in bank 4's sndFxTab
+CHAT_FX = (29, 30, 31)        # the briefing chatter's blips: NOT in the
+                              # bank-4 table - they go to sndchat.asm and
+                              # are copied into the scratch slot at run
+                              # time (see the header)
+CHAT_SLOT = 29                # the scratch slot's effect number, and so
+                              # the driver's table length
+CHAT_PRE = 5                  # bytes of a blip record that actually vary
+                              # (instrument, F0, slide) - the rest is
+                              # common and ships in the slot; asserted
 INST_BASE = 0xEAA0
 
 SID_CLOCK = 985248            # PAL
@@ -141,7 +168,18 @@ FX_OVERRIDES = {24: {'f0': 1836}}
 # instrument 9 is shared with the transfer-entry and time-up zippers,
 # which are right as tones. As periodic bass the dive plays 177 Hz down
 # to ~8 Hz pulse clicks: a machine winding down.
-FX_PERIODIC = {23}
+#
+# fx16, the lift blip, joined it 2026-08-22 on KC's ear. The briefing
+# chatter reuses it on voice 2 ($056A) and plays it for 54 fields in
+# every 64, which is what finally exposed it: it is meant to bounce
+# 108-174 Hz, 48% of that is under the tone floor, and the bounce
+# STRADDLES the floor - so the clamp collapsed a bass warble into an
+# alternation between N=1023 and N=967, two notes 122 and 134 Hz apart,
+# at attenuation 0, nearly continuously. KC: "too loud and too
+# monotonous... perhaps try periodic bass instead". Its instrument 10 is
+# shared with fx21, the console beep, which is well above the floor and
+# right as a tone - hence the clone rather than PERIODIC_BASS.
+FX_PERIODIC = {16, 23}
 
 # Tone instruments whose sub-floor content MUTES instead of clamping.
 # The wiki's sn76489 page: N=1 is a 125 kHz square - out of audible
@@ -159,6 +197,32 @@ FX_PERIODIC = {23}
 # Effects that live ENTIRELY below the floor must NOT go here - they
 # would vanish; they go periodic (PERIODIC_BASS / FX_PERIODIC) instead.
 MUTE_SUBFLOOR = {2, 3}
+
+# Per-effect SUSTAIN LEVEL overrides, as the sustain nibble the C64
+# would have held (0-15); the driver plays it as attenuation
+# 15 - nibble, so one step is 2 dB. The other sanctioned place ported
+# sound data may differ from the C64's bytes, and the same rules apply:
+# every entry is an eared decision with its reason here.
+#
+# Keyed by EFFECT, not by instrument, because clone allocation moves
+# instrument indices around (see the clone loop); the exporter resolves
+# the effect's instrument at emit time and asserts nothing else shares
+# it, so an override can never leak into a sound it was not meant for.
+#
+# fx16, 2026-08-22, KC, over three rounds: after going periodic the
+# pitch was right but it was "still too loud" - and it is the briefing's
+# background for 54 fields in every 64. The C64 sustains it at full (SR
+# nibble F), which put it at attenuation 0, a full 6 dB ABOVE the
+# chatter blips it is supposed to sit behind. Nibble 9 = attenuation 6
+# puts it 6 dB below them instead. Its 100 ms attack ramp is untouched,
+# so the blip keeps its swell and one 20 ms tick at full before
+# settling. KC sanctioned the same drop for the in-game lift, which
+# shares the record.
+#
+# NIBBLE 6 (attenuation 9, another 6 dB down) WAS TRIED AND REVERTED by
+# KC the same evening: 12 dB below the chatter was too far. Nibble 9 is
+# the eared value; do not "improve" it downwards again without asking.
+FX_LEVEL = {16: 9}
 
 # SID envelope rate tables, ms for the full 0->peak / peak->0 ramp
 ATTACK_MS = [2, 8, 16, 24, 38, 56, 68, 80, 100, 250, 500, 800,
@@ -196,9 +260,9 @@ FX_NAMES = {
     26: "collision bump",
     27: "transfer time-up warning / start",
     28: "transfer-mode pulse (8-tick phase)",
-    29: "title chatter blip A (deferred with the chatter mode)",
-    30: "title chatter blip B (deferred)",
-    31: "title chatter blip C (deferred)",
+    29: "briefing chatter blip A (triangle)",
+    30: "briefing chatter blip B (sawtooth)",
+    31: "briefing chatter blip C (pulse)",
 }
 
 WAVE_NAMES = {0x8: 'NOISE', 0x4: 'pulse', 0x2: 'saw', 0x1: 'triangle'}
@@ -329,18 +393,45 @@ def main():
 
     # FX_PERIODIC: clone the effect's instrument as periodic bass and
     # retarget the record, sharing one clone per source instrument
+    # A clone takes an instrument slot NO record references before it
+    # extends the table. The C64's table has gaps - nothing names
+    # instrument 1 - and the emitted table has to be contiguous to keep
+    # every other index valid, so those slots are being paid for either
+    # way. In a bank with four bytes free, a free 6-byte slot is the
+    # difference between a fix landing and not. Slots are taken in
+    # order, so the mapping only moves when FX_PERIODIC does.
+    referenced = {r[0] for r in fx_raw}
+    free_slots = [i for i in range(n_inst) if i not in referenced]
     clones = {}
     for n in sorted(FX_PERIODIC):
         src_i = fx_raw[n - 1][0]
         if src_i not in clones:
             c = dict(instruments[src_i])
-            c['idx'] = len(instruments)
             c['noise'] = True
             c['flags'] = 0x80 | 3
-            instruments.append(c)
+            if free_slots:
+                c['idx'] = free_slots.pop(0)
+                instruments[c['idx']] = c
+            else:
+                c['idx'] = len(instruments)
+                instruments.append(c)
             clones[src_i] = c['idx']
         fx_raw[n - 1] = bytes([clones[src_i]]) + fx_raw[n - 1][1:]
     n_inst = len(instruments)
+
+    # FX_LEVEL, resolved now that every record names its final
+    # instrument. The assert is the whole point of keying by effect:
+    # an override may only touch an instrument whose every user asks
+    # for the same level, so it cannot leak into a sibling effect.
+    for n, nib in FX_LEVEL.items():
+        i = fx_raw[n - 1][0]
+        sharers = [m for m in range(1, NUM_FX + 1) if fx_raw[m - 1][0] == i]
+        assert all(FX_LEVEL.get(m) == nib for m in sharers), \
+            f"fx{n}'s level override would also move fx" \
+            f"{[m for m in sharers if FX_LEVEL.get(m) != nib]} - they " \
+            f"share instrument {i}. Clone it (FX_PERIODIC) or give " \
+            f"them the same entry."
+        instruments[i]['sus'] = nib * 17
 
     effects = [convert_effect(i + 1, fx_raw[i], instruments)
                for i in range(NUM_FX)]
@@ -365,15 +456,17 @@ def main():
         "\\ sounddata.asm",
         "\\ GENERATED by tools/export_sound.py - do not edit by hand.",
         "\\ Source: paradroid_ce.lst ($C610 effects, $EAA0 instruments)",
-        f"\\ {NUM_FX} effects x 11 bytes (SID-frequency space, verbatim",
-        f"\\ minus pulse and the never-used chain), {n_inst} instruments",
-        "\\ x 6 bytes, and the 32-entry frequency->period table. Formats",
-        "\\ and conversion: the exporter's header, docs/layer-11e-sound.md.",
+        f"\\ {SHIP_FX} in-game effects x 11 bytes (SID-frequency space,",
+        "\\ verbatim minus pulse and the never-used chain) plus the",
+        f"\\ chatter's scratch slot, {n_inst} instruments x 6 bytes, and",
+        "\\ the 32-entry frequency->period table. Formats and conversion:",
+        "\\ the exporter's header, docs/layer-11e-sound.md.",
         "\\ Effect n's record is sndFxTab + (n-1)*11; offsets +5/+6/+7",
         "\\ are the per-deck patch targets for effect 24, as on the C64.",
         "\\ ============================================================",
         "",
-        "SND_NUM_FX = " + str(SHIP_FX),
+        "SND_NUM_FX = " + str(CHAT_SLOT),
+        "SND_FX_CHAT = " + str(CHAT_SLOT) + "   \\ the scratch slot's number",
         "SND_FX_LEN = 11",
         "SND_NOISE_SHIFT = " + str(NOISE_SHIFT),
         "",
@@ -382,6 +475,18 @@ def main():
     for e in effects[:SHIP_FX]:
         lines.append("  EQUB " + ",".join(f"&{b:02X}" for b in e['bytes'])
                      + f"  \\ {e['n']:2d}: {FX_NAMES[e['n']]}")
+    lines += [
+        "",
+        "\\ THE CHATTER'S SCRATCH SLOT - effect " + str(CHAT_SLOT) + ", the only",
+        "\\ record in this table whose contents change at run time. BrChatter",
+        "\\ (PARBRF) copies one of sndchat.asm's three blips here and posts",
+        "\\ the effect number; the driver walks to it like any other. Ships",
+        "\\ holding blip A, so it is valid even if nothing ever writes it.",
+        ".sndFxChat",
+    ]
+    lines.append("  EQUB " + ",".join(f"&{b:02X}"
+                                      for b in effects[CHAT_FX[0] - 1]['bytes'])
+                 + f"  \\ {CHAT_SLOT}: scratch (blip A as shipped)")
     lines += [
         "",
         "\\ effect 24's per-deck patch values, indexed by deck 0-15:",
@@ -418,6 +523,66 @@ def main():
     lines.append("")
     OUT_ASM.parent.mkdir(parents=True, exist_ok=True)
     OUT_ASM.write_text("\n".join(lines), newline="\n")
+
+    # ---- src/data/sndchat.asm ----
+    # The blips are ordinary records; they simply live in the briefing's
+    # overlay instead of bank 4. Their instruments must already be in the
+    # bank's table, because the driver looks them up there - true by
+    # construction (n_inst spans all NUM_FX records), asserted anyway.
+    for n in CHAT_FX:
+        e = effects[n - 1]
+        assert e['inst'] < n_inst, \
+            f"fx{n}: instrument {e['inst']} is outside the shipped table"
+        assert not e['noise'], \
+            f"fx{n}: chatter blips are tone voices; instrument " \
+            f"{e['inst']} has become a noise voice, which would put the " \
+            f"briefing on the noise channel"
+    # Only the first CHAT_PRE bytes differ between the three blips -
+    # instrument, initial frequency and slide. Everything from the
+    # segment timer on (7D 00 01 00 00 00: one 125-tick segment, no
+    # bounce, no reset) is common, and the scratch slot ships holding
+    # it, so the run-time ferry carries the prefix alone. That is what
+    # made the whole thing fit PARBRF's &0800 ceiling. Asserted, not
+    # assumed: a release whose blips differ in the tail lands here.
+    tails = {tuple(effects[n - 1]['bytes'][CHAT_PRE:]) for n in CHAT_FX}
+    assert len(tails) == 1, \
+        "the chatter blips no longer share a common record tail - " \
+        "BrChatter ferries only the first %d bytes" % CHAT_PRE
+    chat = [
+        "\\ ============================================================",
+        "\\ sndchat.asm - the briefing chatter's three blips",
+        "\\ GENERATED by tools/export_sound.py - do not edit by hand.",
+        "\\ ============================================================",
+        "\\ Effects 29-31, in sndFxTab's record format but assembled into",
+        "\\ PARMAN - bank 5, beside the briefing text - rather than bank 4,",
+        "\\ which had 15 bytes free. BmChatter copies the blip it picks",
+        "\\ into brChRec and BrChatter lands it in the sndFxChat scratch",
+        f"\\ slot, then posts effect {CHAT_SLOT}. Every instrument named here is",
+        "\\ already in sndInstTab.",
+        "\\",
+        f"\\ ONLY THE FIRST {CHAT_PRE} BYTES OF A RECORD ARE HERE - instrument,",
+        "\\ initial frequency and slide. The three blips share every byte",
+        "\\ from the segment timer on ("
+        + " ".join(f"{b:02X}" for b in effects[CHAT_FX[0] - 1]['bytes'][CHAT_PRE:])
+        + "), the exporter",
+        "\\ asserts they do, and sndFxChat ships holding them.",
+        "\\ ============================================================",
+        "",
+        "BR_CHAT_PRE = " + str(CHAT_PRE),
+        "",
+        ".brChatTab",
+    ]
+    for n in CHAT_FX:
+        e = effects[n - 1]
+        s = e['sim']
+        chat.append("  EQUB " + ",".join(f"&{b:02X}"
+                                         for b in e['bytes'][:CHAT_PRE])
+                    + f"  \\ {e['n']:2d}: {FX_NAMES[e['n']]}")
+        if s:
+            chat.append(f"     \\ F {s['flo']}..{s['fhi']}, {s['wraps']} wraps,"
+                        f" sub-floor {s['sub_pct']}%")
+    chat.append("")
+    OUT_CHAT.write_text("\n".join(chat), newline="\n")
 
     # ---- tools/output/sound_dump.txt ----
     d = ["Paradroid sound tables - review dump (tools/export_sound.py)",
@@ -468,9 +633,12 @@ def main():
     OUT_DUMP.parent.mkdir(parents=True, exist_ok=True)
     OUT_DUMP.write_text("\n".join(d), newline="\n")
 
-    total = SHIP_FX * 11 + n_inst * 6 + 256
-    print(f"sounddata.asm: {SHIP_FX} of {NUM_FX} effects, {n_inst} "
-          f"instruments, 256 B conversion table = {total} B of data")
+    total = CHAT_SLOT * 11 + n_inst * 6 + 256
+    print(f"sounddata.asm: {SHIP_FX} of {NUM_FX} effects + the chatter "
+          f"scratch slot, {n_inst} instruments, 256 B conversion table "
+          f"= {total} B of data")
+    print(f"sndchat.asm:   {len(CHAT_FX)} chatter prefixes x {CHAT_PRE} = "
+          f"{len(CHAT_FX) * CHAT_PRE} B, in PARMAN (bank 5)")
     print(f"review list (sub-floor tone effects): "
           f"{', '.join('fx%02d' % n for n, _ in review) or 'none'}")
 

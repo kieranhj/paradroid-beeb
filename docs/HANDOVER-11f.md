@@ -39,8 +39,13 @@ commits: F1, F4, F5, docs).
 ## Numbers (from the build's own PRINTs, 2026-08-22)
 
 Main RAM `code_end` = `&2FFE` (2 B free — unchanged by all of this). Bank 4: 26 B. Bank 5:
-PARASPR unchanged; PARMAN uses 4,596 of its 16 K when swapped in. PARBRF: 1,188 B spare at
-`&0400`. PARTITL: ~85 B spare after `TiLoadBrf`.
+PARASPR unchanged; PARMAN uses 4,596 of its 16 K when swapped in. PARBRF: ~~1,188 B spare at
+`&0400`~~ **81 B** — that figure was measured to `&0C90` and PARBRF's ceiling is `&0800`, the
+page above being the MOS's sound workspace (§4c's own hard lesson). PARTITL: ~85 B spare after
+`TiLoadBrf`.
+
+**After the chatter, 2026-08-22**: bank 4 **4 B**, PARBRF **3 B**, PARMAN 4,985 B used, main RAM
+unmoved.
 
 ## Decisions you may want to revisit in the morning
 
@@ -68,7 +73,8 @@ PARASPR unchanged; PARMAN uses 4,596 of its 16 K when swapped in. PARBRF: 1,188 
 | | |
 |---|---|
 | Portrait + panel box | the two decisions above |
-| **F2** title chatter | deferred by you; still blocked on 33 B of effect records vs bank 4's 26 |
+| ~~**F2** title chatter~~ | **BUILT AND VERIFIED 2026-08-22** — layer doc §4f. The block dissolved: it is the *briefing's* sound, not the title's (`TitleLoop` writes `$11` after `ShowTitle` returns), so the 50 Hz tick was already running; and one rewritable scratch slot in bank 4 serves all three records, which live in bank 5. **Signed off by your ear the same day**, after three rounds on the lift blip it reuses (periodic bass, then 6 dB down, then a fourth round reverted as too far). The in-game lift and both briefing exits re-heard and fine. Nothing outstanding |
+| **The ± volume keys** | **WANTED 2026-08-22** (KC: "we'll definitely want that volume control"), promoted out of 11e §8's deferred list after three rounds spent turning the lift blip down. Blocked on the clamp round nine deleted (4–6 B in a bank 4 with 4) and a home for the key poll in a machine whose every region is full. Costed in 11e §8; it should land before any more eared level tuning |
 | **F6** exit-load trim | deferred per "optimise loading later". Naive costs: ~1.1 s briefing→game, ~0.6 s briefing→title, one PARMAN load (~0.5 s) on the timed-out path only. §3d has the one-load plan |
 | Held-L skips the 001 page? | untested nit: L held from the briefing may fall through the info screen's wait. Check by hand once |
 

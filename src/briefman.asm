@@ -190,3 +190,116 @@ BR_PO_SPAN = 12 * UNIT_BYTES    \ one row's slice of the rectangle
   FOR n, 0, BR_PO_ROWS-1
     EQUB HI(SPR_SAVE + n * BR_PO_SPAN)
   NEXT
+
+\ ============================================================
+\ BmChatter — the briefing's soundtrack, Sound._chatter ($054A)
+\ ============================================================
+\ THE "TITLE CHATTER" IS THE BRIEFING'S. TitleLoop zeroes sndState at
+\ $10E1 and only writes $11 at $115B — AFTER ShowTitle has returned —
+\ so the C64's logo screen is silent and the burbling belongs to the
+\ scrolling manual. ShowTitle's own wait ($2907) calls Sound every
+\ field with the state still 0, which is why the driver is listed as
+\ one of its callers. [11f DECISION 10]
+\
+\ Twenty lines of C64, on a counter that runs down every field:
+\
+\   AND $7F = 0   pick one of three blips by a random third and post
+\                 it on voice 1 — a 125-tick downward zipper whose
+\                 slide wraps mod 65536 every ten ticks or so
+\   AND $3F = $22 or $30   post $10, the lift blip, on voice 2
+\   AND $0F = 8   nudge voice 1's frequency slide by a signed random
+\                 +-16. THIS is the chatter: it keeps changing the
+\                 zipper's rate, so the burble never repeats
+\
+\ WHY THE WORK IS SPLIT ACROSS TWO FILES. The blips are effect records
+\ and the driver reads records from bank 4, which had 15 bytes free
+\ against the 33 the three of them need. So bank 4 holds ONE scratch
+\ slot (sndFxChat) and the three real records live here, next to the
+\ text; this half picks and copies, and BrChatter — main RAM, and so
+\ allowed to page — lands the copy in the slot and posts it. The rule
+\ in this file's header is intact: nothing below pages anything.
+\
+\ RANDOMNESS IS AN LFSR HERE, where the C64 read the voice-3
+\ oscillator ($D41B). bank 4's DrRandom must stay one sequence for the
+\ deck's sake, so the chatter has its own. [11f DECISION 13]
+\
+\ Returns, for BrChatter to act on with the data bank paged:
+\   A = 0            nothing to do this field
+\   A = SND_FX_CHAT  brChRec holds a record; land it and post it
+\   A = $FF          nudge voice 1's slide by X
+.BmChatter
+  DEC brChCnt
+  LDA brChSeed                  \ the LFSR advances every field, not
+  ASL A                         \ per draw, so the two consumers below
+  BCC bmch_nofb                 \ sample uncorrelated bytes
+  EOR #&1D
+.bmch_nofb
+  STA brChSeed
+
+  LDA brChCnt
+  AND #&7F
+  BNE bmch_mid
+
+\ ---- every 128 fields: a new blip, $0552-$0567 --------------
+  LDX #0                        \ the random third, on the C64's own
+  LDA brChSeed                  \ thresholds
+  CMP #&55
+  BCC bmch_pick
+  INX
+  CMP #&AA
+  BCC bmch_pick
+  INX
+.bmch_pick
+  LDA bmChOff,X
+  TAX
+  LDY #0
+.bmch_copy
+  LDA brChatTab,X               \ this bank's records into PARBRF's
+  STA brChRec,Y                 \ mailbox — main RAM, so it survives
+  INX                           \ the page to bank 4
+  INY
+  CPY #BR_CHAT_PRE
+  BNE bmch_copy
+  LDA #SND_FX_CHAT
+  RTS
+
+.bmch_mid
+  LDA brChCnt                   \ $0571-$057B: the lift blip, twice a
+  AND #&3F                      \ 64-field cycle, on voice 2
+  CMP #&22
+  BEQ bmch_blip
+  CMP #&30
+  BNE bmch_nudge
+.bmch_blip
+  LDA #&10
+  STA sndFx2                    \ main RAM: no paging needed
+  LDA #0
+  RTS
+
+.bmch_nudge
+  LDA brChCnt                   \ $057D-$059E: every 16 fields, walk
+  AND #&0F                      \ the slide's high byte
+  CMP #8
+  BNE bmch_none
+  LDA brChSeed
+  BMI bmch_neg
+  LSR A : LSR A : LSR A         \ 0..+15
+  BPL bmch_del                  \ always: A <= 15
+.bmch_neg
+  SEC : ROR A                   \ SEC before each: the ones shifted in
+  SEC : ROR A                   \ sign-extend it to -16..-1
+  SEC : ROR A
+.bmch_del
+  STA brChRec                   \ the mailbox's first byte carries it —
+  LDA #&FF                      \ BrChatter reads it with bank 4 up
+  RTS
+.bmch_none
+  LDA #0
+  RTS
+
+.bmChOff
+  EQUB 0, BR_CHAT_PRE, 2 * BR_CHAT_PRE
+
+\ ---- state: only this file touches it -----------------------
+.brChCnt  EQUB 0                \ the C64's snd_9C, counted down
+.brChSeed EQUB 1                \ reseeded by BrRun; never zero
