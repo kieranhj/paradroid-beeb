@@ -271,6 +271,16 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
   DEX
   BPL br_pal
 
+\ The box's content: bars, logo, "Briefing" in the mode-word field and
+\ the last game's score — TitleLoop's $6917/$1193/$1151. PanelInit is
+\ wanted as well as the text because only LoadDeck calls it: at a boot
+\ no deck has ever loaded, and on the game-over path the low overlay's
+\ staging has been over the panel since ts_loads. The printer is
+\ bank 6's, so it gets its page before the text bank moves in.
+  PAGEBANK SWRAM_SPR2
+  JSR PanelInit
+  JSR PnBriefing
+
   PAGEBANK SWRAM_SPR
 
 \ ---- per page: $1184's block --------------------------------
