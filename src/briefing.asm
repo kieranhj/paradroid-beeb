@@ -82,6 +82,10 @@ BR_EXIT_OFF   = 1               \ off the end of the last page: the title
 \ The table is bank 7's and the text is bank 5's, so the fourteen bytes
 \ go through brSc in this overlay — the same one-bank-at-a-time dance
 \ as everything else. hsHigh..hsLoIni are contiguous: 4+3+4+3.
+\ Only the ferry lives here: the write half is BmPatch in bank 5,
+\ beside the records it patches, because this overlay has a hard
+\ ceiling at &0800 — see briefman.asm's header for what the page above
+\ costs.
 .BrPatchScores
   PAGEBANK SWRAM_XFER
   LDX #13
@@ -91,74 +95,7 @@ BR_EXIT_OFF   = 1               \ off the end of the last page: the title
   DEX
   BPL bps_copy
   PAGEBANK SWRAM_SPR
-  LDA #LO(br_hiscore+1)         \ +1: past the record's column byte
-  STA brp
-  LDA #HI(br_hiscore+1)
-  STA brp+1
-  LDX #0                        \ brSc: the high score's 4+3
-  JSR BrPatchLine
-  LDA #LO(br_loscore+1)
-  STA brp
-  LDA #HI(br_loscore+1)
-  STA brp+1
-  LDX #7                        \ and the low score's
-.BrPatchLine
-  LDA #0
-  STA brT2                      \ still in the leading zeros
-  LDY #0
-.bpl_byte
-  LDA brSc,X                    \ one BCD byte, two digits
-  PHA
-  LSR A : LSR A : LSR A : LSR A
-  JSR bpl_dig
-  PLA
-  AND #&0F
-  JSR bpl_dig
-  INX
-  CPY #8
-  BCC bpl_byte
-  INY                           \ glyphs 8-10 are ' - ', left alone
-  INY
-  INY
-.bpl_ini
-  LDA brSc,X                    \ a letter index 0-26, 26 the space
-  CMP #26
-  BCC bpl_letter
-  LDA #PN_SPACE                 \ which is ZERO, so no BNE-always here —
-  JMP bpl_iput                  \ that mistake shipped once
-.bpl_letter
-  CLC
-  ADC #PN_UPPER_A
-.bpl_iput
-  STA (brp),Y
-  INX
-  INY
-  CPY #14
-  BCC bpl_ini
-  RTS
-
-.bpl_dig                        \ A = the digit, Y = the glyph position
-  BNE bpld_show
-  LDA brT2                      \ a zero: blanked while leading, except
-  BNE bpld_zero                 \ the last digit, which always shows
-  CPY #7
-  BEQ bpld_zero
-  LDA #PN_SPACE                 \ ZERO — a BNE-always here never branches
-  JMP bpld_put
-.bpld_zero
-  LDA #PN_DIGIT0
-  BNE bpld_put                  \ always
-.bpld_show
-  STA brT
-  LDA #1
-  STA brT2
-  LDA brT
-  CLC
-  ADC #PN_DIGIT0
-.bpld_put
-  STA (brp),Y
-  INY
-  RTS
+  JMP BmPatch                   \ bank 5's, now paged — and its RTS
 
 \ ============================================================
 \ BrDispatch — where TitleSeq's callers land instead of the game
@@ -292,6 +229,11 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
   STA brTop
   STA brBufRow
   JSR SetCRTCStart
+  LDA brPage                    \ $119A: the last page gets the droid
+  CMP #BR_PAGES-1               \ portrait, rendered before the paint
+  BNE br_pg_nopo                \ so the first window composites it
+  JSR BrPortrait
+.br_pg_nopo
   JSR BrDrawPage
 
 \ the _4/_5 release wait: a held M must not eat the next page too
@@ -371,6 +313,42 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
   PAGEBANK SWRAM_DATA
   LDA #BR_EXIT_FIRE
   RTS
+
+\ ============================================================
+\ BrPortrait — page 5's droid picture, and how it scrolls
+\ ============================================================
+\ $119A-$11AD: the last page shows a random droid via
+\ BuildIntroSprites. The C64 floats it as HARDWARE SPRITES fixed on
+\ screen while the canvas scrolls beneath; this port has no sprites on
+\ a modal screen — bank 5 IS the text — so the portrait SCROLLS WITH
+\ THE PAGE instead (KC, 2026-08-22): it is composited into the strip
+\ rows by the painter, exactly as the text is.
+\
+\ The mechanism: PoDraw (bank 7) renders type rnd AND $F into the
+\ parked strip at its own rows — DB_IMG_ROW to +10, the C64's own
+\ picture height — at unit 68, then the rectangle is snapshotted into
+\ SPR_SAVE (dead outside a game, LoadDeck rebuilds it) and BrPaintRow
+\ copies a 96-byte band back whenever it paints one of those canvas
+\ rows. A plain copy, no transparency: text columns 34-39 are empty on
+\ every page-5 row — checked against briefing.txt — and the picture's
+\ own background is logical 0, the page's black. The rectangle sits
+\ level with the score table, a mugshot beside the scores.
+\
+\ Only the paging dance is here; the snapshot (BmSnap), the per-row
+\ band copy (BmBand) and the geometry are bank 5's, briefman.asm —
+\ this overlay's &0800 ceiling again.
+.BrPortrait
+  PAGEBANK SWRAM_DATA           \ the LFSR lives in bank 4
+  JSR DrRandom
+  AND #&0F                      \ $11A3's own mask
+  PHA
+  PAGEBANK SWRAM_XFER           \ the pool and its state are bank 7's
+  LDA #LO(BUF_BASE + BR_PO_OFS) : STA poBase
+  LDA #HI(BUF_BASE + BR_PO_OFS) : STA poBase+1
+  PLA
+  JSR PoDraw
+  PAGEBANK SWRAM_SPR            \ the text bank back — the resting state
+  JMP BmSnap                    \ and its RTS
 
 \ ---- one scanline down the canvas ---------------------------
 \ line 0-7 within the row at scrollS; on the wrap the window's top row
@@ -459,7 +437,9 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
   LDA brRow
   SEC
   SBC #1
-  JMP BrRowList                 \ and its RTS
+  JSR BrRowList
+  JMP BmBand                    \ bank 5: the portrait's band, if this
+                                \ row is page 5's rectangle — and its RTS
 
 \ ---- one strip row to black --------------------------------
 \ 640 bytes, 256 + 256 + 128. The record lists are sparse, so a page

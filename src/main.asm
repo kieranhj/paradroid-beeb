@@ -3128,6 +3128,10 @@ CLEAR SWRAM_BASE, SWRAM_BASE + &4000
 ORG SWRAM_BASE
 .man_start
 INCLUDE "src/data/briefing.asm"
+\ The briefing's bank-half: the score-patch writer, the portrait
+\ snapshot and the band copy, which run with this bank paged and keep
+\ PARBRF under its &0800 ceiling. See briefman.asm's header.
+INCLUDE "src/briefman.asm"
 .man_end
 SAVE "PARMAN", man_start, man_end, DEPK_STREAM, DEPK_STREAM
 PARMAN_PAGES = (man_end - man_start + &FF) DIV &100
@@ -3144,8 +3148,18 @@ ASSERT DEPK_STREAM + (man_end - man_start) <= PANEL_ADDR
 \ title and briefing time. TiShow *LOADs this on every title, so
 \ BrDispatch and BrTimeout are always valid where they are reached.
 \ See briefing.asm's header, and §4c of docs/layer-11f-frontend.md.
+\ THE CEILING IS &0800 AND IT IS MEASURED, NOT CAUTION. &0800-&08FF is
+\ the MOS's sound workspace, channel buffers and printer buffer (NAUG
+\ §6.6), and the MOS IRQ WRITES into it while it still owns the
+\ machine — which it does through every load TiShow and BrTimeout make.
+\ A PARBRF that reached &08B8 verified byte-perfect immediately after
+\ its load and was chewed by the time the briefing painted: the CPU
+\ ran the corrupted &08xx code into the paged bank and BRKed at &800E.
+\ &0400-&07FF really is free — it is the language workspace and no
+\ language is resident — but the page above belongs to a live MOS.
+\ Overflow goes to briefman.asm in bank 5 instead.
 BRF_ADDR = &0400
-BRF_END  = &0C90                \ the low overlay starts there
+BRF_END  = &0800
 CLEAR BRF_ADDR, BRF_END
 ORG BRF_ADDR
 GUARD BRF_END
