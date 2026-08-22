@@ -42,8 +42,11 @@ COMPRESSED = ["PARADAT", "PARASPR", "PARSPR2", "PARXFER"]
 # Physical layout, first file at sector 2. Boot access order: !BOOT,
 # PARA, then PARDEPK and the four banks, then the title, then (after
 # the title is dismissed) the font and the low overlay.
+# PARBRF (the briefing driver, loaded by TiShow on every title) and
+# PARMAN (the briefing text, loaded only when the title times out) sit
+# with PARTITL: the three are all title-time loads. Layer 11f.
 LAYOUT = ["!BOOT", "PARA", "PARDEPK", "PARADAT", "PARASPR", "PARSPR2",
-          "PARXFER", "PARTITL", "PARAFNT", "PARALOW"]
+          "PARXFER", "PARTITL", "PARBRF", "PARMAN", "PARAFNT", "PARALOW"]
 
 SECTOR = 256
 

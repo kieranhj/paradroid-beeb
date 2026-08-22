@@ -103,8 +103,15 @@ ENDMACRO
 \ The deck's sixteen, built by SetPalette at deck load. IT IS HERE, IN
 \ MAIN RAM, and not in bank 4 with SetPalette: the interrupt reads it
 \ three times a frame and may fire with bank 5 or 6 paged in.
+\ The ASSEMBLED DEFAULT is the OS's MODE 1 set, not zeros: the front
+\ end inherits the last deck's palette (KC, 2026-08-22), and at a cold
+\ boot the briefing can run under the rupture before any deck has ever
+\ loaded — an all-zero table wrote only logical 0, and wrote it white.
 .palPlay
-  EQUB 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+  PALENT  0, 0 : PALENT  1, 0 : PALENT  4, 0 : PALENT  5, 0
+  PALENT  2, 1 : PALENT  3, 1 : PALENT  6, 1 : PALENT  7, 1
+  PALENT  8, 3 : PALENT  9, 3 : PALENT 12, 3 : PALENT 13, 3
+  PALENT 10, 7 : PALENT 11, 7 : PALENT 14, 7 : PALENT 15, 7
 
 \ The transfer game's own palette is written INTO palPlay by XferEnter4
 \ (saved and restored around it), so these three fires need no fourth

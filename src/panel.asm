@@ -68,6 +68,7 @@ PN_LOGO0    = 90                \ the seven logo cells, 90-96
 PN_BOXBAR   = 97                \ $7C, the box's vertical bar
 PN_DASH     = 98                \ $2E — the console's separator
 PN_COLON    = 99                \ $2A
+PN_BANG     = 102               \ $25 — the string table's, and $E733's
 
 \ ---- WIDE IS NOT THE SAME AS CAPITAL -----------------------
 \ ToUpper ($2E3D) is where the original says so: it special-cases $54,
@@ -615,3 +616,26 @@ PN_SCORE_BYTES = 4              \ eight BCD digits
 
 .pnShMode   EQUB &FF
 .pnShScore  EQUB &FF
+
+\ ============================================================
+\ PnBriefing — the box's text for the briefing screen. Layer 11f
+\ ============================================================
+\ TitleLoop's own two writes, $1193 and $1151-$1158: "Briefing" into
+\ the mode-word field (the C64's $6A16, row 2 col 2), and the score
+\ repainted — the C64 forces that with a net-zero INC scoreAdd /
+\ INC scoreSub through DoScore, ours by spoiling the shadow, which a
+\ BCD byte can never equal. The score is the LAST GAME's, zero at a
+\ cold boot, exactly as the original leaves it: StartGame clears it on
+\ the way INTO a game, not after one. Called from PARBRF's BrRun with
+\ this bank paged; LoadDeck's PanelInit re-invalidates both shadows on
+\ the way back to a game, so nothing here needs undoing.
+.PnBriefing
+  LDA #LO(pnTxtBrief) : STA pnStrLo
+  LDA #HI(pnTxtBrief) : STA pnStrHi
+  LDA #PN_COL_MODE : STA pnCol
+  JSR PnStr
+  LDA #&FF
+  STA pnShScore
+  JMP pu_score                  \ and its RTS
+
+.pnTxtBrief   EQUS "Briefing  " : EQUB 0    \ 9 cells + 2 pad = 11

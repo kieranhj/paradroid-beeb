@@ -39,6 +39,14 @@ bank 4, every in-game trigger wired and tuned by ear with KC. And it has **the d
 screens**: the 001 briefing a game opens on, the two pages the transfer shows before the board, and
 `EndGame`'s 999 behind "Transmission / Terminated".
 
+**And it has the whole front end** (Layer 11f, 2026-08-22): the high-score entry between the game
+over and the title, under the game's own panel reading "game over"; and the five-page intro
+manual the title falls into on a timeout — smooth-scrolled at the C64's own speeds and dwells,
+with the live score table and a random droid portrait on page 5, driven from `PARBRF` at `&0400`
+with the text in an evicted bank 5. The text itself is hand-editable
+(`src/data/briefing.txt`, tracked; `make_briefing.py` converts it every build), and every
+front-end screen inherits the last deck's palette.
+
 **Every screen that is not the scrolled deck now uses all sixteen rows of the play area**, and the
 ported pages sit on the C64's own rows rather than one above them. **The whole picture sits three
 character rows lower on the tube**, title included, which is `FRAME_DROP_ROWS` in `main.asm` and one
@@ -71,7 +79,7 @@ and the title's own polish are in the layer notes. Defects, as opposed to absenc
 | **The deck goes dark when it is cleared** | The C64's `RunDroids` `_6` arm (`$17DC`) calls `InitColors`, which on `numDeckDroids == 1` takes **colour scheme 7** (`0B 00 0F 07 07 0B 0E 00 08 0C 0C 00` — dark grey, black, light grey, orange) instead of `deckScheme[deck]`. Free on the C64, where colour is per-cell in colour RAM. **Ours bakes colour into the charset at deck load**, and scheme 7's colours merge onto MODE 1's four differently from every deck's own scheme, so this is not a straight palette swap. **KC's call, 2026-08-21: do it as a palette-only repaint** — keep the deck's charset and its logical merges, repaint `palPlay`'s four entries towards scheme 7. Free, no hitch at the moment of clear, greys land approximately. The scheme table is already shipped (`.schemes`, all 8 records, `src/data/colours.asm`); what is needed is a scheme-7 row for `deckPalette` and a repaint on the clear arm. Mind the fixed colour roles — logical 1 black and 3 white carry the sprites | **next up** |
 | **Sound** | Layer 11e stages 0–4 **BUILT AND TUNED 2026-08-21**: driver in bank 4, every in-game trigger wired, and ten by-ear rounds with KC signed off the hum, explosions, bump, disruptor, ram-kill, bullet-hit, lift and start. **Open**: the game-over set (KC: "needs work, leave for now"), the transfer-verdict mapping (unverified guess), fx06 with 11d — plus pause/volume keys and title chatter, deferred features. **Bank 4: 60 bytes free** (was 3; see the RAM row). [`docs/layer-11e-sound.md`](docs/layer-11e-sound.md) | game-over set + odds and ends |
 | **The droid information screens** | Layer 11d, **DONE and verified 2026-08-21**: `NewShipInfo` (`$36B9`), both `ShowXferInfo` pages (`$3734`) and `EndGame`'s 999 page (`$37DC`). `PrintTokenString` turned out to be 90 % built already — Layer 9's database page had the printer, the wrap, the capitalisation and `ShowRobotType` — and `PoDraw`'s rectangle is parameterised horizontally, so the 999 centres the way `$37E8` centres it. [`docs/layer-11d-droid-screens.md`](docs/layer-11d-droid-screens.md) | done |
-| `DoHighScore` | `$E4E5` — HIGH and LOW score and three-initial entry. It sits between `EndGame` and `TitleLoop`, and **that seam is already built**. It is now the only unbuilt thing on this list that the C64 does in play, and `PrintTokenString` — the dependency the other two were queued behind — landed with Layer 11d | **the last one** |
+| `DoHighScore` + the briefing | Layer 11f, **BUILT, VERIFIED AND MERGED 2026-08-22** — the entry (bank-7 table, `PARTITL` overlay, under the game's own "game over" panel), the five-page briefing scroller (`PARBRF` at `&0400` — hard ceiling `&0800`, the MOS owns the page above — text + bank-half in an evicted bank 5, live score table and portrait on page 5, hand-editable `briefing.txt`), the panel box, inherited palettes, blanked load seams. **Open in the layer**: F2 title chatter (deferred, 7 B short in bank 4), F6 exit-load trim (deferred; naive reloads ~1.1 s briefing→game), and the pause-legend wording in `briefing.txt` (KC's, ongoing). [`docs/layer-11f-frontend.md`](docs/layer-11f-frontend.md) | F2 + F6, later |
 | The enemy bullet's colour flicker | `efAlt` from bank 5 plus a second per-entry field. Cheaper now the colour machinery exists, but effect sprites run the interpreted path and were left alone | Layer 7, deferred |
 
 **`PrintTokenString` was the bottleneck and it is gone.** Three items waited on it — the 001 screen,

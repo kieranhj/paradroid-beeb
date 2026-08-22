@@ -423,3 +423,79 @@
 \ value of `line`, which it was not while the strip aliased map rows
 \ mapYr and mapYr+16 into display row 0.
   RTS
+
+\ ============================================================
+\ SetupPlain — the rupture down, WITHOUT a VDU 22
+\ ============================================================
+\ LAYER 11f. GoTitle used to call SetupMode, whose first act is a
+\ VDU 22 — and the OS answers that by clearing &3000-&7FFF. That threw
+\ away the 999 page and the font, which is why PARAFNT had to be
+\ reloaded and why the high-score entry could not be an overlay: there
+\ was no instant at which the page was on screen AND a load was legal.
+\
+\ KC, 2026-08-21: the mode change does not need the OS. The palette,
+\ the CRTC and the wraparound latch are all ours already and are set
+\ once at boot; VDU 22 was only ever supplying R4-R7 and R12/R13, and
+\ clearing screen RAM as a side effect we did not want. So this is
+\ those six registers and nothing else. **The play buffer and the font
+\ both survive it**, and VSync comes back, so the filing system works.
+\
+\ IT IS IN BANK 4 AND THAT IS FREE: GoTitle already runs with
+\ SWRAM_DATA paged — it calls SndSilence two instructions earlier — so
+\ `JSR SetupMode` simply became `JSR SetupPlain` and main RAM, which
+\ has five bytes left, paid nothing.
+\
+\ R0-R3, R8 and R9 are NOT touched. Nothing has changed them since
+\ boot's own VDU 22: the rupture rewrites R4-R7 and R12/R13 every
+\ field and leaves the rest alone.
+\ A TABLE, not six CRTC macros: the macro is ten bytes a register and
+\ bank 4 had sixty left. Ascending register order, because R6, R7 and
+\ R12/R13 are latched for the NEXT cycle and should be in step with the
+\ R4/R5 that defines it.
+.SetupPlain
+  LDX #0
+.sp_reg
+  LDA spReg,X : STA CRTC_ADDR
+  LDA spVal,X : STA CRTC_DATA
+  INX
+  CPX #7
+  BNE sp_reg
+
+\ AND THE LAST DECK'S PALETTE, deliberately: the front end inherits it
+\ (KC, 2026-08-22). Without this the ULA holds whichever REGION palette
+\ the rupture wrote last before UninstallIrq — palPanel or palPlay by
+\ raster luck — so the 999 page, the entry screen and the title were
+\ mostly deck-coloured and occasionally panel-coloured. This makes it
+\ always the deck's. palPlay is main RAM (rupture.asm) and survives the
+\ teardown; its assembled default covers the path before any deck has
+\ loaded.
+  LDX #15
+.sp_pal
+  LDA palPlay,X
+  STA VIDEO_ULA_PAL
+  DEX
+  BPL sp_pal
+  RTS
+
+\ R8 IS IN HERE AND IT IS NOT OPTIONAL. The rupture blanks rows with it
+\ — GoWashStart's note about "the R8 blank at fire 3" hiding the
+\ sixteenth row is the same register — so a teardown that leaves it set
+\ gives a black screen with everything else perfectly correct. Measured:
+\ without this entry the 999 page was in the buffer, the CRTC was
+\ pointed at it, and nothing displayed at all.
+.spReg
+  EQUB 4, 5, 6, 7, 8, 12, 13
+.spVal
+  EQUB PLAIN_R4                 \ a plain 39-row, 312-line, 50 Hz frame
+  EQUB 0
+  EQUB 0                        \ R6 = 0: the frame is BLANK (KC,
+                                \ 2026-08-22). Nothing wants this display
+                                \ visible any more — the entry screen
+                                \ brings its own rupture — and a plain
+                                \ window over the strip showed each
+                                \ load's wreckage. SetupRupture or
+                                \ TiCRTC give the display back
+  EQUB PLAIN_R7                 \ VSync alive, which the loads need
+  EQUB 0                        \ R8: no blanking, no interlace
+  EQUB HI(BUF_BASE / 8)         \ R12/13 park on the play buffer; moot
+  EQUB LO(BUF_BASE / 8)         \ while R6 shows nothing

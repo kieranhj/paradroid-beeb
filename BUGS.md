@@ -28,6 +28,7 @@ sections below are in neither. **The table is the index; read it first.**
 | **13** | [The ALERT sign's lamp is dead; it should track the alert level](#13-the-alert-signs-lamp-is-dead--it-should-track-the-alert-level--2026-08-17) | **Fixed** 2026-08-20 | one character rebuilt when `Alert` crosses a threshold, and the sign repainted. The ramp is four *states*, not four colours — [DECISION 11] in `docs/layer-7-combat.md`, **not yet ratified** |
 | **14** | [`XfRand` is not a maximal LFSR — its low two bits are always zero](#14-xfrand-is-not-a-maximal-lfsr--its-low-two-bits-are-always-zero--fixed-2026-08-19) | **Fixed** 2026-08-19 |  |
 | **15** | [Incremental draw disagrees with `RedrawAll` beside an animating door](#15-incremental-draw-disagrees-with-redrawall-beside-an-animating-door--2026-08-19-unconfirmed) | **Open, unconfirmed** | did not reproduce in five clean runs. Correlates with poking a modal flag, not with the level draw |
+| **18** | [`HS_STR_ADDR` was `PN_TABS`](#18-hs_str_addr-was-pn_tabs--fixed-2026-08-21) | **Fixed** 2026-08-21 | Layer 11f. Strings landed on the mirrored droid tables; a runaway `DbStr` then smashed bank 7. Root cause proven by write watch. **`font_end` + 96 is `PN_TABS` — the gap there is 8 bytes, not 104** |
 | **17** | [Four debug flags silently push the code image past `&3000`](#17-four-debug-flags-silently-push-the-code-image-past-3000--partly-fixed-2026-08-20) | **Fixed** 2026-08-20, bar one | VSYNC, POS and ENERGY fixed and a `GUARD` added so it can never be silent again. RASTER, DRAW and TIME **fit again** since the raster-timing pass moved the tranche decision into bank 6 (code image 11 B free → 323); none has been run since. Only MAPGUARD still fails, on bank 4 |
 | **16** | [Enemy droids draw a black rotor and a WHITE number](#16-enemy-droids-draw-a-black-rotor-and-a-white-number--fixed-2026-08-19) | **Fixed** 2026-08-19 | the wrap fallback blits digits interpreted and never sees `colPix` |
 
@@ -978,3 +979,51 @@ column. This is in units 7–11 and nowhere near the edge.
 **Where to look:** `dp_step`'s `doorDirty` and whatever repaints from it, against what `RedrawAll`
 builds from the patched `doorDef`. The reproduction wants a deck with a door in view, the player
 close enough to hold it open, and the oracle run while `doorState` is between 1 and 3.
+
+
+## 18. `HS_STR_ADDR` was `PN_TABS` — **FIXED 2026-08-21**
+
+Layer 11f's `DoHighScore` put its three strings in the `PARAFNT` block at
+`FONTCODE_ADDR + FONTCODE_BYTES`, on the argument that constant data with no bank of its own
+belongs there beside `FontCell` and `DoScore`. **That expression is also the definition of
+`PN_TABS`** — the four mirrored droid tables `PageTabsIn` copies down from bank 4 at boot and at
+every title. The strings shipped, loaded, and were then overwritten by the tables.
+
+**The chain, end to end.** `DbStr` read the droid table instead of a string, never found its
+`&FF`, and printed some 272 glyphs. `DbGlyph` advances `pnDst` by 16 a glyph, so the print walked
+out of the play buffer, past `&8000` and into **bank 7**, where it flattened `xfRowAdrLo/Hi`.
+Nothing looked wrong yet. On the NEXT game over, `GoWashRow` loaded `xgd` from that table, got a
+zero high byte, and wrote 640 bytes from `&00EE` — through zero page, the stack and the MOS
+vectors. Hence: hang in phase 1, then BASIC.
+
+**How it was found**, after the first hypothesis (an escape condition) was measured out — `&FF`
+bit 7 was 0 at all four sampling points:
+
+1. `overPhase`/`overTick` frozen at 1/`&F0`, and `&F0` is `GO_TICK_END` exactly.
+2. Execute breakpoint on `GoWashStart` fires; write breakpoint on `overPhase` never does.
+3. `goBoil` = 15, the first iteration's value → the first `GoWashRow` never returns.
+4. `svp`/`xgd` = `&00EE`, and reading `xfRowAdrLo/Hi` out of bank 7 showed **font bytes**
+   (`&88 &EE &CC &77 &33 &66` are all `fontExpand` outputs) where row addresses belong.
+5. A **write breakpoint on the table itself** (`&8C1A`) caught it: `PC = &3D06`, inside
+   `FontCell`. The stack gave the whole chain — main loop → `InfoCall` → `IsDone` → `&B58C`
+   (highscore) → `DbStr` → `DbGlyph` → `FontCell`.
+
+**The lesson worth keeping: `font_end` is NOT the end of the region.** `PARAFNT`'s file ends at
+`&3D98`, but `PN_TABS`' 96 bytes follow it and `SPR_SAVE` is at `&3E00` — so the gap is **8 free
+bytes, not 104**. Anything that reads "spare" there must check `PN_TABS` first.
+
+**The fix, and it is not a smaller version of the same idea.** The strings did not move to another
+resident hole — there was not one, and hunting for 77 bytes was the wrong instinct twice over. KC:
+this screen runs outside the game, so it should hold no resident RAM at all. `SetupPlain` made that
+possible (see `docs/layer-11f-frontend.md`), and `DoHighScore` is now in the **PARTITL overlay**,
+carrying its own alphabet from `tools/export_hsfont.py`. What stayed resident is twenty-five bytes
+of bank 7 for the table, which has to remember between games, and three bytes of main RAM for
+`TitleSeq`'s `JSR`.
+
+So `PN_TABS` is not written by anything of Layer 11f's any more, and the collision cannot recur.
+**Verified in jsbeeb**: 999 page → "Great Score!" and the prompt drawn over it → `A` walked to `G`
+→ three initials committed → `hsHiIni` reads G, A, A, `hsArmed` cleared, the low table untouched →
+title.
+
+**The measurement that is worth keeping** is the one in the "lesson" paragraph above: `font_end` is
+not the end of that region, and the gap above it is 8 bytes rather than 104.

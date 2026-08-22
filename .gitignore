@@ -39,7 +39,13 @@ paradroid_ce_annotated.asm
 tools/output/
 # src/data/ is produced by tools/export_bbc.py — converted game artwork and
 # level data, so copyright as above. Regenerate it; do not commit it.
-src/data/
+# THE ONE EXCEPTION is briefing.txt: it is the hand-editable source of the
+# briefing text (KC edits it, make_briefing.py converts it every build), so
+# KC's edits must be KEPT — tracked, not regenerated. The `*` form is what
+# lets the negation work: git cannot re-include a file whose parent
+# DIRECTORY is excluded.
+src/data/*
+!src/data/briefing.txt
 
 # ---- Python ----
 __pycache__/

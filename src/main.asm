@@ -623,6 +623,7 @@ CON_STR_ADDR  = PN_FRAME_ADDR + PN_FRAME_BYTES
 FONTCODE_ADDR  = CON_STR_ADDR + CON_STR_BYTES
 FONTCODE_BYTES = 194            \ FontCell, its table, and DoScore
 
+
 PN_TABS     = FONTCODE_ADDR + FONTCODE_BYTES
 pnTabCent   = PN_TABS + 0
 pnTabNum    = PN_TABS + 24
@@ -691,6 +692,12 @@ TAIL_R4  = TAIL_CYC_ROWS - 1    \ 12
 \ registers, the play cycle's blank and unblank — arrives a rowful of
 \ scanlines into the wrong part of the frame.
 FRAME_DROP_ROWS = 3             \ character rows the picture moves DOWN
+
+\ Layer 11f: the plain frame SetupPlain restores, which is what the OS's
+\ own VDU 22 leaves MODE 1 at, less the drop. title.asm's MODE1_R7 is the
+\ same 34 and is declared there because TiCRTC needs it in that file.
+PLAIN_R4 = 38                   \ 39 rows of 8 = 312 lines
+PLAIN_R7 = 34 - FRAME_DROP_ROWS
 
 TAIL_R7  = 8 - FRAME_DROP_ROWS  \ VSync at P+208+40 = P+248
 ASSERT TAIL_R7 >= 0
@@ -1208,7 +1215,11 @@ ORG &1100
 \ to GameStart, which is in bank 4 beside the droid tables it seeds.
 \ Layer 11 needs the game startable more than once — 11a in
 \ docs/layer-11-sound-title.md.
-  JSR GameStartInfo             \ ...and the 001 screen in front of it
+  JSR BrDispatch                \ ...and the 001 screen in front of it.
+                                \ Layer 11f: BrDispatch, not GameStartInfo
+                                \ — if the title timed out this is where
+                                \ the briefing runs first. PARBRF is
+                                \ valid: TiShow loads it on every title
 
 \ ============================================================
 \ Main loop
@@ -2086,8 +2097,19 @@ ENDMACRO
   LDX #LO(loadtitl)
   LDY #HI(loadtitl)
   JSR OSCLI
+  JSR HsEntry                   \ Layer 11f: the high-score entry, if the
+                                \ game just ended on one. It draws on the
+                                \ 999 page, which SetupPlain left on
+                                \ screen, and it needs PARTITL loaded and
+                                \ the title NOT yet painted over it
   JSR TiShow
 
+\ Layer 11f: ts_loads is re-entered by the briefing's fire exit — the
+\ teardown-and-rebuild after bank 5 is given back to the blitter runs
+\ this same tail rather than carrying a copy. BrTimeout also RTSes to
+\ here, because it is entered by JMP from TiWait with TiShow's return
+\ address still on the stack. See briefing.asm.
+.ts_loads
   LDX #LO(loadfnt)              \ the text font, straight back onto the
   LDY #HI(loadfnt)              \ ground the title borrowed
   JSR OSCLI
@@ -2146,7 +2168,9 @@ ENDMACRO
                                 \ masked so no tick interleaves the port A
                                 \ save/restore. UninstallIrq CLIs at its end
   JSR UninstallIrq
-  JSR SetupMode
+  JSR SetupPlain                \ NOT SetupMode: its VDU 22 would clear
+                                \ &3000-&7FFF and take the 999 page and
+                                \ the font with it. Layer 11f
 \ Put DFS's workspace back before the first load. The low overlay has
 \ been sitting on &0E00-&10FF — DFS's own variables — since the last
 \ PageLowIn, and a filing-system call against that garbage hangs in the
@@ -2156,7 +2180,10 @@ ENDMACRO
 \ Boot does not need it: its loads all run before the first PageLowIn.
   JSR RestoreDfsWs
   JSR TitleSeq
-  JMP GameStartInfo             \ bank 4 — TitleSeq left SWRAM_DATA paged
+  JMP BrDispatch                \ Layer 11f: the briefing if the title
+                                \ timed out, GameStartInfo if it fired —
+                                \ bank 4 either way, TitleSeq left
+                                \ SWRAM_DATA paged
 
 .GoStart7
   PAGEBANK SWRAM_XFER
@@ -2838,10 +2865,14 @@ INCLUDE "src/portrait.asm"
 \ printer, their geometry constants and PoDraw, and beebasm resolves
 \ constants in file order.
 INCLUDE "src/infoscr.asm"
+INCLUDE "src/hstable.asm"       \ Layer 11f: 25 B that outlive a title
 \ droidicon7.asm is gone with the rotor-and-digits stand-in: the
 \ database draws the C64's own portrait now.
 INCLUDE "src/data/droidinfo.asm"
 INCLUDE "src/data/plandata.asm"
+\ Layer 11f, placed HERE and not beside infoscr.asm: plandata carries an
+\ ALIGN &100 for planInk, and whatever sits before it pays the padding.
+\ Behind it, this block costs the bank its own size and nothing more.
 INCLUDE "src/data/sideview.asm"
 .xfer_end
 SAVE "PARXFER", xfer_start, xfer_end, DATA_LOAD, DATA_LOAD
@@ -3043,8 +3074,17 @@ ORG TITLE_ADDR
 .titl_start
 INCLUDE "src/data/title.asm"
 INCLUDE "src/title.asm"
+\ Layer 11f: DoHighScore runs from here, before the title paints.
+\ Its alphabet comes with it because this block is assembled over
+\ the text font's ground -- see highscore.asm's header.
+INCLUDE "src/data/hsfont.asm"
+INCLUDE "src/highscore.asm"
 .titl_end
 ASSERT titl_end <= TI_BASE
+\ AND below FontCell, which highscore.asm calls rather than carrying a
+\ copy of: PARAFNT is still resident when this overlay runs, and only
+\ the part of it below titl_end has been overwritten.
+ASSERT titl_end <= FONTCODE_ADDR
 SAVE "PARTITL", titl_start, titl_end, TITLE_ADDR, TITLE_ADDR
 
 \ ============================================================
@@ -3069,6 +3109,64 @@ ORG DEPK_ADDR
 .depk_end
 ASSERT depk_end <= DEPK_STREAM
 SAVE "PARDEPK", depk_start, depk_end, DEPK_ADDR, DEPK_ADDR
+
+\ ============================================================
+\ The briefing text — the PARMAN disc file, bank 5's overlay
+\ ============================================================
+\ LAYER 11f [DECISION 4]: bank 5 is evicted for the briefing — no
+\ sprite runs on a modal screen — and holds the intro manual's record
+\ lists instead, ~4.6 K in 16 K. The file ships RAW for now and *LOADs
+\ at DEPK_STREAM (over the dead title overlay, on the timed-out path
+\ only); BrTimeout copies it up into the bank. Compressing it like the
+\ four boot banks is the later optimisation, not the working form —
+\ KC, 2026-08-22. Both briefing exits reload PARASPR; see briefing.asm.
+\
+\ The data is generated by tools/make_briefing.py from the hand-editable
+\ src/data/briefing.txt — edit THAT, not the .asm. build.ps1 runs the
+\ converter every build.
+CLEAR SWRAM_BASE, SWRAM_BASE + &4000
+ORG SWRAM_BASE
+.man_start
+INCLUDE "src/data/briefing.asm"
+\ The briefing's bank-half: the score-patch writer, the portrait
+\ snapshot and the band copy, which run with this bank paged and keep
+\ PARBRF under its &0800 ceiling. See briefman.asm's header.
+INCLUDE "src/briefman.asm"
+.man_end
+SAVE "PARMAN", man_start, man_end, DEPK_STREAM, DEPK_STREAM
+PARMAN_PAGES = (man_end - man_start + &FF) DIV &100
+\ The raw stream must clear the panel at &4A00: everything below it —
+\ the dead title overlay and the idle sprite save areas — is rebuilt
+\ after the briefing, the panel is not.
+ASSERT DEPK_STREAM + (man_end - man_start) <= PANEL_ADDR
+
+\ ============================================================
+\ The briefing driver — the PARBRF disc file, at &0400
+\ ============================================================
+\ Loaded where it runs: &0400-&0C90 is the MODE 1 charset, built at
+\ deck load and dead outside a game — 2,192 bytes of free lower RAM at
+\ title and briefing time. TiShow *LOADs this on every title, so
+\ BrDispatch and BrTimeout are always valid where they are reached.
+\ See briefing.asm's header, and §4c of docs/layer-11f-frontend.md.
+\ THE CEILING IS &0800 AND IT IS MEASURED, NOT CAUTION. &0800-&08FF is
+\ the MOS's sound workspace, channel buffers and printer buffer (NAUG
+\ §6.6), and the MOS IRQ WRITES into it while it still owns the
+\ machine — which it does through every load TiShow and BrTimeout make.
+\ A PARBRF that reached &08B8 verified byte-perfect immediately after
+\ its load and was chewed by the time the briefing painted: the CPU
+\ ran the corrupted &08xx code into the paged bank and BRKed at &800E.
+\ &0400-&07FF really is free — it is the language workspace and no
+\ language is resident — but the page above belongs to a live MOS.
+\ Overflow goes to briefman.asm in bank 5 instead.
+BRF_ADDR = &0400
+BRF_END  = &0800
+CLEAR BRF_ADDR, BRF_END
+ORG BRF_ADDR
+GUARD BRF_END
+.brf_start
+INCLUDE "src/briefing.asm"
+.brf_end
+SAVE "PARBRF", brf_start, brf_end, BRF_ADDR, BRF_ADDR
 
 \ ============================================================
 \ The low-RAM overlay — resident code at &0E00
