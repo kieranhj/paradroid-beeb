@@ -48,6 +48,10 @@ BR_EXIT_OFF   = 1               \ off the end of the last page: the title
 \ overlay we have just left for good, and is copied up into bank 5
 \ before loadfnt reclaims &3000.
 .BrTimeout
+  LDA #6                        \ blank the display for the loads: the
+  STA CRTC_ADDR                 \ title picture is still up and the low
+  LDA #0                        \ overlay stages inside its framebuffer.
+  STA CRTC_DATA                 \ VSync carries on; SetupRupture unblanks
   LDA #1
   STA brFlag
   LDX #LO(brLoadMan)
@@ -126,6 +130,12 @@ BR_EXIT_OFF   = 1               \ off the end of the last page: the title
 \ back before the first load.
   JSR UninstallIrq
   JSR SetupPlain                \ bank 4; BrRun left SWRAM_DATA paged
+  LDA #6                        \ and BLANK it (KC, 2026-08-22): the
+  STA CRTC_ADDR                 \ plain frame points at the strip, which
+  LDA #0                        \ still holds the scroll, panel-less, for
+  STA CRTC_DATA                 \ the whole reload. R6 = 0 shows nothing;
+                                \ SetupRupture (fire) or TiCRTC (title)
+                                \ gives the display back
   JSR RestoreDfsWs
 
   LDX #LO(loaddepk)             \ the depacker at &3000, over the font —

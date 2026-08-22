@@ -235,6 +235,13 @@ ASSERT TITLE_R7 >= TITLE_ROWS   \ VSync must fall after the last row shown
   LDA tiLo                      \ hand the dwell out for the seed
   EOR tiHi
   STA overRnd0
+\ BLANK THE DISPLAY for the loads that follow (KC, 2026-08-22): the
+\ low overlay stages at &4A00, INSIDE this title's visible framebuffer,
+\ so ts_loads used to smear staging bytes across the picture. R6 = 0
+\ shows nothing while VSync carries on — the loads need it — and
+\ SetupRupture gives the display back once the ground is rebuilt. The
+\ timed-out path gets the same blank from BrTimeout.
+  CRTC 6, 0
   RTS
 
 .tiIdx  EQUB 0
