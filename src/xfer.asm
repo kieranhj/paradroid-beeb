@@ -2277,7 +2277,12 @@ GO_HOLD      = 88               \ $3802: xfer_plySpriteX counts 88 down
   EQUB &00,&0F,&00,&00,&00,&00,&00,&00
 
 .goTxtOver                      \ "game over"
-  EQUB XF_LC+6, XF_LC+0, XF_LC+12, XF_LC+4
+\ LOWERCASE m IS SIXTEEN PIXELS and XfMessage draws one cell a byte
+\ with no wide expansion — so the m's right half rides IN the string,
+\ or "game" reads "gane". It did, once the entry screen started
+\ showing the panel (KC, 2026-08-22). The only wide glyph in any
+\ XfMessage string, so the printer stays simple.
+  EQUB XF_LC+6, XF_LC+0, XF_LC+12, PN_M_RIGHT, XF_LC+4
   EQUB PN_SPACE
   EQUB XF_LC+14, XF_LC+21, XF_LC+4, XF_LC+17, &FF
 .goCol       EQUB 0
