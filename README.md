@@ -16,11 +16,16 @@ for it — win and you *are* that droid, with its weapon and speed. It has a voi
 SN76489 driver with every in-game trigger wired. And it has the droid information screens the
 original opens and closes on: the 001 briefing that starts a game, the two pages the transfer shows
 you before the board, and the 999 Command Cyborg behind "Transmission / Terminated" when the ship
-burns out under a dissolve.
+burns out under a dissolve. The front end is the original's too: a great (or terrible) score gets
+the three-initial entry under a panel reading "game over", the table survives into the next game,
+and leaving the title alone drops into the five-page intro manual — smooth-scrolled at the C64's
+own speeds and dwells, with the live score table and a random droid portrait on its last page. The
+manual's text is hand-editable (`src/data/briefing.txt`), and every front-end screen wears the
+palette of the last deck played.
 
-**What is left** is the high-score table, the intro manual, and the balance and visual passes. See
-[`PLAN.md`](PLAN.md) for the layered build plan, the memory map, decisions taken and current
-status.
+**What is left** is the title chatter, the balance and visual passes, and trimming the front end's
+disc loads. See [`PLAN.md`](PLAN.md) for the layered build plan, the memory map, decisions taken
+and current status.
 
 ## Target
 
@@ -43,8 +48,8 @@ converts mechanically from the ripped data with nothing redrawn.
 | | |
 |---|---|
 | Z / X | left / right |
-| K / M | up / down — and, on the lift screen, move along the shaft |
-| L | fire; on a lift platform it opens the ship's deck-selection screen, and fire again commits |
+| K / M | up / down — and, on the lift screen, move along the shaft. On the high-score entry they walk the alphabet; on the intro manual K pauses the scroll and M doubles it and skips the dwells |
+| L | fire; on a lift platform it opens the ship's deck-selection screen, and fire again commits. It commits an initial on the entry, and starts the game from anywhere in the manual |
 | Cursor up/down | debug deck hop |
 | ESCAPE | self-destruct — ends the game. The port's own; the C64 has no abort |
 | SPACE | force a full redraw (also the verification oracle) |
@@ -69,8 +74,9 @@ emulator before the next begins:
 9. **HUD and console** — ✅ done
 10. **Transfer minigame** — ✅ done; in a fourth sideways bank, with its two pre-game info screens
 11. **Title, game over, sound and the droid screens** — ✅ done: the title, the death and game-over
-    sequence, the SN76489 sound driver, and the four information screens. The high-score table
-    between the game over and the title is the one piece outstanding
+    sequence, the SN76489 sound driver, the four information screens, and the front end — the
+    high-score entry and the scrolling intro manual. The title chatter and a faster reload out of
+    the manual are the pieces outstanding
 12. Balance, fidelity and feel
 13. **Memory and machine compatibility** — the RAM pass ✅ done; sideways-RAM detection and
     testing on real machines outstanding
@@ -90,43 +96,33 @@ Put `beebasm.exe` in `bin/`, then:
 ```
 
 Everything it produces goes in `build/`: `PARADROID.SSD`, a 200K-padded copy for emulators, and
-beebasm's assembly listing.
+beebasm's assembly listing. `make.bat` and `make.sh` are thin wrappers over the same script
+(`make run` works), for cmd and sh respectively.
 
-Or, without PowerShell:
+**The build is three stages and all of them matter**: `tools/make_briefing.py` converts the
+hand-editable intro-manual text (`src/data/briefing.txt` — edit it freely and rebuild), beebasm
+assembles a *raw* image, and `tools/make_disc.py` ZX0-compresses the sideways-RAM bank files and
+lays the disc out for the loader. **beebasm's direct output is not bootable** — the loader expects
+the compressed layout and hangs at the first bank load — so there is no meaningful way to build
+with beebasm alone; use the scripts.
 
-```
-make.bat            :: assemble into build/
-make.bat run        :: assemble and launch in b-em
-./make.sh           # same, for sh / Git Bash / Linux
-```
-
-Both honour `BEEBASM` and `BEM` environment variables if your tools live elsewhere.
-
-Or directly:
-
-```
-beebasm -i src/main.asm -do PARADROID.SSD -opt 3 -title PARADROID -v
-```
-
-**Do not pass `-boot`.** `main.asm` assembles its own `!BOOT`, carrying the build stamp and the
-list of debug flags that are on, so `-boot` tries to write a second one and beebasm stops with
-"File already exists on DFS disc image". `-opt 3` sets the boot option that makes SHIFT+BREAK
-`*EXEC` it.
-
-The build needs `src/data/`, which is converted game artwork and so is not in the repository —
-generate it with the `tools/export_*.py` scripts (see below) before assembling.
+`main.asm` assembles its own `!BOOT`, carrying the build stamp and the list of debug flags that
+are on, so nothing may pass `-boot`. The rest of `src/data/` is converted game artwork and so is
+not in the repository — generate it with the `tools/export_*.py` scripts (see below) before
+assembling.
 
 The result is a bootable DFS disc image. Note that DFS filenames are limited to 7 characters, so
 the executable on disc is `PARA`.
 
-> **jsbeeb will not boot an unpadded SSD.** It hangs in the DFS FDC poll loading `PARASPR`, because
-> beebasm's image ends mid-track and jsbeeb will not read the last partial one. `build.ps1` and
-> `make.sh` write the padded copy for you; pad it yourself if you invoke beebasm directly.
+> **jsbeeb will not boot an unpadded SSD.** It hangs in the DFS FDC poll, because an image that
+> ends mid-track leaves jsbeeb refusing to read the last partial one. The build writes the padded
+> `PARADROID-200K.SSD` for you — give jsbeeb that one.
 
 ## Repository layout
 
 ```
-src/            BBC Micro 6502 source (BeebASM); src/data/ is generated and gitignored
+src/            BBC Micro 6502 source (BeebASM); src/data/ is generated and gitignored,
+                except briefing.txt — the hand-editable intro-manual text, which is tracked
 tools/          Python data-extraction and conversion tools (see below)
 annotate.py     Generates the annotated C64 disassembly
 docs/           Per-layer working notes, plus graphics.md — the C64 data reference
