@@ -569,9 +569,10 @@ sub-floor, as simulated); what was wrong was the **`$10` the chatter posts on vo
 blip, 48% sub-floor, its bounce straddling the floor, clamped into two notes at attenuation 0 for
 54 fields in every 64. KC: "too loud and too monotonous... perhaps try periodic bass instead."
 It is now periodic bass on a cloned instrument and plays its real 108–174 Hz warble, and — round
-two and three of the same evening, KC: still too loud, and the lift may go quieter with it —
-sustains at attenuation 9 rather than 0, which puts it 12 dB *below* the chatter it sits behind
-instead of 6 dB above. The full account, including the in-game lift consequence still to be heard, is
+two of the same evening, KC: still too loud, and the lift may go quieter with it — sustains at
+attenuation 6 rather than 0, which puts it 6 dB *below* the chatter it sits behind instead of
+6 dB above. A third round took it to attenuation 9 and KC reverted it: too far.
+The full account, including the in-game lift consequence still to be heard, is
 11e §8's **round eleven**. The level knob is `FX_LEVEL` in `tools/export_sound.py`, one nibble,
 2 dB a step.
 
