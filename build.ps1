@@ -13,6 +13,12 @@ $bem     = 'C:\Users\khcon\OneDrive\BEEB\B-Em\b-em-42f6597-w64\b-em.exe'
 
 if (-not (Test-Path $build)) { New-Item -ItemType Directory -Path $build | Out-Null }
 
+# The briefing text is hand-editable (src/data/briefing.txt) and converted
+# every build - the one exporter build.ps1 DOES run, because its input is a
+# checked working file rather than the C64 listing. See tools/make_briefing.py.
+python (Join-Path $root 'tools\make_briefing.py')
+if ($LASTEXITCODE -ne 0) { throw "make_briefing failed ($LASTEXITCODE)" }
+
 # beebasm resolves INCLUDE relative to the working directory, so it runs from
 # the project root and everything it produces is named into build/ instead.
 #

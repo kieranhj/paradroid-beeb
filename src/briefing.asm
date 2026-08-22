@@ -1,0 +1,435 @@
+\ ============================================================
+\ briefing.asm — the briefing driver, the PARBRF overlay at &0400
+\ ============================================================
+\ LAYER 11f. The intro manual: the five-page briefing the C64 title
+\ falls into on a timeout ($1184-$123F), rendered from the record lists
+\ in bank 5 (PARMAN, src/data/briefing.asm) instead of the C64's 15.5 K
+\ canvas. docs/layer-11f-frontend.md is the plan; §3 is this screen.
+\
+\ WHY &0400: outside a game, &0400-&0C90 — the MODE 1 charset — holds
+\ nothing anyone wants. It is built at deck load and GameStart ->
+\ LoadDeck rebuilds it before anything reads it again, so at title and
+\ briefing time it is 2,192 bytes of free lower RAM, loaded into
+\ directly by *LOAD (KC, 2026-08-22: it is language workspace, no
+\ language is resident, and DFS writes into it no problem). PARBRF is
+\ loaded by TiShow on EVERY title, so its entry points are always valid
+\ when the dispatch below can be reached; it dies at the next deck load
+\ and is reloaded at the next title.
+\
+\ WHY THE DRIVER IS MAIN RAM AND THE TEXT IS A BANK: the driver has to
+\ page — bank 5 for the text, bank 7 for the page-5 portrait to come,
+\ the data bank for the rebuild — and code cannot page itself out.
+\ Bank 5 is evicted for the briefing [DECISION 4]: no sprite runs on a
+\ modal screen, so 16 K of compiled blitter has no business being
+\ resident, and both exits reload it below.
+\
+\ THE SCREEN IS THE GAME'S OWN: the rupture, the panel, the strip. The
+\ briefing runs after ts_loads has rebuilt all of it, in exactly the
+\ environment GameStartInfo would inherit, and scribbles only on ground
+\ GameStart and LoadDeck rebuild.
+\
+\ ZERO PAGE, BORROWED: swSrc/swDst are FontCell's own interface, and
+\ chp walks the record lists — the level draw's charset pointer, idle
+\ outside a game. The rupture IRQ and the sound tick touch none of them
+\ (checked 2026-08-22: no swSrc/swDst/chp in rupture.asm or sound.asm).
+brp = chp                       \ record-list walk pointer
+
+\ What BrRun hands back to BrDispatch.
+BR_EXIT_FIRE  = 0               \ fire: start the game
+BR_EXIT_OFF   = 1               \ off the end of the last page: the title
+
+\ ============================================================
+\ BrTimeout — TiWait timed out: fetch the text, mark the turn
+\ ============================================================
+\ Reached by JMP from TiWait's wrap, with TiShow's return address on
+\ the stack — so the RTS here lands at TitleSeq's ts_loads exactly as
+\ TiWait's own RTS would have. Runs BEFORE PageLowIn, so filing calls
+\ are legal; PARMAN's stream lands at DEPK_STREAM over the title
+\ overlay we have just left for good, and is copied up into bank 5
+\ before loadfnt reclaims &3000.
+.BrTimeout
+  LDA #1
+  STA brFlag
+  LDX #LO(brLoadMan)
+  LDY #HI(brLoadMan)
+  JSR OSCLI
+  PAGEBANK SWRAM_SPR
+  LDA #LO(DEPK_STREAM) : STA swSrc
+  LDA #HI(DEPK_STREAM) : STA swSrc+1
+  LDA #LO(SWRAM_BASE)  : STA swDst
+  LDA #HI(SWRAM_BASE)  : STA swDst+1
+  LDX #PARMAN_PAGES
+  JSR PageCopyAt
+  PAGEBANK SWRAM_DATA
+  RTS
+
+.brLoadMan
+  EQUS "LOAD PARMAN"
+  EQUB 13
+
+\ ============================================================
+\ BrDispatch — where TitleSeq's callers land instead of the game
+\ ============================================================
+\ Both post-title sites (boot's JSR and GoTitle's JMP) come here in
+\ place of GameStartInfo. brFlag says how the title ended: 0 fired ->
+\ the game, 1 timed out -> the briefing, and afterwards either exit
+\ reloads PARASPR into the bank the text borrowed — BOTH exits, because
+\ a fire at the NEXT title would otherwise start a game whose blitter
+\ is briefing text. The reload is the PARDEPK dance boot does, legal
+\ here because the teardown has put the MOS back in charge; ~0.7 s,
+\ accepted as the naive form (KC: get it working, optimise the loading
+\ after — [DECISION 6], and §3d has the one-load trim for later).
+.BrDispatch
+  LDA brFlag
+  BNE brd_brief
+  JMP GameStartInfo
+.brd_brief
+  LDA #0
+  STA brFlag
+  JSR BrRun
+  PHA                           \ BR_EXIT_FIRE or BR_EXIT_OFF
+
+\ The teardown is GoTitle's own, minus SndSilence: the chatter is
+\ deferred (F2), so nothing has sounded since the last silence and the
+\ chip is already quiet. UninstallIrq first — the rupture IRQ rewrites
+\ the CRTC every field — then the plain frame, then DFS's workspace
+\ back before the first load.
+  JSR UninstallIrq
+  JSR SetupPlain                \ bank 4; BrRun left SWRAM_DATA paged
+  JSR RestoreDfsWs
+
+  LDX #LO(loaddepk)             \ the depacker at &3000, over the font —
+  LDY #HI(loaddepk)             \ ts_loads reloads the font either way
+  JSR OSCLI
+  LDX #LO(loadspr)              \ PARASPR's stream at DEPK_STREAM
+  LDY #HI(loadspr)
+  JSR OSCLI
+  LDA #SWRAM_SPR
+  JSR UnpackBankIn              \ the blitter is home again
+
+  PLA
+  BNE brd_title
+  JSR ts_loads                  \ font, low overlay, rupture, tables,
+  JMP GameStartInfo             \ IRQ — TitleSeq's own tail — then play
+.brd_title
+  JSR TitleSeq                  \ the full title again; PARTITL lands on
+  JMP BrDispatch                \ the dead depacker. It can time out again
+
+\ ============================================================
+\ BrRun — the briefing proper
+\ ============================================================
+\ Entered from BrDispatch with the rupture up, the IRQ running, the
+\ font home at &3000 and SWRAM_DATA paged. Parks the scroll exactly as
+\ IsStart does — the strip is addressed as a flat 16 x 640 array — then
+\ pages the text in and stays on it; keydown is safe with a bank up
+\ because OSBYTE restores from ROMSHAD.
+\
+\ F4 SHAPE: static pages. M steps forward — off the end of page 5 is
+\ the way out to the title, which is the C64's own exit — K steps back,
+\ L starts the game at any point, as fire does on the C64. F5 replaces
+\ the stepping with the C64's smooth vertical scroll and dwell; the
+\ K/M/L roles stay (KC, 2026-08-22).
+.BrRun
+  LDA #0
+  STA scrollS
+  STA scrollS+1
+  STA line
+  STA iline
+  STA bandDo
+  STA colCount
+  JSR SetCRTCStart
+  STA brPage                    \ A is still 0: page 1
+
+\ The play area's palette is the briefing's to state: palPlay is built
+\ by SetPalette at DECK LOAD, so at briefing time it holds whatever the
+\ assembler left in it, and the rupture reapplies it every frame — the
+\ ULA writes TiPal did are overwritten within a field. The values are
+\ the OS's MODE 1 default, the same statement TiPal makes: black, red,
+\ yellow, white, so fontMask &FF is white on black.
+  LDX #15
+.br_pal
+  LDA brPal,X
+  STA palPlay,X
+  DEX
+  BPL br_pal
+
+  PAGEBANK SWRAM_SPR
+  JSR BrDrawPage
+
+.br_loop
+  LDX #KEY_L
+  JSR keydown
+  BEQ br_fire
+  LDX #KEY_M
+  JSR keydown
+  BEQ br_next
+  LDX #KEY_K
+  JSR keydown
+  BEQ br_prev
+  JMP br_loop
+
+.br_next
+  INC brPage
+  LDA brPage
+  CMP #BR_PAGES
+  BCS br_off                    \ past the last page: back to the title
+  JSR BrDrawPage
+.brn_rel
+  LDX #KEY_M
+  JSR keydown
+  BEQ brn_rel
+  JMP br_loop
+
+.br_prev
+  LDA brPage
+  BEQ br_loop                   \ already on the first
+  DEC brPage
+  JSR BrDrawPage
+.brp_rel
+  LDX #KEY_K
+  JSR keydown
+  BEQ brp_rel
+  JMP br_loop
+
+.br_fire
+  PAGEBANK SWRAM_DATA
+  LDA #BR_EXIT_FIRE
+  RTS
+.br_off
+  PAGEBANK SWRAM_DATA
+  LDA #BR_EXIT_OFF
+  RTS
+
+\ ============================================================
+\ BrDrawPage — all sixteen strip rows of page brPage
+\ ============================================================
+\ Strip row R shows canvas row R — the top of the page — until F5 adds
+\ the scroll offset. A canvas row is painted from ITS record list drawn
+\ top-half plus the row above's drawn bottom-half, because a record
+\ occupies the row it names and the one below: the top cells of its
+\ 8 x 16 glyphs, then the bottom ones. That is UpTextChar's dest+$100,
+\ done at read time.
+.BrDrawPage
+  LDA #0
+  STA brRow
+.bdp_row
+  JSR BrClearRow
+  LDA #0                        \ top halves of this row's records
+  STA brHalf
+  LDA brRow
+  JSR BrRowList
+  LDA #8                        \ bottom halves of the row above's
+  STA brHalf
+  LDA brRow
+  SEC
+  SBC #1
+  JSR BrRowList
+  INC brRow
+  LDA brRow
+  CMP #16
+  BCC bdp_row
+  RTS
+
+\ ---- one strip row to black --------------------------------
+\ 640 bytes, 256 + 256 + 128. The record lists are sparse, so a page
+\ turn must clear what the last page left.
+.BrClearRow
+  LDX brRow
+  LDA brRowBLo,X : STA swDst
+  LDA brRowBHi,X : STA swDst+1
+  LDA #0
+  TAY
+.bcr_1
+  STA (swDst),Y
+  INY
+  BNE bcr_1
+  INC swDst+1
+.bcr_2
+  STA (swDst),Y
+  INY
+  BNE bcr_2
+  INC swDst+1
+.bcr_3
+  STA (swDst),Y
+  INY
+  CPY #&80
+  BNE bcr_3
+  RTS
+
+\ ============================================================
+\ BrRowList — draw one canvas row's records, one half
+\ ============================================================
+\   A = canvas row, brHalf = 0 (top cells) or 8 (bottom cells)
+\ A row list is (col, glyphs..., $FE) per record, then $FF; an empty
+\ row is the $FF alone, and a row outside BR_ROW_LO..HI has no list at
+\ all — the range check is what stands in for it.
+.BrRowList
+  CMP #BR_ROW_LO
+  BCC brl_x
+  CMP #BR_ROW_HI+1
+  BCS brl_x
+  SEC
+  SBC #BR_ROW_LO
+  TAY
+  LDX brPage                    \ the per-page split keeps every index
+  LDA brPageLLo,X : STA brp     \ 8-bit: 57 rows a page, not 285
+  LDA brPageLHi,X : STA brp+1
+  LDA (brp),Y
+  STA brT                       \ the row list's low byte
+  LDA brPageHLo,X : STA brp
+  LDA brPageHHi,X : STA brp+1
+  LDA (brp),Y
+  STA brp+1
+  LDA brT
+  STA brp                       \ brp -> the row list
+
+.brl_rec
+  LDY #0
+  LDA (brp),Y                   \ a record's column, or $FF
+  CMP #&FF
+  BEQ brl_x
+  STA brT                       \ swDst = row base + col * 16; col < 40
+  LDA #0                        \ so the product needs nine bits
+  ASL brT : ROL A
+  ASL brT : ROL A
+  ASL brT : ROL A
+  ASL brT : ROL A
+  STA brT2
+  LDX brRow
+  CLC
+  LDA brRowBLo,X : ADC brT  : STA swDst
+  LDA brRowBHi,X : ADC brT2 : STA swDst+1
+.brl_gl
+  INY
+  LDA (brp),Y
+  CMP #&FE
+  BEQ brl_adv
+  JSR BrChar
+  JMP brl_gl
+.brl_adv
+  INY                           \ step brp past this record to the next
+  TYA
+  CLC
+  ADC brp
+  STA brp
+  BCC brl_rec
+  INC brp+1
+  JMP brl_rec
+.brl_x
+  RTS
+
+\ ============================================================
+\ BrChar — one character: a cell, or two if it is wide
+\ ============================================================
+\   A = glyph index; Y preserved for the caller's list walk
+\ DrawChar's own rule ($0C82): capitals are 16 px — their right halves
+\ at +PN_WIDE_OFS — EXCEPT capital I, a bare stem; and lowercase m and
+\ w are wide too, their rights parked past the alphabet. The record
+\ lists hold one index per character, so the expansion happens here.
+.BrChar
+  STY brY
+  CMP #PN_LOWER_M
+  BEQ brc_m
+  CMP #PN_LOWER_W
+  BEQ brc_w
+  CMP #PN_UPPER_I
+  BEQ brc_one
+  CMP #PN_UPPER_A
+  BCC brc_one
+  CMP #PN_UPPER_Z+1
+  BCS brc_one
+  PHA
+  JSR BrCell
+  PLA
+  CLC
+  ADC #PN_WIDE_OFS
+.brc_one
+  JSR BrCell
+  LDY brY
+  RTS
+.brc_m
+  JSR BrCell
+  LDA #PN_M_RIGHT
+  BNE brc_one                   \ always
+.brc_w
+  JSR BrCell
+  LDA #PN_W_RIGHT
+  BNE brc_one                   \ always
+
+\ ---- one cell through FontCell -----------------------------
+\ An index below BR_XTRA0 is the shared font's, 16 packed bytes at
+\ textfont + n*16; at or above it is one of the briefing's own three
+\ (comma, apostrophe, semicolon) in brExtra — which is BANK 5, legal
+\ because this whole path runs with the text bank paged. brHalf picks
+\ the top or bottom 8 bytes, FontCell expands them into one MODE 1
+\ cell at swDst, and swDst steps one cell on.
+.BrCell
+  CMP #BR_XTRA0
+  BCS brcl_extra
+  STA swSrc
+  LDA #0
+  STA swSrc+1
+  ASL swSrc : ROL swSrc+1
+  ASL swSrc : ROL swSrc+1
+  ASL swSrc : ROL swSrc+1
+  ASL swSrc : ROL swSrc+1
+  CLC
+  LDA swSrc   : ADC #LO(textfont) : STA swSrc
+  LDA swSrc+1 : ADC #HI(textfont) : STA swSrc+1
+  JMP brcl_half
+.brcl_extra
+  SEC
+  SBC #BR_XTRA0
+  ASL A : ASL A : ASL A : ASL A
+  CLC
+  ADC #LO(brExtra)
+  STA swSrc
+  LDA #0
+  ADC #HI(brExtra)
+  STA swSrc+1
+.brcl_half
+  CLC
+  LDA swSrc
+  ADC brHalf
+  STA swSrc
+  BCC brcl_ink
+  INC swSrc+1
+.brcl_ink
+  LDA #&FF                      \ logical 3 — white under TiPal, which
+  STA fontMask                  \ is still the palette here
+  JSR FontCell
+  CLC
+  LDA swDst
+  ADC #16
+  STA swDst
+  BCC brcl_x
+  INC swDst+1
+.brcl_x
+  RTS
+
+\ ---- the briefing's palette --------------------------------
+.brPal
+  PALENT  0, 0 : PALENT  1, 0 : PALENT  4, 0 : PALENT  5, 0
+  PALENT  2, 1 : PALENT  3, 1 : PALENT  6, 1 : PALENT  7, 1
+  PALENT  8, 3 : PALENT  9, 3 : PALENT 12, 3 : PALENT 13, 3
+  PALENT 10, 7 : PALENT 11, 7 : PALENT 14, 7 : PALENT 15, 7
+
+\ ---- the strip's row bases, scroll parked ------------------
+.brRowBLo
+  FOR n, 0, 15
+    EQUB LO(BUF_BASE + n * ROW_BYTES)
+  NEXT
+.brRowBHi
+  FOR n, 0, 15
+    EQUB HI(BUF_BASE + n * ROW_BYTES)
+  NEXT
+
+\ ---- state, all of it this overlay's ------------------------
+.brFlag  EQUB 0                 \ 0 the title fired; 1 it timed out and
+                                \ PARMAN is in bank 5
+.brPage  EQUB 0                 \ 0-4: which page is up
+.brRow   EQUB 0                 \ the strip row being painted
+.brHalf  EQUB 0                 \ 0 top cells, 8 bottom cells
+.brT     EQUB 0
+.brT2    EQUB 0
+.brY     EQUB 0

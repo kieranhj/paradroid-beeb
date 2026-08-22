@@ -50,10 +50,28 @@ tigd  = svp                     \ and where it lands
 \ TiShow — the whole title, with this bank paged
 \ ============================================================
 .TiShow
+  JSR TiLoadBrf                 \ Layer 11f: the briefing driver, FIRST —
+                                \ a filing call, so before any of the
+                                \ display work and long before PageLowIn
   JSR TiPal
   JSR TiCRTC
   JSR TiPaint
   JMP TiWait                    \ and its RTS
+
+\ ---- the briefing driver, loaded on every title -------------
+\ PARBRF lands at &0400 — the MODE 1 charset's ground, dead outside a
+\ game — and carries BrDispatch, which every post-title path now runs
+\ through, so it must be valid even when the title FIRES. Loading it
+\ here, unconditionally, is what makes that true; it is ~1 K, and the
+\ timed-out path loads PARMAN separately (BrTimeout). The OSCLI is this
+\ overlay's rather than main RAM's because main RAM has two bytes left.
+.TiLoadBrf
+  LDX #LO(tiLoadBrf)
+  LDY #HI(tiLoadBrf)
+  JMP OSCLI                     \ and its RTS
+.tiLoadBrf
+  EQUS "LOAD PARBRF"
+  EQUB 13
 
 \ ---- the palette, and why it is here now --------------------
 \ [DECISION 9] said white on black "for now", on the grounds that the
@@ -225,6 +243,13 @@ ASSERT TITLE_R7 >= TITLE_ROWS   \ VSync must fall after the last row shown
   BNE tiw_loop
   INC tiHi
   BNE tiw_loop
+\ Layer 11f: the 16-bit wrap is the timeout, and the timeout is the
+\ briefing — $291B's own arrangement. BrTimeout fetches PARMAN into
+\ bank 5, arms brFlag for BrDispatch, and RTSes: the return address on
+\ the stack is TiShow's caller, so it lands at TitleSeq's ts_loads
+\ exactly as the RTS below would. It must be a JMP taken BEFORE this
+\ overlay is overwritten — PARMAN's stream lands on top of it.
+  JMP BrTimeout
 .tiw_done
   LDA tiLo                      \ hand the dwell out for the seed
   EOR tiHi

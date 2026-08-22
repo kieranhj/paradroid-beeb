@@ -1,8 +1,20 @@
 #!/usr/bin/env python3
 """
-export_briefing.py - the intro manual's text, for Layer 11f's briefing.
+export_briefing.py - decode the C64 intro manual ONCE, into briefing.txt.
 
-Emits src/data/briefing.asm.
+THIS TOOL IS THE ONE-SHOT HALF OF A TWO-STAGE PIPELINE. KC, 2026-08-22:
+the briefing text should be exported once into a file that can be edited
+by hand, and THAT file is the build input. So:
+
+    export_briefing.py   C64 listing -> src/data/briefing.txt   (run ONCE)
+    make_briefing.py     briefing.txt -> src/data/briefing.asm  (every build)
+
+Because briefing.txt may carry KC's hand edits, this tool REFUSES to
+overwrite it unless given --force. Losing edits to a casual re-run is the
+failure mode this guards against; there is no other reason to re-run it.
+
+The text is kept VERBATIM, the C64's pause-key legend included - KC,
+2026-08-22: worry about the wording later, in the text file, by hand.
 
 WHAT THE C64 HAS
 ----------------
@@ -20,42 +32,24 @@ one row below - because the text font is 8 x 16. UpTextChar ($3C4E)
 writes a SECOND COLUMN for any code in $3A-$59: capitals are 16 px, which
 is DrawChar's own rule and export_font.py's header has the why.
 
-WHAT THIS PORT DOES INSTEAD
----------------------------
-No canvas. The records are sorted by text line here and emitted with a
-per-line index, so "paint canvas row R" is a walk of one short list and
-the 15.5 K staging area is simply gone. That is a removal of C64
-machinery the port has no use for, in the same spirit as the ZX0 deck
-maps replacing the RLE. [11f DECISION 3]
-
 Decoded, the canvas is:
 
     stride     256 bytes; a text line is TWO canvas rows
-    rows       $82-$BB, so text lines 1 to 29
+    rows       $82-$BB, so canvas rows 2 to 59
     columns    five pages of 40, at column 2 + 40n
 
-so a page is 40 characters of 8 px = 320 px, which is exactly the port's
-play area, and the only scrolling needed is vertical. Horizontal is not a
+so a page is 40 characters of 8 px = 320 px, exactly the port's play
+area, and the only scrolling needed is vertical. Horizontal is not a
 scroll at all: $122B jump-cuts to the next page.
 
-GLYPHS
-------
-Port glyph indices, the same mapping export_strings.py uses -- the
-briefing runs after TitleSeq has reloaded PARAFNT, so the real font is
-resident and none of it needs carrying. TWO characters are missing from
-that font, because export_bbc.py converts only what a TILE references:
+THE OUTPUT FORMAT is make_briefing.py's input and its header documents
+it; the short version is one record a line, `row col |text`, grouped
+under `page N` headings, with `label` naming the next record and `glyph`
+carrying the bitmaps of characters the shared font has not got.
 
-    comma ($29) and apostrophe ($2D)
-
-They are emitted here as two extra glyph bitmaps with indices above the
-font's own, for the renderer to plot from its own data. See BR_EXTRA0.
-
-TEXT OVERRIDES
---------------
-Page 5 prints the C64's pause-key legend -- RUN/STOP, CLR/HOME, f7, f8 --
-and none of those keys exist on a Beeb, so the page would print a lie.
-OVERRIDES replaces or drops records by address; what the replacement says
-is KC's, at the time. [11f DECISION 9]
+The two SCORE-TABLE lines on page 5 ($DD89, $DDB4) are labelled hiscore
+and loscore: the driver patches them from bank 7's table at load time,
+which is UpdateTextScore's job moved to the read side. [11f DECISION 7]
 """
 
 import sys
@@ -63,61 +57,23 @@ import importlib.util
 from pathlib import Path
 
 PROJECT = Path(__file__).resolve().parent.parent
-OUT = PROJECT / 'src' / 'data' / 'briefing.asm'
+OUT = PROJECT / 'src' / 'data' / 'briefing.txt'
 
 TEXT_BASE = 0xD000
 PAGE_COLS = 40
 PAGE_COL0 = 2
 
-# Port glyph indices, from export_font.py's order.
-PN_SPACE, PN_DIGIT0, PN_UPPER_A, PN_LOWER_A = 0, 1, 11, 63
-PN_DOT, PN_DASH, PN_COLON, PN_BANG = 89, 98, 99, 102
-PN_UPPER_I = PN_UPPER_A + 8
-PN_LOWER_M = PN_LOWER_A + 12
-PN_LOWER_W = PN_LOWER_A + 22
-PN_GLYPHS = 103                 # what the shared font actually has
+# The two records UpdateTextScore ($E5AC) patches in place: the high and
+# low score lines of page 5. The driver needs to find them, so they are
+# labelled in the output.
+LABELS = {0xDD89: 'hiscore', 0xDDB4: 'loscore'}
 
-# The two the shared font has not got, carried by the briefing itself.
-BR_COMMA, BR_APOS = PN_GLYPHS, PN_GLYPHS + 1
-
-SPECIAL = {
-    0x16: PN_UPPER_I,
-    0x42: PN_LOWER_M,
-    0x54: PN_LOWER_W,
-    0x25: PN_BANG,
-    0x28: PN_DOT,
-    0x29: BR_COMMA,             # NOT in the shared font
-    0x2A: PN_COLON,
-    0x2D: BR_APOS,              # NOT in the shared font either
-    0x2E: PN_DASH,
-    0x30: PN_SPACE,
-}
-
-# Records to replace or drop, by their address in the C64 text. None
-# drops the record entirely. Nothing is overridden yet -- the pause keys
-# are KC's wording when pause exists, and until then the two blocks that
-# name them are dropped so the page does not print a lie.
-OVERRIDES = {
-    0xDDC3: None,               # "To pause: press run-stop."
-    0xDDDF: None,               # "From pause mode only:"
-    0xDDF7: None,               # "fire      - restarts,"
-    0xDE0F: None,               # "run-stop  - restarts,"
-    0xDE27: None,               # "clr-home - quits game,"
-    0xDE40: None,               # "f7        - cheese,"
-    0xDE56: None,               # "f8        - pause."
-}
-
-
-def to_glyph(code):
-    if code in SPECIAL:
-        return SPECIAL[code]
-    if code <= 0x09:
-        return PN_DIGIT0 + code
-    if 0x0A <= code <= 0x23:
-        return PN_LOWER_A + (code - 0x0A)
-    if 0x3A <= code <= 0x53:
-        return PN_UPPER_A + (code - 0x3A)
-    raise KeyError('no glyph for C64 code $%02X' % code)
+# Characters the shared font has not got, whose bitmaps therefore ride in
+# briefing.txt as `glyph` lines: comma, apostrophe, semicolon. export_bbc
+# converts only what a TILE references and no deck uses any of the three.
+# Semicolon is included although the C64 text happens not to use it, so a
+# hand edit may - the glyphs cost 16 bytes each in a bank with 12K spare.
+EXTRA_GLYPHS = [(',', 0x29), ("'", 0x2D), (';', 0x2B)]
 
 
 def to_text(code):
@@ -183,134 +139,74 @@ def glyph_rows(mem, code):
 
 
 def main():
+    force = '--force' in sys.argv
+    if OUT.exists() and not force:
+        raise SystemExit(
+            '%s exists and may carry hand edits - re-run with --force '
+            'only if you really mean to regenerate it from the C64 text'
+            % OUT)
+
     mem = load_memory()
     records = read_records(mem)
 
-    kept, dropped = [], 0
+    # (page, row) -> records, exactly as the canvas holds them
+    by_page = {}
     for addr, hi, lo, codes in records:
-        if addr in OVERRIDES:
-            if OVERRIDES[addr] is None:
-                dropped += 1
-                continue
-            codes = [c for c in OVERRIDES[addr]]
-        kept.append((addr, hi, lo, codes))
-
-    # canvas row -> page + the records that START on it. A record spans
-    # rows R and R+1 - the top cells of its glyphs then the bottom ones -
-    # so painting canvas row r means the records at r drawn top-half and
-    # the records at r-1 drawn bottom-half. THE LINES ARE NOT EVENLY
-    # SPACED: page 1 steps three canvas rows a line and the later pages
-    # two, so this is indexed by row and not by any notion of line.
-    rows = {}
-    for addr, hi, lo, codes in kept:
         row = hi - 0x80
         page, col = divmod(lo - PAGE_COL0, PAGE_COLS)
         assert 0 <= page <= 4, 'record $%04X is on page %d' % (addr, page)
-        rows.setdefault((page, row), []).append((col, codes, addr))
+        by_page.setdefault(page, []).append((row, col, addr, codes))
 
-    pages = sorted({p for p, _ in rows})
-    row_lo = min(r for _, r in rows)
-    row_hi = max(r for _, r in rows)
-
-    bs = chr(92)
     out = []
-    out.append(bs + ' ============================================================')
-    out.append(bs + ' briefing.asm - GENERATED by tools/export_briefing.py')
-    out.append(bs + ' ============================================================')
-    out.append(bs + " The intro manual's text, $D000-$DED0, as records indexed by")
-    out.append(bs + ' the canvas row they start on. No canvas: see the exporter')
-    out.append(bs + ' header and docs/layer-11f-frontend.md.')
-    out.append('')
-    out.append('BR_PAGES     = %d' % len(pages))
-    out.append('BR_ROW_LO    = %d' % row_lo)
-    out.append('BR_ROW_HI    = %d' % row_hi)
-    out.append('BR_ROWS      = BR_ROW_HI - BR_ROW_LO + 1')
-    out.append('BR_COL0      = %d' % PAGE_COL0)
-    out.append(bs + ' A record occupies the row it names AND the one below it: the')
-    out.append(bs + ' top cells of its 8 x 16 glyphs, then the bottom ones. So a')
-    out.append(bs + ' row is painted from ITS list top-half and the PREVIOUS list')
-    out.append(bs + ' bottom-half, which is what UpTextChar does with its dest+$100.')
-    out.append('')
-    out.append(bs + ' The two glyphs the shared font has not got. The renderer plots')
-    out.append(bs + ' an index of BR_COMMA or above from brExtra, not from the font.')
-    out.append('BR_COMMA     = %d' % BR_COMMA)
-    out.append('BR_APOS      = %d' % BR_APOS)
-    out.append('')
-    out.append(bs + ' A row list is (col, glyphs..., $FE) per record, then $FF.')
-    out.append(bs + ' Rows with nothing on them are one byte: $FF.')
-    out.append('')
+    out.append('# briefing.txt - the intro manual, decoded from the C64 original.')
+    out.append('# EDIT FREELY: this file is the build input. tools/make_briefing.py')
+    out.append('# turns it into src/data/briefing.asm (build.ps1 runs it).')
+    out.append('#')
+    out.append('# Format, one record per line:')
+    out.append('#   page N                   the records below are on page N (1-5)')
+    out.append('#   ROW COL |text            canvas row (2-58), column (0-39), text.')
+    out.append('#                            The | marks where the text starts, so')
+    out.append('#                            leading spaces are unambiguous.')
+    out.append('#   label NAME               names the NEXT record for the driver')
+    out.append('#   glyph C XX..XX           the 8x16 bitmap of a character the shared')
+    out.append('#                            font lacks: 32 hex bytes, top cell then')
+    out.append('#                            bottom. Do not remove these.')
+    out.append('#')
+    out.append('# Rules make_briefing.py enforces:')
+    out.append("#   characters: a-z A-Z 0-9 space . , : ; ' - !")
+    out.append('#   capitals (except I) and m and w are 16 px wide, everything else 8,')
+    out.append('#   and a line must fit its page: start column + width <= 40.')
+    out.append('#   A text line occupies TWO canvas rows, so records on consecutive')
+    out.append('#   rows overlap; the decoded text uses every OTHER row at least.')
+    out.append('#')
+    out.append('# The hiscore/loscore labels mark the lines the driver patches from')
+    out.append("# the live table in bank 7, so their text here is only the default")
+    out.append("# (Braybrook's own joke entries). Keep their shape if you edit them.")
 
-    entries = [(p, r) for p in pages for r in range(row_lo, row_hi + 1)]
-    out.append('.brRowLo')
-    for p, r in entries:
-        out.append('  EQUB LO(brRow_%d_%d)' % (p, r))
-    out.append('.brRowHi')
-    for p, r in entries:
-        out.append('  EQUB HI(brRow_%d_%d)' % (p, r))
-    out.append('')
-
-    total = 0
-    for p, r in entries:
-        out.append('.brRow_%d_%d' % (p, r))
-        for col, codes, addr in sorted(rows.get((p, r), [])):
+    for page in sorted(by_page):
+        out.append('')
+        out.append('page %d' % (page + 1))
+        for row, col, addr, codes in sorted(by_page[page]):
             text = ''.join(to_text(c) for c in codes)
-            out.append('  ' + bs + ' $%04X  "%s"' % (addr, text))
-            gl = [to_glyph(c) for c in codes]
-            out.append('  EQUB %d' % col)
-            for j in range(0, len(gl), 12):
-                out.append('  EQUB ' + ', '.join(str(v) for v in gl[j:j + 12]))
-            out.append('  EQUB &FE')
-            total += 2 + len(gl)
-        out.append('  EQUB &FF')
-        total += 1
-    out.append('')
+            if addr in LABELS:
+                out.append('label %s' % LABELS[addr])
+            out.append('%2d %2d |%s' % (row, col, text))
 
-    out.append(bs + ' ---- the two missing glyphs, 1bpp, 16 bytes each ----------')
-    out.append(bs + ' export_bbc.py converts only what a TILE references, so the')
-    out.append(bs + ' comma and the apostrophe are in no deck and therefore in no')
-    out.append(bs + ' charset. They are $29 and $2D of the $7000 text font.')
-    out.append('.brExtra')
-    for name, code in (('comma $29', 0x29), ('apostrophe $2D', 0x2D)):
-        grows = glyph_rows(mem, code)
-        out.append('  ' + bs + ' ' + name)
-        out.append('  EQUB ' + ', '.join('&%02X' % b for b in grows[:8]))
-        out.append('  EQUB ' + ', '.join('&%02X' % b for b in grows[8:]))
+    out.append('')
+    out.append('# The bitmaps of the characters the shared font has not got, from')
+    out.append("# the C64's $7000 text font. The renderer plots these from brExtra.")
+    for ch, code in EXTRA_GLYPHS:
+        rows = glyph_rows(mem, code)
+        out.append('glyph %s %s' % (ch, ''.join('%02X' % b for b in rows)))
     out.append('')
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(chr(10).join(out) + chr(10))
+    OUT.write_text('\n'.join(out) + '\n')
 
+    n = sum(len(v) for v in by_page.values())
     print('wrote %s' % OUT)
-    print('  %d records (%d dropped by OVERRIDES), %d pages, rows %d-%d'
-          % (len(kept), dropped, len(pages), row_lo, row_hi))
-    print('  %d bytes of text and lists + %d index + 32 glyphs'
-          % (total, len(entries) * 2))
-
-    # THE CHECK THAT MATTERS: take the glyph indices that were just
-    # emitted, decode them back to ASCII through an INVERSE of the map,
-    # and diff against the C64's own text record for record. A slip in
-    # to_glyph shows up here and nowhere else.
-    inv = {0: ' ', PN_DOT: '.', PN_DASH: '-', PN_COLON: ':',
-           PN_BANG: '!', BR_COMMA: ',', BR_APOS: "'"}
-    for d in range(10):
-        inv[PN_DIGIT0 + d] = chr(48 + d)
-    for i in range(26):
-        inv[PN_UPPER_A + i] = chr(65 + i)
-        inv[PN_LOWER_A + i] = chr(97 + i)
-
-    bad = []
-    for addr, hi, lo, codes in kept:
-        want = ''.join(to_text(c) for c in codes)
-        got = ''.join(inv[to_glyph(c)] for c in codes)
-        if want != got:
-            bad.append((addr, want, got))
-    if bad:
-        for addr, want, got in bad[:5]:
-            print('  MISMATCH $%04X' % addr)
-            print('    C64  %r' % want)
-            print('    ours %r' % got)
-        raise SystemExit('%d records do not round-trip' % len(bad))
-    print('  round-trip: all %d records decode back to the C64 text' % len(kept))
+    print('  %d records over %d pages, verbatim - the pause-key legend included'
+          % (n, len(by_page)))
 
 
 if __name__ == '__main__':
