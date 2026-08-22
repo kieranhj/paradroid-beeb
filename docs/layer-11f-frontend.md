@@ -559,7 +559,10 @@ lost to `SndTick`'s slide negate now and again — one step of a deliberately ra
 - **CH2 and CH3 are never written** — the noise channel stays free, as the tone instruments say.
 - **The exits are silent**: fire out of the briefing left all four channels at attenuation 15 and
   `sndState` at 0 before the loads. `BrDispatch`'s teardown got its `SndSilence` back; the comment
-  saying nothing had sounded is no longer true.
+  saying nothing had sounded is no longer true. **The other exit — off the end of page 5 to the
+  title — is covered by inspection, not by test**: the silence happens in `BrDispatch` before the
+  `brd_title`/`ts_loads` branch, so both exits run the same instructions, but only the fire path
+  has actually been walked.
 - **The game is unharmed**: a deck loaded behind it with `sndState` 2 and the per-deck hum on CH1
   at 219.7 Hz, and `sndFxChat` read back `08 00 0C 00 CD 7D 00 01 00 00 00` — blip C's prefix on
   the shipped tail, the last thing the briefing played.

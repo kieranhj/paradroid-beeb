@@ -461,11 +461,21 @@ The port has no `sndState $11`: 11f [DECISION 11].)*
   into a sibling — the failure mode `FX_PERIODIC`'s cloning exists to prevent, caught at build
   time instead.
 
-  **One in-game consequence for the ear, not yet heard**: `ChangeDeck` posts fx16 on **both**
-  voices, and two noise claims share the one noise channel ([DECISION 3], latest wins), so the
-  lift's doubled blip becomes a single one. Analysed as safe — each voice's flush silences its
-  own tone channel and the owner rule cleans up — but it is a change to a stage-4 sign-off, on
-  top of the level drop KC has already sanctioned. **KC 2026-08-21:
+  **The in-game consequence, verified in the registers 2026-08-22.** `ChangeDeck` posts fx16 on
+  **both** voices, and two noise claims share the one noise channel ([DECISION 3], latest wins),
+  so the lift's doubled blip becomes a single one. Tested directly rather than reasoned about —
+  `sndFx1` and `sndFx2` both poked to 16 during play, which is what `$271B`/`$2729` do:
+
+  - the hum's tone channel went to attenuation 15 the moment the noise voice took its voice over
+    (round eight's rule), and CH0 needed no write because it was already silent
+  - one `Noise: 3` control write, one envelope on CH3 — **12, 9, 6, 3, 0, then 6** — and CH2
+    sweeping the pitch for the full 27 ticks
+  - **attenuation 15 on CH3 at the end: nothing left stuck**, and the per-deck hum re-posted on
+    CH1 immediately after
+
+  So the mechanism is sound and the only open question is taste: one blip per deck instead of a
+  doubled one, quieter, at its real pitch. **Still wants KC's ear on an actual lift ride** — a
+  change to a stage-4 sign-off, on top of the level drop already sanctioned. **KC 2026-08-21:
   periodic noise clocked by tone 2 is the preferred cure** — it reaches ~15× below the tone
   floor and is an iconic BBC sound. Tuned by ear in stage 4, effect by effect, minding that it
   shares the one noise channel with the explosions.
