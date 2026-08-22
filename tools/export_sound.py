@@ -198,6 +198,27 @@ FX_PERIODIC = {16, 23}
 # would vanish; they go periodic (PERIODIC_BASS / FX_PERIODIC) instead.
 MUTE_SUBFLOOR = {2, 3}
 
+# Per-effect SUSTAIN LEVEL overrides, as the sustain nibble the C64
+# would have held (0-15); the driver plays it as attenuation
+# 15 - nibble, so one step is 2 dB. The other sanctioned place ported
+# sound data may differ from the C64's bytes, and the same rules apply:
+# every entry is an eared decision with its reason here.
+#
+# Keyed by EFFECT, not by instrument, because clone allocation moves
+# instrument indices around (see the clone loop); the exporter resolves
+# the effect's instrument at emit time and asserts nothing else shares
+# it, so an override can never leak into a sound it was not meant for.
+#
+# fx16, 2026-08-22, KC: after going periodic the pitch was right but it
+# was "still too loud" - and it is the briefing's background for 54
+# fields in every 64. The C64 sustains it at full (SR nibble F), which
+# put it at attenuation 0, a full 6 dB ABOVE the chatter blips it is
+# supposed to sit behind. Nibble 9 = attenuation 6 puts it 6 dB below
+# them instead. Its 100 ms attack ramp is untouched, so the blip keeps
+# its swell and one 20 ms tick at full before settling. KC sanctioned
+# the same drop for the in-game lift, which shares the record.
+FX_LEVEL = {16: 9}
+
 # SID envelope rate tables, ms for the full 0->peak / peak->0 ramp
 ATTACK_MS = [2, 8, 16, 24, 38, 56, 68, 80, 100, 250, 500, 800,
              1000, 3000, 5000, 8000]
@@ -392,6 +413,20 @@ def main():
             clones[src_i] = c['idx']
         fx_raw[n - 1] = bytes([clones[src_i]]) + fx_raw[n - 1][1:]
     n_inst = len(instruments)
+
+    # FX_LEVEL, resolved now that every record names its final
+    # instrument. The assert is the whole point of keying by effect:
+    # an override may only touch an instrument whose every user asks
+    # for the same level, so it cannot leak into a sibling effect.
+    for n, nib in FX_LEVEL.items():
+        i = fx_raw[n - 1][0]
+        sharers = [m for m in range(1, NUM_FX + 1) if fx_raw[m - 1][0] == i]
+        assert all(FX_LEVEL.get(m) == nib for m in sharers), \
+            f"fx{n}'s level override would also move fx" \
+            f"{[m for m in sharers if FX_LEVEL.get(m) != nib]} - they " \
+            f"share instrument {i}. Clone it (FX_PERIODIC) or give " \
+            f"them the same entry."
+        instruments[i]['sus'] = nib * 17
 
     effects = [convert_effect(i + 1, fx_raw[i], instruments)
                for i in range(NUM_FX)]

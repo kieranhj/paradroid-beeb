@@ -411,10 +411,27 @@ The port has no `sndState $11`: 11f [DECISION 11].)*
   and a contiguous emitted table pays for them either way. The fx23 clone moved into slot 1 and
   fx16's took the slot it vacated at the end.
 
+  **Round eleven, part two — and the level, which is a new mechanism.** KC on the rebuild: the
+  pitch was right, "still too loud", and — asked directly — the in-game lift may go quieter with
+  it. The C64 sustains fx16 at full (SR nibble `F`), which put it at **attenuation 0, 6 dB above
+  the chatter blips it is supposed to sit behind**. `FX_LEVEL`, the second sanctioned place
+  ported sound data may differ from the C64's bytes, sets its sustain to nibble 9 = attenuation
+  6, so it now sits 6 dB *below* them: a 12 dB swing from what KC heard. The 100 ms attack ramp
+  is untouched, so the blip keeps its swell — captured on CH3 as **12, 9, 6, 3, 0, then 6**,
+  one 20 ms tick at full before the body settles.
+
+  **`FX_LEVEL` is keyed by EFFECT, not by instrument**, and that is load-bearing: clone
+  allocation moves instrument indices, so an index-keyed table would silently retarget the next
+  time `FX_PERIODIC` changes. The exporter resolves the effect's instrument at emit time and
+  **asserts every other effect sharing it asks for the same level**, so an override cannot leak
+  into a sibling — the failure mode `FX_PERIODIC`'s cloning exists to prevent, caught at build
+  time instead.
+
   **One in-game consequence for the ear, not yet heard**: `ChangeDeck` posts fx16 on **both**
   voices, and two noise claims share the one noise channel ([DECISION 3], latest wins), so the
   lift's doubled blip becomes a single one. Analysed as safe — each voice's flush silences its
-  own tone channel and the owner rule cleans up — but it is a change to a stage-4 sign-off. **KC 2026-08-21:
+  own tone channel and the owner rule cleans up — but it is a change to a stage-4 sign-off, on
+  top of the level drop KC has already sanctioned. **KC 2026-08-21:
   periodic noise clocked by tone 2 is the preferred cure** — it reaches ~15× below the tone
   floor and is an iconic BBC sound. Tuned by ear in stage 4, effect by effect, minding that it
   shares the one noise channel with the explosions.
