@@ -359,6 +359,17 @@ PAGE = r"""<!doctype html>
   <h1>Paradroid deck palettes</h1>
   <div class="tabs" id="tabs"></div>
   <span style="flex:1"></span>
+  <label for="dither">dither</label>
+  <select id="dither">
+    <option value="off" selected>off &mdash; solid, as built</option>
+    <option value="check">2&times;2 checker</option>
+    <option value="vert">vertical stripes</option>
+    <option value="horiz">horizontal stripes</option>
+  </select>
+  <select id="shade" title="which logical the half-pixels take">
+    <option value="1" selected>shade = logical 1</option>
+    <option value="2">shade = logical 2</option>
+  </select>
   <label for="zoom">zoom</label>
   <select id="zoom">
     <option value="fit">fit</option>
@@ -400,6 +411,19 @@ PAGE = r"""<!doctype html>
     </div>
     <p class="note" id="hint">Move the pointer over a deck above to aim this
       window; the droid follows it. Shown at 2&times;.</p>
+    <p class="note"><b>dither</b> halves the intensity of logical 0 by giving
+      every other pixel the shade logical instead. It is worth what logical 1
+      is on this deck: black on thirteen of the sixteen, so the floor reads at
+      half strength &mdash; but decks 0, 5 and 9 already have a BLACK logical 0
+      and a coloured logical 1, so the dither there paints colour ONTO black
+      and gets louder, not quieter. Those three want leaving alone, or
+      re-picking.</p>
+    <p class="note">What the BUILD does is the <b>2&times;2 checker</b> with
+      <b>shade = logical 1</b>, and only on a deck whose logical 1 is physical
+      black &mdash; <code>DitherChar</code> in <code>src/level.asm</code>, see
+      <code>docs/layer-14-visual.md</code> DECISION 1. The other patterns and
+      shade 2 are here to compare against, not to select: nothing carries them
+      into the build.</p>
     <p class="note">The C64 draws every droid, the player included, in BLACK
       &mdash; <code>SpriteColor</code> takes <code>$F0</code> at
       <code>$1906</code> &mdash; so the C64 pane shows it black whatever the
@@ -424,6 +448,7 @@ PAGE = r"""<!doctype html>
     <hr>
     <h2>Merge &mdash; C64 colour to logical</h2>
     <div class="merge" id="merge"></div>
+    <p class="warn" id="bgwarn" hidden></p>
     <p class="note">Emitted as <code>.colourMap</code>. Two C64 colours on the
       same logical slot become the same pixel &mdash; no palette can separate
       them again. Percentages are of this deck's pixels.</p>
@@ -490,13 +515,50 @@ function bbcLut(d) {
   return lut(out);
 }
 
-function paint(canvas, d, table) {
+/* ---- the dither ---------------------------------------------------------
+   Layer 14's experiment: the BBC palette is fully saturated, so a floor of
+   solid red or cyan is far harsher than the C64's. Half its pixels take
+   ANOTHER logical instead - logical 1, which is physical BLACK on thirteen
+   of the sixteen decks - and the floor reads at half intensity.
+
+   Applied to logical 0 wherever it lands: the floor itself AND any cell
+   whose ink merged onto logical 0, which is what keeps such a cell
+   invisible against the floor exactly as it is now.
+
+   On the port this is baked into the charset at deck load, not drawn per
+   frame, so the phase is fixed to the character grid. The crop here starts
+   on a tile boundary, so (x+y)&1 is that grid up to a whole-pattern flip. */
+let dither = 'off', shadeLog = 1;
+
+function keepsColour(x, y) {
+  if (dither === 'check') return ((x + y) & 1) === 0;
+  if (dither === 'vert')  return (x & 1) === 0;
+  if (dither === 'horiz') return (y & 1) === 0;
+  return true;
+}
+
+/* The same 16-entry lookup, but with every C64 colour that merged onto
+   logical 0 painted in the shade logical instead. */
+function shadeLut(d) {
+  const p = phys(d), m = cmap(d), out = [];
+  for (let c = 0; c < 16; c++)
+    out.push(BBC[p[m[c] === 0 ? shadeLog : m[c]]]);
+  return lut(out);
+}
+
+function paint(canvas, d, table, alt) {
   const k = deck(d);
   canvas.width = k.w; canvas.height = k.h;
   const ctx = canvas.getContext('2d');
   const img = ctx.createImageData(k.w, k.h);
   const out = new Uint32Array(img.data.buffer), src = idx[d];
-  for (let i = 0; i < src.length; i++) out[i] = table[src[i]];
+  if (!alt || dither === 'off') {
+    for (let i = 0; i < src.length; i++) out[i] = table[src[i]];
+  } else {
+    for (let y = 0, i = 0; y < k.h; y++)
+      for (let x = 0; x < k.w; x++, i++)
+        out[i] = keepsColour(x, y) ? table[src[i]] : alt[src[i]];
+  }
   ctx.putImageData(img, 0, 0);
 }
 
@@ -542,7 +604,7 @@ function applyZoom() {
 }
 
 function redrawBBC() {
-  paint(cvbb, cur, bbcLut(cur));
+  paint(cvbb, cur, bbcLut(cur), shadeLut(cur));
   drawWindows(lastWin.x, lastWin.y);
 }
 
@@ -550,7 +612,7 @@ function show(d) {
   cur = d;
   const k = deck(d);
   paint(cv64, d, LUT64);
-  paint(cvbb, d, bbcLut(d));
+  paint(cvbb, d, bbcLut(d), shadeLut(d));
   applyZoom();
   document.getElementById('c64info').textContent =
     'deck ' + d + ' · scheme ' + k.scheme + ' · ' + k.w + '×' + k.h + ' px';
@@ -689,6 +751,14 @@ function buildOverview() {
 
 function buildMerge() {
   const el = document.getElementById('merge'), k = deck(cur), m = cmap(cur);
+  /* The background HAS to stay on logical 0: it is %00, so BuildLUTs gets a
+     background pixel for free and DitherCharset finds one by asking which
+     pixels are zero. export_bbc.py refuses to write colours.asm otherwise,
+     so say it here rather than at build time. */
+  const bgw = document.getElementById('bgwarn');
+  bgw.hidden = m[k.logical[0]] === 0;
+  bgw.textContent = 'The background (' + C64N[k.logical[0]] + ') is on logical '
+    + m[k.logical[0]] + ', not 0. export_bbc.py will refuse this deck.';
   const total = k.counts.reduce((a, b) => a + b, 0) || 1;
   el.innerHTML = '';
   k.counts.forEach((n, c) => {
@@ -781,6 +851,13 @@ document.getElementById('sprCol').onchange = e => {
 /* the rotor spins in the game, so it spins here - a still rotor hides how
    much of the droid is actually its thin blades */
 setInterval(() => { if (sprOn) { sprPhase++; drawWindows(lastWin.x, lastWin.y); } }, 120);
+
+document.getElementById('dither').onchange = e => {
+  dither = e.target.value; redrawBBC();
+};
+document.getElementById('shade').onchange = e => {
+  shadeLog = +e.target.value; redrawBBC();
+};
 
 document.getElementById('zoom').onchange = e => {
   zoom = e.target.value === 'fit' ? 'fit' : +e.target.value;

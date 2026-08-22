@@ -926,10 +926,12 @@ NUM_DECKS  = 16
 \ is used. These index the per-deck colourMap.
 \
 \ $D021 is NOT here, because it is not shared: the play area's
-\ background is slot 0 of each deck's colour record, and the
-\ sixteen values are in the deckBg table in colours.asm. It was a
+\ background is slot 0 of each deck's colour record. It was a
 \ constant 14 until 2026-08-17, which is right for decks 2 and 7
-\ only — see tools/export_bbc.py's deck_background().
+\ only — see tools/export_bbc.py's deck_background(). The sixteen
+\ values used to ship as a deckBg table; they are not shipped at
+\ all now, because the only thing that read them looked up a
+\ logical colour that is ALWAYS 0. See BuildCharset.
 \ $D022/$D023 are NOT here either: the play area is hires, so the
 \ multicolour pair never applies to it. DrawSideview sets them for
 \ its own screen. Removed 2026-08-18 with the multicolour path.

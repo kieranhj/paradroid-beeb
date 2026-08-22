@@ -73,9 +73,17 @@ def check_charset(mem, dump_path, deck):
     The 6502 builds it from nibble lookup tables; this recomputes it directly
     from the C64 bitmaps and the deck's colour scheme, so agreement means two
     independent implementations match.
+
+    EXPECT CODES $4C-$4F TO DIFFER on a dump taken from a running game. They
+    are the recharge pad, and AnimTick rotates those four characters inside
+    the charset every pass, so they hold whatever phase the animation had
+    reached. Character $16 - the ALERT lamp - can differ for the same reason:
+    BuildLampChar rewrites it when the alert level changes. Anything else is
+    a real failure.
     """
     from export_bbc import (deck_colours, build_logical_map, convert_charset,
-                            deck_background,
+                            deck_background, assign_palette, load_palette_override,
+                            dither_charset, deck_dithers,
                             CHARSET_ADDR, TILEDEF_ADDR, TILEDEF_SIZE)
 
     used = sorted({mem[TILEDEF_ADDR + i] for i in range(32 * TILEDEF_SIZE)})
@@ -83,9 +91,17 @@ def check_charset(mem, dump_path, deck):
     logical, _ = build_logical_map(mem, cell_colour, deck_background(mem, deck))
     full, _ = convert_charset(mem, cell_colour, logical)
 
+    # Layer 14's floor dither is part of what BuildCharset leaves behind, so
+    # the oracle has to apply it too or every dithered deck reads as a fail.
+    # The enable rule needs the deck's PHYSICAL palette, hand-set or not.
+    dpal = load_palette_override().get(deck, {}).get(
+        'physical', assign_palette(logical))
+    dither = deck_dithers(dpal)
+
     expected = bytearray()
     for code in used:
-        expected.extend(full[code * 16:code * 16 + 16])
+        expected.extend(
+            dither_charset(full[code * 16:code * 16 + 16], dither))
 
     actual = open(dump_path, 'rb').read()
     if len(actual) != len(expected):
@@ -95,6 +111,16 @@ def check_charset(mem, dump_path, deck):
 
     diffs = [i for i, (e, a) in enumerate(zip(expected, actual)) if e != a]
     if diffs:
+        codes = sorted({used[i // 16] for i in diffs})
+        live = {0x4C, 0x4D, 0x4E, 0x4F, 0x16}
+        if set(codes) <= live:
+            print('OK   charset   deck %d: %d bytes match, except the %d '
+                  'live-animated character(s) %s - see the docstring '
+                  '(dither %s)'
+                  % (deck, len(expected), len(codes),
+                     ' '.join('$%02X' % c for c in codes),
+                     'on' if dither else 'off'))
+            return 0
         print('FAIL charset: %d of %d bytes differ' % (len(diffs), len(expected)))
         for i in diffs[:8]:
             print('       char index %d (code $%02X) byte %d: expected %02X, got %02X'
@@ -102,7 +128,8 @@ def check_charset(mem, dump_path, deck):
         return 1
 
     print('OK   charset   deck %d: %d bytes (%d chars) match the Python '
-          'conversion' % (deck, len(expected), len(used)))
+          'conversion (dither %s)'
+          % (deck, len(expected), len(used), 'on' if dither else 'off'))
     return 0
 
 

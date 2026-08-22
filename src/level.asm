@@ -76,6 +76,11 @@
 .lampSrc
   SKIP 8
 
+\ The ALERT lamp's ink by alert level, read by AnimNextLamp — in this bank
+\ for the room rather than beside it in lowcode.asm. Level 3 also blinks.
+.lampInk
+  EQUB 1, 2, 3, 3
+
 \ ---- UnpackChars — the char stream into the depack scratch --
 \ Bitmaps at SPR_SAVE, the remap behind them. Callers: BuildCharset
 \ (deck load) and BuildCharPtrs (boot, and GoTitle's rebuild — the
@@ -149,11 +154,31 @@
   ASL A : ASL A : ASL A : ASL A
   STA bcCmapBase
 
-  LDY bcDeck                    \ $D021 is PER DECK — slot 0 of its colour
-  LDA deckBg,Y                  \ record, not a constant. Only decks 2 and 7
-  CLC : ADC bcCmapBase : TAX    \ are the light blue this used to assume for
-  LDA colourMap,X : STA bcBg    \ all sixteen. See tools/export_bbc.py.
+\ THE DECK'S BACKGROUND IS ALWAYS LOGICAL 0, so it is not looked up here
+\ any more. This used to read deckBg through colourMap into bcBg, and
+\ BuildLUTs then computed background masks from it — arithmetic that could
+\ only ever produce zero, because build_logical_map puts the background at
+\ logical 0 by construction and logical 0 is %00. export_bbc.py now REFUSES
+\ to write colours.asm if a hand-edited merge breaks that, so the whole
+\ chain is gone and the bytes went to the dither.
   JSR BuildLUTs
+
+\ ---- the floor dither's masks, for DitherChar -------------
+\ DITHER ONLY WHERE LOGICAL 1 IS BLACK. On a deck whose floor is already
+\ black, logical 1 is a colour, and shading with it would paint that colour
+\ ONTO the black — louder, not quieter. The four physicals are distinct
+\ (verify_bbc.py asserts it), so logical 1 being black is enough on its
+\ own: logical 0 cannot be black as well.
+  LDA bcDeck
+  ASL A : ASL A : TAY
+  LDA #&05                      \ even scanline: shade pixels 1 and 3
+  LDX deckPalette+1,Y           \ logical 1's physical colour
+  BEQ bc_dither
+  LDA #0                        \ not black — leave this deck's floor solid
+.bc_dither
+  STA dcMask
+  ASL A                         \ &05 -> &0A, the odd scanline's pixels 0 and
+  STA dcMask+1                  \ 2; and 0 -> 0, so "off" needs no second path
 
   LDA #LO(SPR_SAVE) : STA bcSrc \ the bitmaps, unpacked above
   LDA #HI(SPR_SAVE) : STA bcSrc+1
@@ -182,7 +207,7 @@
 .bc_slot_oob
   LDA #0
 .bc_got_colour
-  STA bcColour                  \ EVERY CELL IS HIRES. Bit 3 of the colour
+                                \ EVERY CELL IS HIRES. Bit 3 of the colour
   CLC : ADC bcCmapBase          \ nibble is part of the COLOUR, not a mode
   TAX                           \ flag: the play area runs with $D016 bit 4
   LDA colourMap,X               \ CLEAR ($C0, written by _reenter_game at
@@ -209,6 +234,10 @@
   DEY
   BPL bc_row
 
+  JSR DitherChar                \ Layer 14's floor dither, over the 16 bytes
+                                \ just written. Here rather than in a pass of
+                                \ its own because bcDst already walks the
+                                \ charset a character at a time.
   CLC
   LDA bcSrc    : ADC #8  : STA bcSrc
   LDA bcSrc+1  : ADC #0  : STA bcSrc+1
@@ -228,6 +257,67 @@
   RTS
 
 \ ============================================================
+\ DitherChar — half-intensity floor, Layer 14
+\ ============================================================
+\ The BBC palette is fully saturated, so a floor of solid red or cyan is
+\ far harsher than the C64's. Half the floor's pixels take LOGICAL 1
+\ instead — physical black on the decks this runs on — in a 2x2 checker,
+\ and the floor reads at half intensity. KC's decision, 2026-08-22; the
+\ previews are in docs/layer-14-visual.md.
+\
+\ WHY IT IS A PASS OVER THE FINISHED CHARSET rather than a change to the
+\ LUTs: the pattern alternates per SCANLINE and a LUT entry is indexed by
+\ the source nibble alone, so building it in would have meant two LUT sets
+\ and 64 more bytes of a region that has none. Here the parity is just bit
+\ 0 of the byte index — a character is 16 bytes, the left half's 8
+\ scanlines then the right half's, so Y bit 0 IS the scanline parity in
+\ both halves, and the phase carries across characters because 16 is even.
+\ Cell width and height are 8, both even, so it carries across the map
+\ too and there are no seams.
+\
+\ It dithers logical 0 WHEREVER IT LANDS, ink as well as floor. A cell
+\ whose colour merged onto logical 0 is invisible against the floor today;
+\ dithering only the floor would have made it appear as a solid patch.
+\
+\ Which pixels are logical 0 is exactly the question SPR_MASKTAB answers —
+\ SprBuildMask fills it with "this pixel has no colour", the sprite
+\ transparency mask, duplicated into both nibbles. The dither mask is low
+\ nibble only, so the ORA can only ever set the LOW colour plane: logical
+\ 0 -> logical 1, and a pixel with any colour is left alone.
+\
+\ ONE CHARACTER AT A TIME, at (bcDst), called from BuildCharset's own loop
+\ — which already walks the charset a character at a time, so the dither
+\ costs no second walk. BuildLampChar (lowcode.asm) calls the same entry:
+\ it rebuilds character $16 during play and would otherwise leave that one
+\ cell solid against a dithered floor. Reaching this bank from there is
+\ legal for the reason lowcode.asm's header gives — SWRAM_DATA is the
+\ resting state, so the main loop can see bank 4.
+\
+\ dcMask is ZERO on a deck that keeps a solid floor, which makes this a
+\ no-op without a second test in either caller. BuildCharset sets it.
+\
+\ ~5 ms across a deck load. Nothing in the main loop pays anything.
+\ ============================================================
+.DitherChar
+  LDY #15
+.dc_byte
+  LDA (bcDst),Y
+  STA bcTmp
+  TAX
+  LDA SPR_MASKTAB,X             \ set bit = this pixel is logical 0
+  STA bcTmp2
+  TYA
+  AND #1                        \ the scanline's parity, in both halves
+  TAX
+  LDA dcMask,X
+  AND bcTmp2
+  ORA bcTmp
+  STA (bcDst),Y
+  DEY
+  BPL dc_byte
+  RTS
+
+\ ============================================================
 \ BuildLUTs — nibble -> MODE 1 byte tables for this deck
 \
 \ LUTs+0..63   4 tables of 16, indexed by the cell colour's logical
@@ -242,20 +332,12 @@
   STA bcLutOfs
   STA bcF
 
-  LDA bcBg                      \ background masks are constant
-  AND #2 : BEQ bl_g0
-  LDA #&0F : BNE bl_g1
-.bl_g0
-  LDA #0
-.bl_g1
-  STA bcGH
-  LDA bcBg
-  AND #1 : BEQ bl_g2
-  LDA #&0F : BNE bl_g3
-.bl_g2
-  LDA #0
-.bl_g3
-  STA bcGL
+\ THE BACKGROUND CONTRIBUTES NOTHING. It is logical 0 on every deck —
+\ guaranteed by export_bbc.py, which refuses to write colours.asm
+\ otherwise — and logical 0 is %00, so a clear source bit is already a
+\ clear pair of plane bits. The bcBg/bcGH/bcGL arithmetic that used to
+\ stand here computed zero, and its two ORA pairs in the inner loop
+\ ORA'd zero in. Removed 2026-08-22; the bytes paid for DitherCharset.
 
 .bl_f                           \ ---- hires tables ----
   LDA bcF
@@ -275,14 +357,10 @@
 
   LDY #0
 .bl_n
-  TYA : AND bcFH : STA bcTmp    \ set pixels take the foreground
-  TYA : EOR #&0F : AND bcGH     \ clear pixels take the background
-  ORA bcTmp
-  ASL A : ASL A : ASL A : ASL A
+  TYA : AND bcFH                \ set pixels take the foreground; clear ones
+  ASL A : ASL A : ASL A : ASL A \ are logical 0 and want no bits at all
   STA bcTmp2
-  TYA : AND bcFL : STA bcTmp
-  TYA : EOR #&0F : AND bcGL
-  ORA bcTmp
+  TYA : AND bcFL
   ORA bcTmp2
   STA bcTmp
   TYA : CLC : ADC bcLutOfs : TAX
@@ -307,19 +385,15 @@
 .bcDeck    EQUB 0
 .bcRecOfs  EQUB 0
 .bcCmapBase EQUB 0
-.bcBg      EQUB 0
-.bcColour  EQUB 0
 .bcLutOfs  EQUB 0
 .bcIndex   EQUB 0
 .bcF       EQUB 0
 .bcFH      EQUB 0
 .bcFL      EQUB 0
-.bcGH      EQUB 0
-.bcGL      EQUB 0
-.bcA       EQUB 0
-.bcB       EQUB 0
+.dcMask    EQUB 0, 0            \ DitherCharset's shade masks, by scanline
+                                \ parity. Both ZERO on a deck that keeps a
+                                \ solid floor, which makes the pass a no-op.
 .bcTmp     EQUB 0
 .bcTmp2    EQUB 0
-.bcPal     SKIP 4
 .palBase   EQUB 0
 .palTmp    EQUB 0

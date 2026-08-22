@@ -452,6 +452,38 @@ def convert_charset(mem, cell_colour, logical):
     return out, stats
 
 
+def dither_charset(data, enabled):
+    """DitherChar (src/level.asm), byte for byte, for the verification oracle.
+
+    Layer 14's floor dither: half of every LOGICAL 0 pixel takes logical 1
+    instead, in a 2x2 checker, so a fully-saturated BBC floor reads at half
+    intensity. See docs/layer-14-visual.md DECISION 1.
+
+    A character is 16 bytes - the left half's 8 scanlines then the right
+    half's - so bit 0 of the byte index IS the scanline parity in both halves,
+    which is where the checker comes from. The zero-pixel mask is what
+    SprBuildMask puts in SPR_MASKTAB, and the shade mask is low nibble only,
+    so a pixel with any colour in it is left alone.
+    """
+    if not enabled:
+        return data
+    out = bytearray(data)
+    for i, b in enumerate(out):
+        zero = ~((b >> 4) | b) & 0x0F          # pixels with no colour at all
+        out[i] = b | (zero & (0x0A if i & 1 else 0x05))
+    return out
+
+
+def deck_dithers(dpal):
+    """Does this deck's floor get the dither? Exactly BuildCharset's test.
+
+    Only where logical 1 is physical BLACK. On a deck whose floor is already
+    black, logical 1 is a colour and shading with it would paint that colour
+    ONTO the black - louder, not quieter.
+    """
+    return dpal[1] == 0
+
+
 def main():
     if not LST_FILE.exists():
         sys.exit('ERROR: %s not found. See README.' % LST_FILE)
@@ -538,6 +570,23 @@ def main():
         chosen = override.get(d, {})
         dmap = chosen.get('colourMap', dmap)
         dpal = chosen.get('physical', dpal)
+
+        # THE BACKGROUND MUST LAND ON LOGICAL 0, and this is a build-stopping
+        # check rather than a comment because two things now depend on it.
+        # build_logical_map puts it there by construction, but colourMap is
+        # hand-editable in palette_lab.py, so the invariant can be edited away.
+        #   - BuildLUTs assumes the background contributes NOTHING to a LUT
+        #     entry: logical 0 is %00, so a background pixel is already zero
+        #     bits. Its old bcBg/bcGH/bcGL arithmetic was computing zero.
+        #   - DitherCharset finds the background pixels by asking which are
+        #     zero. A background on any other logical would leave the floor
+        #     solid and dither something else instead.
+        if dmap[bg] != 0:
+            sys.exit('ERROR: deck %d puts its background (C64 %s) on logical '
+                     '%d, not 0. BuildLUTs and DitherCharset both require the '
+                     'background to be logical 0 -- fix the merge for that '
+                     'colour in %s.' % (d, names[bg], dmap[bg],
+                                        PALETTE_FILE.name))
         colour_map.extend(dmap)
         deck_pal.extend(dpal)
         if d == DECK:
@@ -611,12 +660,12 @@ def main():
         emit_bytes(f, schemes)
         f.write('\n.deckScheme\n')
         emit_bytes(f, mem[DECKSCHEME:DECKSCHEME + 16])
-        f.write('\n.deckBg\n')
-        f.write('\\ $D021 per deck - slot 0 of the deck\'s colour record.\n'
-                '\\ BuildCharset indexes colourMap with this rather than a\n'
-                '\\ constant: only decks 2 and 7 are the light blue the port\n'
-                '\\ used to assume for all sixteen.\n')
-        emit_bytes(f, deck_bg)
+        # .deckBg IS NOT EMITTED ANY MORE. It was $D021 per deck - slot 0 of
+        # the deck's colour record - and BuildCharset's only use for it was to
+        # look up a logical colour that is ALWAYS 0 (see the assertion above).
+        # That lookup is gone, so the table was 16 dead bytes in the tightest
+        # region in the machine. Nothing is lost: it is slot 0 of
+        # schemes[deckScheme[d] * 12], both of which are still here.
         f.write('\n.deckPalette\n')
         emit_bytes(f, deck_pal)
         f.write('\nALIGN &100\n.colourMap\n')

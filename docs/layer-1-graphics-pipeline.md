@@ -125,7 +125,11 @@ area; the status box itself is a fixed white (`Irq_254` writes `#$F1`).
 
 Confirmed against `ref/c64_deck0.png`, a screenshot of the real game: deck 0 uses scheme 0, whose
 slot 0 is light grey — and the floor in that screenshot is light grey, not light blue. The per-deck
-values are emitted as **`.deckBg`** and `BuildCharset` indexes `colourMap` with them.
+values were emitted as **`.deckBg`** and `BuildCharset` indexed `colourMap` with them. **Both are
+gone since 2026-08-22**: that lookup could only ever return logical 0, because the background is
+logical 0 by construction, and `export_bbc.py` now asserts it rather than looking it up at run
+time. See [`layer-14-visual.md`](layer-14-visual.md) DECISION 1. The values themselves are still
+derivable — slot 0 of `schemes[deckScheme[d] * 12]`.
 
 Only decks **2 and 7** are light blue. The rest: light grey (0, 5, 9), light red (1, 8, 10, 15),
 yellow (3, 6, 12), light green (4, 11), cyan (13, 14).
