@@ -44,10 +44,13 @@ PARASPR unchanged; PARMAN uses 4,596 of its 16 K when swapped in. PARBRF: 1,188 
 
 ## Decisions you may want to revisit in the morning
 
-1. **The page-5 droid portrait** — a genuine design question, not a task: the C64 floats it as a
-   *hardware sprite over the scroll*, and the port has no sprites during the briefing (bank 5 IS
-   the text). Options: (a) scroll it with the text — integrate `PoDraw` into the row painter, a
-   visible deviation; (b) redraw over the buffer each field — costly; (c) drop it. Not built.
+1. ~~The page-5 droid portrait~~ **DONE** (KC chose: scroll it with the text; commit `4c8c007`):
+   `PoDraw` renders a random type into the strip at text cols 34–39 beside the score table, the
+   rectangle is snapshotted to `SPR_SAVE`, and the painter composites its bands as the rows
+   paint and scroll. **Hard lesson bought on the way:** `PARBRF`'s ceiling is `&0800` — the page
+   above is the MOS's sound workspace, and its IRQ writes there through the title's loads; a
+   1,208-byte overlay died of it. The briefing's bank-half (`src/briefman.asm`, bank 5) now
+   carries everything that need not be main RAM.
 2. ~~The panel during the briefing~~ **DONE** (follow-up commit `9de9fe5`): the box now carries
    bars, logo, "Briefing" and the last game's score — `PanelInit` + the new `PnBriefing` in
    bank 6, called from `BrRun`. NB the C64 shows the *one* score there (the last game's, zero at

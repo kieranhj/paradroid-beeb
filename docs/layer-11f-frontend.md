@@ -433,10 +433,19 @@ branches — `PN_SPACE` is zero. The leading zeros printed as `0`s until it beca
 
 **Still open in this layer:**
 
-- **The page-5 portrait is a design question, not a task.** `BuildIntroSprites` puts the droid up
-  as a *hardware sprite floating over the scroll*; the port's briefing has no sprites — bank 5 is
-  the text. Options: scroll it with the text (integrate `PoDraw` output into the row painter — a
-  visible deviation), redraw it over the buffer each field (costly), or drop it. **KC's call.**
+- ~~**The page-5 portrait**~~ **DONE 2026-08-22, KC's call: it scrolls with the text.**
+  `BuildIntroSprites` floats it as a hardware sprite over the C64's scroll; the port renders it
+  INTO the page instead — `PoDraw` (bank 7) draws type `rnd AND $F` into the parked strip at
+  text columns 34–39 (empty on every page-5 row), rows 3–13, the rectangle is snapshotted into
+  `SPR_SAVE`, and the painter copies a 96-byte band back per rectangle row, so the picture sits
+  beside the score table and moves with it. **And it cost the layer's hardest lesson:** the
+  first cut pushed `PARBRF` past `&0800`, and `&0800–&08FF` is the MOS's sound workspace and
+  channel buffers (NAUG §6.6), which its IRQ *writes* while it still owns the machine through
+  the title's loads. The overlay verified byte-perfect at load and was chewed by paint time —
+  the corrupted code wandered into the paged bank. **`&0400–&07FF` (the language workspace) is
+  the whole of PARBRF's ground**, GUARDed at `&0800` now, and the briefing's bank-half
+  (`src/briefman.asm` in the PARMAN block — the score-patch writer, the snapshot, the band copy)
+  holds everything that need not be main RAM, running with the text bank paged.
 - ~~**The panel during the briefing**~~ **DONE 2026-08-22**: `PnBriefing` (bank 6) draws
   "Briefing" in the mode-word field and repaints the last game's score, after `PanelInit` puts
   the bars and logo up — only `LoadDeck` ever called that, so the boot path's box had neither.
