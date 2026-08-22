@@ -164,11 +164,11 @@
   JSR BuildLUTs
 
 \ ---- the floor dither's masks, for DitherChar -------------
-\ DITHER ONLY WHERE LOGICAL 1 IS BLACK. On a deck whose floor is already
-\ black, logical 1 is a colour, and shading with it would paint that colour
-\ ONTO the black — louder, not quieter. The four physicals are distinct
-\ (verify_bbc.py asserts it), so logical 1 being black is enough on its
-\ own: logical 0 cannot be black as well.
+\ DITHER ONLY WHERE LOGICAL 1 IS BLACK. On a deck whose logical 1 is a
+\ COLOUR, shading with it would paint that colour onto the floor — louder,
+\ not quieter. Testing logical 1 alone is enough: if logical 0 happened to
+\ be black too the dither would blend black with black and simply not show,
+\ so the only case the test has to catch is the harmful one.
   LDA bcDeck
   ASL A : ASL A : TAY
   LDA #&05                      \ even scanline: shade pixels 1 and 3

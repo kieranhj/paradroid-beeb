@@ -412,12 +412,16 @@ PAGE = r"""<!doctype html>
     <p class="note" id="hint">Move the pointer over a deck above to aim this
       window; the droid follows it. Shown at 2&times;.</p>
     <p class="note"><b>dither</b> halves the intensity of logical 0 by giving
-      every other pixel the shade logical instead. It is worth what logical 1
-      is on this deck: black on thirteen of the sixteen, so the floor reads at
-      half strength &mdash; but decks 0, 5 and 9 already have a BLACK logical 0
-      and a coloured logical 1, so the dither there paints colour ONTO black
-      and gets louder, not quieter. Those three want leaving alone, or
-      re-picking.</p>
+      every other pixel the shade logical instead. It is worth whatever
+      logical 1 is on this deck, so it only helps where logical 1 is BLACK
+      &mdash; on a deck whose logical 1 is a colour it paints that colour onto
+      the floor and gets louder, not quieter, and the build skips it.</p>
+    <p class="note">It also buys a FIFTH TONE: a dithered logical 0 is a 50%
+      blend, which no solid entry can be, so logical 0 may share its physical
+      with another logical. Decks 0 and 9 use that deliberately &mdash; white
+      dithered to the grey their C64 floor actually is &mdash; and so carry
+      white on both logical 0 and logical 3. A collision that does NOT involve
+      logical 0 still loses detail for good.</p>
     <p class="note">What the BUILD does is the <b>2&times;2 checker</b> with
       <b>shade = logical 1</b>, and only on a deck whose logical 1 is physical
       black &mdash; <code>DitherChar</code> in <code>src/level.asm</code>, see
@@ -713,10 +717,21 @@ function buildPalette() {
     el.appendChild(row);
   }
   const msgs = [];
-  if (new Set(p).size !== 4)
+  /* DISTINCT TONES, NOT DISTINCT PHYSICALS. On a dithered deck logical 0 is
+     displayed as a 50% blend with black, a tone no solid entry has, so it may
+     share its physical with another logical - decks 0 and 9 do exactly that,
+     white dithered to the grey their C64 floor really is. A collision that
+     does not involve logical 0, or one on a deck with a solid floor, still
+     loses detail for good. verify_bbc.py applies the same rule. */
+  const dithers = p[1] === 0;
+  const rest = dithers ? p.slice(1) : p;
+  if (new Set(rest).size !== rest.length)
     msgs.push('Two logical colours share a physical one: detail drawn in the ' +
-              'second is invisible, and verify_bbc.py asserts all four are ' +
-              'distinct.');
+              'second is invisible, and verify_bbc.py rejects it.');
+  else if (new Set(p).size !== 4 && !dithers)
+    msgs.push('Logical 0 shares a physical with another logical, and this ' +
+              'deck does not dither (logical 1 is not black), so nothing ' +
+              'separates them.');
   WANTS.forEach((want, l) => {
     if (want !== null && p[l] !== want)
       msgs.push('Logical ' + l + ' is ' + BBCN[p[l]] + ', not ' + BBCN[want] +

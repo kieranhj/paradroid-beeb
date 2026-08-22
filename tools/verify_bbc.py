@@ -178,17 +178,37 @@ def main():
     else:
         print('OK   colours   8 scheme records and 16 deck->scheme entries match')
 
-    # Every deck must map its four logical colours to four DISTINCT physical
-    # ones. A fixed C64->BBC table cannot guarantee this - several C64 colours
-    # share a nearest BBC match - and when two collapse, whatever is drawn in
-    # the second becomes invisible against the first.
+    # Every deck must show four DISTINCT tones. A fixed C64->BBC table cannot
+    # guarantee that - several C64 colours share a nearest BBC match - and
+    # when two collapse, whatever is drawn in the second becomes invisible
+    # against the first.
+    #
+    # DISTINCT TONES, NOT DISTINCT PHYSICALS, since Layer 14's floor dither:
+    # on a dithered deck logical 0 is displayed as a 50% blend of its physical
+    # with black, which is a tone no solid entry has. Decks 0 and 9 use that
+    # deliberately - white dithered to grey, which is what their C64 floor
+    # actually is - and so share physical 7 with logical 3, the sprites.
+    # KC, 2026-08-22. A collision that does NOT involve logical 0, or one on
+    # a deck that keeps a solid floor, is still a real failure.
+    from export_bbc import deck_dithers
     pal = col[112:176]
-    clash = [d for d in range(16) if len(set(pal[d * 4:d * 4 + 4])) < 4]
+    clash = []
+    for d in range(16):
+        p = list(pal[d * 4:d * 4 + 4])
+        rest = p[1:] if deck_dithers(p) else p
+        if len(set(rest)) < len(rest) or (not deck_dithers(p)
+                                          and len(set(p)) < 4):
+            clash.append(d)
     if clash:
         print('FAIL colours: decks %s have colliding physical colours' % clash)
         failures += 1
     else:
-        print('OK   colours   all 16 decks have 4 distinct physical colours')
+        shared = [d for d in range(16)
+                  if len(set(pal[d * 4:d * 4 + 4])) < 4]
+        print('OK   colours   all 16 decks show 4 distinct tones%s'
+              % ('' if not shared else
+                 ' (decks %s share logical 0\'s physical, which the dither '
+                 'separates)' % shared))
 
     # ---- tile definitions: must be byte-identical ------------------
     tiles = read_equb(DATA_DIR / 'tiledefs.asm')

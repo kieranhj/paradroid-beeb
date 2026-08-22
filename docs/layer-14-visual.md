@@ -94,10 +94,33 @@ dithering them would have painted colour *onto* black — louder, not quieter. `
 no-op with no second code path in either caller. One test is enough: the four physicals are
 distinct (`verify_bbc.py` asserts it), so logical 1 being black means logical 0 is not.
 
-**KC is re-picking those three decks' palettes** so their floor is a colour and logical 1 is black,
-at which point all sixteen dither. The rule stays regardless — a deck that wants a black floor
-keeps one. Note `LAMP_OFF = 1` in `lowcode.asm` already assumed logical 1 is black on every deck;
-the re-pick makes that true.
+**KC re-picked all three, and all sixteen decks now dither** — logical 1 is black on every one of
+them, which finally makes `lowcode.asm`'s long-standing `LAMP_OFF = 1` comment ("logical 1 is black
+on every deck") true. The rule stays regardless: a deck that wants a solid floor keeps one.
+
+### [DECISION 2] The dither is a fifth tone, and decks 0 and 9 spend it
+
+**KC, 2026-08-22, after seeing it in game.** Decks 0 and 9 are scheme 0, whose C64 floor is **light
+grey** — a colour MODE 1 does not have, and the thing this port has never been able to reproduce.
+Their palette is now `[7, 0, 4, 7]`: **logical 0 is WHITE**, dithered to grey, and logical 3 is
+white as well.
+
+That is a deliberate collision, and it works because a dithered logical 0 is displayed as a **50%
+blend with black** — a tone no solid palette entry can be. So the dither does not merely soften the
+floor; it *adds* a fifth tone to a four-colour mode, and on these two decks that fifth tone is
+exactly the colour the original wanted. The sprites stay legible because they are solid white
+against a 50% white floor.
+
+**The consequence for the checks:** "four distinct physical colours" is no longer the right rule,
+and both places that enforced it now test **four distinct TONES** instead — a collision is legal
+only when it involves logical 0 on a dithered deck. `verify_bbc.py` says which decks share and why;
+`palette_lab.py` says the same in the palette panel. A collision that does not involve logical 0,
+or any collision on a deck with a solid floor, is still a real failure and still loses detail for
+good.
+
+The 6502 is unaffected: `DitherChar`'s enable test reads logical 1 alone. If logical 0 were black
+as well the dither would blend black with black and simply not show, so the only case the test has
+to catch is the harmful one — a coloured logical 1.
 
 ### The invariant it depends on, now enforced
 
