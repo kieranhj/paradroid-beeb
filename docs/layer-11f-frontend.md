@@ -279,9 +279,13 @@ Two things that had to be measured rather than assumed:
 
 - **R8 is not optional.** The rupture blanks rows with it, so a teardown that leaves it set gives a
   black screen with the CRTC otherwise perfectly correct. First attempt did exactly that.
-- **The palette is no longer reset**, so the title states its own — `TiPal`, the OS's MODE 1
-  default values, which is what [DECISION 9] was relying on `VDU 22` to supply. Layer 14 wants
-  every screen explicit anyway.
+- ~~**The palette is no longer reset**, so the title states its own — `TiPal`~~ **Superseded
+  2026-08-22, KC: the front end INHERITS the last deck's palette.** `TiPal` and the briefing's
+  own palette are gone; `SetupPlain` ends by applying `palPlay` to the ULA (deterministically —
+  the raw teardown froze whichever region palette the rupture wrote last), the rupture reapplies
+  `palPlay` under the briefing anyway, and `palPlay`'s *assembled* default became the MODE 1 set
+  so the cold-boot briefing — the one rupture screen before any deck exists — is not sixteen
+  zeros.
 
 **Where the parts live.**
 
