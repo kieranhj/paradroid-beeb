@@ -415,10 +415,17 @@ The port has no `sndState $11`: 11f [DECISION 11].)*
   pitch was right, "still too loud", and — asked directly — the in-game lift may go quieter with
   it. The C64 sustains fx16 at full (SR nibble `F`), which put it at **attenuation 0, 6 dB above
   the chatter blips it is supposed to sit behind**. `FX_LEVEL`, the second sanctioned place
-  ported sound data may differ from the C64's bytes, sets its sustain to nibble 9 = attenuation
-  6, so it now sits 6 dB *below* them: a 12 dB swing from what KC heard. The 100 ms attack ramp
-  is untouched, so the blip keeps its swell — captured on CH3 as **12, 9, 6, 3, 0, then 6**,
-  one 20 ms tick at full before the body settles.
+  ported sound data may differ from the C64's bytes, sets its sustain instead — nibble 9
+  (attenuation 6) on that round, then **nibble 6 (attenuation 9) on KC's "turn it down some
+  more"**, which is where it sits: 12 dB below the chatter, 18 dB below where it started. The
+  100 ms attack ramp is untouched, so the blip keeps its swell — captured on CH3 as
+  **12, 9, 6, 3, 0, then 9**.
+
+  **The transient is now the loudest thing in it by 18 dB**, and is the next thing to look at if
+  it still reads as loud. That one 20 ms tick at attenuation 0 is structural: the envelope climbs
+  in `snAtk` steps until it overflows, so the peak is always full level, and the only way to lose
+  it is an instant attack (`atk` 255), which lands straight on the sustain — and costs the swell.
+  KC's call if it comes to that.
 
   **`FX_LEVEL` is keyed by EFFECT, not by instrument**, and that is load-bearing: clone
   allocation moves instrument indices, so an index-keyed table would silently retarget the next
