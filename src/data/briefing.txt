@@ -1,0 +1,162 @@
+# briefing.txt - the intro manual, decoded from the C64 original.
+# EDIT FREELY: this file is the build input. tools/make_briefing.py
+# turns it into src/data/briefing.asm (build.ps1 runs it).
+#
+# Format, one record per line:
+#   page N                   the records below are on page N (1-5)
+#   ROW COL |text            canvas row (2-58), column (0-39), text.
+#                            The | marks where the text starts, so
+#                            leading spaces are unambiguous.
+#   label NAME               names the NEXT record for the driver
+#   glyph C XX..XX           the 8x16 bitmap of a character the shared
+#                            font lacks: 32 hex bytes, top cell then
+#                            bottom. Do not remove these.
+#
+# Rules make_briefing.py enforces:
+#   characters: a-z A-Z 0-9 space . , : ; ' - !
+#   capitals (except I) and m and w are 16 px wide, everything else 8,
+#   and a line must fit its page: start column + width <= 40.
+#   A text line occupies TWO canvas rows, so records on consecutive
+#   rows overlap; the decoded text uses every OTHER row at least.
+#
+# The hiscore/loscore labels mark the lines the driver patches from
+# the live table in bank 7, so their text here is only the default
+# (Braybrook's own joke entries). Keep their shape if you edit them.
+
+page 1
+ 2 12 |HEWSON
+ 5 14 |presents
+ 8 13 |Paradroid
+11  7 |Competition Edition
+14  7 |w Graftgold Ltd. 1986.
+18  2 |Plug your joystick into port 2
+21  8 |Press fire to play
+24  1 |Clear  the freighter  of robots by
+26  0 |destroying them with twin  lasers
+28  0 |or by transferring control to them.
+31  1 |Control is  by  joystick  only, as
+33  0 |follows:
+36  0 |At all times joystick moves robot
+38  0 |and holding fire down will  allow
+40  0 |use of lifts and consoles.
+44  0 |In addition, pressing fire with the
+46  0 |joystick  centred will  prepare the
+48  0 |current robot for transfer. Contact
+50  0 |with another robot with the button
+52  0 |down will initiate transfer.
+54  0 |Press fire with the joystick in  a
+56  0 |specific direction to fire lasers in
+58  0 |that direction.
+
+page 2
+ 2  1 |A fleet  of  Robo-Freighters  on
+ 4  0 |its way to the Beta Ceti  system
+ 6  0 |reported entering an uncharted field
+ 8  0 |of  asteroids. Each  ship carries a
+10  0 |cargo of battle droids to  reinforce
+12  0 |the outworld defences.
+14  1 |Two  distress beacons  have  been
+16  0 |recovered. Similar messages were
+18  0 |stored on each. The ships had  been
+20  0 |bombarded by  a powerful  radionic
+22  0 |beam from one of the asteroids.
+24  1 |All  of the  robots on  the ships,
+26  0 |including those in storage,  became
+28  0 |hyper-active. The crews report  an
+30  0 |attack by droids, isolating them on
+32  0 |the bridge. They  cannot  reach the
+34  0 |shuttle  and can hold out for only a
+36  0 |couple more hours.
+38  1 |Since these beacons were  located
+40  0 |two days ago, we can only fear the
+42  0 |worst.
+44  1 |Some of the  fleet was last seen
+46  0 |heading for enemy space.  In enemy
+48  0 |hands the droids can be used against
+50  0 |our forces.
+52  1 |Docking would  be impossible but
+54  0 |we  can beam  aboard  a  prototype
+56  0 |Influence Device.
+
+page 3
+ 2  1 |The 001 Influence Device consists
+ 4  0 |of a  helmet, which, when  placed
+ 6  0 |over a robot's control unit can halt
+ 8  0 |the normal activities of that robot
+10  0 |for a short time. The helmet  has
+12  0 |its  own energy supply  and powers
+14  0 |the  robot itself,  at  an  upgraded
+16  0 |capability. The  helmet also  uses
+18  0 |an energy  cloak for  protection  of
+20  0 |the host.
+22  1 |The helmet is  fitted with twin
+24  0 |lasers mounted  in a turret. These
+26  0 |are low powered  and have  a slow
+28  0 |recycle rate.
+30  1 |Most of the device's resources are
+32  0 |channelled towards holding  control
+34  0 |of the host  robot, as it  attempts
+36  0 |to resume 'normal' operation.
+38  1 |It is therefore necessary to change
+40  0 |the host robot often  to prevent the
+42  0 |device  from burning out. Transfer
+44  0 |to a new robot  requires the device
+46  0 |to drain its host of energy in order
+48  0 |to take it over. Failure to achieve
+50  0 |transfer results in the device being
+52  0 |a free agent once more.
+56  8 |Press fire to play
+
+page 4
+ 2  1 |An Influence Device can transmit
+ 4  0 |only certain data, namely its  own
+ 6  0 |location  and the  location of other
+ 8  0 |robots in visual range.This data is
+10  0 |merged with known ship layouts at
+12  0 |your C64 remote terminal.
+14  1 |Additional information  about the
+16  0 |ship and robots may be obtained  by
+18  0 |accessing the  ship's computer at a
+20  0 |console. A small-scale plan of the
+22  0 |whole deck  is available, as  well
+24  0 |as a side elevation of the ship.
+26  1 |Robots are  represented  on-screen
+28  0 |as a symbol  showing a three-digit
+30  0 |number. The first digit shown  is
+32  0 |the important one, the class of the
+34  0 |robot. It denotes the strength also.
+36  0 |To find out more  about any  given
+38  0 |robot, use the robot enquiry system
+40  0 |at a console. Only data about units
+42  0 |of a lower class  than your current
+44  0 |host is available, since  it is  the
+46  0 |host's security clearance  which is
+48  0 |used to access the console.
+56  8 |Press fire to play
+
+page 5
+ 2 11 |Top score of the day:
+label hiscore
+ 5 13 |    6809 - AEB
+10 10 |Worst score of the day:
+label loscore
+13 13 |    6502 - BAD
+22  8 |To pause: press run-stop.
+26 10 |From pause mode only:
+30 12 |fire      - restarts,
+32 12 |run-stop  - restarts,
+34 12 |clr-home - quits game,
+36 12 |f7        - cheese,
+38 12 |f8        - pause.
+46  9 |Paradroid programmed by
+48 12 |Andrew Braybrook.
+50 14 |Sound advice by
+52 14 |Steve Turner.
+57 11 |Press fire to play
+
+# The bitmaps of the characters the shared font has not got, from
+# the C64's $7000 text font. The renderer plots these from brExtra.
+glyph , 00000000000000000000707030600000
+glyph ' 00007070306000000000000000000000
+glyph ; 00000000707000000000707030600000
+
