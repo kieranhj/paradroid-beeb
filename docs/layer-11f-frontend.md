@@ -437,8 +437,13 @@ branches — `PN_SPACE` is zero. The leading zeros printed as `0`s until it beca
   as a *hardware sprite floating over the scroll*; the port's briefing has no sprites — bank 5 is
   the text. Options: scroll it with the text (integrate `PoDraw` output into the row painter — a
   visible deviation), redraw it over the buffer each field (costly), or drop it. **KC's call.**
-- **The panel during the briefing** still shows the game's empty status box; the C64 writes HIGH
-  and LOW into it and "Briefing" on its text line ($1193). Bank-6 `PnStr` plumbing from `PARBRF`.
+- ~~**The panel during the briefing**~~ **DONE 2026-08-22**: `PnBriefing` (bank 6) draws
+  "Briefing" in the mode-word field and repaints the last game's score, after `PanelInit` puts
+  the bars and logo up — only `LoadDeck` ever called that, so the boot path's box had neither.
+  **Correction to §1**: the C64 does NOT write "HIGH and LOW" into the box — the four strings
+  are the box borders and the logo, and `DoScore` (forced by a net-zero
+  `INC scoreAdd`/`INC scoreSub`) draws the one score, the *last game's*, zero at a cold boot.
+  `StartGame` clears it on the way into a game.
 - **F2** (title chatter) deferred as agreed; **F6** (exit-load trim) deferred per KC's
   "optimise the loading later" — the naive exits cost ~1.1 s into a game, ~0.6 s back to title.
 

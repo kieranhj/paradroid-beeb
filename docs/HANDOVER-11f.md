@@ -48,9 +48,10 @@ PARASPR unchanged; PARMAN uses 4,596 of its 16 K when swapped in. PARBRF: 1,188 
    *hardware sprite over the scroll*, and the port has no sprites during the briefing (bank 5 IS
    the text). Options: (a) scroll it with the text — integrate `PoDraw` into the row painter, a
    visible deviation; (b) redraw over the buffer each field — costly; (c) drop it. Not built.
-2. **The panel during the briefing** shows the game's empty status box; the C64 writes HIGH/LOW
-   scores into it and "Briefing" on its text line. Needs bank-6 `PnStr` plumbing from `PARBRF`.
-   Not built.
+2. ~~The panel during the briefing~~ **DONE** (follow-up commit `9de9fe5`): the box now carries
+   bars, logo, "Briefing" and the last game's score — `PanelInit` + the new `PnBriefing` in
+   bank 6, called from `BrRun`. NB the C64 shows the *one* score there (the last game's, zero at
+   boot), not HIGH and LOW — the layer doc's §1 was wrong and §4e carries the correction.
 3. **`briefing.txt` wording** — the C64 text is verbatim, including `your C64 remote terminal`
    (page 4) and the whole pause-key legend (RUN/STOP, CLR/HOME, f7 cheese, f8) which is untrue
    of the port. All yours to edit now, in the text file.
