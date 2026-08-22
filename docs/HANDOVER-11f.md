@@ -74,6 +74,7 @@ unmoved.
 |---|---|
 | Portrait + panel box | the two decisions above |
 | ~~**F2** title chatter~~ | **BUILT AND VERIFIED 2026-08-22** — layer doc §4f. The block dissolved: it is the *briefing's* sound, not the title's (`TitleLoop` writes `$11` after `ShowTitle` returns), so the 50 Hz tick was already running; and one rewritable scratch slot in bank 4 serves all three records, which live in bank 5. Left for you: the by-ear pass |
+| **The ± volume keys** | **WANTED 2026-08-22** (KC: "we'll definitely want that volume control"), promoted out of 11e §8's deferred list after three rounds spent turning the lift blip down. Blocked on the clamp round nine deleted (4–6 B in a bank 4 with 4) and a home for the key poll in a machine whose every region is full. Costed in 11e §8; it should land before any more eared level tuning |
 | **F6** exit-load trim | deferred per "optimise loading later". Naive costs: ~1.1 s briefing→game, ~0.6 s briefing→title, one PARMAN load (~0.5 s) on the timed-out path only. §3d has the one-load plan |
 | Held-L skips the 001 page? | untested nit: L held from the briefing may fall through the info screen's wait. Check by hand once |
 

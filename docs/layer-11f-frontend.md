@@ -640,7 +640,10 @@ the whole of it existed to give the logo screen a 50 Hz tick for a chatter the l
 not play. See §4f. `TiWait` keeps its iteration wrap and its entropy.
 
 **[DECISION 9]** Pause and the ± volume keys are **deferred** (KC, 2026-08-21) and stay in
-11e §8. Because briefing page 5 prints the C64's key legend — RUN/STOP, CLR/HOME, f7, f8 —
+11e §8. *(Amended 2026-08-22: the **volume keys are wanted** — "we'll definitely want that
+volume control", after three rounds of turning the chatter's lift blip down by hand. They are
+on `PLAN.md`'s list and costed in 11e §8, and the briefing loop is still where `AdjustVolume`
+belongs, which is `BrWaitField` now that it exists. Pause stays deferred.)* Because briefing page 5 prints the C64's key legend — RUN/STOP, CLR/HOME, f7, f8 —
 and none of it is true here, the exporter carries a **text-override table** and those two blocks
 are replaced or dropped until pause exists. The replacement wording is KC's, later.
 

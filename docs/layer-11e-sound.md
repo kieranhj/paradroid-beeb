@@ -380,12 +380,35 @@ The port has no `sndState $11`: 11f [DECISION 11].)*
   scratch slot** (`sndFxChat`, effect 29) and the three real records live in bank 5 beside the
   briefing text. `SndTick` is unchanged — it walks to effect 29 like any other. The LFSR is
   bank 5's `brChSeed`.
-- **Pause and the ± volume keys.** The port has no pause feature; `DoPause` (`$3B7C`) and
-  `AdjustVolume` (`$0CB4`) are one small piece of work together — pause writes `sndState`
-  0/`$12` around itself and the driver already honours both. **AdjustVolume's port MUST
-  restore the attenuation clamp in `snf_voice`** (`CMP #16 / BCC / LDA #15` after the
-  subtracts) — round nine dropped it because `sndVolume` is pinned at 15, and a lower master
-  volume without it wraps the attenuation nibble into garbage.
+- **The ± volume keys — WANTED, KC 2026-08-22: "we'll definitely want that volume control."**
+  Promoted out of this deferred list on the strength of the chatter's loudness rounds: three of
+  them went into turning one effect down, and some of "too loud" is really "no way to turn it
+  down". It should land **before** any further eared level deviations, because a working master
+  volume may make some of them unnecessary — `FX_LEVEL`'s fx16 entry above is the first thing to
+  re-listen to once it exists.
+
+  `sndVolume` is already a main-RAM byte, already applied per voice, already pinned at 15. Two
+  things stand in the way:
+
+  1. **The attenuation clamp round nine deleted must come back.** `snf_voice` computes
+     `30 - levelNibble - sndVolume`, which is 0–30; with `sndVolume` pinned at 15 it can never
+     exceed 15, and round nine spent the clamp to pay for the periodic-bass control byte. Lower
+     the master volume without it and the nibble wraps into garbage. The obvious form is the
+     C64's `CMP #16 / BCC / LDA #15`, **6 bytes**; a **4-byte** form looks available — `CMP #16 /
+     BCS snfv_off`, routing an inaudible result into the silent path that already writes 15 and
+     already picks the right channel. Bank 4 has 4 bytes, so the cheap form is the difference
+     between this landing and another RAM hunt. **Costed, not tested**: check the branch range
+     and that `snfv_off` is right for a live noise voice before relying on it.
+  2. **The key poll needs a home, and every region is full**: main RAM 2 B, bank 4 4 B, PARBRF
+     3 B, the low overlay 2 B, `lowcode2` 8 B (measured 2026-08-22). It wants somewhere that runs
+     once a pass in game — `SndAmbient` is already called there, in the right bank — and once a
+     field in the briefing, where `BrWaitField` is now the established hook. See
+     `docs/memory-map.md`'s free-RAM section and `docs/layer-13-ram-pass.md` for where bytes can
+     come from.
+
+- **Pause.** The port has no pause feature; `DoPause` (`$3B7C`) writes `sndState` 0/`$12` around
+  itself and the driver already honours both. Still deferred (11f [DECISION 9]), and no longer
+  bundled with the volume keys, which are wanted sooner.
 - **Sub-122 Hz effects** — stage 1's review list: fx04 disruptor (100% of its ticks below the
   floor), fx26 (100%), fx23 (73%), fx16 (48%), fx17 (41%), fx06 (40%). **All but fx06 are now
   treated; the list the exporter prints is down to fx06 and fx17** (fx17 is muted rather than
