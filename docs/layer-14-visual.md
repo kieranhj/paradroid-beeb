@@ -153,3 +153,68 @@ character, and `&38`-style bytes with their logical-2 pixels untouched); the pla
 shows it on screen; deck 5, which is not dithered, has an all-zero blank character and a solid
 black floor. Walked diagonally to force both scroll axes and pressed SPACE for the `RedrawAll`
 oracle at a mid-scroll position — the buffer is **byte-identical** across the two draw paths.
+
+---
+
+## [DECISION 4] A solid text-screen background, per deck — and DECISION 3 reverted
+
+**KC, 2026-08-23, having looked at it in game.** The dither is right on the deck and wrong behind
+text: it costs readability and the screens come out messy. **DECISION 3 is reverted in full** —
+`DitherCell`, `DitherBuf`, the portrait's dithered clear and `IsBlank`'s guard are all gone, and
+`dcMask` went back to bank 4. The deck itself keeps the dither (DECISIONS 1 and 2).
+
+The real problem it was trying to solve stands, though, and is worse than the dither: **several
+deck floors are far too bright to read white text on** — yellow, cyan, and the white of decks 0, 5
+and 9. So the static text screens get **a solid background colour of their own, chosen per deck**.
+
+### The mechanism, which touches no drawing code at all
+
+Those screens already draw their background as **logical 0**. So nothing about the drawing changes:
+only what logical 0 *looks like* while they are up.
+
+`export_bbc.py` emits **`.deckTextPal`** — the deck's four physicals with logical 0 replaced —
+immediately after `.deckPalette`. The two tables are therefore **64 bytes apart**, so `SetTextPal`
+is `SetPalette` with `palBase` 64 higher: no second table lookup, no test in the loop, and the
+restore is the existing `SetPalette`. `main.asm` asserts the adjacency.
+
+**The 64 bytes cost nothing.** `colourMap` is `ALIGN &100` and there were 226 bytes of padding in
+front of it; the new table rides in that. Worth remembering — the fuel gauge does not count it, and
+it is the only slack left in bank 4.
+
+Where it is applied and taken away:
+
+- **In**: `ConMenuInit4` for the console (which covers the deck plan and the database, both opened
+  inside it), and `InfoCall` for the information screens.
+- **Out**: `RedrawAll`. Every way back to the deck ends in a full redraw — `ReframeView` jumps
+  straight to it — so putting the restore at the top of the redraw cannot be forgotten by a new
+  exit path, and costs one `JSR`.
+- **`LoadDeck` no longer calls `SetPalette`.** It used to, at the top, and that was what fought
+  this: the 001 screen is up *across* that `LoadDeck` (it holds the redraw back), so the deck's
+  colours overrode the text background every time. `ReframeView` returns early while a screen is
+  up, so the deck's palette now lands exactly when the deck does.
+
+**Total: 19 bytes of bank 4 and 3 of the low overlay**, leaving 10 and 1.
+
+### Two things that bit, both worth keeping in mind
+
+1. **`IsEntry` takes its screen selector in X**, and `SetPalette` ends its loop with `X = $FF`,
+   which is `IS_BLANK`. Calling `SetTextPal` *before* `JSR IsEntry` therefore turned every
+   information screen into the blank one — a screen that cleared and drew nothing. The call goes
+   **after**, where X is spent. `IsEntry`'s own header warns about exactly this register.
+2. **The MCP screenshot is the last PAINTED frame.** Twice it showed a blank or stale screen while
+   memory said the page was drawn correctly, and twice that nearly sent me after a bug that was not
+   there. Read the buffer; screenshot only to judge how it looks.
+
+### Choosing them
+
+`palette_lab.py` has a fifth picker, **T**, beside the four logical colours, and a **text screen**
+checkbox in the header that shows the deck through that palette. Colours already used by logicals
+1–3 are disabled: the portrait and the deck plan draw in those, and anything drawn in the
+background colour vanishes into it. `export_bbc.py` refuses a collision outright.
+
+The starting value is automatic — the darkest BBC colour the deck is not already using — which
+lands on blue for most decks and red for the few whose logical 2 is blue. **That is a starting
+point, not the answer**; it is a judgement by eye, like the palettes themselves.
+
+Verified in jsbeeb: the 001 screen on a cyan/white deck comes up with a solid red field, white
+text and a blue portrait, and the deck's own colours return when it is dismissed.

@@ -60,7 +60,7 @@ from export_droids import (build_rotor, build_digits,               # noqa: E402
 from export_bbc import (C64_RGB, BBC_RGB,                          # noqa: E402
                         CHARSET_ADDR, TILEDEF_ADDR,
                         deck_colours, deck_background, build_logical_map,
-                        build_colour_map, assign_palette)
+                        build_colour_map, assign_palette, auto_text_bg)
 
 PROJECT = Path(__file__).resolve().parent.parent
 LST_FILE = PROJECT / 'paradroid_ce.lst'
@@ -228,6 +228,8 @@ def collect(mem):
             'autoPhys': auto_phys,
             'colourMap': list(saved.get('colourMap', auto_map)),
             'physical': list(saved.get('physical', auto_phys)),
+            'textBg': saved.get('textBg',
+                                auto_text_bg(saved.get('physical', auto_phys))),
         })
         print('  deck %2d  scheme %d  bg %-9s %4dx%-4d  logical %s'
               % (d, scheme, C64_NAMES[bg], w, h,
@@ -359,6 +361,7 @@ PAGE = r"""<!doctype html>
   <h1>Paradroid deck palettes</h1>
   <div class="tabs" id="tabs"></div>
   <span style="flex:1"></span>
+  <label style="margin-right:10px"><input type="checkbox" id="textmode"> text screen</label>
   <label for="dither">dither</label>
   <select id="dither">
     <option value="off" selected>off &mdash; solid, as built</option>
@@ -448,6 +451,13 @@ PAGE = r"""<!doctype html>
     <p class="warn" id="dupwarn" hidden></p>
     <p class="note">Emitted as <code>.deckPalette</code>, 4 bytes a deck.
       Logical 0 is the background the whole deck sits on.</p>
+    <p class="note"><b>T</b> is the static text screens' background &mdash;
+      the console, the deck plan, the droid database and the 001 pages. They
+      read WHITE text, and a floor chosen to look right underfoot is often
+      far too bright for that, so those screens swap logical 0 for this.
+      Emitted as <code>.deckTextPal</code>. Tick <b>text screen</b> in the
+      header to see the deck through it. Colours already used by logicals
+      1&ndash;3 are disabled: anything drawn in one would vanish.</p>
 
     <hr>
     <h2>Merge &mdash; C64 colour to logical</h2>
@@ -488,6 +498,10 @@ try { edits = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { edits
 function deck(d) { return DECKS[d]; }
 function phys(d) { return (edits[d] && edits[d].physical) || deck(d).physical; }
 function cmap(d) { return (edits[d] && edits[d].colourMap) || deck(d).colourMap; }
+function tbg(d) {
+  const e = edits[d];
+  return (e && e.textBg !== undefined) ? e.textBg : deck(d).textBg;
+}
 function edited(d) {
   const e = edits[d]; if (!e) return false;
   const k = deck(d);
@@ -495,8 +509,8 @@ function edited(d) {
          String(e.colourMap || k.colourMap) !== String(k.autoMap);
 }
 function setEdit(d, key, val) {
-  edits[d] = Object.assign({ physical: phys(d).slice(), colourMap: cmap(d).slice() },
-                           edits[d] || {});
+  edits[d] = Object.assign({ physical: phys(d).slice(), colourMap: cmap(d).slice(),
+                             textBg: tbg(d) }, edits[d] || {});
   edits[d][key] = val;
   localStorage.setItem(KEY, JSON.stringify(edits));
 }
@@ -513,9 +527,16 @@ function lut(rgbList) {
 }
 const LUT64 = lut(C64);
 
+let textMode = false;
+
+/* The static text screens keep the deck's logicals 1-3 and swap logical 0
+   for a background white text can be read on - SetTextPal, and deckTextPal
+   in colours.asm. Ticking "text screen" shows the deck through that
+   palette, which is the only way to judge the choice. */
 function bbcLut(d) {
   const p = phys(d), m = cmap(d), out = [];
-  for (let c = 0; c < 16; c++) out.push(BBC[p[m[c]]]);
+  for (let c = 0; c < 16; c++)
+    out.push(BBC[m[c] === 0 && textMode ? tbg(d) : p[m[c]]]);
   return lut(out);
 }
 
@@ -716,6 +737,37 @@ function buildPalette() {
     row.appendChild(pick);
     el.appendChild(row);
   }
+  /* ---- the text-screen background, a FIFTH choice ------------------
+     Not one of the four: it REPLACES logical 0 while a static text screen
+     is up, and the deck keeps its own 1-3 underneath. Emitted as
+     .deckTextPal. It must not collide with logicals 1-3 or whatever is
+     drawn in them - the portrait, the deck plan - vanishes into it, and
+     export_bbc.py refuses that. */
+  {
+    const row = document.createElement('div');
+    row.className = 'lrow';
+    row.style.marginTop = '10px';
+    row.innerHTML = '<span class="lname"><b>T</b> text screens' +
+      '<br><span style="color:var(--dim)">replaces logical 0</span></span>';
+    const pick = document.createElement('div');
+    pick.className = 'picker';
+    for (let ph = 0; ph < 8; ph++) {
+      const b = document.createElement('button');
+      b.style.background = rgbcss(BBC[ph]);
+      b.className = (tbg(cur) === ph ? 'on' : '');
+      b.disabled = p.slice(1).indexOf(ph) >= 0;
+      b.style.opacity = b.disabled ? 0.25 : 1;
+      b.title = ph + ' ' + BBCN[ph] + (b.disabled ? ' - taken by a logical' : '');
+      b.onclick = () => {
+        setEdit(cur, 'textBg', ph);
+        buildPalette(); buildTabs(); redrawBBC();
+      };
+      pick.appendChild(b);
+    }
+    row.appendChild(pick);
+    el.appendChild(row);
+  }
+
   const msgs = [];
   /* DISTINCT TONES, NOT DISTINCT PHYSICALS. On a dithered deck logical 0 is
      displayed as a 50% blend with black, a tone no solid entry has, so it may
@@ -807,7 +859,7 @@ function buildMerge() {
 function payload() {
   const decks = {};
   DECKS.forEach((k, d) => {
-    decks[d] = { physical: phys(d), colourMap: cmap(d) };
+    decks[d] = { physical: phys(d), colourMap: cmap(d), textBg: tbg(d) };
   });
   return {
     _comment: 'Written by tools/palette_lab.py. Read by tools/export_bbc.py ' +
@@ -866,6 +918,10 @@ document.getElementById('sprCol').onchange = e => {
 /* the rotor spins in the game, so it spins here - a still rotor hides how
    much of the droid is actually its thin blades */
 setInterval(() => { if (sprOn) { sprPhase++; drawWindows(lastWin.x, lastWin.y); } }, 120);
+
+document.getElementById('textmode').onchange = e => {
+  textMode = e.target.checked; redrawBBC();
+};
 
 document.getElementById('dither').onchange = e => {
   dither = e.target.value; redrawBBC();

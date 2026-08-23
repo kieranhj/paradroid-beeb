@@ -183,7 +183,14 @@ DR_LOS_MAX = 96
   JSR BuildCharset              \ charset is deck specific
   JSR AnimReset                 \ ...which puts the alert lamp back on its
                                 \ default colour, so the lamp must rebuild
-  JSR SetPalette
+
+\ NO SetPalette HERE ANY MORE. RedrawAll does it, and RedrawAll is where
+\ the deck is actually drawn — ReframeView below ends in it. The call
+\ here fought the text-screen palette: the 001 screen is up across this
+\ LoadDeck (it holds the redraw back, see infoscr.asm), so setting the
+\ deck's colours here overrode the text background InfoCall had just
+\ chosen, every time. ReframeView returns early while a screen is up, so
+\ the deck's palette now lands exactly when the deck does. DECISION 4.
 
 \ The deck's own hum: three bytes into effect 24's record, exactly the
 \ C64's $135F writes into sfx23+5/6/7 — segment timer, reload, count.
@@ -3060,6 +3067,11 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
 \ indicator that survives every deck.
 
 .ConMenuInit4                   \ from ConsoleEnter: top entry, edges
+  JSR SetTextPal                \ the console reads white on logical 0, so
+                                \ logical 0 becomes the deck's TEXT
+                                \ background for as long as it is up.
+                                \ RedrawAll puts the deck's own back — the
+                                \ close goes through ReframeView
   LDA #0                        \ armed — the opening press is still down
   STA conSel
   STA conShipReq

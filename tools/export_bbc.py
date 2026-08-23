@@ -100,6 +100,9 @@ BBC_RGB = [
     (255, 255, 255),  # 7 white
 ]
 
+BBC_NAMES = ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan',
+             'white']
+
 # The C64 palette, for nearest-colour matching.
 C64_RGB = [
     (0x00, 0x00, 0x00), (0xFF, 0xFF, 0xFF), (0x88, 0x39, 0x32), (0x67, 0xB6, 0xBD),
@@ -160,9 +163,40 @@ def load_palette_override():
                 sys.exit('ERROR: %s: deck %d colourMap must be 16 values 0-3, '
                          'got %r' % (PALETTE_FILE.name, d, cmap))
             clean['colourMap'] = list(cmap)
+        tbg = rec.get('textBg')
+        if tbg is not None:
+            if not isinstance(tbg, int) or not 0 <= tbg < 8:
+                sys.exit('ERROR: %s: deck %d textBg must be 0-7, got %r'
+                         % (PALETTE_FILE.name, d, tbg))
+            clean['textBg'] = tbg
         if clean:
             out[d] = clean
     return out
+
+
+# Darkest first, by the LUMA of the BBC physical colours. The text
+# background wants to be dark, because the text on it is white.
+BBC_DARK_ORDER = (0, 4, 1, 5, 2, 6, 3, 7)
+
+
+def auto_text_bg(dpal):
+    """A starting text-screen background for a deck: the darkest colour it is
+    not already using for something.
+
+    The static text screens draw their background in LOGICAL 0, which is the
+    deck's FLOOR - and a floor chosen to look right underfoot is often far too
+    bright to read white text on. So those screens swap logical 0 for a colour
+    of their own. It must not collide with logicals 1-3 or the artwork drawn in
+    them (the portrait, the deck plan) disappears into it.
+
+    This is a starting point, not the answer: it is a judgement by eye, and
+    palette_lab.py is where it is made. See docs/layer-14-visual.md DECISION 4.
+    """
+    taken = set(dpal[1:])
+    for p in BBC_DARK_ORDER:
+        if p not in taken:
+            return p
+    return 0                                     # cannot happen: 8 > 3
 
 
 # Which SLOT gets to choose its physical colour first. Slot order and
@@ -557,6 +591,7 @@ def main():
     override = load_palette_override()
     colour_map = bytearray()
     deck_pal = bytearray()
+    deck_text_pal = bytearray()
     deck_bg = bytearray()
     deck_logicals = []
     for d in range(16):
@@ -589,6 +624,19 @@ def main():
                                         PALETTE_FILE.name))
         colour_map.extend(dmap)
         deck_pal.extend(dpal)
+
+        # The text-screen palette is the deck's, with logical 0 swapped for a
+        # background white text can be read on. Emitted as a whole four so the
+        # 6502 picks between the two tables with ONE offset - see SetTextPal.
+        tbg = chosen.get('textBg', auto_text_bg(dpal))
+        if tbg in dpal[1:]:
+            sys.exit('ERROR: deck %d has textBg = %s, which is already '
+                     'logical %d. Anything drawn in that logical would '
+                     'vanish into the background of every text screen - '
+                     'pick another in %s.'
+                     % (d, BBC_NAMES[tbg], dpal.index(tbg), PALETTE_FILE.name))
+        deck_text_pal.append(tbg)
+        deck_text_pal.extend(dpal[1:])
         if d == DECK:
             print('  deck %d -> scheme %d -> logical %s'
                   % (d, scheme, ', '.join('%d=%s' % (i, names[c])
@@ -668,6 +716,13 @@ def main():
         # schemes[deckScheme[d] * 12], both of which are still here.
         f.write('\n.deckPalette\n')
         emit_bytes(f, deck_pal)
+        f.write('\n.deckTextPal\n')
+        f.write('\\ The same four with LOGICAL 0 replaced: the static text\n'
+                '\\ screens read white on it, and a deck floor chosen to look\n'
+                '\\ right underfoot is often far too bright for that. It MUST\n'
+                '\\ follow deckPalette immediately - SetTextPal picks between\n'
+                '\\ the two by adding 64 to palBase, and main.asm asserts it.\n')
+        emit_bytes(f, deck_text_pal)
         f.write('\nALIGN &100\n.colourMap\n')
         emit_bytes(f, colour_map)
     print('  colours.asm   %5d bytes%s'

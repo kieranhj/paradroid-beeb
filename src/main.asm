@@ -3262,6 +3262,10 @@ ASSERT XFER_PAGES * 256 <= &4000
 ASSERT DATA_LOAD + XFER_PAGES * 256 <= &8000
 
 ASSERT charset_end - charset == NUM_CHARS * CHAR_BYTES
+\ SetTextPal picks the text-screen palette by adding 64 to palBase, so the
+\ two tables must be adjacent and in this order. export_bbc.py emits them
+\ that way; this is what catches it if that ever changes.
+ASSERT deckTextPal == deckPalette + 64
 
 PRINT "code    ", ~start, "-", ~code_end
 PRINT "tilemap ", ~tilemap, "-", ~tilemap_end

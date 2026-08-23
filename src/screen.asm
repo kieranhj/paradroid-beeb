@@ -371,6 +371,14 @@
 \ RedrawAll — fill the whole viewport from the current position
 \ ============================================================
 .RedrawAll
+  JSR SetPalette                \ THE DECK'S OWN COLOURS BACK. The console
+                                \ and the information screens swap logical 0
+                                \ for a text background (SetTextPal), and
+                                \ every way back to the deck ends in a full
+                                \ redraw — ReframeView's JMP here. Putting it
+                                \ at the top of the redraw rather than in each
+                                \ exit path costs one JSR and cannot be
+                                \ forgotten by a new one. Layer 14 DECISION 4
   LDA #0 : STA rCount
   LDA mapYr : STA cellY
 

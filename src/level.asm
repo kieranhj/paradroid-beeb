@@ -23,9 +23,29 @@
 \ times a frame — see the header in rupture.asm. palPlay is in main RAM
 \ for the same reason: this routine is in bank 4 and the interrupt that
 \ reads the table cannot see bank 4 while a sprite is being blitted.
+\ ---- TWO PALETTES PER DECK, one offset apart ---------------
+\ The static text screens — the console and its pages, and the droid
+\ information screens — draw their background in LOGICAL 0, which is the
+\ deck's FLOOR. A floor chosen to look right underfoot is often far too
+\ bright to read white text on (yellow, cyan, the dithered white of decks
+\ 0 and 9), so those screens swap logical 0 for a colour of their own.
+\ KC, 2026-08-23; the dither was tried there first and lost the text.
+\
+\ deckTextPal is the deck's four with logical 0 replaced, emitted
+\ IMMEDIATELY after deckPalette, so the two differ by one offset and this
+\ needs no second table lookup and no test in the loop. main.asm asserts
+\ the adjacency; export_bbc.py refuses a text background that collides
+\ with logicals 1-3.
+.SetTextPal
+  LDA #64                       \ deckTextPal - deckPalette
+  BNE stp_go                    \ always
 .SetPalette
+  LDA #0
+.stp_go
+  STA palBase
   LDA deck
-  ASL A : ASL A                 \ deck * 4 -> index into deckPalette
+  ASL A : ASL A                 \ deck * 4 -> index into the chosen table
+  CLC : ADC palBase
   STA palBase
   LDX #15
 .sp_loop

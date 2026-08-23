@@ -548,6 +548,14 @@ LAMP_OFF = 1                    \ logical 1 is black on every deck
   JSR IsEntry
   PAGEBANK SWRAM_DATA
 
+\ AFTER the call, not before, and X is why: IsEntry takes its selector in
+\ X — see its header — and SetPalette ends its loop with X = $FF, which is
+\ IS_BLANK. Called first, every screen became the blank. Here X is spent.
+\ Unconditional, which also catches IsBlank and the game over, and that is
+\ wanted: the front end inherits palPlay and the text background is the
+\ legible half of the deck's palette. Layer 14 DECISION 4.
+  JSR SetTextPal
+
   LDX infoAct                   \ $FF while the screen is still up
   BMI ic_x
   BEQ ic_game
