@@ -46,17 +46,6 @@ ORG LOWBSS_ADDR
 .drVisNew   SKIP DR_SLOTS       \ needs one now, having just been allocated
 .drBulFrm   SKIP DR_SLOTS       \ an enemy bullet's effect frame
 
-\ ---- Layer 14's floor dither, in MAIN RAM on purpose --------
-\ The two shade masks, by scanline parity: &05 / &0A on a deck that
-\ dithers, both ZERO on one that keeps a solid floor. BuildCharset (bank
-\ 4) writes them at every deck load, before anything can read them.
-\
-\ THEY LIVED IN BANK 4 UNTIL 2026-08-22 and had to come out: bank 7's
-\ static screens dither their own background and cannot see bank 4, and
-\ absolute addressing costs the same either side of the boundary. Read
-\ by DitherChar and ConMarkClear (bank 4) and DitherBuf (bank 7).
-.dcMask     SKIP 2
-
 \ ---- the alert lamp -----------------------------------------
 .lampWant   SKIP 1
 .lampHave   SKIP 1

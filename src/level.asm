@@ -390,8 +390,9 @@
 .bcF       EQUB 0
 .bcFH      EQUB 0
 .bcFL      EQUB 0
-\ dcMask is NOT here: it is main RAM, in lowbss.asm, because bank 7's
-\ static screens dither their own background and cannot see this bank.
+.dcMask    EQUB 0, 0            \ DitherCharset's shade masks, by scanline
+                                \ parity. Both ZERO on a deck that keeps a
+                                \ solid floor, which makes the pass a no-op.
 .bcTmp     EQUB 0
 .bcTmp2    EQUB 0
 .palBase   EQUB 0

@@ -96,15 +96,6 @@ IS_BLANK = &FF                  \ IsEntry's third door, and not a screen
 .IsBlank
   LDA #&FF
   STA infoAct
-  LDA #0                        \ AND NO DITHER ON THE TITLE. This runs at
-  STA dcMask                    \ boot, BEFORE any deck load has written the
-  STA dcMask+1                  \ masks — lowbss is SKIPped, so they would
-                                \ otherwise be whatever the RAM held, and
-                                \ DbClear's pass would scatter that over the
-                                \ buffer the title is about to print on. On
-                                \ the way back from a game over they hold the
-                                \ last deck's, which is just as wrong here;
-                                \ the next LoadDeck writes them again.
   JMP DbClear                   \ and its RTS
 
 \ ============================================================
