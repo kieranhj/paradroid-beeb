@@ -37,7 +37,12 @@
 
 DB_TYPES = 24
 DB_STATS = 8
-DB_INK   = PN_INK_WHITE         \ white: logical 3 on every deck
+DB_INK   = PN_INK_WHITE         \ the PAGE: white, logical 3 on every deck
+DB_INK_PN = PN_INK_RED          \ the PANEL's mode field: red, because
+                                \ LevelColors ($2844) fills colour RAM
+                                \ rows 2-3 cols 2-37 with $F2 and this
+                                \ writes col 2. Same field, and so the
+                                \ same red as panel.asm's PnStr
 
 \ ---- the page's geometry ------------------------------------
 \ A glyph is 8 x 16, so a text line is TWO buffer rows and the console's
@@ -830,6 +835,8 @@ DB_DESC_MAX = &38 - &10         \ sub_0_2DCD's own bound, rebased to 0
 .DbPanelStr
   STA db_p_get+1
   STY db_p_get+2
+  LDA #DB_INK_PN                \ the panel's field, not the page
+  STA dbInk
   LDA #LO(PN_TEXT_ADDR + PN_COL_MODE * 16) : STA pnDst
   LDA #HI(PN_TEXT_ADDR + PN_COL_MODE * 16) : STA pnDst+1
   LDA #0
@@ -844,6 +851,8 @@ DB_DESC_MAX = &38 - &10         \ sub_0_2DCD's own bound, rebased to 0
   INC dbIx
   BNE db_p_loop
 .db_p_x
+  LDA #DB_INK                   \ and the page's ink back, for the next
+  STA dbInk                     \ DbGlyph that is not the panel's
   RTS
 
 \ ============================================================
@@ -880,7 +889,7 @@ DB_DESC_MAX = &38 - &10         \ sub_0_2DCD's own bound, rebased to 0
   LDA pnSrc   : ADC #LO(FONT_ADDR) : STA pnSrc
   LDA pnSrc+1 : ADC #HI(FONT_ADDR) : STA pnSrc+1
 
-  LDA #DB_INK
+  LDA dbInk                     \ the page's white, or the panel's red
   STA fontMask
   JSR FontCell                  \ the top cell
 
@@ -1060,6 +1069,8 @@ ASSERT DB_IMG_ROW + 11 <= PLAY_ROWS      \ the 84-scanline portrait: rows 3-13
 .dbCap     EQUB 0               \ byte_0_248: capitalise the next word
 .dbWidth   EQUB 0
 .dbIx      EQUB 0
+.dbInk     EQUB DB_INK          \ DbGlyph's ink: the page's white, or the
+                                \ panel field's red. DbPanelStr swaps it
 .dbTmp     EQUB 0
 .dbTmp2    EQUB 0
 .dbPrevF   EQUB 0

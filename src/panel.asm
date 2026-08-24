@@ -323,6 +323,13 @@ PN_TEXT_ADDR = PANEL_ADDR + PN_TEXT_ROW * ROW_BYTES
   LDA pnStrLo : STA pn_s_get+1
   LDA pnStrHi : STA pn_s_get+2
   JSR PnAt
+  LDA #PN_INK_RED : STA pnMask  \ THE MODE FIELD IS RED, like the logo
+                                \ and the score beside it: LevelColors
+                                \ ($2844) fills colour RAM rows 2-3
+                                \ COLS 2-37 with $F2, and the field is
+                                \ col 2. It was drawn in PN_INK_TEXT
+                                \ until KC caught it, 2026-08-24.
+                                \ After PnAt, which resets the ink
   LDA #0
   STA pnTmp
 .pn_s_loop

@@ -199,7 +199,7 @@ palettes. **Bank 4 also has ~160 B of alignment padding in front of `colourMap` 
 Layer 11f's front end spent bank 4's margin down again (the sixteen-row change had bought it back
 to 60 by collapsing three copies of the `t1i3` restore into one in `ReframeView` — see
 `docs/layer-9-hud.md` §6g). The build PRINTs bank 4's fuel gauge every run; the other three come
-from `&C000` minus the end addresses it also PRINTs — **bank 5 1,033 B, bank 6 9 B, bank 7 314 B**
+from `&C000` minus the end addresses it also PRINTs — **bank 5 1,033 B, bank 6 4 B, bank 7 314 B**
 as of 2026-08-24, the low overlay 1 B and `lowcode2` 8 B.
 
 **The `PARBRF` overlay at `&0400` has a hard ceiling of `&0800` and 3 bytes free**, and the

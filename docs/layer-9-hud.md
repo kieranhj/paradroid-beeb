@@ -798,3 +798,42 @@ table alone, and their post-draw call is gone.
   the ship every one at `high = low` — **zero malformed bytes**, counts unchanged, so the transform
   loses and gains nothing.
 - the marker column (unit 1) is clear on all four rows.
+
+## [DECISION 19] The panel's mode word is red, like the logo and the score
+
+**KC, 2026-08-24:** *"the text on the left hand side of the top panel should be red, same as the
+paradroid logo and the score in the rest of the panel."* Correct — it was `PN_INK_TEXT`.
+
+**The C64 says so directly.** `LevelColors` (`$2844`) fills six rows of colour RAM with `bgColor`,
+then overwrites **rows 2 and 3, columns 2 to 37** with `$F2` — low nibble 2, red:
+
+```
+2853  LDA #$F2
+2855  LDY #35
+2857  STA $D852,Y      ; $D800 + 82  = row 2, col 2
+285A  STA $D87A,Y      ; $D800 + 122 = row 3, col 2
+285D  DEY
+285E  BPL _1           ; 36 cells, cols 2-37
+```
+
+The status line's fields are the mode word at col 2, the logo at 15–23 and the score at 30–37 —
+**all inside cols 2–37, so all three are red on the original.** Ours had the logo and the score
+right and the mode word wrong.
+
+**Three routines write that field** and two of them needed changing:
+
+| | who | now |
+|---|---|---|
+| `PnStr` (bank 6) | Mobile / Weapon / Transfer / Console, and `PnBriefing`'s "Briefing" | `PN_INK_RED` after `PnAt`, which resets the ink — the same two lines the logo and score already had |
+| `DbPanelStr` (bank 7) | the droid database's "More" and "Console" | `DbGlyph`'s ink became a variable, `dbInk`: the page keeps `DB_INK` white, the panel field takes `DB_INK_PN` red, and `DbPanelStr` puts it back on the way out |
+| `XfGlyphAt` (bank 7) | the transfer game's verdict messages, col 4 | **left alone** — a different screen with its own palette, and not what was asked for |
+
+Cost: 5 bytes of bank 6 (now **4 free** — that bank is tight again) and about 14 of bank 7's 314.
+
+**Verified in the panel buffer, 2026-08-24**, not from a screenshot: the mode word, the logo and the
+score all come out **logical 2 and nothing else** — 71, 55 and 8 bytes with the high plane set and
+**zero** bytes in any other plane. Checked on "Mobile" and on "Console".
+
+**Not verified**: the droid database's own "More", which is written on its page 3. The change is
+the same `dbInk` for both its strings and its "Console" write shares the path, but page 3 was not
+reached in the emulator.
