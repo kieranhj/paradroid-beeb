@@ -268,3 +268,73 @@ has to outlive it — which is why the routine ends in `JSR SetPalPlay` and an `
 `JMP` it used to. Costs five bytes and removes the trap that had already caught this once.
 
 **Both tight regions are at 2 bytes free**: main RAM ends at `&2FFE`, bank 4 at `&BFFE`.
+(DECISION 5 below gave main RAM four of those back — it ends at `&2FFA` now.)
+
+## [DECISION 5] The logo screen is embossed, and the front end picks a deck at boot
+
+**Found 2026-08-24, KC:** the C64 logo screen is embossed and the port's was one flat colour.
+
+**What the C64 does.** The screen is hires (`Irq1` `$2922` writes `$D016 = $C8`, bit 4 clear), so a
+cell is the shared background plus one foreground colour — and `ShowTitle` `$2879` makes a *second*
+pass over the same 1,000 codes, writing `$D800` from `CharColor` `$0800`. **Colour is a property of
+the character code, not of the cell.** `CharColor`'s high nibble is a fixed SLOT; `NewCharColors`
+`$3577` patches the low nibble per deck from the current colour scheme. Slot is artwork, physical
+is palette — the same split this port already has.
+
+Matching all 1,000 cells of `Title_dat` against `ref/c64-logo-screen.png` on a fitted grid, the
+whole screen is five slots and no more:
+
+| slot | cells | measured ink | what it is | port |
+|---|---|---|---|---|
+| 0 | 484 | (162,142,229) | code `$00`, blank — background shows through | logical 0 |
+| 9 | 247 | (241,238,251) | white highlight strokes, top-left of every box | logical 3 |
+| 7 | 249 | (100, 79,180) | dark violet shadow strokes, bottom-right | logical 1 |
+| 4 | 17 | ( 23, 15, 61) | the BY ANDREW / BRAYBROOK lettering | logical 1 |
+| E | 3 | green | the three blobs | logical 2 |
+
+**The highlight and its shadow are about three character cells apart and never share one**, so none
+of it needs per-pixel colour. `tools/export_title.py` bakes the slot's logical colour into each of
+the 36 glyphs — `SLOT_LOGICAL` — and that is the whole change: **the file is still 1,140 bytes**,
+`TiCell` is untouched, the RLE stream is untouched. It replaces layer-11 [DECISION 9], the
+white-on-black placeholder that deferred this here.
+
+**The four fixed slot roles ARE the four tones the logo wants** (0 the deck background, 1 black,
+2 the deck highlight, 3 white), so the only substitution is slot E's green taking the deck
+highlight — three decorative cells. The one place the port is not the C64 is the shadow: the C64's
+is a dark tint *of* its background and ours is black.
+
+### The random boot deck
+
+KC, same day: **the front end inherits the last deck's palette, and at a cold boot it picks one at
+random.** Before this the boot title ran on the OS's MODE 1 default, where logical 0 is black and
+logical 1 is red — which *inverts* a fresh emboss, because the shadow strokes come out brighter
+than the background they sit under. Verified in jsbeeb, and it looked exactly as bad as that
+sounds. Any deck palette has the relationship the artwork wants.
+
+`TiBootPal` (`src/title.asm`, and so in `PARTITL`) does it, and it takes the **text** palette
+rather than the play one — that is what the game-over path arrives on, since `InfoCall` runs
+`SetTextPal` before every front-end screen (DECISION 4 above), so boot and the loop back now agree.
+It also dodges decks 0, 5 and 9, whose logical 0 *is* white and would swallow the white
+highlights; their text background is not.
+
+**It absorbed the boot seed.** `main.asm`'s `LDA USR_VIA_T1CL / BEQ / STA drSeed` moved into it —
+the deck and the LFSR seed are the same sample of the same free-running counter, so they belong in
+one place. Same caveat as before: deterministic under an emulator, varying on real hardware where
+the disc loads above take a different time. Real entropy still arrives with `TiWait`'s dwell.
+
+**`bootPal` is why it is boot-only.** An assembled `1` in main RAM that `TiBootPal` clears, so the
+game-over path falls straight through and keeps what it inherited. It cannot live in `PARTITL`:
+that overlay is reloaded from disc on every title and would bring the flag back set.
+
+**And it must page bank 4 itself.** Boot's last act before `TitleSeq` is `UnpackBankIn` on
+`SWRAM_XFER`, so `SWRAM_DATA` is *not* the resting state on arrival, and both `SetTextPal` and
+`drSeed` are bank 4's. Leaving it paged is safe — `HsEntry` is next and pages `SWRAM_XFER` for
+itself in its first instruction.
+
+**Net −4 bytes of main RAM** (the 8-byte seed block out, a `JSR` and the flag in): the code image
+ends at `&2FFA`, **6 bytes free**. `PARTITL` spent 32 of its 89 and has 58. Bank 4 unchanged.
+
+**Verified in jsbeeb 2026-08-24:** cold boot lands on deck 11's text palette (`bootPal` reads 0,
+`deck` reads 11, palette `[4,0,5,7]`) and the logo shows blue ground, white highlights top-left,
+black shadows bottom-right, dark panel lettering, magenta blobs — the same relationships as
+`ref/c64-logo-screen.png`.

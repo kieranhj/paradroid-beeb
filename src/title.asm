@@ -72,6 +72,61 @@ tigd  = svp                     \ and where it lands
   EQUS "LOAD PARBRF"
   EQUB 13
 
+\ ============================================================
+\ TiBootPal — the front end's palette at a COLD BOOT
+\ ============================================================
+\ KC, 2026-08-24: the front end inherits the palette of the last deck
+\ the player played, and at a cold boot there is no such deck, so one
+\ is PICKED AT RANDOM. Before this the boot title ran on the OS's MODE
+\ 1 default, where logical 0 is black and logical 1 is red — and with
+\ the logo now embossed out of CharColor's slots (tools/export_title.py)
+\ that inverts it: the shadow strokes came out BRIGHTER than the
+\ background they are meant to sit under. Any deck palette has the
+\ relationship the artwork wants, because the fixed slot roles give it
+\ one: logical 0 a mid colour, logical 1 black under it, logical 3
+\ white over it.
+\ IT IS THE TEXT PALETTE, not the play one, because that is what the
+\ game-over path arrives on — InfoCall runs SetTextPal before every
+\ front-end screen (layer-14 DECISION 4), so boot and the loop back
+\ now agree. It also dodges decks 0, 5 and 9, whose logical 0 IS white
+\ and would swallow the white highlights; their text background is not.
+\ AND IT IS WHERE THE SEED IS NOW SET. This used to sit in main.asm
+\ after TitleSeq; it wants to be here anyway, because the deck it picks
+\ and the LFSR's seed are the same sample of the same free-running
+\ counter. Reading the USER VIA's T1C-L clears an interrupt flag
+\ nothing in this game uses; the SYSTEM VIA's would eat a rupture
+\ interrupt, so do not read that one. A ZERO SEED LOCKS THE LFSR at
+\ zero for ever, so it is refused and the assembled default stands —
+\ the deck still takes the zero, which is deck 0 and perfectly legal.
+\ UNDER AN EMULATOR IT IS STILL DETERMINISTIC: everything before it
+\ takes the same time on every boot, so the same deck comes up. On
+\ real hardware the disc loads above vary by up to a revolution. The
+\ same caveat the seed always carried; real entropy arrives with
+\ TiWait's dwell, which GameStart stirs into drSeed.
+\ BOOT ONLY. bootPal (main.asm) is an assembled 1 and this is the only
+\ thing that clears it, so the game-over path falls straight through
+\ and keeps the palette it inherited. The flag cannot live in here:
+\ PARTITL is reloaded from disc on every title, so anything it held
+\ would come back set.
+\ THE BANK IS NOT SWRAM_DATA ON ARRIVAL — boot's last act before
+\ TitleSeq is UnpackBankIn on SWRAM_XFER — and SetTextPal and drSeed
+\ are both bank 4's, so page it. Leaving it paged is safe: HsEntry is
+\ next and pages SWRAM_XFER for itself in its first instruction.
+.TiBootPal
+  LDA bootPal
+  BEQ tbp_x
+  DEC bootPal                   \ 1 -> 0, once in the life of the machine
+  PAGEBANK SWRAM_DATA
+  LDA USR_VIA_T1CL
+  BEQ tbp_deck                  \ zero would lock the LFSR — keep the
+  STA drSeed                    \ assembled seed, take the deck anyway
+.tbp_deck
+  AND #15                       \ 16 decks, and the low bits are the
+  STA deck                      \ noisiest end of a 1 MHz counter
+  JMP SetTextPal                \ bank 4, and its RTS
+.tbp_x
+  RTS
+
 \ ---- the palette is INHERITED, deliberately -----------------
 \ TiPal used to state the MODE 1 default here; KC, 2026-08-22: the
 \ front end inherits the palette from the last deck played instead.

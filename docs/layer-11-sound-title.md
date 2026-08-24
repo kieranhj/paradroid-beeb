@@ -131,7 +131,8 @@ tables: a small plotter in bank 7 computing character addresses arithmetically, 
 game's `CHAR_PTR_LO/HI` — which would otherwise have to live under the framebuffer. The block
 letters come from the MODE 1 charset built at `&0400` by `BuildCharset` (bank 4 data, independent
 of any deck map, so it can run before a deck exists); the two info panels come from `PARAFNT`.
-A title palette is Layer 14's to settle.
+A title palette is Layer 14's to settle — and it did, 2026-08-24: the front end inherits the
+last deck's text palette and picks a random deck at a cold boot. See layer-14 DECISION 5.
 
 ## 5. Staging
 
@@ -293,10 +294,13 @@ give `EndGame` its four wash characters back — but it changes `NUM_CHARS` and 
 that every deck's rendering depends on, so it wants KC and a careful regeneration, not a passing
 edit.
 
-**[DECISION 9] — white on black, for now.** Every glyph is rendered in logical 3 on logical 0. The
-title runs before any deck is loaded, so MODE 1's default palette makes that white on black, which
-is close to what the C64's title is. The C64's own is two-tone yellow/brown outlines with purple
-panel text; matching it is Layer 14's job along with every other palette.
+**[DECISION 9] — white on black, for now. SUPERSEDED 2026-08-24, layer-14 DECISION 5.** Every
+glyph was rendered in logical 3 on logical 0, which made the logo one flat colour where the C64's
+is embossed. It is now coloured per glyph from `CharColor` `$0800`'s slot, the front end picks a
+random deck's palette at a cold boot, and the emboss is back for no extra bytes. The description
+of the C64's colours that stood here — "two-tone yellow/brown outlines with purple panel text" —
+was a guess and is wrong; the measurement is in
+[`docs/layer-14-visual.md`](layer-14-visual.md) DECISION 5.
 
 **Verified in jsbeeb**: the rendered title matches `tools/output/title_screen_7800.png` cell for
 cell, fire skips it into the game, and the timeout falls through into the game on its own.

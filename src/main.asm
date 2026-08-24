@@ -1189,26 +1189,9 @@ ORG &1100
 \ the MOS still owns the machine, which is what its loads require.
   JSR TitleSeq
 
-\ ---- the random seed ---------------------------------------
-\ The C64 does not have one: its random source is $D41B, SID voice 3's
-\ oscillator output, which is free-running noise. We have no equivalent,
-\ so the LFSR in DrRandom is seeded from the USER VIA's T1 counter — also
-\ free-running, also sampled at an arbitrary moment. Reading T1C-L there
-\ clears an interrupt flag nothing in this game uses; the SYSTEM VIA's
-\ would eat a rupture interrupt, so do not read that one.
-\
-\ A ZERO SEED LOCKS THE LFSR at zero for ever, so it is refused and the
-\ assembled default stands.
-\
-\ UNDER AN EMULATOR THIS IS STILL DETERMINISTIC — the counter reads the
-\ same on every boot because everything before it takes the same time.
-\ Real entropy arrives with Layer 11's title screen, which is where the
-\ C64 gets its own: $D41B has been running for however long the player
-\ left the title up.
-  LDA USR_VIA_T1CL
-  BEQ ml_keepseed
-  STA drSeed
-.ml_keepseed
+\ ---- the random seed --------------------------------------
+\ It is TiBootPal's now (src/title.asm), taken from the same sample
+\ of the same free-running counter as the random boot deck.
 
 \ ---- everything above happens ONCE -------------------------
 \ Restart0 ($1078) against the StartGame ($1242) that TitleLoop reaches:
@@ -2107,6 +2090,12 @@ ENDMACRO
   LDX #LO(loadtitl)
   LDY #HI(loadtitl)
   JSR OSCLI
+  JSR TiBootPal                 \ KC 2026-08-24: at a COLD boot only, a
+                                \ random deck text palette for the front
+                                \ end to inherit, and the LFSR seed from
+                                \ the same sample. It is PARTITL code, so
+                                \ it must follow the load above; boot-only,
+                                \ so it needs bootPal. See its header
   JSR HsEntry                   \ Layer 11f: the high-score entry, if the
                                 \ game just ended on one. It draws on the
                                 \ 999 page, which SetupPlain left on
@@ -2613,6 +2602,11 @@ ENDIF
 .sndState  EQUB 0
 .sndVolume EQUB 15
 .gameTick  EQUB 0               \ the C64's frameCount, once per ITERATION
+.bootPal   EQUB 1               \ TiBootPal clears it: the random front-end
+                                \ deck is picked ONCE, at a cold boot, and
+                                \ every title after one inherits instead.
+                                \ Main RAM because PARTITL is reloaded from
+                                \ disc on every title and could not keep it
 .oldIrq1V  EQUW 0
 .oldSysIer EQUB 0               \ the MOS's VIA state, saved by InstallIrq
 .oldUsrIer EQUB 0               \ and handed back by UninstallIrq for the
