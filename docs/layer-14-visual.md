@@ -218,3 +218,24 @@ point, not the answer**; it is a judgement by eye, like the palettes themselves.
 
 Verified in jsbeeb: the 001 screen on a cyan/white deck comes up with a solid red field, white
 text and a blue portrait, and the deck's own colours return when it is dismissed.
+
+### DECISION 4a — the deck plan keeps the DECK's colours
+
+**KC, 2026-08-24.** The console's deck plan is a picture of the deck, not a page of text, so it
+wears the deck's own palette. Only the menu, the droid database and the information screens take
+the text background.
+
+The switch rides on **`ConMarker4`**: every path that puts the console MENU on screen ends by
+drawing the selection marker — `ConsoleEnter`, the return from a page (`ct_back`), and `ConMenu4`'s
+own up/down steps — and **none of the pages does**, so it is the one place that means "the menu is
+up" without a flag. `SetTextPal` moved there out of `ConMenuInit4`, which cost bank 4 nothing.
+`ct_trydeck` ends `JMP SetPalette` instead of `RTS`, which puts the deck's colours on for the plan
+and returns through it.
+
+The ship page is unaffected: `ConShipEnter4` saves `palPlay` and installs `palLift`, and
+`ConShipExit4` puts back whatever it found — the text palette or the deck's, either is correct.
+
+**MAIN RAM IS NOW EXACTLY FULL.** The code image ends at `&3000`, on the `GUARD`, with **0 bytes
+free** — those two bytes were the `JMP`'s. The next thing that needs main RAM needs a hunt first.
+If it has to come from here, moving `ct_trydeck`'s `LDA #2 / STA conDeckReq` into a bank-4 tail
+gives 3 bytes back and costs bank 4 8 of its 10.

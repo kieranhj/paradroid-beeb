@@ -1992,7 +1992,13 @@ ENDMACRO
   PAGEBANK SWRAM_DATA
   LDA #2
   STA conDeckReq
-  RTS
+  JMP SetPalette                \ and its RTS. THE PLAN IS THE DECK, so it
+                                \ wears the deck's colours and not the
+                                \ console's text background — KC,
+                                \ 2026-08-24. Going back to the menu draws
+                                \ the marker, which puts the text palette
+                                \ on again. Two bytes, which is what main
+                                \ RAM had
 \ The database is NOT one of the static pages: it is a browser, so its
 \ tick runs every pass and the page itself reads the keys — which it can,
 \ because keydown is main RAM. There is no bank-4 shim and no enter

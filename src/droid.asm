@@ -3067,11 +3067,6 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
 \ indicator that survives every deck.
 
 .ConMenuInit4                   \ from ConsoleEnter: top entry, edges
-  JSR SetTextPal                \ the console reads white on logical 0, so
-                                \ logical 0 becomes the deck's TEXT
-                                \ background for as long as it is up.
-                                \ RedrawAll puts the deck's own back — the
-                                \ close goes through ReframeView
   LDA #0                        \ armed — the opening press is still down
   STA conSel
   STA conShipReq
@@ -3203,7 +3198,15 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
 \ ---- the marker: a white bar beside the selected icon -------
 \ One 4-px column, eight scanlines, at unit 1 — clear of the icons at
 \ units 4 and 7 — centred a row into each icon's three.
+\ THE MENU'S PALETTE RIDES ON THE MARKER. Every path that puts the console
+\ MENU on screen ends by drawing the marker — ConsoleEnter, the return from
+\ a page (ct_back) and ConMenu4's own selection steps — and none of the
+\ pages does, so this is the one place that means "the menu is up" without
+\ a flag. The menu reads white text, so logical 0 becomes the deck's text
+\ background here; the deck plan puts the deck's own colours back for
+\ itself, and RedrawAll does it for the close. Layer 14 DECISION 4.
 .ConMarker4
+  JSR SetTextPal
   LDA #&0F                      \ solid logical 1: white on every deck
   BNE cmk_put
 .ConMarkClear
