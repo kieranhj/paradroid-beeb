@@ -60,7 +60,7 @@ from export_droids import (build_rotor, build_digits,               # noqa: E402
 from export_bbc import (C64_RGB, BBC_RGB,                          # noqa: E402
                         CHARSET_ADDR, TILEDEF_ADDR,
                         deck_colours, deck_background, build_logical_map,
-                        build_colour_map, assign_palette)
+                        build_colour_map, assign_palette, auto_text_bg)
 
 PROJECT = Path(__file__).resolve().parent.parent
 LST_FILE = PROJECT / 'paradroid_ce.lst'
@@ -228,6 +228,8 @@ def collect(mem):
             'autoPhys': auto_phys,
             'colourMap': list(saved.get('colourMap', auto_map)),
             'physical': list(saved.get('physical', auto_phys)),
+            'textBg': saved.get('textBg',
+                                auto_text_bg(saved.get('physical', auto_phys))),
         })
         print('  deck %2d  scheme %d  bg %-9s %4dx%-4d  logical %s'
               % (d, scheme, C64_NAMES[bg], w, h,
@@ -359,6 +361,18 @@ PAGE = r"""<!doctype html>
   <h1>Paradroid deck palettes</h1>
   <div class="tabs" id="tabs"></div>
   <span style="flex:1"></span>
+  <label style="margin-right:10px"><input type="checkbox" id="textmode"> text screen</label>
+  <label for="dither">dither</label>
+  <select id="dither">
+    <option value="off" selected>off &mdash; solid, as built</option>
+    <option value="check">2&times;2 checker</option>
+    <option value="vert">vertical stripes</option>
+    <option value="horiz">horizontal stripes</option>
+  </select>
+  <select id="shade" title="which logical the half-pixels take">
+    <option value="1" selected>shade = logical 1</option>
+    <option value="2">shade = logical 2</option>
+  </select>
   <label for="zoom">zoom</label>
   <select id="zoom">
     <option value="fit">fit</option>
@@ -400,6 +414,23 @@ PAGE = r"""<!doctype html>
     </div>
     <p class="note" id="hint">Move the pointer over a deck above to aim this
       window; the droid follows it. Shown at 2&times;.</p>
+    <p class="note"><b>dither</b> halves the intensity of logical 0 by giving
+      every other pixel the shade logical instead. It is worth whatever
+      logical 1 is on this deck, so it only helps where logical 1 is BLACK
+      &mdash; on a deck whose logical 1 is a colour it paints that colour onto
+      the floor and gets louder, not quieter, and the build skips it.</p>
+    <p class="note">It also buys a FIFTH TONE: a dithered logical 0 is a 50%
+      blend, which no solid entry can be, so logical 0 may share its physical
+      with another logical. Decks 0 and 9 use that deliberately &mdash; white
+      dithered to the grey their C64 floor actually is &mdash; and so carry
+      white on both logical 0 and logical 3. A collision that does NOT involve
+      logical 0 still loses detail for good.</p>
+    <p class="note">What the BUILD does is the <b>2&times;2 checker</b> with
+      <b>shade = logical 1</b>, and only on a deck whose logical 1 is physical
+      black &mdash; <code>DitherChar</code> in <code>src/level.asm</code>, see
+      <code>docs/layer-14-visual.md</code> DECISION 1. The other patterns and
+      shade 2 are here to compare against, not to select: nothing carries them
+      into the build.</p>
     <p class="note">The C64 draws every droid, the player included, in BLACK
       &mdash; <code>SpriteColor</code> takes <code>$F0</code> at
       <code>$1906</code> &mdash; so the C64 pane shows it black whatever the
@@ -420,10 +451,18 @@ PAGE = r"""<!doctype html>
     <p class="warn" id="dupwarn" hidden></p>
     <p class="note">Emitted as <code>.deckPalette</code>, 4 bytes a deck.
       Logical 0 is the background the whole deck sits on.</p>
+    <p class="note"><b>T</b> is the static text screens' background &mdash;
+      the console, the deck plan, the droid database and the 001 pages. They
+      read WHITE text, and a floor chosen to look right underfoot is often
+      far too bright for that, so those screens swap logical 0 for this.
+      Emitted as <code>.deckTextPal</code>. Tick <b>text screen</b> in the
+      header to see the deck through it. Colours already used by logicals
+      1&ndash;3 are disabled: anything drawn in one would vanish.</p>
 
     <hr>
     <h2>Merge &mdash; C64 colour to logical</h2>
     <div class="merge" id="merge"></div>
+    <p class="warn" id="bgwarn" hidden></p>
     <p class="note">Emitted as <code>.colourMap</code>. Two C64 colours on the
       same logical slot become the same pixel &mdash; no palette can separate
       them again. Percentages are of this deck's pixels.</p>
@@ -459,6 +498,10 @@ try { edits = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { edits
 function deck(d) { return DECKS[d]; }
 function phys(d) { return (edits[d] && edits[d].physical) || deck(d).physical; }
 function cmap(d) { return (edits[d] && edits[d].colourMap) || deck(d).colourMap; }
+function tbg(d) {
+  const e = edits[d];
+  return (e && e.textBg !== undefined) ? e.textBg : deck(d).textBg;
+}
 function edited(d) {
   const e = edits[d]; if (!e) return false;
   const k = deck(d);
@@ -466,8 +509,8 @@ function edited(d) {
          String(e.colourMap || k.colourMap) !== String(k.autoMap);
 }
 function setEdit(d, key, val) {
-  edits[d] = Object.assign({ physical: phys(d).slice(), colourMap: cmap(d).slice() },
-                           edits[d] || {});
+  edits[d] = Object.assign({ physical: phys(d).slice(), colourMap: cmap(d).slice(),
+                             textBg: tbg(d) }, edits[d] || {});
   edits[d][key] = val;
   localStorage.setItem(KEY, JSON.stringify(edits));
 }
@@ -484,19 +527,63 @@ function lut(rgbList) {
 }
 const LUT64 = lut(C64);
 
+let textMode = false;
+
+/* The static text screens keep the deck's logicals 1-3 and swap logical 0
+   for a background white text can be read on - SetTextPal, and deckTextPal
+   in colours.asm. Ticking "text screen" shows the deck through that
+   palette, which is the only way to judge the choice. */
 function bbcLut(d) {
   const p = phys(d), m = cmap(d), out = [];
-  for (let c = 0; c < 16; c++) out.push(BBC[p[m[c]]]);
+  for (let c = 0; c < 16; c++)
+    out.push(BBC[m[c] === 0 && textMode ? tbg(d) : p[m[c]]]);
   return lut(out);
 }
 
-function paint(canvas, d, table) {
+/* ---- the dither ---------------------------------------------------------
+   Layer 14's experiment: the BBC palette is fully saturated, so a floor of
+   solid red or cyan is far harsher than the C64's. Half its pixels take
+   ANOTHER logical instead - logical 1, which is physical BLACK on thirteen
+   of the sixteen decks - and the floor reads at half intensity.
+
+   Applied to logical 0 wherever it lands: the floor itself AND any cell
+   whose ink merged onto logical 0, which is what keeps such a cell
+   invisible against the floor exactly as it is now.
+
+   On the port this is baked into the charset at deck load, not drawn per
+   frame, so the phase is fixed to the character grid. The crop here starts
+   on a tile boundary, so (x+y)&1 is that grid up to a whole-pattern flip. */
+let dither = 'off', shadeLog = 1;
+
+function keepsColour(x, y) {
+  if (dither === 'check') return ((x + y) & 1) === 0;
+  if (dither === 'vert')  return (x & 1) === 0;
+  if (dither === 'horiz') return (y & 1) === 0;
+  return true;
+}
+
+/* The same 16-entry lookup, but with every C64 colour that merged onto
+   logical 0 painted in the shade logical instead. */
+function shadeLut(d) {
+  const p = phys(d), m = cmap(d), out = [];
+  for (let c = 0; c < 16; c++)
+    out.push(BBC[p[m[c] === 0 ? shadeLog : m[c]]]);
+  return lut(out);
+}
+
+function paint(canvas, d, table, alt) {
   const k = deck(d);
   canvas.width = k.w; canvas.height = k.h;
   const ctx = canvas.getContext('2d');
   const img = ctx.createImageData(k.w, k.h);
   const out = new Uint32Array(img.data.buffer), src = idx[d];
-  for (let i = 0; i < src.length; i++) out[i] = table[src[i]];
+  if (!alt || dither === 'off') {
+    for (let i = 0; i < src.length; i++) out[i] = table[src[i]];
+  } else {
+    for (let y = 0, i = 0; y < k.h; y++)
+      for (let x = 0; x < k.w; x++, i++)
+        out[i] = keepsColour(x, y) ? table[src[i]] : alt[src[i]];
+  }
   ctx.putImageData(img, 0, 0);
 }
 
@@ -542,7 +629,7 @@ function applyZoom() {
 }
 
 function redrawBBC() {
-  paint(cvbb, cur, bbcLut(cur));
+  paint(cvbb, cur, bbcLut(cur), shadeLut(cur));
   drawWindows(lastWin.x, lastWin.y);
 }
 
@@ -550,7 +637,7 @@ function show(d) {
   cur = d;
   const k = deck(d);
   paint(cv64, d, LUT64);
-  paint(cvbb, d, bbcLut(d));
+  paint(cvbb, d, bbcLut(d), shadeLut(d));
   applyZoom();
   document.getElementById('c64info').textContent =
     'deck ' + d + ' · scheme ' + k.scheme + ' · ' + k.w + '×' + k.h + ' px';
@@ -650,11 +737,53 @@ function buildPalette() {
     row.appendChild(pick);
     el.appendChild(row);
   }
+  /* ---- the text-screen background, a FIFTH choice ------------------
+     Not one of the four: it REPLACES logical 0 while a static text screen
+     is up, and the deck keeps its own 1-3 underneath. Emitted as
+     .deckTextPal. It must not collide with logicals 1-3 or whatever is
+     drawn in them - the portrait, the deck plan - vanishes into it, and
+     export_bbc.py refuses that. */
+  {
+    const row = document.createElement('div');
+    row.className = 'lrow';
+    row.style.marginTop = '10px';
+    row.innerHTML = '<span class="lname"><b>T</b> text screens' +
+      '<br><span style="color:var(--dim)">replaces logical 0</span></span>';
+    const pick = document.createElement('div');
+    pick.className = 'picker';
+    for (let ph = 0; ph < 8; ph++) {
+      const b = document.createElement('button');
+      b.style.background = rgbcss(BBC[ph]);
+      b.className = (tbg(cur) === ph ? 'on' : '');
+      b.disabled = p.slice(1).indexOf(ph) >= 0;
+      b.style.opacity = b.disabled ? 0.25 : 1;
+      b.title = ph + ' ' + BBCN[ph] + (b.disabled ? ' - taken by a logical' : '');
+      b.onclick = () => {
+        setEdit(cur, 'textBg', ph);
+        buildPalette(); buildTabs(); redrawBBC();
+      };
+      pick.appendChild(b);
+    }
+    row.appendChild(pick);
+    el.appendChild(row);
+  }
+
   const msgs = [];
-  if (new Set(p).size !== 4)
+  /* DISTINCT TONES, NOT DISTINCT PHYSICALS. On a dithered deck logical 0 is
+     displayed as a 50% blend with black, a tone no solid entry has, so it may
+     share its physical with another logical - decks 0 and 9 do exactly that,
+     white dithered to the grey their C64 floor really is. A collision that
+     does not involve logical 0, or one on a deck with a solid floor, still
+     loses detail for good. verify_bbc.py applies the same rule. */
+  const dithers = p[1] === 0;
+  const rest = dithers ? p.slice(1) : p;
+  if (new Set(rest).size !== rest.length)
     msgs.push('Two logical colours share a physical one: detail drawn in the ' +
-              'second is invisible, and verify_bbc.py asserts all four are ' +
-              'distinct.');
+              'second is invisible, and verify_bbc.py rejects it.');
+  else if (new Set(p).size !== 4 && !dithers)
+    msgs.push('Logical 0 shares a physical with another logical, and this ' +
+              'deck does not dither (logical 1 is not black), so nothing ' +
+              'separates them.');
   WANTS.forEach((want, l) => {
     if (want !== null && p[l] !== want)
       msgs.push('Logical ' + l + ' is ' + BBCN[p[l]] + ', not ' + BBCN[want] +
@@ -689,6 +818,14 @@ function buildOverview() {
 
 function buildMerge() {
   const el = document.getElementById('merge'), k = deck(cur), m = cmap(cur);
+  /* The background HAS to stay on logical 0: it is %00, so BuildLUTs gets a
+     background pixel for free and DitherCharset finds one by asking which
+     pixels are zero. export_bbc.py refuses to write colours.asm otherwise,
+     so say it here rather than at build time. */
+  const bgw = document.getElementById('bgwarn');
+  bgw.hidden = m[k.logical[0]] === 0;
+  bgw.textContent = 'The background (' + C64N[k.logical[0]] + ') is on logical '
+    + m[k.logical[0]] + ', not 0. export_bbc.py will refuse this deck.';
   const total = k.counts.reduce((a, b) => a + b, 0) || 1;
   el.innerHTML = '';
   k.counts.forEach((n, c) => {
@@ -722,7 +859,7 @@ function buildMerge() {
 function payload() {
   const decks = {};
   DECKS.forEach((k, d) => {
-    decks[d] = { physical: phys(d), colourMap: cmap(d) };
+    decks[d] = { physical: phys(d), colourMap: cmap(d), textBg: tbg(d) };
   });
   return {
     _comment: 'Written by tools/palette_lab.py. Read by tools/export_bbc.py ' +
@@ -781,6 +918,17 @@ document.getElementById('sprCol').onchange = e => {
 /* the rotor spins in the game, so it spins here - a still rotor hides how
    much of the droid is actually its thin blades */
 setInterval(() => { if (sprOn) { sprPhase++; drawWindows(lastWin.x, lastWin.y); } }, 120);
+
+document.getElementById('textmode').onchange = e => {
+  textMode = e.target.checked; redrawBBC();
+};
+
+document.getElementById('dither').onchange = e => {
+  dither = e.target.value; redrawBBC();
+};
+document.getElementById('shade').onchange = e => {
+  shadeLog = +e.target.value; redrawBBC();
+};
 
 document.getElementById('zoom').onchange = e => {
   zoom = e.target.value === 'fit' ? 'fit' : +e.target.value;

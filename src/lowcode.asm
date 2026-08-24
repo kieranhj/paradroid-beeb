@@ -500,12 +500,24 @@
   STA (bcDst2),Y
   DEY
   BPL blc_row
-  RTS
+  JMP DitherChar                \ and its RTS. Layer 14's floor dither is a
+                                \ pass over the FINISHED charset, so a
+                                \ character rebuilt during play has to take
+                                \ it too or this one cell goes solid against
+                                \ a dithered floor. bcDst still points at it,
+                                \ and DitherChar is a no-op on a deck that is
+                                \ not dithered. Reaching bank 4 from here is
+                                \ the header's rule: SWRAM_DATA is paged
+                                \ everywhere in the main loop, and AnimTick
+                                \ is in the main loop.
 
 ALERT_LAMP_CHAR = &16           \ CharColor+$16, the two dots in tile 22
 LAMP_OFF = 1                    \ logical 1 is black on every deck
 
-.lampInk    EQUB 1, 2, 3, 3     \ by alert level; 3 also blinks
+\ lampInk MOVED TO BANK 4, beside lampSrc, 2026-08-22 — reading it from
+\ here is the same rule this file already lives under and AnimNextLamp is
+\ in the main loop, where SWRAM_DATA is paged. The low overlay had run to
+\ zero bytes and this was the cheapest thing in it to move.
 
 \ The mutable state is NOT here. It is in src/lowbss.asm at &0C90 —
 \ another piece of the same reclaimed workspace, and uninitialised, so
@@ -532,6 +544,15 @@ LAMP_OFF = 1                    \ logical 1 is black on every deck
 \   A = 0        run a tick
 \   A = id + 1   open that screen
 .InfoCall
+\ BEFORE the draw, so the page lands on the colours it will be seen in.
+\ X IS THE CATCH: IsEntry takes its screen selector in X — see its header
+\ — and this used to clobber it, which made every screen come out as the
+\ blank. SetPalette preserves X now, for this call. Unconditional, which
+\ also catches IsBlank and the game over, and that is wanted: the front
+\ end inherits palPlay and the text background is the legible half of the
+\ deck's palette. Layer 14 DECISION 4.
+  JSR SetTextPal
+
   PAGEBANK SWRAM_XFER
   JSR IsEntry
   PAGEBANK SWRAM_DATA

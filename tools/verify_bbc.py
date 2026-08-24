@@ -73,9 +73,17 @@ def check_charset(mem, dump_path, deck):
     The 6502 builds it from nibble lookup tables; this recomputes it directly
     from the C64 bitmaps and the deck's colour scheme, so agreement means two
     independent implementations match.
+
+    EXPECT CODES $4C-$4F TO DIFFER on a dump taken from a running game. They
+    are the recharge pad, and AnimTick rotates those four characters inside
+    the charset every pass, so they hold whatever phase the animation had
+    reached. Character $16 - the ALERT lamp - can differ for the same reason:
+    BuildLampChar rewrites it when the alert level changes. Anything else is
+    a real failure.
     """
     from export_bbc import (deck_colours, build_logical_map, convert_charset,
-                            deck_background,
+                            deck_background, assign_palette, load_palette_override,
+                            dither_charset, deck_dithers,
                             CHARSET_ADDR, TILEDEF_ADDR, TILEDEF_SIZE)
 
     used = sorted({mem[TILEDEF_ADDR + i] for i in range(32 * TILEDEF_SIZE)})
@@ -83,9 +91,17 @@ def check_charset(mem, dump_path, deck):
     logical, _ = build_logical_map(mem, cell_colour, deck_background(mem, deck))
     full, _ = convert_charset(mem, cell_colour, logical)
 
+    # Layer 14's floor dither is part of what BuildCharset leaves behind, so
+    # the oracle has to apply it too or every dithered deck reads as a fail.
+    # The enable rule needs the deck's PHYSICAL palette, hand-set or not.
+    dpal = load_palette_override().get(deck, {}).get(
+        'physical', assign_palette(logical))
+    dither = deck_dithers(dpal)
+
     expected = bytearray()
     for code in used:
-        expected.extend(full[code * 16:code * 16 + 16])
+        expected.extend(
+            dither_charset(full[code * 16:code * 16 + 16], dither))
 
     actual = open(dump_path, 'rb').read()
     if len(actual) != len(expected):
@@ -95,6 +111,16 @@ def check_charset(mem, dump_path, deck):
 
     diffs = [i for i, (e, a) in enumerate(zip(expected, actual)) if e != a]
     if diffs:
+        codes = sorted({used[i // 16] for i in diffs})
+        live = {0x4C, 0x4D, 0x4E, 0x4F, 0x16}
+        if set(codes) <= live:
+            print('OK   charset   deck %d: %d bytes match, except the %d '
+                  'live-animated character(s) %s - see the docstring '
+                  '(dither %s)'
+                  % (deck, len(expected), len(codes),
+                     ' '.join('$%02X' % c for c in codes),
+                     'on' if dither else 'off'))
+            return 0
         print('FAIL charset: %d of %d bytes differ' % (len(diffs), len(expected)))
         for i in diffs[:8]:
             print('       char index %d (code $%02X) byte %d: expected %02X, got %02X'
@@ -102,7 +128,8 @@ def check_charset(mem, dump_path, deck):
         return 1
 
     print('OK   charset   deck %d: %d bytes (%d chars) match the Python '
-          'conversion' % (deck, len(expected), len(used)))
+          'conversion (dither %s)'
+          % (deck, len(expected), len(used), 'on' if dither else 'off'))
     return 0
 
 
@@ -151,17 +178,37 @@ def main():
     else:
         print('OK   colours   8 scheme records and 16 deck->scheme entries match')
 
-    # Every deck must map its four logical colours to four DISTINCT physical
-    # ones. A fixed C64->BBC table cannot guarantee this - several C64 colours
-    # share a nearest BBC match - and when two collapse, whatever is drawn in
-    # the second becomes invisible against the first.
+    # Every deck must show four DISTINCT tones. A fixed C64->BBC table cannot
+    # guarantee that - several C64 colours share a nearest BBC match - and
+    # when two collapse, whatever is drawn in the second becomes invisible
+    # against the first.
+    #
+    # DISTINCT TONES, NOT DISTINCT PHYSICALS, since Layer 14's floor dither:
+    # on a dithered deck logical 0 is displayed as a 50% blend of its physical
+    # with black, which is a tone no solid entry has. Decks 0 and 9 use that
+    # deliberately - white dithered to grey, which is what their C64 floor
+    # actually is - and so share physical 7 with logical 3, the sprites.
+    # KC, 2026-08-22. A collision that does NOT involve logical 0, or one on
+    # a deck that keeps a solid floor, is still a real failure.
+    from export_bbc import deck_dithers
     pal = col[112:176]
-    clash = [d for d in range(16) if len(set(pal[d * 4:d * 4 + 4])) < 4]
+    clash = []
+    for d in range(16):
+        p = list(pal[d * 4:d * 4 + 4])
+        rest = p[1:] if deck_dithers(p) else p
+        if len(set(rest)) < len(rest) or (not deck_dithers(p)
+                                          and len(set(p)) < 4):
+            clash.append(d)
     if clash:
         print('FAIL colours: decks %s have colliding physical colours' % clash)
         failures += 1
     else:
-        print('OK   colours   all 16 decks have 4 distinct physical colours')
+        shared = [d for d in range(16)
+                  if len(set(pal[d * 4:d * 4 + 4])) < 4]
+        print('OK   colours   all 16 decks show 4 distinct tones%s'
+              % ('' if not shared else
+                 ' (decks %s share logical 0\'s physical, which the dither '
+                 'separates)' % shared))
 
     # ---- tile definitions: must be byte-identical ------------------
     tiles = read_equb(DATA_DIR / 'tiledefs.asm')

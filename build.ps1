@@ -19,6 +19,24 @@ if (-not (Test-Path $build)) { New-Item -ItemType Directory -Path $build | Out-N
 python (Join-Path $root 'tools\make_briefing.py')
 if ($LASTEXITCODE -ne 0) { throw "make_briefing failed ($LASTEXITCODE)" }
 
+# The OTHER exporters are not run here, because their input is the C64 listing
+# and that is supplied locally rather than checked in. That is fine for a code
+# change and a trap for a DATA one: tools/deck_palettes.json is hand-edited in
+# palette_lab.py, and a build after editing it silently used the old
+# src/data/colours.asm - the palettes and the text-screen backgrounds simply
+# did not appear, with nothing to say why. Caught 2026-08-24. Stop instead.
+$palJson = Join-Path $root 'tools\deck_palettes.json'
+$palAsm  = Join-Path $root 'src\data\colours.asm'
+if ((Test-Path $palJson) -and (Test-Path $palAsm)) {
+    $j = (Get-Item $palJson).LastWriteTimeUtc
+    $a = (Get-Item $palAsm).LastWriteTimeUtc
+    if ($j -gt $a) {
+        throw ("deck_palettes.json is newer than src/data/colours.asm, so this " +
+               "build would use the OLD palettes. Run:`n" +
+               "    python tools\export_bbc.py")
+    }
+}
+
 # beebasm resolves INCLUDE relative to the working directory, so it runs from
 # the project root and everything it produces is named into build/ instead.
 #

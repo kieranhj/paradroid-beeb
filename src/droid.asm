@@ -183,7 +183,14 @@ DR_LOS_MAX = 96
   JSR BuildCharset              \ charset is deck specific
   JSR AnimReset                 \ ...which puts the alert lamp back on its
                                 \ default colour, so the lamp must rebuild
-  JSR SetPalette
+
+\ NO SetPalette HERE ANY MORE. RedrawAll does it, and RedrawAll is where
+\ the deck is actually drawn — ReframeView below ends in it. The call
+\ here fought the text-screen palette: the 001 screen is up across this
+\ LoadDeck (it holds the redraw back, see infoscr.asm), so setting the
+\ deck's colours here overrode the text background InfoCall had just
+\ chosen, every time. ReframeView returns early while a screen is up, so
+\ the deck's palette now lands exactly when the deck does. DECISION 4.
 
 \ The deck's own hum: three bytes into effect 24's record, exactly the
 \ C64's $135F writes into sfx23+5/6/7 — segment timer, reload, count.
@@ -3069,7 +3076,13 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
   STA conMPrevL
   STA conPrevU
   STA conPrevD
-  RTS
+\ AND THE MENU'S PALETTE, BEFORE ANYTHING IS DRAWN ON IT. ConsoleEnter
+\ calls this first for exactly that reason — the console reads white text,
+\ so logical 0 becomes the deck's text background, and the draw that
+\ follows lands on the colours it will be seen in. Setting it afterwards
+\ showed the menu in the deck's colours for as long as the draw took.
+\ KC, 2026-08-24.
+  JMP SetTextPal                \ and its RTS
 
 .ConMenu4
   LDX #KEY_K                    \ up the menu
@@ -3138,7 +3151,10 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
 .cm4_deck
   LDA #1
   STA conDeckReq                \ entry 2: the deck plan
-  RTS
+  JMP SetPalette                \ and its RTS. THE PLAN IS THE DECK, so it
+                                \ wears the deck's colours — and set here,
+                                \ on the press, rather than after ConDeck7
+                                \ has drawn the whole page in the wrong ones
 .cm4_ship
   LDA #1
   STA conShipReq                \ entry 3: the ship's side view
@@ -3166,7 +3182,9 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
   LDA #0
   STA conShipReq                \ ConsoleTick sees it and redraws the main
   STA conDeckReq
-  RTS
+  JMP SetTextPal                \ and its RTS — the menu's colours back on
+                                \ the press that leaves, before ct_back
+                                \ redraws it
 .csk_lUp
   LDA #0
   STA conMPrevL
@@ -3191,6 +3209,10 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
 \ ---- the marker: a white bar beside the selected icon -------
 \ One 4-px column, eight scanlines, at unit 1 — clear of the icons at
 \ units 4 and 7 — centred a row into each icon's three.
+\ THE PALETTE USED TO BE SET HERE, because the marker is the one thing
+\ every path to the MENU ends with. It moved to the two routines that
+\ DECIDE the transition — ConMenuInit4 and ConPageKeys4 — because both of
+\ those run before the redraw and this one runs after it. KC, 2026-08-24.
 .ConMarker4
   LDA #&0F                      \ solid logical 1: white on every deck
   BNE cmk_put
