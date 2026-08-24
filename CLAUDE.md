@@ -188,16 +188,18 @@ addresses from the `beebasm` output rather than from any document.** In outline:
 | SWRAM bank 6 | `PARSPR2` — shifts 2 and 3 px, same layout, plus Layer 9's panel/console, Layer 11f's `PnBriefing` and the 912 B `dfsSave` snapshot — **full** (16 B) |
 | SWRAM bank 7 | `PARXFER` — Layer 10's transfer minigame, Layer 8b's lift screen, the console's ship, deck-plan and droid-database pages, and Layer 11's game over. The title is NOT here any more — it is the `PARTITL` disc overlay. **5,690 B free, reserved for the droid portrait pool** |
 
-**RAM is the binding constraint. Measured from the build of 2026-08-22**, not remembered: the
-main-RAM code image ends at `&2FFE`, so **2 bytes** below `&3000`, and **bank 4 has 2 B** — those
-two are the tightest things in the project, and any figure elsewhere claiming 47 or 60 is stale.
+**RAM is the binding constraint. Measured from the build of 2026-08-24**, not remembered: the
+main-RAM code image ends at `&2FFD`, so **3 bytes** below `&3000`, and **bank 4 has 45 B** — any
+figure elsewhere claiming 2, 47 or 60 is stale. Both moved that day: the title's random boot deck
+gave main RAM 4 back (`docs/layer-14-visual.md` DECISION 5) and the console's icon selection gave
+bank 4 46 (`docs/layer-9-hud.md` DECISION 18). **Main RAM is now the tightest thing in the
+project**, and the padding note below is why bank 4 no longer is.
 Bank 4 went to 26 B when Layer 14's floor dither paid for itself, and spent it again on the text
-palettes. **Bank 4 also has ~160 B of alignment padding in front of `colourMap` that the fuel gauge
-does not count, and DATA can ride there for nothing** — see `docs/layer-14-visual.md`.
+palettes. **Bank 4 also has ~160 B of alignment padding in front of `colourMap` that the fuel gauge does not count, and anything — CODE or data — assembled ANYWHERE before that `ALIGN` rides there for nothing** (`src/consolesel.asm` is the worked example). **Deleting the `ALIGN` recovers nothing**: `tiledefs.asm` aligns next and pads by the same amount — measured, 2026-08-24. Past 162 B the `ALIGN` rounds to the next page and costs 256 at a stroke. See `docs/layer-9-hud.md` DECISION 18 and `docs/layer-14-visual.md`.
 Layer 11f's front end spent bank 4's margin down again (the sixteen-row change had bought it back
 to 60 by collapsing three copies of the `t1i3` restore into one in `ReframeView` — see
 `docs/layer-9-hud.md` §6g). The build PRINTs bank 4's fuel gauge every run; the other three come
-from `&C000` minus the end addresses it also PRINTs — **bank 5 1,033 B, bank 6 16 B, bank 7 314 B**
+from `&C000` minus the end addresses it also PRINTs — **bank 5 1,033 B, bank 6 9 B, bank 7 314 B**
 as of 2026-08-24, the low overlay 1 B and `lowcode2` 8 B.
 
 **The `PARBRF` overlay at `&0400` has a hard ceiling of `&0800` and 3 bytes free**, and the
@@ -258,9 +260,11 @@ without the GUARD an overrun assembles silently and corrupts `PARAFNT` at run ti
 stops with *Guard point hit* at `sprScan0` means the code image is full. **Everything in `src/` is in the build** — the five inherited Master/HAL files that
 were not have been deleted, so nothing there is dead. Keep it that way.
 
-**Five files assemble into SWRAM bank 4, not main RAM**: `screen.asm`, `scroll.asm`, `level.asm`,
-`zx0depack.asm` and `droid.asm` are included from inside the `PARADAT` block, next to the tile, deck and waypoint data
-they read. That costs no
+**Six files assemble into SWRAM bank 4, not main RAM**: `screen.asm`, `scroll.asm`, `level.asm`,
+`zx0depack.asm`, `droid.asm` and `consolesel.asm` are included from inside the `PARADAT` block, next
+to the tile, deck and waypoint data they read. **`consolesel.asm`'s position in that block is load
+bearing** — it must stay before `colours.asm` so `colourMap`'s `ALIGN` padding absorbs it; read its
+header before moving it. That costs no
 paging, because the data bank is the resting state. The rule it depends on is one-way and undiagnosed
 if broken — bank code may call main RAM freely, but main RAM may call *in* only with `SWRAM_DATA`
 paged, which is false at startup before the bank is loaded and inside `SprDrawAll`/`SprRestoreAll`.

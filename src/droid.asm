@@ -3060,11 +3060,9 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
 \ and 3 work; 1 is the droid database, not yet built, and the press
 \ does nothing.
 \
-\ THE MARKER STANDS IN FOR THE SPRITE RECOLOUR. conWaitInput paints
-\ the selected icon's sprite white and the rest their own colours; our
-\ icons are drawn in logical 1 because 2 and 3 are black on several
-\ deck palettes — so a white bar beside the selected icon is the
-\ indicator that survives every deck.
+\ THE SELECTION IS THE ICON'S OWN COLOUR, as the C64's is, and there
+\ is no marker bar. See src/consolesel.asm - the routine lives there
+\ rather than here because it rides colourMap's alignment padding.
 
 .ConMenuInit4                   \ from ConsoleEnter: top entry, edges
   LDA #0                        \ armed — the opening press is still down
@@ -3082,6 +3080,8 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
 \ follows lands on the colours it will be seen in. Setting it afterwards
 \ showed the menu in the deck's colours for as long as the draw took.
 \ KC, 2026-08-24.
+  JSR ConIconInk4               \ the icon colours BEFORE ConsoleOpen
+                                \ draws them - KC 2026-08-24
   JMP SetTextPal                \ and its RTS
 
 .ConMenu4
@@ -3094,11 +3094,10 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
   STA conPrevU
   LDA conSel
   BEQ cm4_notUp                 \ clamped at the top, as $2C8C clamps
-  JSR ConMarkClear
   DEC conSel
   LDA #&15                      \ $2CF6: the menu step's beep
   STA sndFx1
-  JSR ConMarker4
+  JSR ConIconSel4               \ all four, from the new conSel
   JMP cm4_notUp
 .cm4_upOff
   LDA #0
@@ -3114,11 +3113,10 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
   LDA conSel
   CMP #3
   BCS cm4_notDn                 \ and at the bottom, as $2C6B does
-  JSR ConMarkClear
   INC conSel
   LDA #&15                      \ and the same on the way down
   STA sndFx1
-  JSR ConMarker4
+  JSR ConIconSel4               \ all four, from the new conSel
   JMP cm4_notDn
 .cm4_dnOff
   LDA #0
@@ -3206,46 +3204,6 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
 \ ConDeck7 directly. Decks 2, 10, 11 and 12 have map in row 15; the C64
 \ shows it, and now so does every other console page.
 
-\ ---- the marker: a white bar beside the selected icon -------
-\ One 4-px column, eight scanlines, at unit 1 — clear of the icons at
-\ units 4 and 7 — centred a row into each icon's three.
-\ THE PALETTE USED TO BE SET HERE, because the marker is the one thing
-\ every path to the MENU ends with. It moved to the two routines that
-\ DECIDE the transition — ConMenuInit4 and ConPageKeys4 — because both of
-\ those run before the redraw and this one runs after it. KC, 2026-08-24.
-.ConMarker4
-  LDA #&0F                      \ solid logical 1: white on every deck
-  BNE cmk_put
-.ConMarkClear
-  LDA #0
-.cmk_put
-  LDX conSel
-  STA cmk_val+1
-  LDA conMarkLo,X
-  STA swDst
-  LDA conMarkHi,X
-  STA swDst+1
-  LDY #7
-.cmk_val
-  LDA #0                        \ operand patched above
-.cmk_loop
-  STA (swDst),Y
-  DEY
-  BPL cmk_loop
-  RTS
-
-\ LITERALS, and they cannot be CON_ROW_* : this file is bank 4 and is
-\ assembled BEFORE bank 6's console.asm, so those constants do not
-\ exist yet. console.asm ASSERTs the four agree with its rows instead
-\ - they are one row into each icon's three, so they move with them.
-CON_MARK0 = BUF_BASE +  4 * ROW_BYTES + 1 * UNIT_BYTES
-CON_MARK1 = BUF_BASE +  7 * ROW_BYTES + 1 * UNIT_BYTES
-CON_MARK2 = BUF_BASE + 10 * ROW_BYTES + 1 * UNIT_BYTES
-CON_MARK3 = BUF_BASE + 13 * ROW_BYTES + 1 * UNIT_BYTES
-.conMarkLo
-  EQUB LO(CON_MARK0), LO(CON_MARK1), LO(CON_MARK2), LO(CON_MARK3)
-.conMarkHi
-  EQUB HI(CON_MARK0), HI(CON_MARK1), HI(CON_MARK2), HI(CON_MARK3)
 
 \ ---- the ship page's palette, around LvShip7 ----------------
 \ The side view's own colours in, the deck's back on return. The saved

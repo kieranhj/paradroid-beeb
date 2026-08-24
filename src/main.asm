@@ -1938,8 +1938,9 @@ ENDMACRO
                                 \ depends on the draw having happened
   PAGEBANK SWRAM_SPR2
   JSR ConsoleOpen
-  PAGEBANK SWRAM_DATA           \ bank 4: selection to the top, edges
-  JMP ConMarker4                \ armed — and the first marker. Bank 6
+  PAGEBANK SWRAM_DATA
+  RTS                           \ no recolour tail: ConMenuInit4 above
+                                \ set the ink table before the draw
                                 \ had no room for any of this: 23 B free
 
 \ The console's menu lives in BANK 4 (ConMenu4, droid.asm) — bank 6 is
@@ -2008,10 +2009,15 @@ ENDMACRO
   BNE ct_x
 .ct_back
   PNMIRROR                      \ and the console main screen again
+  JSR ConIconInk4               \ bank 4, and it is the RESTING bank
+                                \ here: the icon colours BEFORE the
+                                \ draw, so ConIcons plots them right
+                                \ first time. Selection kept, as the
+                                \ C64 keeps it
   PAGEBANK SWRAM_SPR2
   JSR ConDraw
   PAGEBANK SWRAM_DATA
-  JMP ConMarker4                \ selection kept, as the C64 keeps it
+  RTS
 .ct_noship
   LDA conActive
   BNE ct_x
@@ -2607,6 +2613,13 @@ ENDIF
                                 \ every title after one inherits instead.
                                 \ Main RAM because PARTITL is reloaded from
                                 \ disc on every title and could not keep it
+.conInkT   EQUB 0, 0, 0, 0     \ the console menu's four icon colours, one
+                               \ per conSel: &F0 white for the selected,
+                               \ &00 black for the rest. ConIconInk4 (bank
+                               \ 4) fills it and ConIcons/ConDroid (bank 6)
+                               \ read it -- MAIN RAM because conSel is bank
+                               \ 4's and bank 6 cannot see it, which is the
+                               \ same reason PN_TABS and pmShip exist
 .oldIrq1V  EQUW 0
 .oldSysIer EQUB 0               \ the MOS's VIA state, saved by InstallIrq
 .oldUsrIer EQUB 0               \ and handed back by UninstallIrq for the
@@ -2699,6 +2712,10 @@ DATA_LOAD = &3000
 ORG SWRAM_BASE
 .data_start
 INCLUDE "src/data/chardata.asm"
+INCLUDE "src/consolesel.asm"    \ BEFORE colours.asm, so colourMap's
+                                \ ALIGN &100 padding absorbs it and
+                                \ the bank does not grow. Read its
+                                \ header before moving it
 INCLUDE "src/data/colours.asm"
 INCLUDE "src/data/tiledefs.asm"
 INCLUDE "src/data/levels.asm"

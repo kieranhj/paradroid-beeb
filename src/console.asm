@@ -380,6 +380,12 @@ CON_DROID_D  = BUF_BASE + CON_ROW_ACC   * ROW_BYTES + 7 * UNIT_BYTES
   LDA conIconSrcLo,X : STA ci_get+1
   LDA conIconSrcHi,X : STA ci_get+2
   LDA conIconExp,X   : STA conWide
+  LDA conInkT+1,X    : STA csn_mask+1   \ conSel 1-3: THE COLOUR, chosen
+                                        \ before a pixel is drawn, so the
+                                        \ icon never appears in the wrong
+                                        \ one. conInkT is main RAM because
+                                        \ conSel is bank 4's and this file
+                                        \ cannot read it. KC, 2026-08-24
   LDA #LO(ConIconRow) : STA cs_get+1
   LDA #HI(ConIconRow) : STA cs_get+2
   JSR ConSprite
@@ -440,6 +446,7 @@ CON_DROID_D  = BUF_BASE + CON_ROW_ACC   * ROW_BYTES + 7 * UNIT_BYTES
   LDA #LO(CON_DROID_D) : STA pnDst
   LDA #HI(CON_DROID_D) : STA pnDst+1
   LDA #0 : STA conWide
+  LDA conInkT : STA csn_mask+1  \ conSel 0, the player's own droid
   LDA #LO(ConDroidRow) : STA cs_get+1
   LDA #HI(ConDroidRow) : STA cs_get+2
   JMP ConSprite                 \ and its RTS
@@ -577,50 +584,61 @@ CON_DROID_D  = BUF_BASE + CON_ROW_ACC   * ROW_BYTES + 7 * UNIT_BYTES
   TAX
   LDA conWide
   BNE csn_wide
-  LDA conNib3,X                 \ the ink is logical 3, so the four pixels
-  LDY conDrTmp                  \ go into BOTH colour planes, not just the
-  STA (pnDst),Y                 \ low one as when white was logical 1
+  TXA                           \ narrow: the nibble IS the pattern
+  JSR csn_put
   JMP ConSprAdv
 .csn_wide
   LDA conDblHi,X
-  LDY conDrTmp
-  STA (pnDst),Y
+  JSR csn_put
   JSR ConSprAdv
   LDA conDblLo,X
-  LDY conDrTmp
-  STA (pnDst),Y
+  JSR csn_put
 .ConSprAdv
   LDA conDrTmp
   CLC : ADC #UNIT_BYTES
   STA conDrTmp
   RTS
 
-\ ---- a nibble into both colour planes ----------------------
-\ n -> n in the high nibble and n in the low, i.e. four pixels of logical
-\ 3. Sixteen bytes rather than the shift-and-OR, because ConSprNib runs
-\ per byte of every icon and the console is redrawn whole.
-.conNib3
-  EQUB &00,&11,&22,&33,&44,&55,&66,&77
-  EQUB &88,&99,&AA,&BB,&CC,&DD,&EE,&FF
+\ ---- one four-pixel pattern, in the icon's colour ----------
+\ A = the pattern in its LOW nibble, and the high nibble is built from
+\ it: zero for logical 1 (black) or a copy for logical 3 (white). The
+\ SAME transform ConIconSel4 uses on an icon already drawn - see
+\ src/consolesel.asm - which is why the two agree by construction.
+\ IT REPLACED A conNib3 TABLE of sixteen n*&11 entries, and paid for
+\ itself: the table was 16 bytes, this is 7 more of code shared by all
+\ three stores below, and it is where the colour arrives. Bank 6 had
+\ sixteen bytes free when this was written and the colour had to fit in
+\ them - a second set of black tables would have wanted forty-eight.
+.csn_put
+  STA conNibT
+  ASL A : ASL A : ASL A : ASL A
+.csn_mask
+  AND #&00                      \ patched per icon: &00 black, &F0 white
+  ORA conNibT
+  LDY conDrTmp
+  STA (pnDst),Y
+  RTS
 
 \ ---- doubling a nibble to a byte ---------------------------
 \ Four pixels to eight, for the two X-expanded icons. Sixteen entries and
 \ not 256, because a pixel is either the ink or nothing. Bits 3-0 of the
 \ index are pixels 0-3, so entry n of conDblHi is p0 p0 p1 p1 and of
 \ conDblLo is p2 p2 p3 p3.
-\ THE INK IS LOGICAL 3, so each pattern appears in BOTH nibbles: the high
-\ nibble is the high colour plane and the low nibble the low one. It was
-\ the low nibble alone while white was logical 1.
+\ LOW NIBBLE ONLY: these are the PATTERN, not a finished byte. csn_put
+\ builds the high colour plane from it, and that is where the icon's
+\ colour is decided. They held the pattern in BOTH nibbles while every
+\ icon was logical 3, and in one alone before that, when white was
+\ logical 1 - so this is the third time these sixteen bytes have moved.
 .conDblHi
   EQUB %00000000, %00000000, %00000000, %00000000
-  EQUB %00110011, %00110011, %00110011, %00110011
-  EQUB %11001100, %11001100, %11001100, %11001100
-  EQUB %11111111, %11111111, %11111111, %11111111
+  EQUB %00000011, %00000011, %00000011, %00000011
+  EQUB %00001100, %00001100, %00001100, %00001100
+  EQUB %00001111, %00001111, %00001111, %00001111
 .conDblLo
-  EQUB %00000000, %00110011, %11001100, %11111111
-  EQUB %00000000, %00110011, %11001100, %11111111
-  EQUB %00000000, %00110011, %11001100, %11111111
-  EQUB %00000000, %00110011, %11001100, %11111111
+  EQUB %00000000, %00000011, %00001100, %00001111
+  EQUB %00000000, %00000011, %00001100, %00001111
+  EQUB %00000000, %00000011, %00001100, %00001111
+  EQUB %00000000, %00000011, %00001100, %00001111
 
 \ One icon per line, on the SAME rows as the lower four - so these are
 \ CON_ROW_SHIP/DECK/ALERT, not literals, and the droid is CON_ROW_ACC.
@@ -631,14 +649,19 @@ CON_ICON_D0 = BUF_BASE + CON_ROW_SHIP  * ROW_BYTES + 7 * UNIT_BYTES
 CON_ICON_D1 = BUF_BASE + CON_ROW_DECK  * ROW_BYTES + 4 * UNIT_BYTES
 CON_ICON_D2 = BUF_BASE + CON_ROW_ALERT * ROW_BYTES + 4 * UNIT_BYTES
 
-\ The marker bar is bank 4's (droid.asm) and had to be written as
-\ literals there - that file is assembled first, so CON_ROW_* does not
-\ exist yet. Tie the two together HERE, where both are known: the bar
-\ sits one row into each icon's three.
-ASSERT CON_MARK0 == BUF_BASE + (CON_ROW_ACC   + 1) * ROW_BYTES + 1 * UNIT_BYTES
-ASSERT CON_MARK1 == BUF_BASE + (CON_ROW_SHIP  + 1) * ROW_BYTES + 1 * UNIT_BYTES
-ASSERT CON_MARK2 == BUF_BASE + (CON_ROW_DECK  + 1) * ROW_BYTES + 1 * UNIT_BYTES
-ASSERT CON_MARK3 == BUF_BASE + (CON_ROW_ALERT + 1) * ROW_BYTES + 1 * UNIT_BYTES
+\ ConIconSel4 (src/consolesel.asm) recolours these four in place. It is
+\ assembled into bank 4 long BEFORE this file, so it cannot see the
+\ destinations above and holds its own literals. Tie the two together
+\ HERE, where both are known - CON_SEL0 is the player's own droid.
+ASSERT CON_SEL0 == CON_DROID_D
+ASSERT CON_SEL1 == CON_ICON_D0
+ASSERT CON_SEL2 == CON_ICON_D1
+ASSERT CON_SEL3 == CON_ICON_D2
+ASSERT CON_SEL_ROWS == CON_ICON_ROWS
+\ and that its fixed width covers the widest icon without reaching the
+\ text: the narrow icons start at unit 7, the wide ones at unit 4.
+ASSERT 7 + CON_SEL_UNITS <= CON_COL_TEXT * 2
+ASSERT 4 + CON_SEL_UNITS <= CON_COL_TEXT * 2
 .conIconDstLo EQUB LO(CON_ICON_D0), LO(CON_ICON_D1), LO(CON_ICON_D2)
 .conIconDstHi EQUB HI(CON_ICON_D0), HI(CON_ICON_D1), HI(CON_ICON_D2)
 .conIconSrcLo EQUB LO(conicons + CON_ICON0_OFS), LO(conicons + CON_ICON1_OFS), LO(conicons + CON_ICON2_OFS)
@@ -788,3 +811,4 @@ ASSERT CON_MARK3 == BUF_BASE + (CON_ROW_ALERT + 1) * ROW_BYTES + 1 * UNIT_BYTES
 .conSrcRow EQUB 0, 0, 0
 .conRowY   EQUB 0
 .conWide   EQUB 0
+.conNibT   EQUB 0              \ csn_put's, one pattern deep
