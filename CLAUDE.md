@@ -189,15 +189,16 @@ addresses from the `beebasm` output rather than from any document.** In outline:
 | SWRAM bank 7 | `PARXFER` — Layer 10's transfer minigame, Layer 8b's lift screen, the console's ship, deck-plan and droid-database pages, and Layer 11's game over. The title is NOT here any more — it is the `PARTITL` disc overlay. **5,690 B free, reserved for the droid portrait pool** |
 
 **RAM is the binding constraint. Measured from the build of 2026-08-22**, not remembered: the
-main-RAM code image ends at `&2FFE`, so **2 bytes** below `&3000`, and **bank 4 has 26 B** — main
-RAM is now the tightest thing in the project by a distance, and any figure elsewhere claiming 47 or
-60 is stale. Bank 4 was 4 B until Layer 14's floor dither paid for itself and more (see
-`docs/layer-14-visual.md` DECISION 1).
+main-RAM code image ends at `&2FFE`, so **2 bytes** below `&3000`, and **bank 4 has 2 B** — those
+two are the tightest things in the project, and any figure elsewhere claiming 47 or 60 is stale.
+Bank 4 went to 26 B when Layer 14's floor dither paid for itself, and spent it again on the text
+palettes. **Bank 4 also has ~160 B of alignment padding in front of `colourMap` that the fuel gauge
+does not count, and DATA can ride there for nothing** — see `docs/layer-14-visual.md`.
 Layer 11f's front end spent bank 4's margin down again (the sixteen-row change had bought it back
 to 60 by collapsing three copies of the `t1i3` restore into one in `ReframeView` — see
 `docs/layer-9-hud.md` §6g). The build PRINTs bank 4's fuel gauge every run; the other three come
 from `&C000` minus the end addresses it also PRINTs — **bank 5 1,033 B, bank 6 16 B, bank 7 314 B**
-as of 2026-08-22, the low overlay 4 B and `lowcode2` 8 B.
+as of 2026-08-24, the low overlay 1 B and `lowcode2` 8 B.
 
 **The `PARBRF` overlay at `&0400` has a hard ceiling of `&0800` and 3 bytes free**, and the
 ceiling is measured, not caution: `&0800-&08FF` is the MOS's sound workspace and its IRQ writes

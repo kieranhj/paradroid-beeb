@@ -23,8 +23,16 @@ own speeds and dwells, burbling to itself as it goes, with the live score table 
 portrait on its last page. The manual's text is hand-editable (`src/data/briefing.txt`), and every
 front-end screen wears the palette of the last deck played.
 
-**What is left** is the balance and visual passes, a volume control, and trimming the front end's
-disc loads. See [`PLAN.md`](PLAN.md) for the layered build plan, the memory map, decisions taken
+The **visual pass has started**. The BBC's palette is fully saturated where the C64's is not, so a
+deck floor of solid red or cyan reads far harsher here than the original ever did: half the floor's
+pixels now take black in a 2x2 checker, and it comes out at half intensity. That turns out to add a
+FIFTH tone to a four-colour mode, and three decks spend it on white dithered to the grey their C64
+floor actually is - a colour MODE 1 does not have and this port could not previously show. The
+static text screens do not dither; they take a solid background of their own, chosen per deck,
+because a floor that looks right underfoot is often far too bright to read white text on.
+
+**What is left** is the rest of the visual pass, the balance pass, a volume control, and trimming
+the front end's disc loads. See [`PLAN.md`](PLAN.md) for the layered build plan, the memory map, decisions taken
 and current status.
 
 ## Target
@@ -81,7 +89,8 @@ emulator before the next begins:
 12. Balance, fidelity and feel
 13. **Memory and machine compatibility** — the RAM pass ✅ done; sideways-RAM detection and
     testing on real machines outstanding
-14. Visual pass — the final palettes
+14. **Visual pass** — the deck dither and the per-deck text-screen backgrounds ✅ done; the
+    remaining palettes and the characters that fight MODE 1 outstanding
 
 Each completed layer keeps its working notes in [`docs/`](docs/) — the measurements, the dead ends
 and the hardware facts bought the hard way, including several options that were costed and
@@ -163,6 +172,8 @@ source into `src/data/`:
 
 ```
 python tools/export_bbc.py        # tiles, decks, palettes -> src/data/
+                                  # RUN THIS after editing tools/deck_palettes.json:
+                                  # build.ps1 does not, and stops if it is stale
 python tools/export_droids.py     # droid sprites and game data -> src/data/
 python tools/export_effects.py    # bullet and explosion frames -> src/data/
 python tools/export_font.py       # the $7000 text font and the status box -> src/data/
