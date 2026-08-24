@@ -550,6 +550,7 @@ HEX_FIELD_RE   = re.compile(
     r'|^\?\?$'
     r'|^\+$'
 )
+DATA_DIRECTIVE_RE = re.compile(r'\.(BYTE|WORD)\b', re.IGNORECASE)
 XREF_RE        = re.compile(r'\w+(?:\+[0-9A-Fa-f]+)?\s*[\u2191\u2193]\w')  # ↑/↓
 CALLER_RE      = re.compile(r'(\w+)(?:\+[0-9A-Fa-f]+)?\s*[\u2191\u2193]p')
 OPCODE_RE      = re.compile(
@@ -598,12 +599,29 @@ def get_content(rest):
     and return the first tab-field that looks like real assembly content.
     """
     parts = rest.split('\t')
-    for part in parts:
+    for idx, part in enumerate(parts):
         stripped = part.strip()
         if not stripped:
             continue
         if HEX_FIELD_RE.match(stripped):
             continue
+        # A .BYTE/.WORD OPERAND LIST IS LAID OUT IN TAB-SEPARATED COLUMN
+        # GROUPS, and returning only the first one silently truncates the
+        # block - and misaligns whatever survives, so the bytes that are
+        # left sit at the WRONG OFFSETS.  BUGS.md #19: CharColor ($0800)
+        # came back as 76 bytes of 256 this way, and 43% of the raw
+        # listing's data went missing.  tools/verify_annotation.py checks.
+        if DATA_DIRECTIVE_RE.search(stripped):
+            tail = []
+            for extra in parts[idx + 1:]:
+                e = extra.strip()
+                if not e:
+                    continue
+                if e.startswith(';'):
+                    break               # a trailing xref, not more data
+                tail.append(e)
+            if tail:
+                return stripped + ' ' + ' '.join(tail)
         return stripped
     return ''
 

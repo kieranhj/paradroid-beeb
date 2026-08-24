@@ -31,6 +31,7 @@ sections below are in neither. **The table is the index; read it first.**
 | **18** | [`HS_STR_ADDR` was `PN_TABS`](#18-hs_str_addr-was-pn_tabs--fixed-2026-08-21) | **Fixed** 2026-08-21 | Layer 11f. Strings landed on the mirrored droid tables; a runaway `DbStr` then smashed bank 7. Root cause proven by write watch. **`font_end` + 96 is `PN_TABS` — the gap there is 8 bytes, not 104** |
 | **17** | [Four debug flags silently push the code image past `&3000`](#17-four-debug-flags-silently-push-the-code-image-past-3000--partly-fixed-2026-08-20) | **Fixed** 2026-08-20, bar one | VSYNC, POS and ENERGY fixed and a `GUARD` added so it can never be silent again. RASTER, DRAW and TIME **fit again** since the raster-timing pass moved the tranche decision into bank 6 (code image 11 B free → 323); none has been run since. Only MAPGUARD still fails, on bank 4 |
 | **16** | [Enemy droids draw a black rotor and a WHITE number](#16-enemy-droids-draw-a-black-rotor-and-a-white-number--fixed-2026-08-19) | **Fixed** 2026-08-19 | the wrap fallback blits digits interpreted and never sees `colPix` |
+| **19** | [`paradroid_ce_annotated.asm` truncated multi-column `.BYTE` lines](#19-paradroid_ce_annotatedasm-truncated-multi-column-byte-lines--fixed-2026-08-24) | **Fixed** 2026-08-24 | 43% of the listing's data was missing AND what survived was misaligned. `annotate.py`'s `get_content`; `tools/verify_annotation.py` is the standing check |
 
 `## Delivered: DEBUG_POS` near the end is not a defect — it is the position bookmark that came out
 of #5, kept with the defects because that is where it is looked for.
@@ -1027,3 +1028,73 @@ title.
 
 **The measurement that is worth keeping** is the one in the "lesson" paragraph above: `font_end` is
 not the end of that region, and the gap above it is 8 bytes rather than 104.
+
+---
+
+## 19. `paradroid_ce_annotated.asm` truncated multi-column `.BYTE` lines — **FIXED 2026-08-24**
+
+Found while working out why the port's title logo is one colour (it is not this; that is
+`export_title.py` hardcoding `fg=3`). Looking up the `CharColor` table at `$0800` in the
+**annotated** listing returns **76 bytes**. The table is 256 bytes, and the raw listing has all of
+it at `paradroid_ce.lst:2291-2312`, sixteen rows of sixteen.
+
+### The cause
+
+The raw listing lays a `.BYTE` directive out in **tab-separated column groups**:
+
+```
+0800 00	70 70+CharColor:.BYTE 0, $70, $70, $80,	$70, $70, $70, $70, $70, $70, $70, $70,	$70, $70, $70, $70
+```
+
+`annotate.py` keeps the **first group only** — four bytes of sixteen — and drops the rest. It also
+emits every continuation line with the block's own address in the address column (`0800` sixteen
+times over), so the truncation does not look like truncation: it reads as a short, complete,
+plausible table. That is what makes it dangerous. Interleaved comment lines
+(`; ShowTitle+38↓r` and friends) sit inside the same block and may be part of the same fault.
+
+### Why it matters beyond this table
+
+**The annotated listing is what everything in this project reads the original out of** — the
+working approach in `CLAUDE.md` says the C64 original is the specification, and this is the copy
+of it we consult. A data table that silently returns a fraction of itself will produce a port
+feature that is faithful to the part that survived. `CharColor` is the one caught; nothing says
+it is the only one.
+
+### The pass, and what it found — 2026-08-24
+
+`tools/verify_annotation.py` re-extracts every `.BYTE` block from both files, per address, and
+diffs them. Run it after any change to `annotate.py`. **It was far worse than the one table:**
+
+| | before | after |
+|---|---|---|
+| `.BYTE` bytes in `paradroid_ce.lst` | 49,537 | 49,537 |
+| ...present in the annotated listing | **21,405** | **49,420** |
+| blocks truncated | 295 (27,862 bytes lost) | 0 |
+| blocks whose values *disagree* | 96 | 0 |
+
+**43% of the original's data was missing, and the surviving bytes were at the wrong offsets.**
+That second row is the dangerous one: dropping a column group shifts everything after it, so a
+lookup of `CharColor[$16]` returned a real-looking byte from a different entry rather than
+nothing. Truncation announces itself eventually; silent misalignment does not.
+
+The remaining 117 bytes are zero page, where `annotate.py` deliberately emits `name = $XX` instead
+of a `.BYTE` — the address survives and the assembled initial value does not. The tool reports
+those separately and passes; **read zero-page initial values from `paradroid_ce.lst`.**
+
+### The fix
+
+`get_content` (`annotate.py`) split the line on tabs and returned the **first** non-hex field. It
+now rejoins the fields that follow when the field it picked carries a `.BYTE`/`.WORD`, stopping at
+a trailing `;` xref. Two details cost a build each: `DATA_DIRECTIVE_RE` needs its `\b` (a mangled
+one compiled to a literal backspace and matched nothing), and the rejoin must **not** insert a
+comma when the directive itself ends a field — `.BYTE,` broke the `\.BYTE\s` extraction and
+re-truncated eight blocks.
+
+### Still cosmetic, not fixed
+
+The first line of a data block keeps IDA's hex-dump prefix glued to the label
+(`68C0  60 FF+unused_68c0:.BYTE ...`). It has always been there, it does not affect the operands,
+and stripping it means guessing where a hex dump ends and a label begins. Left alone deliberately.
+
+The exporters in `tools/` parse the **raw** listing (`export_title.py`'s `parse_listing` reads
+`LST_FILE = paradroid_ce.lst`), so `src/data/` was never affected — confirmed, not assumed.
