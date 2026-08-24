@@ -36,6 +36,9 @@
 \ needs no second table lookup and no test in the loop. main.asm asserts
 \ the adjacency; export_bbc.py refuses a text background that collides
 \ with logicals 1-3.
+DECK_CLEAR_PHYS = 4             \ BBC physical 4 is blue: the floor of a
+                                \ deck with nothing but the player on it
+
 .SetTextPal
   LDA #64                       \ deckTextPal - deckPalette
   BNE stp_go                    \ always
@@ -63,10 +66,44 @@
   TXA
   AND #2
   LSR A
-  ORA palTmp
+  ORA palTmp                    \ A = the logical colour, 0-3
+
+\ ---- the cleared deck's floor ------------------------------
+\ KC, 2026-08-24: when the deck holds nothing but the player, its
+\ BACKGROUND turns blue. The C64 does the same thing at a coarser
+\ grain -- InitColors ($27E5) forces the whole 12-slot record to
+\ ColorSets entry 7, which the listing itself labels "7 - deck
+\ cleared" -- and its floor, slot 0, is C64 colour $B, DARK GREY.
+\ MODE 1 has no grey, so blue is KC's substitution and only the
+\ background changes, not the other three logicals. Layer-14
+\ DECISION 6.
+\
+\ deckClear IS THE TEST, NOT drCount, and the difference is a bug KC
+\ found: LoadDeck runs ReframeView -- which ends in RedrawAll, which
+\ calls this -- BEFORE DroidsInit, so arriving from a cleared deck the
+\ palette was built while drCount was still 1 and the new deck stayed
+\ blue with droids on it. LoadDeck clears the flag FIRST and the compaction
+\ sets it, so the state cannot depend on the load order at all.
+\ The C64 reads numDeckDroids directly ($27F1) and gets away with it
+\ because InitColors is called from RunDroids, after the count is right.
+\
+\ THE TEXT PALETTE IS EXEMPT. palBase is deck*4 by now, or that plus
+\ 64 for deckTextPal, and deck*4 cannot reach 64 -- so >= 64 is the
+\ text screens, whose logical 0 is a legibility choice of its own
+\ (DECISION 4) and not the deck's floor at all.
+  BNE sp_ink                    \ logicals 1-3: the deck's own
+  LDY palBase
+  CPY #64
+  BCS sp_ink                    \ the text screens keep their own
+  LDY deckClear
+  BEQ sp_ink                    \ droids left: the deck's own floor
+  LDA #DECK_CLEAR_PHYS
+  BNE sp_phys                   \ always -- blue is 4
+.sp_ink
   CLC : ADC palBase
   TAY
   LDA deckPalette,Y             \ physical colour, 0-7
+.sp_phys
   EOR #7                        \ the ULA wants it inverted
   STA palTmp
   TXA

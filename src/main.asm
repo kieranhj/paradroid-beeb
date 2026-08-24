@@ -424,6 +424,14 @@ DEBUG_XFERWIN = TRUE
 \ because nothing else here wants UP or DOWN.
 DEBUG_DECK = TRUE
 
+\ DEBUG_KILL is the fourth that changes what the GAME does: C kills
+\ every droid on the deck, one at a time through DrKillDroid, so the
+\ cleared-deck floor (layer-14 DECISION 6) can be reached without
+\ shooting a deck empty. It is the REAL kill path -- explosions,
+\ sound, score, alert and DrRemoveShip all happen -- so what it tests
+\ is the mechanism, not a shortcut past it. src/droid.asm.
+DEBUG_KILL = TRUE
+
 \ DEBUG_INVULN pins the player's energy at full, so a run can be taken
 \ deep into the ship without a 001's death ending it. Asked for by KC
 \ alongside 11b, which is what took the free respawn away: the port used
@@ -947,6 +955,7 @@ KEY_DOWN   = &D6                \ -42
 KEY_SPACE  = &9D                \ -99
 KEY_L      = &A9                \ -87, the fire button
 KEY_W      = &DE                \ -34, DEBUG_XFERWIN only
+KEY_C      = &AD                \ -83, DEBUG_KILL only
 KEY_ESCAPE = &8F                \ -113, the self-destruct
 
 \ ---- zero page ---------------------------------------------
@@ -2716,6 +2725,9 @@ INCLUDE "src/consolesel.asm"    \ BEFORE colours.asm, so colourMap's
                                 \ ALIGN &100 padding absorbs it and
                                 \ the bank does not grow. Read its
                                 \ header before moving it
+INCLUDE "src/dbgkill.asm"       \ DEBUG_KILL only, and in the same
+                                \ padding for the same reason. It must
+                                \ be in BANK 4: DroidsUpdate calls it
 INCLUDE "src/data/colours.asm"
 INCLUDE "src/data/tiledefs.asm"
 INCLUDE "src/data/levels.asm"
@@ -3315,7 +3327,7 @@ SAVE "PARA",    start,      code_end, start
 \ ------------------------------------------------------------------
 DEBUG_ANY1 = DEBUG_RASTER OR DEBUG_DRAW OR DEBUG_POS OR DEBUG_VSYNC
 DEBUG_ANY2 = DEBUG_TIME OR DEBUG_ENERGY OR DEBUG_MAPGUARD OR DEBUG_XFERWIN
-DEBUG_ANY3 = DEBUG_INVULN OR DEBUG_DECK
+DEBUG_ANY3 = DEBUG_INVULN OR DEBUG_DECK OR DEBUG_KILL
 DEBUG_ANY  = DEBUG_ANY1 OR DEBUG_ANY2 OR DEBUG_ANY3
 
 CLEAR &7E00, &7F00
@@ -3356,6 +3368,9 @@ EQUS " INVULN"
 ENDIF
 IF DEBUG_DECK
 EQUS " DECK"
+ENDIF
+IF DEBUG_KILL
+EQUS " KILL"
 ENDIF
 EQUB 13
 ENDIF

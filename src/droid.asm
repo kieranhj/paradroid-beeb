@@ -179,6 +179,15 @@ DR_LOS_MAX = 96
 \ lift are in here, the two debug deck keys are in the main loop where
 \ the data bank is the resting state.
 .LoadDeck
+  LDA #0                        \ A NEW DECK IS NOT CLEARED until its own
+  STA deckClear                 \ compaction says so, and this must be
+                                \ FIRST: ReframeView below ends in
+                                \ RedrawAll, which calls SetPalette, and
+                                \ that is the only time the deck's
+                                \ palette is built. Clearing it in
+                                \ DroidsInit was too late by exactly one
+                                \ routine and the new deck stayed blue.
+                                \ Layer-14 DECISION 6
   LDA deck
   JSR BuildCharset              \ charset is deck specific
   JSR AnimReset                 \ ...which puts the alert lamp back on its
@@ -631,6 +640,12 @@ ENDIF
 \ whole pass, so it is formed once here rather than thirteen times in
 \ DrScreen.
 .DroidsUpdate
+IF DEBUG_KILL
+  JSR DbgKill4                  \ the C key, and it costs BANK 4 three
+                                \ bytes rather than main RAM's last
+                                \ three. Above the guard below, so it
+                                \ still answers on a cleared deck
+ENDIF
   INC drTick
   CLC
   LDA posX   : ADC #PLY_REFX : STA drOrgX
@@ -699,6 +714,23 @@ ENDIF
   JMP dru_loop                  \ the copy-down block grew past a branch
 .dru_done
   STY drCount
+\ ---- the deck is clear -------------------------------------
+\ $17D7: CPY #1 / BEQ, and it fires exactly ONCE because the guard
+\ at the top of this routine returns early from the next pass on --
+\ drCount is 1 and never reaches here again.
+\
+\ WE DO LESS THAN THE ORIGINAL. $17DC runs InitColors (the colour),
+\ then AddScore twice with 250 -- FIVE HUNDRED POINTS -- then
+\ sndFx1 = $17, and finally INC notInDeck when shipNumDroids is
+\ zero as well. Only the colour is ported: KC asked for the
+\ background, and the score, the sound and the ship-clear arm are
+\ not in the port at all. Layer-14 DECISION 6 lists them as open.
+  CPY #1
+  BNE dru_notclear
+  STY deckClear                 \ Y is 1: the deck is clear, and the
+  JSR SetPalette                \ floor turns blue until DroidsInit
+                                \ says otherwise
+.dru_notclear
   JSR DrBulletHit               \ before the pair loop — see its header
   JMP DrCollide
 
@@ -2482,6 +2514,9 @@ ENDIF
 .drSlotOwner SKIP SPR_SLOTS     \ droid index holding each sprite slot, 0 free
 
 .drCount     EQUB 0             \ high-water mark; 1 means the deck is clear
+.deckClear   EQUB 0             \ and THIS says the floor should be blue:
+                                \ set by the compaction, cleared at the
+                                \ top of LoadDeck. Layer-14 DECISION 6
 .drIdx       EQUB 0
 .drDst       EQUB 0
 .drTick      EQUB 0

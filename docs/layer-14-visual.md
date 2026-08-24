@@ -338,3 +338,105 @@ ends at `&2FFA`, **6 bytes free**. `PARTITL` spent 32 of its 89 and has 58. Bank
 `deck` reads 11, palette `[4,0,5,7]`) and the logo shows blue ground, white highlights top-left,
 black shadows bottom-right, dark panel lettering, magenta blobs — the same relationships as
 `ref/c64-logo-screen.png`.
+
+## [DECISION 6] A cleared deck's floor turns blue
+
+**KC, 2026-08-24:** the deck background goes blue once nothing but the player is left on it.
+
+**What the C64 does, and it is more than a colour.** `RunDroids` (`$174B`) ends its compaction with
+`STY numDeckDroids`, and if the count has reached **1** — the player alone — it runs a whole
+deck-cleared event:
+
+```
+17D5  STY numDeckDroids
+17D7  CPY #1 / BEQ _6 / RTS
+_6:
+17DC  JSR InitColors           ; the colour
+17DF  LDA #250 / JSR AddScore
+17E4  LDA #250 / JSR AddScore  ; five hundred points
+17E9  LDA #$17 / STA sndFx1    ; a sound effect
+17ED  LDA shipNumDroids / BNE _7
+17F1  INC notInDeck            ; the whole SHIP is clear
+_7:   RTS
+```
+
+**It fires exactly once**, because `RunDroids` early-outs while the count is below 2 and so never
+reaches this code again. The port's `DroidsUpdate` already mirrors that guard, so the hook needs no
+shadow byte.
+
+**The colour is `InitColors` (`$27E5`) forcing colour scheme 7**, not a background poke:
+
+```
+27F1  LDA numDeckDroids
+27F3  CMP #1
+27F5  BNE _1
+27F7  LDA #7          ; the scheme, instead of deckColorScheme[deckNum]
+```
+
+and `ColorSets` entry 7 at `$6A98` carries the listing's own label — **`; 7 - deck cleared`**. So
+the C64 swaps all twelve colour slots, and its floor (slot 0) becomes C64 colour **`$B`, dark
+grey**. Every other scheme's slot 0 is light grey, light blue, yellow, light green, light red or
+cyan.
+
+**MODE 1 has no grey, so blue is KC's substitution** — and only logical 0 changes, not the deck's
+other three. Verified in `palPlay`: all four logical-0 ULA entries become physical 4 while logical
+1 stays black, 2 red and 3 white.
+
+### The state is a flag, not `drCount` — and why
+
+**KC, on the first build:** *"the deck background stays blue when I move to a new deck in the lift
+that still has droids on it."*
+
+`LoadDeck` runs `ReframeView` — which ends in `RedrawAll`, which calls `SetPalette` — **before**
+`DroidsInit`. Arriving from a cleared deck, the palette was therefore built while `drCount` was
+still 1, and nothing rebuilt it afterwards. The C64 reads `numDeckDroids` directly and gets away
+with it because its `InitColors` is called *from* `RunDroids`, after the count is right.
+
+So the port keeps an explicit **`deckClear`** byte: the compaction sets it, and **the top of
+`LoadDeck` clears it** — first, before anything draws. Putting the reset in `DroidsInit` was tried
+and is wrong by exactly one routine: the flag was correct (`drCount` 10, `deckClear` 0) and the
+floor was still blue, because the palette had already been built. The ordering is now impossible to
+get wrong from either end.
+
+**`drCount == 1` is what sets it, and that is the original's** — the port's own comment on `drCount`
+already read *"1 means the deck is clear"*, which is `numDeckDroids == 1` exactly.
+
+**It lives in `SetPalette`** (`level.asm`), not in a one-off poke, so every path that re-applies the
+palette keeps it: the deck redraw, the console exit, a lift arrival. **The text palette is exempt** —
+`palBase` is `deck*4` there, or that plus 64 for `deckTextPal`, and `deck*4` cannot reach 64, so
+`>= 64` cleanly identifies the text screens, whose logical 0 is DECISION 4's legibility choice and
+not the floor at all.
+
+### Still missing, and worth a decision
+
+The port does **none** of the rest of the C64's event: the **500 points**, the **`$17` sound**, and
+the `notInDeck` arm for a wholly cleared ship. Only the colour was asked for. The score in
+particular is a real gameplay difference — clearing a deck pays nothing in the port.
+
+### DEBUG_KILL
+
+`C` kills every droid on the deck, so the floor can be reached without shooting one empty.
+`src/dbgkill.asm`, bank 4, called from the top of `DroidsUpdate` — **from bank 4, so it costs the
+bank three bytes rather than main RAM's last three.**
+
+It drives the **real** kill path, one droid at a time through `DrKillDroid`, rather than zeroing
+`drEnergy` behind its back: the explosion, the sound, the alert rise, the score by class and
+`DrRemoveShip` all happen exactly as they do when you shoot the thing, and the compaction reaps the
+explosions a few passes later. What it tests is the mechanism, not a shortcut past it.
+
+**It rides the same padding as `consolesel.asm`** and for the same reason — bank 4 overshot by 24
+with it in `droid.asm`. That is now two files in `colourMap`'s 162 bytes; watch the fuel gauge.
+
+**A trap worth recording**: the first `INCLUDE` landed in the **bank 5** block by accident. It
+assembled cleanly and the asserts passed — beebasm resolves the label either way and nothing checks
+banks — so a `JSR` from bank 4 would have jumped into whatever bank 4 held at that address. Caught
+by reading the build's include order, not by the build.
+
+**Verified in jsbeeb, 2026-08-24**, all three cases:
+
+1. press C — the droids explode, the score rises 0 → 612 through the ordinary scoring, `drCount`
+   reads 1 and the floor is blue with the walls still red and white;
+2. hop to a deck that still has droids — **it shows its own colours**, `drCount` 10 and
+   `deckClear` 0. This is the case that was broken;
+3. hop back to the cleared deck — blue again, `drCount` 1 and `deckClear` 1. The kills persisted on
+   the ship roster, `DroidsInit` placed nothing, and the compaction fired the hook.

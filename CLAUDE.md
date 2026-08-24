@@ -263,9 +263,10 @@ without the GUARD an overrun assembles silently and corrupts `PARAFNT` at run ti
 stops with *Guard point hit* at `sprScan0` means the code image is full. **Everything in `src/` is in the build** — the five inherited Master/HAL files that
 were not have been deleted, so nothing there is dead. Keep it that way.
 
-**Six files assemble into SWRAM bank 4, not main RAM**: `screen.asm`, `scroll.asm`, `level.asm`,
-`zx0depack.asm`, `droid.asm` and `consolesel.asm` are included from inside the `PARADAT` block, next
-to the tile, deck and waypoint data they read. **`consolesel.asm`'s position in that block is load
+**Six files assemble into SWRAM bank 4 (seven with `DEBUG_KILL`), not main RAM**: `screen.asm`, `scroll.asm`, `level.asm`,
+`zx0depack.asm`, `droid.asm`, `consolesel.asm` and (on a `DEBUG_KILL` build) `dbgkill.asm`
+are included from inside the `PARADAT` block, next
+to the tile, deck and waypoint data they read. **`consolesel.asm`'s and `dbgkill.asm`'s position in that block is load
 bearing** — it must stay before `colours.asm` so `colourMap`'s `ALIGN` padding absorbs it; read its
 header before moving it. That costs no
 paging, because the data bank is the resting state. The rule it depends on is one-way and undiagnosed
@@ -316,11 +317,13 @@ Both worked around locally; extending the shared set is the better fix and moves
   the C64 original
 - Debug builds are switched by constants at the top of `main.asm` — `DEBUG_RASTER`, `DEBUG_DRAW`,
   `DEBUG_VSYNC`, `DEBUG_TIME`, `DEBUG_POS`, `DEBUG_ENERGY`, `DEBUG_MAPGUARD`, `DEBUG_XFERWIN`,
-  `DEBUG_INVULN`, `DEBUG_DECK`. Each carries a header explaining what it shows and
+  `DEBUG_INVULN`, `DEBUG_DECK`, `DEBUG_KILL`. Each carries a header explaining what it shows and
   how to read it; `DEBUG_TIME` in particular documents how to take a cycle measurement that means
-  something, including why only one call site may be instrumented at a time. **Two change what the
+  something, including why only one call site may be instrumented at a time. **Three change what the
   GAME does rather than what it draws**. `DEBUG_XFERWIN`: W wins the transfer minigame outright, so
-  droid behaviour after a capture can be reached without playing it. `DEBUG_DECK`: cursor up/down hop the player one
+  droid behaviour after a capture can be reached without playing it. `DEBUG_KILL`: **C** kills every droid on the deck, through the real `DrKillDroid` path, to
+  reach the cleared-deck floor without shooting one empty (layer-14 DECISION 6).
+  `DEBUG_DECK`: cursor up/down hop the player one
   deck at a time with no lift — the ship is walkable without it, but reaching deck 11 by lift to
   look at one tile costs minutes a time.
   `DEBUG_RESTART` was removed 2026-08-21: **ESCAPE** is a real game feature that ends the game
