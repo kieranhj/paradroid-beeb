@@ -239,3 +239,32 @@ The ship page is unaffected: `ConShipEnter4` saves `palPlay` and installs `palLi
 free** — those two bytes were the `JMP`'s. The next thing that needs main RAM needs a hunt first.
 If it has to come from here, moving `ct_trydeck`'s `LDA #2 / STA conDeckReq` into a bank-4 tail
 gives 3 bytes back and costs bank 4 8 of its 10.
+
+### DECISION 4b — the palette changes BEFORE the screen it belongs to
+
+**KC, 2026-08-24.** All four switches were set *after* their draw, so each screen was painted in
+the outgoing palette and only corrected once it was finished — a visible wrong-coloured pass on
+every transition. They now run **immediately before** the draw, which meant moving each one to the
+routine that *decides* the transition rather than the one that completes it:
+
+| Transition | Was | Now |
+|---|---|---|
+| open the console | `ConMarker4`, after `ConsoleOpen` drew | `ConMenuInit4`, which `ConsoleEnter` now calls **first** |
+| menu → deck plan | `ct_trydeck`, after `ConDeck7` drew | `ConMenu4`'s `cm4_deck` arm, on the press |
+| page → menu | `ConMarker4`, after `ConDraw` drew | `ConPageKeys4`'s leave arm, on the press |
+| any information screen | `InfoCall`, after `IsEntry` drew | `InfoCall`, before it pages bank 7 |
+| back to the deck | `RedrawAll` — already before its own draw | unchanged |
+
+Each is a **tail call** (`RTS` → `JMP SetTextPal` / `JMP SetPalette`) on an arm that already ended
+in `RTS`, so three of the four cost two bytes rather than three, and `ConMarker4` gave three back.
+
+**`ConsoleEnter` now calls `ConMenuInit4` before the bank-6 block.** That is a reorder of game
+code, and it is safe because `ConMenuInit4` only writes flags — `conSel` and the key edges — and
+nothing in `ConsoleOpen` reads them; the marker is drawn separately, afterwards, as it always was.
+
+**`SetPalette` and `SetTextPal` now preserve X.** `InfoCall` calls one before it pages bank 7, and
+`IsEntry` takes its screen selector in X. `SetPalPlay`'s own loop clobbers X as well, so the save
+has to outlive it — which is why the routine ends in `JSR SetPalPlay` and an `RTS` rather than the
+`JMP` it used to. Costs five bytes and removes the trap that had already caught this once.
+
+**Both tight regions are at 2 bytes free**: main RAM ends at `&2FFE`, bank 4 at `&BFFE`.

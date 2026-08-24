@@ -3076,7 +3076,13 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
   STA conMPrevL
   STA conPrevU
   STA conPrevD
-  RTS
+\ AND THE MENU'S PALETTE, BEFORE ANYTHING IS DRAWN ON IT. ConsoleEnter
+\ calls this first for exactly that reason — the console reads white text,
+\ so logical 0 becomes the deck's text background, and the draw that
+\ follows lands on the colours it will be seen in. Setting it afterwards
+\ showed the menu in the deck's colours for as long as the draw took.
+\ KC, 2026-08-24.
+  JMP SetTextPal                \ and its RTS
 
 .ConMenu4
   LDX #KEY_K                    \ up the menu
@@ -3145,7 +3151,10 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
 .cm4_deck
   LDA #1
   STA conDeckReq                \ entry 2: the deck plan
-  RTS
+  JMP SetPalette                \ and its RTS. THE PLAN IS THE DECK, so it
+                                \ wears the deck's colours — and set here,
+                                \ on the press, rather than after ConDeck7
+                                \ has drawn the whole page in the wrong ones
 .cm4_ship
   LDA #1
   STA conShipReq                \ entry 3: the ship's side view
@@ -3173,7 +3182,9 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
   LDA #0
   STA conShipReq                \ ConsoleTick sees it and redraws the main
   STA conDeckReq
-  RTS
+  JMP SetTextPal                \ and its RTS — the menu's colours back on
+                                \ the press that leaves, before ct_back
+                                \ redraws it
 .csk_lUp
   LDA #0
   STA conMPrevL
@@ -3198,15 +3209,11 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
 \ ---- the marker: a white bar beside the selected icon -------
 \ One 4-px column, eight scanlines, at unit 1 — clear of the icons at
 \ units 4 and 7 — centred a row into each icon's three.
-\ THE MENU'S PALETTE RIDES ON THE MARKER. Every path that puts the console
-\ MENU on screen ends by drawing the marker — ConsoleEnter, the return from
-\ a page (ct_back) and ConMenu4's own selection steps — and none of the
-\ pages does, so this is the one place that means "the menu is up" without
-\ a flag. The menu reads white text, so logical 0 becomes the deck's text
-\ background here; the deck plan puts the deck's own colours back for
-\ itself, and RedrawAll does it for the close. Layer 14 DECISION 4.
+\ THE PALETTE USED TO BE SET HERE, because the marker is the one thing
+\ every path to the MENU ends with. It moved to the two routines that
+\ DECIDE the transition — ConMenuInit4 and ConPageKeys4 — because both of
+\ those run before the redraw and this one runs after it. KC, 2026-08-24.
 .ConMarker4
-  JSR SetTextPal
   LDA #&0F                      \ solid logical 1: white on every deck
   BNE cmk_put
 .ConMarkClear

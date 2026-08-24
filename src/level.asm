@@ -42,7 +42,14 @@
 .SetPalette
   LDA #0
 .stp_go
-  STA palBase
+\ X IS PRESERVED, and that is not politeness: InfoCall calls SetTextPal
+\ before it pages bank 7, and IsEntry takes its screen selector in X —
+\ see its header. SetPalPlay's own loop clobbers X too, so saving it
+\ here has to outlive that, which is why this ends in a JSR and an RTS
+\ rather than the JMP it used to.
+  STA palBase                   \ A is the table offset — save X AFTER it
+  TXA
+  PHA
   LDA deck
   ASL A : ASL A                 \ deck * 4 -> index into the chosen table
   CLC : ADC palBase
@@ -68,7 +75,10 @@
   STA palPlay,X
   DEX
   BPL sp_loop
-  JMP SetPalPlay                \ live immediately, not at the next fire 1
+  JSR SetPalPlay                \ live immediately, not at the next fire 1
+  PLA                           \ and X back, for InfoCall — see stp_go
+  TAX
+  RTS
 
 \ ============================================================
 \ BuildLevel — decompress a deck into the tile map

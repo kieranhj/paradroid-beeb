@@ -1947,10 +1947,15 @@ ENDMACRO
 
 .ConsoleEnter
   PNMIRROR
+  JSR ConMenuInit4              \ bank 4 — FIRST, and the resting bank, so
+                                \ no paging. It ends in SetTextPal, and the
+                                \ point of the order is that the palette is
+                                \ in force BEFORE ConsoleOpen draws on it.
+                                \ It only writes flags, so nothing here
+                                \ depends on the draw having happened
   PAGEBANK SWRAM_SPR2
   JSR ConsoleOpen
-  PAGEBANK SWRAM_DATA
-  JSR ConMenuInit4              \ bank 4: selection to the top, edges
+  PAGEBANK SWRAM_DATA           \ bank 4: selection to the top, edges
   JMP ConMarker4                \ armed — and the first marker. Bank 6
                                 \ had no room for any of this: 23 B free
 
@@ -1992,13 +1997,10 @@ ENDMACRO
   PAGEBANK SWRAM_DATA
   LDA #2
   STA conDeckReq
-  JMP SetPalette                \ and its RTS. THE PLAN IS THE DECK, so it
-                                \ wears the deck's colours and not the
-                                \ console's text background — KC,
-                                \ 2026-08-24. Going back to the menu draws
-                                \ the marker, which puts the text palette
-                                \ on again. Two bytes, which is what main
-                                \ RAM had
+  RTS                           \ the plan's palette is NOT set here any
+                                \ more: ConMenu4 sets it on the press that
+                                \ asks for the page, so ConDeck7 draws in
+                                \ the colours it will be seen in
 \ The database is NOT one of the static pages: it is a browser, so its
 \ tick runs every pass and the page itself reads the keys — which it can,
 \ because keydown is main RAM. There is no bank-4 shim and no enter
