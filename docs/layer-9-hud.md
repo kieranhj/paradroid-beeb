@@ -293,19 +293,38 @@ Entry is `DoCharUnder`'s missing arm: character 66, the console tile, plus fire.
 **Rebuilt 2026-08-16 at KC's request.** `ConsoleMain` (`$2955`) and `ShowRobotType` (`$3149`) draw
 five lines, and the strings carry their own `prntY`/`prntX`:
 
-| C64 | ours | |
-|---|---|---|
-| row 10, col 2 | row 0 | `Unit type 001 - Influence Device` |
-| row 12, col 12 | row 2 | `Access granted.` |
-| row 15, col 12 | row 5 | `Ship  : Paradroid` |
-| row 18, col 12 | row 8 | `Deck  : Staterooms` |
-| row 21, col 12 | row 11 | `Alert : Green` |
+| C64 screen | C64 console row | ours | |
+|---|---|---|---|
+| row 10, col 2 | 2 | row 1 | `Unit type 001 - Influence Device` |
+| row 12, col 12 | 4 | row 3 | `Access granted.` |
+| row 15, col 12 | 7 | row 6 | `Ship  : Paradroid` |
+| row 18, col 12 | 10 | row 9 | `Deck  : Staterooms` |
+| row 21, col 12 | 13 | row 12 | `Alert : Green` |
 
-The C64's console area starts at screen row 8, so those are deck rows 2, 4, 7, 10 and 13 with rows
-0 and 1 empty. **KC: plot from the top row**, so everything moves up two and lands on buffer rows
-0, 2, 5, 8 and 11 of our fifteen, three to spare. The 2/3/3/3 spacing is the original's, and is
-what leaves a blank row between the lower four. `ConAt` therefore takes a **buffer row** and not a
-text line — a line-times-two index cannot express 5, 8, 11.
+**The C64's console area is screen rows 8-24.** `ClearGameScreen` (`$2BA5`) fills 17 rows from
+`$4940` — that is `$4800 + 320`, so row 8 — at 40 bytes a row (`FillCRAM`, `$0A52`). Its five lines
+are therefore console rows 2, 4, 7, 10 and 13, with rows 0 and 1 empty. The 2/3/3/3 spacing is the
+original's, and is what leaves a blank row between the lower four. `ConAt` therefore takes a
+**buffer row** and not a text line — a line-times-two index cannot express 6, 9, 12.
+
+**Ours sat two rows above that until 2026-08-24.** The layout was originally flattened to the top
+row (0, 2, 5, 8, 11) because the play area was fifteen rows and 13 + 2 did not fit. Sixteen rows
+since 2026-08-21 bought one back, and **[DECISION 17] KC, 2026-08-24: spend it on the menu** —
+everything moves down one, to 1, 3, 6, 9 and 12.
+
+**That is still a row short of the C64's own 2, 4, 7, 10, 13, and deliberately so.** Two rows
+also fits (the alert glyph would land on 13-14 and its icon on 13-15, filling the area exactly);
+KC was shown both and chose one. Do not "correct" it to two without asking.
+
+**The whole menu moves as one.** The four icons ride the lower four lines and the marker bar sits
+one row into each icon's three, so the icon destinations in `console.asm` are now written as
+`CON_ROW_SHIP`/`DECK`/`ALERT` rather than literals, and the bar — `CON_MARK0-3` in `droid.asm`,
+bank 4, which is assembled first and cannot see those constants — is `ASSERT`ed against them from
+`console.asm` instead. They had been three independent sets of literals.
+
+**Verified in the buffer** (not the screenshot), 2026-08-24: row 0 empty, text on 1-2, 3-4, 6-7,
+9-10 and 12-13, icons at 3-5, 6-8, 9-11 and 12-14, the marker bar at row 4 unit 1, and row 15
+clear — so nothing clips the bottom.
 
 ### 6b. The names are real, and they cost 1,542 bytes
 

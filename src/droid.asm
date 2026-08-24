@@ -3234,10 +3234,14 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
   BPL cmk_loop
   RTS
 
-CON_MARK0 = BUF_BASE +  3 * ROW_BYTES + 1 * UNIT_BYTES
-CON_MARK1 = BUF_BASE +  6 * ROW_BYTES + 1 * UNIT_BYTES
-CON_MARK2 = BUF_BASE +  9 * ROW_BYTES + 1 * UNIT_BYTES
-CON_MARK3 = BUF_BASE + 12 * ROW_BYTES + 1 * UNIT_BYTES
+\ LITERALS, and they cannot be CON_ROW_* : this file is bank 4 and is
+\ assembled BEFORE bank 6's console.asm, so those constants do not
+\ exist yet. console.asm ASSERTs the four agree with its rows instead
+\ - they are one row into each icon's three, so they move with them.
+CON_MARK0 = BUF_BASE +  4 * ROW_BYTES + 1 * UNIT_BYTES
+CON_MARK1 = BUF_BASE +  7 * ROW_BYTES + 1 * UNIT_BYTES
+CON_MARK2 = BUF_BASE + 10 * ROW_BYTES + 1 * UNIT_BYTES
+CON_MARK3 = BUF_BASE + 13 * ROW_BYTES + 1 * UNIT_BYTES
 .conMarkLo
   EQUB LO(CON_MARK0), LO(CON_MARK1), LO(CON_MARK2), LO(CON_MARK3)
 .conMarkHi

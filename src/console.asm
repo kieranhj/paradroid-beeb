@@ -40,24 +40,36 @@ CON_TYPES = 24
 \   C64 row 18, col 12   "Deck  : " + the deck name
 \   C64 row 21, col 12   "Alert : " + the alert level
 \
-\ Its console area starts at screen row 8, so those are deck rows 2, 4, 7,
-\ 10 and 13 — and rows 0 and 1 are empty. **KC: plot from the top row**,
-\ so everything moves up by two and the five lines land on buffer rows
-\ 0, 2, 5, 8 and 11. The 2/3/3/3 spacing is the original's and is what
-\ leaves a blank row between the lower four.
+\ Its console area is screen rows 8-24 — ClearGameScreen ($2BA5) fills 17
+\ rows from $4940, which is $4800 + 320, so row 8 — and those five lines
+\ are therefore console rows 2, 4, 7, 10 and 13, with rows 0 and 1 empty.
+\ The 2/3/3/3 spacing is the original's and is what leaves a blank row
+\ between the lower four.
 \
-\ THE AREA IS SIXTEEN ROWS since 2026-08-21 and this layout did NOT move
-\ with it: KC's rule is to plot from the top row, and the top row is
-\ still row 0. The recovered row is the fourth spare one at the bottom.
-\ The pages that DID move down a row are the ported ones — the database,
-\ the information screens and the game over — because sixteen rows is
-\ what the C64 lays them out in. See condb.asm's geometry block.
-CON_ROW_UNIT  = 0
-CON_ROW_ACC   = 2
-CON_ROW_SHIP  = 5
-CON_ROW_DECK  = 8
-CON_ROW_ALERT = 11
-ASSERT CON_ROW_ALERT + 2 <= PLAY_ROWS
+\ WE SIT ONE ROW ABOVE THAT. The layout was originally flattened to the
+\ top row (0, 2, 5, 8, 11) because the area was fifteen rows and 13 + 2
+\ did not fit. Sixteen rows since 2026-08-21 bought one back, and KC,
+\ 2026-08-24, spent it here — layer-9 DECISION 17: everything moved
+\ down one, to 1, 3, 6, 9 and 12.
+\ **It is a row short of the C64's own 2, 4, 7, 10, 13** — that would
+\ fit too, and KC chose one row rather than two with the choice in
+\ front of them. Do not 'fix' it to two without asking.
+\
+\ EVERYTHING IN THE MENU MOVES TOGETHER: the four icons ride the lower
+\ four rows and the marker bar sits one row into each icon, so the icon
+\ destinations below are written as CON_ROW_* and the bar — bank 4's,
+\ which cannot see them — is ASSERTed against them instead.
+\
+\ The pages that moved down a row at the sixteen-row change are the
+\ ported ones — the database, the information screens and the game over
+\ — because sixteen rows is what the C64 lays them out in. See
+\ condb.asm's geometry block.
+CON_ROW_UNIT  = 1
+CON_ROW_ACC   = 3
+CON_ROW_SHIP  = 6
+CON_ROW_DECK  = 9
+CON_ROW_ALERT = 12
+ASSERT CON_ROW_ALERT + 2 <= PLAY_ROWS         \ the alert glyph, two rows
 
 CON_COL_UNIT  = 2               \ UnitType_txt's own prntX
 CON_COL_TEXT  = 12              \ and $6E00's
@@ -101,12 +113,13 @@ CON_TOK_ALERT  = 208            \ green, yellow, amber, red
 CON_ICON_COUNT = 3              \ of four — see conicons.asm
 CON_ICON_ROWS  = 3              \ 21 scanlines, so three character rows
 CON_ICON_LINES = 21             \ scanlines: a C64 sprite is 21 tall
+ASSERT CON_ROW_ALERT + CON_ICON_ROWS <= PLAY_ROWS  \ and its icon, three
 
 \ The FIRST icon is the player's own droid and is composed, not copied —
 \ see droidicon.asm. Same 24 x 21 as the rest, in the slot the other
 \ three leave empty: row 2, unit 7.
 CON_DRICON_W = 3                \ C64 sprite bytes a row
-CON_DROID_D  = BUF_BASE + 2 * ROW_BYTES + 7 * UNIT_BYTES
+CON_DROID_D  = BUF_BASE + CON_ROW_ACC   * ROW_BYTES + 7 * UNIT_BYTES
 
 \ ============================================================
 \ ConAt — point pnDst at console text cell (conRow, pnCol)
@@ -609,12 +622,23 @@ CON_DROID_D  = BUF_BASE + 2 * ROW_BYTES + 7 * UNIT_BYTES
   EQUB %00000000, %00110011, %11001100, %11111111
   EQUB %00000000, %00110011, %11001100, %11111111
 
-\ Rows 5, 8 and 11 at units 7, 4 and 4; the droid takes row 2, unit 7.
+\ One icon per line, on the SAME rows as the lower four - so these are
+\ CON_ROW_SHIP/DECK/ALERT, not literals, and the droid is CON_ROW_ACC.
+\ They drifted from the text once; deriving them is what stops it.
 \ Held as whole addresses because the row multiply would otherwise be
 \ three 16-bit shifts for a table that never changes.
-CON_ICON_D0 = BUF_BASE +  5 * ROW_BYTES + 7 * UNIT_BYTES
-CON_ICON_D1 = BUF_BASE +  8 * ROW_BYTES + 4 * UNIT_BYTES
-CON_ICON_D2 = BUF_BASE + 11 * ROW_BYTES + 4 * UNIT_BYTES
+CON_ICON_D0 = BUF_BASE + CON_ROW_SHIP  * ROW_BYTES + 7 * UNIT_BYTES
+CON_ICON_D1 = BUF_BASE + CON_ROW_DECK  * ROW_BYTES + 4 * UNIT_BYTES
+CON_ICON_D2 = BUF_BASE + CON_ROW_ALERT * ROW_BYTES + 4 * UNIT_BYTES
+
+\ The marker bar is bank 4's (droid.asm) and had to be written as
+\ literals there - that file is assembled first, so CON_ROW_* does not
+\ exist yet. Tie the two together HERE, where both are known: the bar
+\ sits one row into each icon's three.
+ASSERT CON_MARK0 == BUF_BASE + (CON_ROW_ACC   + 1) * ROW_BYTES + 1 * UNIT_BYTES
+ASSERT CON_MARK1 == BUF_BASE + (CON_ROW_SHIP  + 1) * ROW_BYTES + 1 * UNIT_BYTES
+ASSERT CON_MARK2 == BUF_BASE + (CON_ROW_DECK  + 1) * ROW_BYTES + 1 * UNIT_BYTES
+ASSERT CON_MARK3 == BUF_BASE + (CON_ROW_ALERT + 1) * ROW_BYTES + 1 * UNIT_BYTES
 .conIconDstLo EQUB LO(CON_ICON_D0), LO(CON_ICON_D1), LO(CON_ICON_D2)
 .conIconDstHi EQUB HI(CON_ICON_D0), HI(CON_ICON_D1), HI(CON_ICON_D2)
 .conIconSrcLo EQUB LO(conicons + CON_ICON0_OFS), LO(conicons + CON_ICON1_OFS), LO(conicons + CON_ICON2_OFS)
