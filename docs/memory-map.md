@@ -123,7 +123,8 @@ staged on the panel and copied down last — see the boot code and `layer-11-sou
 
 ## SWRAM bank 4 — `PARADAT`
 
-`&8000–&BFFD`, **3 free** (2026-08-21, layer-11e stage 3 — THE FULLEST REGION IN THE MACHINE:
+`&8000–&BF97`, **105 free** (2026-08-24, Layer 15's space pass — see §"Layer 15 space pass" below.
+Before it, 8. It was 3 on 2026-08-21, layer-11e stage 3, when this was THE FULLEST REGION IN THE MACHINE:
 the sound driver (908 B), its data, the trigger posts, `SndAmbient` and the hum tables took
 Layer 13d's 1,161 and every squeeze after it. Paid by ZX0-packing the char bitmaps AND
 `charRemap` into one stream (`UnpackChars` → the sprite save areas; `lampSrc` caches the ALERT
@@ -151,7 +152,7 @@ past the 2,437 bytes recorded — regenerate before trusting a code address.
 | `&8670` | 144 | `deckPalette` |
 | `&8700` | 256 | `colourMap` |
 | `&8800` | 512 | `tiledefs` — 16-byte tile definitions |
-| `&8A00` | 128 | Per-deck metadata: `deckPackLo`/`Hi` (offsets into `deckPack`), `deckY`, `deckX`, `deckHeight`, `deckWidth`, `deckColour`, `deckDroids` |
+| `&8A00` | 16 | Per-deck metadata: `deckPackLo`/`Hi` (offsets into `deckPack`) and `deckDroids`. **The other seven C64 tables were dropped by Layer 15's space pass** — 112 B, none of them read anywhere in `src/` |
 | `&8A80` | 128 | *free — alignment gap* |
 | — | 2,183 | `deckPack` — the 16 deck maps, decoded offline and ZX0-compressed; `Zx0Unpack` rebuilds the tile map straight from them. Replaced `leveldata`'s 3,207 B of RLE (Layer 13d) |
 | `&9787` | 1,743 | `drSprData` — the droid artwork, 249 rows × 7 bytes. Moved here 2026-08-14: only `SprFetchRow` reads it, and the sprite bank is the scarce one |
@@ -168,6 +169,60 @@ What could **not** come with it is in `src/bufcore.asm`, 480 bytes in main RAM: 
 tables are reached while the *sprite* bank is paged in — `SprScanRow` tail-calls the first and
 `SprCalcAddr` calls the second. A JSR from there into this bank would land in compiled sprite rows,
 and nothing would diagnose it.
+
+### Layer 15 space pass — bank 4, 8 B → 105 B free (2026-08-24)
+
+One saving, one cost, measured off the build's own fuel gauge either side of the change.
+
+| | bytes |
+|---|---|
+| `deckOffsetLo`/`Hi`, `deckY`, `deckX`, `deckHeight`, `deckWidth`, `deckColour` deleted | **+112** |
+| `sound.asm`'s new conditional page pad (this build's instance) | −15 |
+| **net on the gauge** | **+97** |
+
+**What went.** `export_bbc.py` emitted all eight of the C64's per-deck tables from `$F120`, 16 bytes
+each, plus the two `deckOffset` tables that indexed the RLE stream. **Only `deckDroids` has a reader
+in the port**, and that was confirmed by word-boundary grep over the whole of `src/` and `tools/`
+before anything was touched:
+
+- `deckOffsetLo`/`Hi` indexed `leveldata`, which **Layer 13d deleted** when the decks became ZX0
+  streams (`deckPackLo`/`Hi` replaced them). Dead since 2026-08-20.
+- `deckY`/`deckX`/`deckHeight`/`deckWidth` are the deck-plan geometry. Bank 7 has its **own copy**
+  (`sideview.asm`'s `svDeckY`/`svDeckX`/`svDeckH`/`svDeckW`) because only one bank is visible at a
+  time — bank 4's copy could never have been the one the plan page read.
+- `deckColour` predates `colours.asm`'s per-deck scheme table.
+
+`src/data/` is generated, so the change is in `tools/export_bbc.py`; re-emitting any of them is a
+one-line change, and the exporter carries a comment saying so. **Regenerating needs
+`python tools/export_bbc.py` — `build.ps1` does not run the exporters.** The run was checked to
+leave `chardata.asm`, `colours.asm`, `tiledefs.asm` and `plandata.asm` byte-identical.
+
+**Why the 15 bytes came back out.** Deleting 112 bytes upstream shifted everything after it and
+broke `sound.asm`'s `ASSERT HI(snFreqLo) == HI(snPhase+1)` — the 38-byte voice-state block must not
+cross a page, because `SndCopy`'s stride-2 self-modified store steps the low byte only. That assert
+was unpadded, so **any** bank-4 edit of the wrong size could break it, and this one did. The block
+now carries a conditional pad in front of it:
+
+```
+IF HI(P%) <> HI(P% + 37)
+  SKIP 256 - (P% AND 255)
+ENDIF
+```
+
+At most 37 bytes, often none, and self-healing across future bank-4 edits. It cost 15 in this build.
+**A future bank-4 change can move that cost up or down by up to 37 bytes with nothing else
+changing** — read the gauge, do not infer it.
+
+**`colourMap`'s alignment padding is unchanged at 17 B** (`deckTextPal + 64` = `&84EF`,
+`colourMap` = `&8500`), because the deletion happens in `levels.asm`, which is **after** that
+`ALIGN`. Total bank-4 headroom is therefore **122 B**: 105 on the gauge plus 17 of pad that anything
+assembled before `colourMap` rides in for nothing.
+
+**Nothing else moved**: main RAM still ends at `&2FFD`, bank 5 at `&BBF7`, bank 6 at `&BFFC`,
+bank 7 at `&BEC6`. The instruction stream is identical — 22,954 instructions reduced to
+(mnemonic, addressing class) and diffed against the pre-change listing, zero differences — so this
+is pure data removal plus padding. **`DEBUG_KILL` was NOT turned off**; its ~45 bytes of padding are
+still available if bank 4 is ever squeezed again.
 
 ## SWRAM bank 5 — `PARASPR` (shifts 0 and 1 px)
 

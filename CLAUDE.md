@@ -189,13 +189,16 @@ addresses from the `beebasm` output rather than from any document.** In outline:
 | SWRAM bank 7 | `PARXFER` — Layer 10's transfer minigame, Layer 8b's lift screen, the console's ship, deck-plan and droid-database pages, and Layer 11's game over. The title is NOT here any more — it is the `PARTITL` disc overlay. **5,690 B free, reserved for the droid portrait pool** |
 
 **RAM is the binding constraint. Measured from the build of 2026-08-24**, not remembered: the
-main-RAM code image ends at `&2FFD`, so **3 bytes** below `&3000`, and **bank 4 has 45 B** — any
-figure elsewhere claiming 2, 47 or 60 is stale. Both moved that day: the title's random boot deck
+main-RAM code image ends at `&2FFD`, so **3 bytes** below `&3000`, and **bank 4 has 105 B** after
+Layer 15's space pass — any figure elsewhere claiming 2, 8, 47 or 60 is stale. The pass deleted
+112 bytes of per-deck tables that nothing read and spent 15 back on a self-healing page pad in
+`sound.asm`; `docs/memory-map.md` §"Layer 15 space pass" has the detail, and the pad means a
+future bank-4 edit can move the gauge by up to 37 bytes on its own — read it, do not infer it. Both moved that day: the title's random boot deck
 gave main RAM 4 back (`docs/layer-14-visual.md` DECISION 5) and the console's icon selection gave
-bank 4 46 (`docs/layer-9-hud.md` DECISION 18). **Main RAM is now the tightest thing in the
-project**, and the padding note below is why bank 4 no longer is.
+bank 4 46 (`docs/layer-9-hud.md` DECISION 18). **Main RAM is by a wide margin the tightest thing in the
+project**, and the padding note below is the other reason bank 4 is not.
 Bank 4 went to 26 B when Layer 14's floor dither paid for itself, and spent it again on the text
-palettes. **Bank 4 also has ~160 B of alignment padding in front of `colourMap` that the fuel gauge does not count, and anything — CODE or data — assembled ANYWHERE before that `ALIGN` rides there for nothing** (`src/consolesel.asm` is the worked example). **Deleting the `ALIGN` recovers nothing**: `tiledefs.asm` aligns next and pads by the same amount — measured, 2026-08-24. Past 162 B the `ALIGN` rounds to the next page and costs 256 at a stroke. See `docs/layer-9-hud.md` DECISION 18 and `docs/layer-14-visual.md`.
+palettes. **Bank 4 also has alignment padding in front of `colourMap` that the fuel gauge does not count — 17 B of the original 162 are left, `consolesel.asm` and `dbgkill.asm` having spent the rest, and anything — CODE or data — assembled ANYWHERE before that `ALIGN` rides there for nothing** (`src/consolesel.asm` is the worked example). **Deleting the `ALIGN` recovers nothing**: `tiledefs.asm` aligns next and pads by the same amount — measured, 2026-08-24. Past 162 B the `ALIGN` rounds to the next page and costs 256 at a stroke. See `docs/layer-9-hud.md` DECISION 18 and `docs/layer-14-visual.md`.
 Layer 11f's front end spent bank 4's margin down again (the sixteen-row change had bought it back
 to 60 by collapsing three copies of the `t1i3` restore into one in `ReframeView` — see
 `docs/layer-9-hud.md` §6g). The build PRINTs bank 4's fuel gauge every run; the other three come

@@ -760,15 +760,16 @@ def main():
         f.write(BANNER.format(
             name='levels.asm',
             desc='16 deck maps, RLE encoded - byte-identical to the C64'))
-        f.write('\n\\ Per-deck offsets into leveldata (re-based from C64 $F249)\n')
-        f.write('.deckOffsetLo\n')
-        emit_bytes(f, [o & 0xFF for o in offs])
-        f.write('.deckOffsetHi\n')
-        emit_bytes(f, [(o >> 8) & 0xFF for o in offs])
-        for n, label in enumerate(['deckY', 'deckX', 'deckHeight',
-                                   'deckWidth', 'deckColour', 'deckDroids']):
-            f.write('.%s\n' % label)
-            emit_bytes(f, meta[n * 16:(n + 1) * 16])
+        # Layer 15 space pass: of the C64's eight per-deck tables at $F120,
+        # only deckDroids has a reader in the port. deckOffsetLo/Hi indexed
+        # the RLE stream Layer 13d deleted; deckY/X/Height/Width are the
+        # deck-plan geometry, of which bank 7 carries its own copy
+        # (sideview.asm's svDeckY/svDeckX/svDeckH/svDeckW); deckColour
+        # predates colours.asm's per-deck scheme table. 112 bytes of bank 4
+        # that nothing read. Re-emitting any of them is a one-line change.
+        f.write('\n\\ Droids per deck (C64 $F120 + 5*16).\n')
+        f.write('.deckDroids\n')
+        emit_bytes(f, meta[5 * 16:6 * 16])
         # ---- lift stops ----
         sh  = mem[LIFT_IDX2SH:LIFT_IDX2SH + LIFT_STOPS]
         lkd = mem[LIFT_POS_DECK:LIFT_POS_DECK + LIFT_STOPS]

@@ -48,6 +48,15 @@
 \ mirror record bytes 1-10 and snInstFl..snGate mirror instrument
 \ bytes 0-5, so SndCopy can walk them as base + field*2 + voice with
 \ one stride-2 self-modified store. Insert nothing inside either run.
+\ snFreqLo..snPhase+1 is 38 bytes and MUST NOT cross a page: the
+\ stride-2 self-modified store in SndCopy steps the low byte only.
+\ Everything upstream in bank 4 shifts this block whenever it changes
+\ size, so pad to the next page only when it would straddle one - at
+\ most 37 bytes, usually none. Before the Layer 15 space pass this was
+\ an unpadded ASSERT that any bank-4 edit could break (and did).
+IF HI(P%) <> HI(P% + 37)
+  SKIP 256 - (P% AND 255)
+ENDIF
 .snFreqLo  EQUB 0,0             \ C64 snd_C0/C1 — 16-bit SID frequency
 .snFreqHi  EQUB 0,0
 .snSlideLo EQUB 0,0             \ C2/C3 — added every tick, signed
