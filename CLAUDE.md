@@ -189,7 +189,7 @@ addresses from the `beebasm` output rather than from any document.** In outline:
 | SWRAM bank 7 | `PARXFER` — Layer 10's transfer minigame, Layer 8b's lift screen, the console's ship, deck-plan and droid-database pages, and Layer 11's game over. The title is NOT here any more — it is the `PARTITL` disc overlay. **5,690 B free, reserved for the droid portrait pool** |
 
 **RAM is the binding constraint. Measured from the build of 2026-08-24**, not remembered: the
-main-RAM code image ends at `&2FFE`, so **2 bytes** below `&3000`, and **bank 4 has 2 B** after
+main-RAM code image ends at `&2FFE`, so **2 bytes** below `&3000`, and **bank 4 has 3 B** after
 Layer 15 built its endgame on the space pass's 105 and then fixed the cleared-deck re-fire — any figure elsewhere claiming 2, 8, 47 or 60 is stale. The pass deleted
 112 bytes of per-deck tables that nothing read and spent 15 back on a self-healing page pad in
 `sound.asm`; Layer 15 then spent 92 of the rest on the endgame. **Main RAM went UP, 3 → 26**, because

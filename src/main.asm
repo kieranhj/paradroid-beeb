@@ -1649,8 +1649,8 @@ ENDIF                           \ 2026-08-20 it did not: the tint set before
 \ screen cannot be opened twice if a pass is ever taken twice.
   LDA shipClear
   BEQ ml_noshipclr
-  LDA #0
-  STA shipClear
+  DEC shipClear                 \ it is 1 -- DroidsUpdate INCs it, and
+                                \ the BEQ above has just tested it
   LDX #IS_SCR_CLEAR+1
   JSR InfoCall
   JMP ml_passend
@@ -2235,10 +2235,26 @@ ENDMACRO
   LDX #1
 .ih_namek
   STX shipName
+  STX pmShip                    \ the same value, and set HERE rather than
+                                \ after the call: IsShip reads it for the
+                                \ ship name and X still holds it, which is
+                                \ three bytes cheaper than reloading
 
   JSR EnterShip4                \ bank 4: _entership, ending in LoadDeck
-  LDA shipName
-  STA pmShip
+
+  \ $12A5-$12A7: AND THE PLAYER ARRIVES ON SEVEN ENERGY. The C64 does
+  \ NOT reset droidType here, so the droid captured on the last ship
+  \ comes with you -- but its energy does not. maxEnergy is left alone,
+  \ as $12A5 leaves it, so the bar reads 7 out of whatever ceiling the
+  \ droid has. $12AA stores the same 7 to droidSprNum, which has no
+  \ port meaning: the player is sprite slot 0 and drSprNum[0] is unused.
+  \
+  \ AFTER the call, not inside it: EnterShip4 ends in LoadDeck, and
+  \ DroidsInit deliberately leaves entry 0 alone (see its header), so
+  \ either side would do -- but bank 4 has three bytes and this has
+  \ five. KC 2026-08-25.
+  LDA #7
+  STA drEnergy
   LDX #IS_SCR_001+1
   JMP InfoCall                  \ re-entered, and safe: the JMP that got
                                 \ here left no frame of its own. IsArm

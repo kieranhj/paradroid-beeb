@@ -269,7 +269,7 @@ droid they captured into the next ship, at energy 7 and in the materialise mode.
 
 | region | before the layer | after |
 |---|---|---|
-| bank 4 | 105 B | **2 B** (13 before DECISION 6's fix) |
+| bank 4 | 105 B | **3 B** |
 | main RAM | 3 B | **2 B** (26 before DECISION 5 was revised) |
 | bank 7 | 314 B | **314 B** (the screen fell into `planInk`'s `ALIGN` hole) |
 | bank 5 / bank 6 | 1,033 / 4 | unchanged |
@@ -393,6 +393,54 @@ The ship clear was reached by poking `shipNumDroids` to the deck's own droid cou
    (score 0 → 975 on that deck, floor blue); leaving and returning leaves the score at **975
    unchanged** with the floor still blue and no effect. Bank 4 is down to **2 bytes**.
 
+7. **The ship reset, audited against `_entership` line by line.** KC found a new ship starting on
+   red alert, and asked what else the reset was missing. `$1289`-`$12CD`, every store:
+
+   | C64 | port | |
+   |---|---|---|
+   | `$128B`-`$1291` xSpd/ySpd = 0 | the "standing still" block | ok |
+   | `$1293` **Alert = 0** | **was missing** | **fixed** |
+   | `$1295` droidSpriteImage[0] = 0 | `SprInit` puts the player back in slot 0 | n/a |
+   | `$1298`/`$129B` droidEnergy[1], droidSprNum[1] = 0 | `DroidsInit` rebuilds the table | ok |
+   | `$129E` NextLevel | `INC shipLevel` + `NewShipDroids` | ok |
+   | `$12A1` moveMode = `$80` | `MM_MOBILE` = `&80` | ok |
+   | `$12A7` **droidEnergy[0] = 7** | **was missing** | **fixed** |
+   | `$12AA` droidSprNum[0] = 7 | player is slot 0; `drSprNum[0]` unused | n/a |
+   | `$12AF` numDeckDroids = 2 | `DroidsInit` sets `drCount` | ok |
+   | `$12B4` dType = droidType | `pmType` mirror | ok |
+   | `$12BE` deckNum random 4-7 | `DrRandom AND 3 + DECK_START_LO` | ok |
+   | `$12C2` prevDeck = `EOR $FF` | not ported; `LoadDeck` is unconditional | documented |
+   | `$12C4` FindStrings, `$12CA` ClearSubGameData | the port scans; it has no string index | n/a |
+   | `$12CD` BuildLevel | `LoadDeck` | ok |
+
+   **Both misses have the same cause**: `CombatInit` does them, and `CombatInit` is above the T5
+   split. It zeroes `alertLvl` and sets `drEnergy` to `CB_ENERGY_FULL` on a new game — so a *ship*
+   transition, which must not call it (it would wipe the score), inherited the last deck's alert and
+   the last ship's energy.
+
+   Two names in the annotated listing needed checking rather than trusting. `droidSprNum` looked
+   like it might be `maxEnergy`, since `$12A5` sets it and `droidEnergy` to 7 together — `$158F`
+   shows it is not, and `maxEnergy` is genuinely untouched here, so the player arrives on 7 against
+   whatever ceiling the droid they are riding has. And `ClearSubGameData` sounds like it clears
+   transfer state; `$377E` shows it only zeroes the `FindStrings` index, which the port has no
+   equivalent of.
+
+   **`droidType` is NOT reset**, on the C64 or here: the droid captured on the last ship comes with
+   you, at 7 energy. KC 2026-08-25 confirmed porting `$12A7` as it stands.
+
+   **Where they live.** The alert reset joined `EnterShip4`'s existing A = 0 run in bank 4 (three
+   bytes); the energy went into `InfoHigh`'s `ih_ship` in main RAM, because bank 4 had three bytes
+   left and it needed five. `DroidsInit` deliberately leaves entry 0 alone, so after the call is as
+   correct as inside it.
+
+   **Paid for by two provable rewrites**, both of a `LDA #n : STA` where the flag's value was
+   already known from the branch immediately above: `dbgdeck.asm`'s two latch sets became `INC`
+   (+4 bank 4), and the main loop's `shipClear` clear became `DEC` (+2 main RAM).
+
+   **Verified**: `alertLvl` forced to `&C0` and the ship cleared reads **0** on the new ship;
+   energy 62 before, **7** after, with `maxEnergy` unchanged at 58; `shipLevel` 2 and a fresh
+   119-droid roster.
+
 ---
 
 ## 7. Open
@@ -412,6 +460,6 @@ The ship clear was reached by poking `shipNumDroids` to the deck's own droid cou
   tick up on the panel. Faithful, and possibly too slow to read as a reward. KC's ear.
 - **The deck payout's `$17` and the screen's `$B`** are posted back to back, as `$17E9` and `$1282`
   are. Not yet listened to.
-- **Bank 4 has 2 bytes.** The next thing to touch it needs room found first — read `CLAUDE.md`'s padding note, and note that `DEBUG_KILL` off returns about 45.
+- **Bank 4 has 3 bytes and main RAM has 2.** The next thing to touch it needs room found first — read `CLAUDE.md`'s padding note, and note that `DEBUG_KILL` off returns about 45.
 - **A whole ship has never been cleared by playing.** Every run above forced the count; the honest
   end-to-end test is sixteen decks of real play.

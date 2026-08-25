@@ -325,20 +325,13 @@ ENDIF
 \ screen is dismissed -- IS_ACT_NEWSHIP. GameStart still falls
 \ straight through, which is $1242's own behaviour.
 .EnterShip4
-
-\ ---- the eighth ship is the last one -----------------------
-\ [DECISION 5] The C64 never ends: NextLevel caps shipLevel at 8, the
-\ console wraps the name at (shipLevel - 1) AND 7, and the player
-\ clears ship after ship until they die. KC chose an ENDING instead --
-\ eight ships cleared is a win -- so that is a deviation, and the only
-\ one in the layer.
-\
-\ THE TEST IS NOT HERE. It is in InfoHigh, main.asm: both things it
-\ does on the last ship -- raise hsArmed and go to GoTitle -- are main
-\ RAM, and InfoHigh already holds the JMP GoTitle it would need. So
-\ this routine is only ever reached when there IS a next ship, and
-\ shipLevel therefore runs 1 to 8 and needs no cap of its own.
-
+\ ---- $15F1: the next ship ---------------------------------
+\ NextLevel INCs shipLevel and DECs it straight back at $15F9 if it
+\ reached 9, so the level -- and the difficulty with it -- stops at 8
+\ and the game never ends. THE CAP IS NOT HERE: InfoHigh applies it
+\ before calling, because this bank has no room and NewShipDroids
+\ below reads shipLevel. The eight ship NAMES keep cycling under it,
+\ on shipName. Layer-15 DECISION 5.
   INC shipLevel                 \ $129E NextLevel's own increment
 
   JSR NewShipDroids             \ $129E: the ship's complement, generated
@@ -364,6 +357,13 @@ ENDIF
   STA lvCommit
   STA lvLoad
   STA overPhase                 \ and the game over that brought us here
+  STA alertLvl                  \ $1293: THE ALERT COMES DOWN WITH THE
+                                \ SHIP. It is CombatInit that zeroes it on
+                                \ a new game, and CombatInit is above the
+                                \ split -- so without this a ship entered
+                                \ after clearing one began at whatever
+                                \ alert the last deck ended on, which is
+                                \ red. KC 2026-08-25
 
 \ ---- and no key is half-pressed ----------------------------
 \ Every edge latch in the game, because the restart itself is a keypress

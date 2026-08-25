@@ -123,7 +123,7 @@ staged on the panel and copied down last — see the boot code and `layer-11-sou
 
 ## SWRAM bank 4 — `PARADAT`
 
-`&8000–&BFFE`, **2 free** (2026-08-25, after Layer 15's endgame spent the space pass's 105 and DECISION 6's cleared-deck fix took the rest — the
+`&8000–&BFFD`, **3 free** (2026-08-25, after Layer 15's endgame spent the space pass's 105 and DECISION 6's cleared-deck fix took the rest — the
 deck and ship payouts, the `shipClear` flag, the `GameStart`/`EnterShip4` split, and `DEBUG_DECK`'s
 69-byte arm moved in from main RAM. The space pass itself — see §"Layer 15 space pass" below.
 Before it, 8. It was 3 on 2026-08-21, layer-11e stage 3, when this was THE FULLEST REGION IN THE MACHINE:

@@ -15,12 +15,12 @@
 \ (see CLAUDE.md's padding note). So this is assembled AFTER the align,
 \ where it simply spends the bank's own free space.
 \
-\ NOTHING ABOUT THE ARM CHANGED. It is the same instructions in the same
-\ order, and it works from here because both halves of what it touches
-\ already reach across: keydown is main RAM, which bank code may call
-\ freely, and LoadDeck is this bank's -- the old site called it from
-\ main RAM only because SWRAM_DATA is the main loop's resting state.
-\
+\ ONE THING ABOUT THE ARM CHANGED, and only to pay for a bug fix:
+\ the two `LDA #1 : STA prevUp/Dn` are `INC` now, which is three
+\ bytes less each and provably identical -- the BNE immediately
+\ above each one has just tested that the latch is zero. The four
+\ bytes went to EnterShip4's alert reset, which had nowhere else to
+\ come from. Everything else is the arm as it stood in the main loop.
 \ WHERE IT IS CALLED FROM is unchanged too: the same point in the pass,
 \ after AnimPaint and inside the window the level draw just used.
 
@@ -45,7 +45,7 @@ IF DEBUG_DECK
   BNE dd_upOff
   LDA prevUp
   BNE dd_notUp
-  LDA #1 : STA prevUp
+  INC prevUp                    \ it is 0 -- the BNE above tested it
   LDA deck
   BEQ dd_notUp
   DEC deck
@@ -60,7 +60,7 @@ IF DEBUG_DECK
   BNE dd_dnOff
   LDA prevDn
   BNE dd_notDn
-  LDA #1 : STA prevDn
+  INC prevDn                    \ likewise
   LDA deck
   CMP #NUM_DECKS-1
   BCS dd_notDn
