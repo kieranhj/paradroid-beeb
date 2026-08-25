@@ -1173,30 +1173,11 @@ ORG &1100
   JSR OSCLI                     \ The boot depacker, loaded once at
                                 \ DEPK_ADDR and reused for all four banks
 
-  LDX #LO(loadcmd)              \ PARADAT's ZX0 stream lands at DEPK_STREAM
-  LDY #HI(loadcmd)              \ and is unpacked straight into SWRAM; the
-  JSR OSCLI                     \ staging area is free after
-  LDA #SWRAM_DATA
-  JSR UnpackBankIn
-
-  LDX #LO(loadspr)              \ and again for the sprite bank, staged over
-  LDY #HI(loadspr)              \ the same DEPK_STREAM. The filing system
-  JSR OSCLI                     \ pages DFS in and out around its own call
-  LDA #SWRAM_SPR                \ and restores from ROMSHAD, which
-  JSR UnpackBankIn              \ UnpackBankIn has kept honest, so the
-                                \ second load is no different from the first
-
-  LDX #LO(loadspr2)             \ and a third: shifts 2 and 3 px live in a
-  LDY #HI(loadspr2)             \ bank of their own, because four compiled
-  JSR OSCLI                     \ shifts do not fit in one
-  LDA #SWRAM_SPR2
-  JSR UnpackBankIn
-
-  LDX #LO(loadxfer)             \ and a fourth bank: the transfer minigame,
-  LDY #HI(loadxfer)             \ staged through DEPK_STREAM like the others
-  JSR OSCLI
-  LDA #SWRAM_XFER
-  JSR UnpackBankIn
+  JSR BootBanks                 \ load-and-unpack all four banks. The loop
+                                \ rides in the PARDEPK overlay itself (RAM
+                                \ pass 3) — it only runs while the overlay
+                                \ it JSRs is resident, so it need not spend
+                                \ the code image
 
 \ ---- the title, and everything that rebuilds after it ------
 \ TitleSeq is shared with the game-over seam (GoTitle): load PARTITL,
@@ -1737,20 +1718,11 @@ ENDIF                           \ other close: no band may outlive a pass
   JSR WaitNextPass
   JMP mainloop
 
-.loaddepk
-  EQUS "LOAD PARDEPK"
-  EQUB 13
-.loadcmd
-  EQUS "LOAD PARADAT"
-  EQUB 13
-.loadspr
-  EQUS "LOAD PARASPR"
-  EQUB 13
-.loadspr2
-  EQUS "LOAD PARSPR2"
-  EQUB 13
-.loadxfer
-  EQUS "LOAD PARXFER"
+.loaddepk                       \ loaddepk and loadspr stay HERE: the
+  EQUS "LOAD PARDEPK"           \ briefing exit OSCLIs both with the
+  EQUB 13                       \ overlay not yet / just loaded. The other
+.loadspr                        \ three bank strings ride in PARDEPK
+  EQUS "LOAD PARASPR"           \ beside BootBanks (RAM pass 3)
   EQUB 13
 .loadfnt
   EQUS "LOAD PARAFNT"
@@ -1762,29 +1734,9 @@ ENDIF                           \ other close: no band may outlive a pass
   EQUS "LOAD PARTITL"
   EQUB 13
 
-\ ============================================================
-\ UnpackBankIn — fill a sideways RAM bank from its ZX0 stream
-\ ============================================================
-\ The four bank files ship ZX0-compressed and *LOAD at DEPK_STREAM
-\ (a catalogue address tools/make_disc.py writes). They cannot be
-\ loaded straight into the bank even uncompressed: while the filing
-\ system is working, the MOS has the DFS ROM paged in at &8000, so
-\ the bytes would land in the ROM socket and be discarded. A selects
-\ the bank; the PARDEPK overlay at DEPK_ADDR (loaded just before, and
-\ resident until PARTITL lands on it) unpacks DEPK_STREAM -> &8000.
-\ Boot-only, before InstallIrq: the MOS IRQ touches no bank.
-\
-\ The data bank stays selected from here on. Every character drawn
-\ reads `tiledefs` through it, so it cannot be paged out during play.
-\ (`charRemap` used to be read every frame too; it is now folded into
-\ CHAR_PTR_LO/HI at startup and never touched again.) That displaces
-\ BASIC, which we
-\ never return to, and not DFS, which lives in its own socket and
-\ which the MOS pages in and back out around each of its own calls.
-.UnpackBankIn
-  STA ROMSHAD                   \ both, always — see the note at the top
-  STA ROMSEL
-  JMP DEPK_ADDR                 \ its RTS returns to our caller
+\ UnpackBankIn and the boot's bank loop live in the PARDEPK overlay
+\ now (RAM pass 3) — they only ever run with it resident. The story of
+\ why the banks stage through DEPK_STREAM moved with them.
 
 \ PageCopyAt — the staging copy: X = pages, swSrc and swDst set.
 .PageCopyAt
@@ -3238,6 +3190,67 @@ ORG DEPK_ADDR
   LDA #LO(SWRAM_BASE)  : STA mapptr
   LDA #HI(SWRAM_BASE)  : STA mapptr+1
   ZX0_DEPACKER
+
+\ ---- UnpackBankIn — fill a sideways RAM bank from its stream ----
+\ The four bank files ship ZX0-compressed and *LOAD at DEPK_STREAM
+\ (a catalogue address tools/make_disc.py writes). They cannot be
+\ loaded straight into the bank even uncompressed: while the filing
+\ system is working, the MOS has the DFS ROM paged in at &8000, so
+\ the bytes would land in the ROM socket and be discarded. A selects
+\ the bank; the depacker above unpacks DEPK_STREAM -> &8000.
+\
+\ IN THIS OVERLAY, not the code image (RAM pass 3): every caller runs
+\ with it resident — BootBanks below, and the briefing exit, which
+\ OSCLIs loaddepk again before its PARASPR reload. Before InstallIrq
+\ on both paths: the MOS IRQ touches no bank.
+\
+\ The data bank stays selected from boot on. Every character drawn
+\ reads `tiledefs` through it, so it cannot be paged out during play.
+\ That displaces BASIC, which we never return to, and not DFS, which
+\ lives in its own socket and which the MOS pages in and back out
+\ around each of its own calls.
+.UnpackBankIn
+  STA ROMSHAD                   \ both, always — PAGEBANK's rule
+  STA ROMSEL
+  JMP DEPK_ADDR                 \ its RTS returns to our caller
+
+\ ---- BootBanks — .start's load-and-unpack loop, all four banks ----
+\ PARADAT's stream lands at DEPK_STREAM and is unpacked straight into
+\ SWRAM; the staging area is free again for the next. The filing
+\ system pages DFS in and out around each call and restores from
+\ ROMSHAD, which UnpackBankIn has kept honest, so each load is no
+\ different from the first. loadspr is main RAM's (the briefing exit
+\ shares it); the other two strings are nobody else's and sit here.
+.BootBanks
+  LDX #LO(d_loadcmd)
+  LDY #HI(d_loadcmd)
+  JSR OSCLI
+  LDA #SWRAM_DATA
+  JSR UnpackBankIn
+  LDX #LO(loadspr)
+  LDY #HI(loadspr)
+  JSR OSCLI
+  LDA #SWRAM_SPR
+  JSR UnpackBankIn
+  LDX #LO(d_loadspr2)
+  LDY #HI(d_loadspr2)
+  JSR OSCLI
+  LDA #SWRAM_SPR2
+  JSR UnpackBankIn
+  LDX #LO(d_loadxfer)
+  LDY #HI(d_loadxfer)
+  JSR OSCLI
+  LDA #SWRAM_XFER
+  JMP UnpackBankIn              \ tail call; its RTS is BootBanks' own
+.d_loadcmd
+  EQUS "LOAD PARADAT"
+  EQUB 13
+.d_loadspr2
+  EQUS "LOAD PARSPR2"
+  EQUB 13
+.d_loadxfer
+  EQUS "LOAD PARXFER"
+  EQUB 13
 .depk_end
 ASSERT depk_end <= DEPK_STREAM
 SAVE "PARDEPK", depk_start, depk_end, DEPK_ADDR, DEPK_ADDR
