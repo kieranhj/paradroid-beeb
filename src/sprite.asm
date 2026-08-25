@@ -887,8 +887,7 @@ ENDMACRO
 .srt_skip
   DEX
   BPL srt_loop
-  PAGEBANK SWRAM_DATA
-  RTS
+  JMP PgData     \ tail: its RTS is ours
 
 .SprDrawAll
   LDA #&FF
@@ -912,8 +911,7 @@ ENDMACRO
   INX
   CPX #SPR_SLOTS
   BNE sdt_loop
-  PAGEBANK SWRAM_DATA
-  RTS
+  JMP PgData     \ tail: its RTS is ours
 
 \ ============================================================
 \ SprSplitOK — the bridge into bank 6
@@ -931,9 +929,9 @@ ENDMACRO
 \ The answer comes back in sprSplit rather than in A, because PAGEBANK
 \ writes A on the way out.
 .SprSplitOK
-  PAGEBANK SWRAM_SPR2
+  JSR PgSpr2   
   JSR SprSplitDecide
-  PAGEBANK SWRAM_DATA
+  JSR PgData   
   LDA sprSplit
   RTS
 

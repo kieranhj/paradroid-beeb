@@ -1738,6 +1738,33 @@ ENDIF                           \ other close: no band may outlive a pass
 \ now (RAM pass 3) — they only ever run with it resident. The story of
 \ why the banks stage through DEPK_STREAM moved with them.
 
+\ ============================================================
+\ PgData / PgSpr / PgSpr2 / PgXfer — PAGEBANK as a subroutine
+\ ============================================================
+\ RAM pass 5: the 7-byte PAGEBANK expansion appeared ~36 times in the
+\ code image and 13 more in PARBRF; a JSR is 3. The pair of stores
+\ stays adjacent and shadow-first inside the helper, so the IRQ
+\ contract PAGEBANK carries is preserved exactly — between the JSR and
+\ the LDA both ROMSHAD and ROMSEL still name the OLD bank, which is
+\ consistent, and strictly safer than the mid-pair window.
+\
+\ NOT used by PAGESPRBANK (per-slot, its 16-cycle budget is real), not
+\ inside SprFetchRow (~64 calls a pass in the saturated blit window),
+\ and not in the low overlay or the IRQ. Everything converted is
+\ transition code or a once-per-pass tick: ~45 cycles a pass all told.
+.PgData
+  PAGEBANK SWRAM_DATA
+  RTS
+.PgSpr
+  PAGEBANK SWRAM_SPR
+  RTS
+.PgSpr2
+  PAGEBANK SWRAM_SPR2
+  RTS
+.PgXfer
+  PAGEBANK SWRAM_XFER
+  RTS
+
 \ PageCopyAt — the staging copy: X = pages, swSrc and swDst set.
 .PageCopyAt
 .pdi_page
@@ -1797,7 +1824,7 @@ DFSWS2_LEN  = &0DF0 - &0D60     \ 144 bytes
 DFSWS_ADDR  = &0E00
 DFSWS_PAGES = 3                 \ &0E00-&10FF
 .SaveDfsWs
-  PAGEBANK SWRAM_SPR2
+  JSR PgSpr2   
   LDY #0
 .sdw_lo
   LDA DFSWS2_ADDR,Y
@@ -1812,7 +1839,7 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
   BNE dws_copy                  \ always: the HI is never zero
 
 .RestoreDfsWs
-  PAGEBANK SWRAM_SPR2
+  JSR PgSpr2   
   LDY #0
 .rdw_lo
   LDA dfsSave,Y
@@ -1827,8 +1854,7 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
 .dws_copy
   LDX #DFSWS_PAGES
   JSR PageCopyAt
-  PAGEBANK SWRAM_DATA
-  RTS
+  JMP PgData     \ tail: its RTS is ours
 
 \ ============================================================
 \ Layer 9 lives in BANK 6 and cannot see bank 4 — the bridge
@@ -1866,38 +1892,38 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
 \ shows; drType came back for the console's "Unit type 001" line, which
 \ ShowRobotType ($3149) indexes DCent_t and DNum_t with. drCount and
 \ shipLevel are the console's deck and ship lines.
-MACRO PNMIRROR
+\ A subroutine, not a macro (RAM pass 5): four 18-byte expansions were
+\ 72 B of the code image, and only PanelTick's runs per pass (+12 cyc).
+\ MUST be called with SWRAM_DATA paged — drType and friends are bank 4.
+.PnMirror
   LDA drType   : STA pmType
   LDA drCount  : STA pmCount
   LDA shipName : STA pmShip     \ the NAME, not the level: shipLevel
-                                \ stops at 8 and shipName keeps cycling
-ENDMACRO
+  RTS                           \ stops at 8 and shipName keeps cycling
 
 .PanelTick
-  PNMIRROR
-  PAGEBANK SWRAM_SPR2
+  JSR PnMirror
+  JSR PgSpr2   
   JSR PanelUpdate
-  PAGEBANK SWRAM_DATA
-  RTS
+  JMP PgData     \ tail: its RTS is ours
 
 .PanelSetup
-  PNMIRROR
-  PAGEBANK SWRAM_SPR2
+  JSR PnMirror
+  JSR PgSpr2   
   JSR PanelInit
-  PAGEBANK SWRAM_DATA
-  RTS
+  JMP PgData     \ tail: its RTS is ours
 
 .ConsoleEnter
-  PNMIRROR
+  JSR PnMirror
   JSR ConMenuInit4              \ bank 4 — FIRST, and the resting bank, so
                                 \ no paging. It ends in SetTextPal, and the
                                 \ point of the order is that the palette is
                                 \ in force BEFORE ConsoleOpen draws on it.
                                 \ It only writes flags, so nothing here
                                 \ depends on the draw having happened
-  PAGEBANK SWRAM_SPR2
+  JSR PgSpr2   
   JSR ConsoleOpen
-  PAGEBANK SWRAM_DATA
+  JSR PgData   
   RTS                           \ no recolour tail: ConMenuInit4 above
                                 \ set the ink table before the draw
                                 \ had no room for any of this: 23 B free
@@ -1925,9 +1951,9 @@ ENDMACRO
   CMP #1
   BNE ct_trydeck
   JSR ConShipEnter4             \ bank 4: the side view's palette in
-  PAGEBANK SWRAM_XFER
+  JSR PgXfer   
   JSR LvShip7                   \ bank 7: the cross-section, deck lit
-  PAGEBANK SWRAM_DATA
+  JSR PgData   
   LDA #2
   STA conShipReq
   RTS
@@ -1935,9 +1961,9 @@ ENDMACRO
   LDA conDeckReq
   CMP #1
   BNE ct_noship
-  PAGEBANK SWRAM_XFER
+  JSR PgXfer   
   JSR ConDeck7                  \ bank 7: the plan, and the white marker
-  PAGEBANK SWRAM_DATA
+  JSR PgData   
   LDA #2
   STA conDeckReq
   RTS                           \ the plan's palette is NOT set here any
@@ -1950,9 +1976,9 @@ ENDMACRO
 \ shim; DbTick's own conDbReq = 1 arm does the initialising, and 0 means
 \ it has left, which lands on the pages' shared return tail.
 .ct_db
-  PAGEBANK SWRAM_XFER
+  JSR PgXfer   
   JSR DbTick                    \ bank 7: keys, state and draw together
-  PAGEBANK SWRAM_DATA
+  JSR PgData   
   LDA conDbReq
   BEQ ct_back
   RTS
@@ -1967,16 +1993,15 @@ ENDMACRO
   LDA conDeckReq
   BNE ct_x
 .ct_back
-  PNMIRROR                      \ and the console main screen again
+  JSR PnMirror                      \ and the console main screen again
   JSR ConIconInk4               \ bank 4, and it is the RESTING bank
                                 \ here: the icon colours BEFORE the
                                 \ draw, so ConIcons plots them right
                                 \ first time. Selection kept, as the
                                 \ C64 keeps it
-  PAGEBANK SWRAM_SPR2
+  JSR PgSpr2   
   JSR ConDraw
-  PAGEBANK SWRAM_DATA
-  RTS
+  JMP PgData     \ tail: its RTS is ours
 .ct_noship
   LDA conActive
   BNE ct_x
@@ -2026,10 +2051,9 @@ ENDMACRO
 
 .XferEnter
   JSR XferEnter4                \ bank 4: gather, flatten, palette, t1i3
-  PAGEBANK SWRAM_XFER
+  JSR PgXfer   
   JSR XfStart
-  PAGEBANK SWRAM_DATA
-  RTS
+  JMP PgData     \ tail: its RTS is ours
 
 \ ============================================================
 \ GoStart7 / GoTick7 — the game-over shims
@@ -2099,7 +2123,7 @@ ENDMACRO
                                 \ GoTitle needs it back for its loads
   JSR PageLowIn
 
-  PAGEBANK SWRAM_DATA           \ the data bank is the resting state
+  JSR PgData              \ the data bank is the resting state
   JSR PageTabsIn                \ and, with it up, the four droid tables the
                                 \ panel needs and cannot reach from bank 6
 
@@ -2235,17 +2259,16 @@ ENDMACRO
                                 \ SWRAM_DATA paged
 
 .GoStart7
-  PAGEBANK SWRAM_XFER
+  JSR PgXfer   
   JSR GoStart
-  PAGEBANK SWRAM_DATA
-  RTS
+  JMP PgData     \ tail: its RTS is ours
 
 .GoTick7
   JSR DrRandom : STA overRnd0
   JSR DrRandom : STA overRnd1
-  PAGEBANK SWRAM_XFER
+  JSR PgXfer   
   JSR GoTick
-  PAGEBANK SWRAM_DATA
+  JSR PgData   
   LDA overDone
   BEQ gt_x
   LDA #0
@@ -2265,9 +2288,9 @@ ENDMACRO
   RTS
 
 .XferTick
-  PAGEBANK SWRAM_XFER
+  JSR PgXfer   
   JSR XfTick
-  PAGEBANK SWRAM_DATA
+  JSR PgData   
   LDA xfmDone
   BEQ xt_x
   JSR XferExit4                 \ bank 4: the outcome, and ReframeView

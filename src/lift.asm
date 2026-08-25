@@ -114,16 +114,15 @@ LIFT_LAST  = 30                 \ and so is 31
 \ PanelSetup reach bank 6, so both belong to main RAM.
 .LiftViewEnter
   JSR LvEnter4                  \ bank 4: flatten, palette, t1i3, mirrors
-  PAGEBANK SWRAM_XFER
+  JSR PgXfer   
   JSR LvStart7
-  PAGEBANK SWRAM_DATA
-  RTS
+  JMP PgData     \ tail: its RTS is ours
 
 .LiftViewTick
   JSR LvTick4                   \ bank 4: keys, step, the fire edge
-  PAGEBANK SWRAM_XFER
+  JSR PgXfer   
   JSR LvTick7                   \ bank 7: move the light, if it moved
-  PAGEBANK SWRAM_DATA
+  JSR PgData   
   LDA lvCommit
   BEQ lvt_x
   JSR LvExit4                   \ bank 4: palette and t1i3 back, deck set

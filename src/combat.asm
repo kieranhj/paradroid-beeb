@@ -450,13 +450,13 @@ MM_DELAY    = 8                 \ DoMobile ($3835) loads 8
 \ can flip between two bytes instead of looking anything up. Both are in
 \ BANK 5 with the artwork, so page it in and the data bank back out —
 \ once per shot, not per pass.
-  PAGEBANK SWRAM_SPR
+  JSR PgSpr   
   LDA efBullet,Y
   STA plyFireF0
   TAY
   LDA efAlt,Y
   STA plyFireF1
-  PAGEBANK SWRAM_DATA
+  JSR PgData   
 
 \ BulletDisplacement_t ($6E58) is BOTH the spawn offset and the speed:
 \ $33FB stores it as plyFireSpdY and then adds it to the position once.

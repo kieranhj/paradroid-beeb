@@ -57,7 +57,7 @@ BR_EXIT_OFF   = 1               \ off the end of the last page: the title
   LDX #LO(brLoadMan)
   LDY #HI(brLoadMan)
   JSR OSCLI
-  PAGEBANK SWRAM_SPR
+  JSR PgSpr   
   LDA #LO(DEPK_STREAM) : STA swSrc
   LDA #HI(DEPK_STREAM) : STA swSrc+1
   LDA #LO(SWRAM_BASE)  : STA swDst
@@ -65,8 +65,7 @@ BR_EXIT_OFF   = 1               \ off the end of the last page: the title
   LDX #PARMAN_PAGES
   JSR PageCopyAt
   JSR BrPatchScores
-  PAGEBANK SWRAM_DATA
-  RTS
+  JMP PgData     \ tail: its RTS is ours
 
 .brLoadMan
   EQUS "LOAD PARMAN"
@@ -91,14 +90,14 @@ BR_EXIT_OFF   = 1               \ off the end of the last page: the title
 \ ceiling at &0800 — see briefman.asm's header for what the page above
 \ costs.
 .BrPatchScores
-  PAGEBANK SWRAM_XFER
+  JSR PgXfer   
   LDX #13
 .bps_copy
   LDA hsHigh,X
   STA brSc,X
   DEX
   BPL bps_copy
-  PAGEBANK SWRAM_SPR
+  JSR PgSpr   
   JMP BmPatch                   \ bank 5's, now paged — and its RTS
 
 \ ============================================================
@@ -222,11 +221,11 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
 \ no deck has ever loaded, and on the game-over path the low overlay's
 \ staging has been over the panel since ts_loads. The printer is
 \ bank 6's, so it gets its page before the text bank moves in.
-  PAGEBANK SWRAM_SPR2
+  JSR PgSpr2   
   JSR PanelInit
   JSR PnBriefing
 
-  PAGEBANK SWRAM_SPR
+  JSR PgSpr   
 
 \ ---- the chatter starts, $115B ------------------------------
 \ The C64 writes $11 here; this port has no $11, because its chatter
@@ -332,11 +331,11 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
   BCS br_out
   JMP br_page
 .br_out
-  PAGEBANK SWRAM_DATA
+  JSR PgData   
   LDA #BR_EXIT_OFF
   RTS
 .br_fire
-  PAGEBANK SWRAM_DATA
+  JSR PgData   
   LDA #BR_EXIT_FIRE
   RTS
 
@@ -364,16 +363,16 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
 \ band copy (BmBand) and the geometry are bank 5's, briefman.asm —
 \ this overlay's &0800 ceiling again.
 .BrPortrait
-  PAGEBANK SWRAM_DATA           \ the LFSR lives in bank 4
+  JSR PgData              \ the LFSR lives in bank 4
   JSR DrRandom
   AND #&0F                      \ $11A3's own mask
   PHA
-  PAGEBANK SWRAM_XFER           \ the pool and its state are bank 7's
+  JSR PgXfer              \ the pool and its state are bank 7's
   LDA #LO(BUF_BASE + BR_PO_OFS) : STA poBase
   LDA #HI(BUF_BASE + BR_PO_OFS) : STA poBase+1
   PLA
   JSR PoDraw
-  PAGEBANK SWRAM_SPR            \ the text bank back — the resting state
+  JSR PgSpr               \ the text bank back — the resting state
   JMP BmSnap                    \ and its RTS
 
 \ ---- one scanline down the canvas ---------------------------
@@ -463,7 +462,7 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
   JSR BmChatter
   BEQ brch_x                    \ 0 nothing, $FF nudge, else the blip
   PHA
-  PAGEBANK SWRAM_DATA
+  JSR PgData   
   PLA
   BMI brch_nudge
 
@@ -483,7 +482,7 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
   ADC snSlideHi                 \ voice 1's slide hi = the C64's $C3
   STA snSlideHi
 .BrChBack
-  PAGEBANK SWRAM_SPR
+  JSR PgSpr   
 .brch_x
   RTS
 
