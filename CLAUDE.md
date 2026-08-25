@@ -192,9 +192,11 @@ addresses from the `beebasm` output rather than from any document.** In outline:
 main-RAM code image ends at `&2FFE`, so **2 bytes** below `&3000`, and **bank 4 has 3 B** after
 Layer 15 built its endgame on the space pass's 105 and then fixed the cleared-deck re-fire — any figure elsewhere claiming 2, 8, 47 or 60 is stale. The pass deleted
 112 bytes of per-deck tables that nothing read and spent 15 back on a self-healing page pad in
-`sound.asm`; Layer 15 then spent 92 of the rest on the endgame. **Main RAM went UP, 3 → 26**, because
-`DEBUG_DECK`'s 69-byte arm moved to bank 4 (`src/dbgdeck.asm`, layer-15 DECISION 1) the way
-`dbgkill.asm` did. `docs/memory-map.md` §"Layer 15 space pass" has the detail, and the pad means a
+`sound.asm`; Layer 15 then spent 92 of the rest on the endgame. `DEBUG_DECK`'s 69-byte arm moved
+to bank 4 (`src/dbgdeck.asm`, layer-15 DECISION 1) the way `dbgkill.asm` did.
+**A "Main RAM went UP, 3 → 26" once stood here and was WRONG** — it contradicted the `&2FFE`
+two lines above it, and re-measured on 2026-08-25 the image still ends at `&2FFE`. **Main RAM
+has 2 bytes.** Take it from `PRINT "code"` in the build output, never from this paragraph. `docs/memory-map.md` §"Layer 15 space pass" has the detail, and the pad means a
 future bank-4 edit can move the gauge by up to 37 bytes on its own — read it, do not infer it. Both moved that day: the title's random boot deck
 gave main RAM 4 back (`docs/layer-14-visual.md` DECISION 5) and the console's icon selection gave
 bank 4 46 (`docs/layer-9-hud.md` DECISION 18). **Main RAM is by a wide margin the tightest thing in the
