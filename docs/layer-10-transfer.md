@@ -185,12 +185,15 @@ is `WinningColor == LeftColor`.
       the countdown still ticked 99 -> 35 over 254 frames (256 predicted), and the game
       ran to its verdict clean. Re-measured at the shipped 160 ms: a 120 ms tap moves
       **1** row, a 200 ms hold moves **2** — the boundary sits where the constant says.
-    - **The cost, and it is out of proportion: 256 bytes of bank 7.** The filter is 54
-      bytes, but `plandata.asm`'s `ALIGN &100` had only 27 bytes of padding spare, so the
-      addition rolled `planInk` to the next page. **Bank 7 went 314 B free -> 58 B**
-      (`xfer_end` = `&BFC6`). Recoverable by assembling the routine *behind* the ALIGN —
-      the `consolesel.asm`-in-bank-4 trick — at the price of splitting it away from
-      `XfGetMove`. Left where it reads correctly for now; see the open item below.
+    - **The cost is 54 bytes, and the first telling of this said 256.** The tail figure
+      does move `314 B -> 58 B` (`xfer_end` = `&BFC6`), because `plandata.asm`'s
+      `ALIGN &100` had 26 bytes spare and the addition rolled `planInk` to the next page.
+      But **the padding is usable space**, exactly as bank 4's is: anything assembled
+      before `INCLUDE "src/data/plandata.asm"` rides in it for nothing, and there are now
+      **228 B of it**. Real free space in bank 7 is 228 + 58 = **286 B**, and the filter
+      took 54 of the 340 that were there before it. The correction matters because the
+      256 figure was used to argue that DECISION 14's droid icons could not be afforded;
+      on the true numbers they very nearly can.
     - **Not changed, deliberately**: the select countdown, which is the one real timing
       deviation found. `SubGameSelectSide`'s `_14` loop is paced by `DelayScore(80)` —
       ~103,000 cycles, ~105 ms a tick before badline steal — so the original takes ~11 s
@@ -198,10 +201,70 @@ is `WinningColor == LeftColor`.
       Fire confirms immediately either way, so it only shows if the player dithers. Fixing
       it needs a mod-3 counter rather than the present `AND #1`. KC's call, left alone.
 
-**Open item from 13:** whether to buy bank 7's 256 bytes back by moving the repeat filter
-behind `plandata.asm`'s `ALIGN`. Bank 7's spare is nominally reserved for the droid portrait
-pool, and main RAM — not bank 7 — is the project's binding constraint, so this was not done
-unilaterally.
+**Open item from 13 — CLOSED, and it was never worth doing.** Moving the repeat filter
+behind `plandata.asm`'s `ALIGN` would have restored the *tail* figure while costing its 46
+bytes 1:1 out of the tail, leaving real free space unchanged at 286 B and putting the routine
+somewhere it reads worse. It stays where it is. What the exercise did produce is the bank-7
+map below, which is the thing worth keeping.
+
+## 6. Bank 7's map, measured 2026-08-25
+
+| chunk | start | size |
+|---|---|---|
+| `xfer.asm` | `&8000` | 3,997 |
+| `xferboard.asm` | `&8F9D` | 1,033 -> **876** (see below) |
+| `liftview.asm` | `&93A6` | 867 |
+| `condeck.asm` | `&9709` | 361 |
+| `condb.asm` | `&9872` | 1,559 |
+| `portraits.asm` | `&9E89` | **4,736** |
+| `portrait.asm` | `&B109` | 559 |
+| `infoscr.asm` | `&B338` | 534 |
+| `hstable.asm` | `&B54E` | 15 |
+| `droidinfo.asm` | `&B55D` | 711 |
+| `plandata.asm` head | `&B824` | 248 |
+| **`ALIGN` padding** | `&B91C` | **228 — free to anything before the plandata include** |
+| `planInk` onwards | `&BA00` | 739 |
+| `sideview.asm` | `&BBFF` | 966 |
+| tail | `&BFC6` | **58 — free to anything** |
+
+The portrait pool is 63 images at 64 B, already deduplicated by `export_portraits.py`, so
+there is no cheap win in the biggest chunk.
+
+### The glyph pool — 154 B found, 2026-08-25
+
+`xferboard.asm` shipped the 17 board characters three times over, once per ownership set
+(DECISION 1). **13 of those 51 cells were duplicates.** A character whose every logical-3
+pixel is *structural* is byte-identical in all three sets — which is DECISION 2 showing up in
+the data — and several others coincide pairwise. The identical-in-all-three ones are `$00`,
+`$D0`, `$D1`, `$FB` and `$FC`: the blank, the two bar caps and the central bar's two ends.
+
+`export_xfer.py` now emits one pool of the **38 distinct glyphs** plus a 51-byte `xbSlot`
+table, and `XfCellPaint` reaches the glyph through it: `xsGlyphOf` gives 0..16, `xfSetOfs`
+(a 4-byte pen -> run table, replacing `xfSetLo`/`xfSetHi`) picks the set's run, and `xbSlot`
+names the pool entry. Six more instructions, ~8 cycles a repainted cell — nothing against a
+pass with 12,000 spare — and **816 B of glyphs became 659**.
+
+| | before | after |
+|---|---|---|
+| `ALIGN` padding | 228 B | **126 B** |
+| tail | 58 B | **314 B** |
+| **real free** | **286 B** | **440 B** |
+
+**Verified, and not by the obvious method.** A straight before/after diff of the 10,240-byte
+play buffer showed 758 bytes differing — confined to the twelve wire rows in the gate
+columns, with the frame rows, buses and stock columns identical. That is the RNG moving, not
+the glyphs: `XfStart` seeds from `USR_VIA_T1CL EOR fieldCount`, and six extra instructions a
+cell shift the cycle at which it samples, so the gate placement changes. The seed makes a
+before/after diff worthless here.
+
+What proves it instead is an **independent reconstruction**: dump the shadow screen and
+colour shadow (`xsScr`/`xsCram` at `SPR_SAVE = &3E00`, *not* `&3000`), and rebuild the whole
+10,240-byte buffer on the host from `export_xfer.mode1_char` — the pre-dedup algorithm —
+through `xfPenOf`. **All 10,240 bytes matched.** The exporter also asserts by construction
+that `pool[slot[set][code]]` is the exact byte string the flat table held, for all 51 pairs.
+
+`src/data/` is gitignored and `build.ps1` does not run the exporters, so a clean checkout
+needs `python tools/export_xfer.py` before it will build.
 
 ## 4. The interfaces, for whoever touches this next
 

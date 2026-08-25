@@ -1675,8 +1675,12 @@ XF_REPLAY_PASSES = 50
   LDA xfPen
   BEQ xcp_blank                 \ pen 0: invisible, so wipe the cell
   TAY
-  LDX xfChar                    \ token -> glyph index -> set base + *16
-  LDA xsGlyphOf,X
+  LDX xfChar                    \ token -> glyph index -> pool slot -> *16
+  LDA xsGlyphOf,X               \ 0..XB_CHARS-1, unknown codes clamp to 0
+  CLC
+  ADC xfSetOfs,Y                \ Y is the pen: this set's run of xbSlot
+  TAX
+  LDA xbSlot,X                  \ -> the pool glyph the pair shares
   STA xgs
   LDA #0
   STA xgs+1
@@ -1685,8 +1689,8 @@ XF_REPLAY_PASSES = 50
   ASL xgs : ROL xgs+1
   ASL xgs : ROL xgs+1
   CLC
-  LDA xgs   : ADC xfSetLo,Y : STA xgs
-  LDA xgs+1 : ADC xfSetHi,Y : STA xgs+1
+  LDA xgs   : ADC #LO(xbPool) : STA xgs
+  LDA xgs+1 : ADC #HI(xbPool) : STA xgs+1
   LDY #15
 .xcp_copy
   LDA (xgs),Y
@@ -1733,10 +1737,16 @@ XF_REPLAY_PASSES = 50
   EQUB 0, 3, 0, 3, 3, 3, 3, 3
   EQUB 3, 3, 3, 3, 2, 3, 3, 1
 
-.xfSetLo
-  EQUB 0, LO(xbCharsPly), LO(xbCharsCpu), LO(xbChars)
-.xfSetHi
-  EQUB 0, HI(xbCharsPly), HI(xbCharsCpu), HI(xbChars)
+\ Pen -> where that set's run starts in xbSlot. The three glyph sets
+\ used to be three parallel 17-entry tables of 16-byte cells; 13 of
+\ those 51 cells were duplicates, because a character whose every
+\ logical-3 pixel is STRUCTURAL (decision 2) is identical in all
+\ three. They are one pool of 38 behind this indirection now - 157 B
+\ of bank 7, which is what paid for the droid icons. See
+\ tools/export_xfer.py, which asserts the pool reproduces every
+\ (set, code) pair byte for byte.
+.xfSetOfs
+  EQUB 0, XB_CHARS, XB_CHARS * 2, 0
 
 \ shadow row bases, C64-row-indexed (0-24; rows 0-8 are above the board
 \ and clamp to row 0, which nothing reaches) and shadow-row-indexed.
