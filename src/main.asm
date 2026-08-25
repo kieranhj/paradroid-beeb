@@ -640,10 +640,8 @@ FONTCODE_BYTES = 194            \ FontCell, its table, and DoScore
 PN_TABS     = FONTCODE_ADDR + FONTCODE_BYTES
 pnTabCent   = PN_TABS + 0
 pnTabNum    = PN_TABS + 24
-pnTabWeapon = PN_TABS + 48
-pnTabSpeed  = PN_TABS + 72
-ASSERT PN_TABS + 96 <= PANEL_ADDR
-ASSERT PN_TABS + 96 <= SPR_SAVE  \ the whole PARAFNT block sits below
+ASSERT PN_TABS + 48 <= PANEL_ADDR
+ASSERT PN_TABS + 48 <= SPR_SAVE  \ the whole PARAFNT block sits below
                                  \ the save areas now, not above the map
 
 \ ---- the panel is FOUR rows, because the C64's box is 32 scanlines ----
@@ -1885,11 +1883,11 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
 \ ============================================================
 \ panel.asm and console.asm were pushed out of bank 4 by 224 bytes and
 \ into bank 6, which is the only one with room now the font ships as its
-\ own file. Bank 6 code cannot read drCent, drNum, drWeapon, drSpeed,
-\ drCount or shipLevel, all of which are in bank 4.
+\ own file. Bank 6 code cannot read drCent, drNum, drCount or shipLevel,
+\ all of which are in bank 4.
 \
 \ So main RAM carries them across, in two pieces:
-\   the four TABLES are constant and are copied once at boot, to PN_TABS;
+\   the two TABLES are constant and are copied once at boot, to PN_TABS;
 \   the two SCALARS move, and are mirrored per pass by PanelTick below.
 \
 \ Everything else the panel and the console read is already main RAM —
@@ -1903,8 +1901,6 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
 .pti_loop
   LDA drCent,X   : STA pnTabCent,X
   LDA drNum,X    : STA pnTabNum,X
-  LDA drWeapon,X : STA pnTabWeapon,X
-  LDA drSpeed,X  : STA pnTabSpeed,X
   DEX
   BPL pti_loop
   RTS
