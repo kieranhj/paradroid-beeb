@@ -617,8 +617,13 @@ PN_FRAME_BYTES = PN_FRAME_CELLS * 8
 \
 \ Declared here for the same reason FONT_BYTES is: beebasm resolves
 \ constants in file order and PN_TABS below needs the size.
-CON_STR_COUNT = 248
-CON_STR_BYTES = 1542            \ 1,541 plus the terminating sentinel
+CON_STR_COUNT = 249
+CON_STR_BYTES = 1549            \ 1,548 plus the terminating sentinel.
+                                \ It was 1542/248: the exporter stopped one
+                                \ string short, on the reasoning that the
+                                \ C64 never prints its last. Layer 15 does
+                                \ -- token $F8 is "awarded", the last word
+                                \ of the ship-clear screen. Layer-15 T4
 CON_STR_ADDR  = PN_FRAME_ADDR + PN_FRAME_BYTES
 
 \ ---- and the font's own decoder -----------------------------
@@ -929,6 +934,11 @@ VIEW_CHARS = 40                 \ 320 px / 8
 MAX_HX     = (MAP_CHAR_W - VIEW_CHARS) * 2      \ 432 half-characters
 MAX_Y      = MAP_CHAR_H - 16                    \ 48 rows
 NUM_DECKS  = 16
+SHIP_CAP   = 8                  \ $15F5: NextLevel INCs shipLevel and DECs
+                                \ it straight back if it reached 9, so the
+                                \ ship level -- and with it the difficulty
+                                \ -- stops at 8 and the game never ends.
+                                \ Layer-15 DECISION 5, revised
 
 \ Shared C64 play-area colours; only the low nibble of each $D02x
 \ is used. These index the per-deck colourMap.
@@ -1505,52 +1515,17 @@ IF DEBUG_DRAW
   LDA #DBG_REDRAW : JSR DbgSetBg
 ENDIF
 
-  \ Deck keys are edge triggered: one press steps one deck however
-  \ long it is held. A blocking wait-for-release deadlocks if the
-  \ other deck key goes down before the first is released.
+\ DEBUG_DECK's free deck hop -- UP and DOWN, one deck a press, no lift.
+\ THE ARM ITSELF IS IN BANK 4, src/dbgdeck.asm: it was 69 bytes of the
+\ code image and Layer 15's ship-clear arm below needed eighteen of
+\ them. Bank 4 is the resting state here, so this is a plain JSR, and
+\ the arm calls LoadDeck from inside its own bank now rather than
+\ across. Layer-15 DECISION 1.
+\
 \ L was handled at the top of the pass, where it has to be: DoFire
 \ activates a sprite slot and SprSplitOK must see it.
-
-\ UP and DOWN belong to the lift while it has the controls. Outside one
-\ they are DEBUG_DECK's free hop, one deck a press and no lift needed.
-\ The whole block is the flag's, the liftMode test included: nothing
-\ else in the pass wants either key, and a build without the hop should
-\ not be reading them at all. Two OSBYTEs a pass, inside the window.
 IF DEBUG_DECK
-  LDA liftMode                  \ entering the lift: the debug hop keeps
-  BNE ml_notDn                  \ its hands off the deck this pass
-
-.ml_debugdeck
-  LDX #KEY_UP
-  JSR keydown
-  BNE ml_upOff
-  LDA prevUp
-  BNE ml_notUp
-  LDA #1 : STA prevUp
-  LDA deck
-  BEQ ml_notUp
-  DEC deck
-  JSR LoadDeck
-  JMP ml_notUp
-.ml_upOff
-  LDA #0 : STA prevUp
-.ml_notUp
-
-  LDX #KEY_DOWN
-  JSR keydown
-  BNE ml_dnOff
-  LDA prevDn
-  BNE ml_notDn
-  LDA #1 : STA prevDn
-  LDA deck
-  CMP #NUM_DECKS-1
-  BCS ml_notDn
-  INC deck
-  JSR LoadDeck
-  JMP ml_notDn
-.ml_dnOff
-  LDA #0 : STA prevDn
-.ml_notDn
+  JSR DbgDeck4
 ENDIF
 
 IF DEBUG_DRAW
@@ -1654,6 +1629,32 @@ ENDIF                           \ 2026-08-20 it did not: the tint set before
   JSR InfoCall
   JMP ml_passend
 .ml_noxstart
+
+\ ---- or has the whole SHIP just been cleared? ---------------
+\ $1440: GameLoop tests notInDeck and jumps to _lift, which tests
+\ shipNumDroids and jumps to _shipclean. The port has neither flag nor
+\ either jump, so DroidsUpdate did the shipNumDroids test itself and
+\ raised shipClear; this is the arm that acts on it. Layer-15
+\ DECISION 4.
+\
+\ IT IS HERE, BELOW THE SPRITES, and with the transfer's two screens
+\ for the same reason theirs are: the page takes the play buffer over,
+\ so nothing may draw after it this pass. Raising the flag inside
+\ DroidsUpdate and acting on it here is what keeps SprDrawAll from
+\ painting the player onto the congratulations screen.
+\
+\ shipClear IS BANK 4'S and this reads it directly -- SWRAM_DATA is the
+\ main loop's resting state, which is the same reason the arm above can
+\ read drType. It is cleared here rather than in bank 4 so that the
+\ screen cannot be opened twice if a pass is ever taken twice.
+  LDA shipClear
+  BEQ ml_noshipclr
+  LDA #0
+  STA shipClear
+  LDX #IS_SCR_CLEAR+1
+  JSR InfoCall
+  JMP ml_passend
+.ml_noshipclr
 
 \ ---- or did fire on a lift platform stage the side view? ----
 \ LiftEnter set liftMode 1 in the fire block earlier this pass; the
@@ -1920,7 +1921,8 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
 MACRO PNMIRROR
   LDA drType   : STA pmType
   LDA drCount  : STA pmCount
-  LDA shipLevel: STA pmShip
+  LDA shipName : STA pmShip     \ the NAME, not the level: shipLevel
+                                \ stops at 8 and shipName keeps cycling
 ENDMACRO
 
 .PanelTick
@@ -2038,6 +2040,17 @@ ENDMACRO
 .pmType   EQUB 0
 .pmCount  EQUB 0
 .pmShip   EQUB 0
+.shipName EQUB 1                \ 1-8, cycling, and it is what names the
+                                \ ship. SEPARATE FROM shipLevel because the
+                                \ two stop meaning the same thing at ship 8:
+                                \ the level caps there (and the difficulty
+                                \ with it) while the name goes round again.
+                                \
+                                \ The C64 does NOT do this -- with shipLevel
+                                \ pinned at 8 its name is pinned too, so
+                                \ every ship from the eighth on carries the
+                                \ same one. KC 2026-08-25: cycle them.
+                                \ Layer-15 DECISION 5, revised
 .conActive EQUB 0               \ main RAM: the loop and the bridge both read it
 .conDbReq  EQUB 0               \ 0 idle / 1 fire on entry 1 / 2 page up.
                                 \ MAIN RAM because bank 4 sets it, bank 7
@@ -2174,6 +2187,64 @@ ENDMACRO
 \ sequence boot does, and hand what comes back to GameStart. UninstallIrq
 \ must come first — the rupture IRQ rewrites R6/R12/R13 every field, so
 \ any display SetupMode set up would be overwritten within one.
+\ ============================================================
+\ InfoHigh -- InfoCall's acts 2 and 3, out of the low overlay
+\ ============================================================
+\ The overlay had one byte free and the ship-clear continuation wanted
+\ six, so the tail of InfoCall's dispatch lives here instead and the
+\ overlay JMPs to it -- a JMP for a JMP, and it costs that region
+\ nothing. X arrives as infoAct - 2. Layer-15 DECISION 3.
+\
+\ SWRAM_DATA IS PAGED: InfoCall put it back before the dispatch, so
+\ the JMP into bank 4 below is the ordinary main-RAM-to-bank-4 call
+\ and needs no shim. GoTitle pages banks of its own.
+.InfoHigh
+  DEX
+  BNE ih_ship                   \ 3 = IS_ACT_NEWSHIP
+  JMP GoTitle                   \ 2 = IS_ACT_TITLE: the game over, and
+                                \ GameStart after it. Clearing a ship
+                                \ never comes here -- the game does not
+                                \ end, see DECISION 5
+.ih_ship
+  \ $12C7: _entership calls NewShipInfo BEFORE BuildLevel, so the new
+  \ ship announces itself and the deck arrives when the screen is
+  \ dismissed. This is GameStartInfo's sequence exactly, and for the
+  \ same reasons: infoActive FIRST, so LoadDeck's ReframeView is a
+  \ no-op and the deck is not drawn under the page; and pmShip by
+  \ hand, because IsShip reads it for the ship's name and no pass has
+  \ run since shipLevel changed.
+  LDA #1
+  STA infoActive
+  \ $15F1-$15F9: EnterShip4 INCs shipLevel, so pull it back to 7 when
+  \ it is already 8 and the INC lands on 8 again. That is NextLevel's
+  \ cap, done on this side because bank 4 has two bytes left and this
+  \ region has room -- and it has to happen BEFORE the call, because
+  \ NewShipDroids reads shipLevel to pick the droid classes.
+  LDA shipLevel
+  CMP #SHIP_CAP
+  BNE ih_nocap
+  DEC shipLevel
+.ih_nocap
+
+  \ and the name goes round: 1-8 and back to 1, so the eight ships
+  \ keep cycling under a difficulty that no longer rises.
+  LDX shipName
+  INX
+  CPX #SHIP_CAP+1
+  BCC ih_namek
+  LDX #1
+.ih_namek
+  STX shipName
+
+  JSR EnterShip4                \ bank 4: _entership, ending in LoadDeck
+  LDA shipName
+  STA pmShip
+  LDX #IS_SCR_001+1
+  JMP InfoCall                  \ re-entered, and safe: the JMP that got
+                                \ here left no frame of its own. IsArm
+                                \ sets infoAct $FF, so the dispatch below
+                                \ falls straight out again
+
 .GoTitle
   LDA #0                        \ Layer 11e: UninstallIrq stops the sound
   STA sndState                  \ ticks, so whatever the chip holds would
@@ -2731,6 +2802,10 @@ INCLUDE "src/dbgkill.asm"       \ DEBUG_KILL only, and in the same
 INCLUDE "src/data/colours.asm"
 INCLUDE "src/data/tiledefs.asm"
 INCLUDE "src/data/levels.asm"
+INCLUDE "src/dbgdeck.asm"       \ DEBUG_DECK only. AFTER the ALIGNs,
+                                \ NOT in colourMap's padding: 69 bytes
+                                \ would push it past the page and cost
+                                \ 256. Bank 4 because it calls LoadDeck
 INCLUDE "src/data/droidgame.asm"
 INCLUDE "src/data/sounddata.asm"
 

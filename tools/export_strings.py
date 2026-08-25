@@ -104,8 +104,16 @@ def main():
     count = mem[TABLE]
 
     # Walk to the end of the last string, so the blob is exactly the table.
+    #
+    # `found < count`, NOT `count - 1`. This used to stop one string short
+    # on the reasoning that the C64 never prints its last one -- and that
+    # was wrong. String 248 is "awarded", the last word of ShipClear_txt
+    # ($6DD8's `E0 2C E1 F8`, "bonus of 2000 awarded"), and Layer 15's
+    # ship-clear screen is the first thing in the port to ask for it.
+    # Dropping it left token $F8 pointing at the sentinel, so the screen
+    # read "Bonus of 2000 ." with a word-shaped hole in it.
     addr, found = TABLE + 1, 0
-    while found < count - 1:
+    while found < count:
         if mem[addr] & 0x80:
             found += 1
         addr += 1

@@ -33,7 +33,7 @@ Regenerate it after any change that moves a region:
 | `&0E00–&10F1` | 753 B | `lowcode` — `DrawTileCells`, the animated-tile scan and repaint, the alert lamp, the `CollisionType` table. Staged through `LOW_STAGE` and copied down **after the last `*LOAD`**: this is DFS's own workspace while the filing system is running |
 | `&10F2–&10FF` | **15 B free** | |
 | `&1100–&2F6C` | 7,789 B | Code (`PARA`), starting below DFS's `PAGE` of `&1900`. The level draw and droid AI are in bank 4; Layers 7–10's main-RAM halves refilled the room they made |
-| `&2FD2–&2FFF` | **46 B free** | The binding constraint. Layer 11e's sound driver did NOT land here — the IRQ pages bank 4 for it — but its request bytes, paging shim and stage 3's main-RAM trigger posts took 64 in all. It was 24, then 30, then 148. TASK 6 moved 192 bytes of `rowMul`/`unitMul` out to `&5400`; TASK 3 spent 82 of that on `FontCell` and TASK 8 moved those 82 into the font region. The sprite colour work then spent 94: `SprSetColour`, `sprColPat`, `sprColour` and the player's colour arms in `SprAnimateAll`, all of which have to be resident because the blitter calls them with a sprite bank paged in |
+| `&2FFE–&2FFF` | **2 B free** | The binding constraint, and for once it went UP: Layer 15 moved `DEBUG_DECK`'s 69-byte arm out to `src/dbgdeck.asm` in bank 4 (DECISION 1, the trade `dbgkill.asm` made) and spent about 43 of it back on the ship-clear arm and `InfoHigh`. Before that it was 3. Layer 11e's sound driver did NOT land here — the IRQ pages bank 4 for it — but its request bytes, paging shim and stage 3's main-RAM trigger posts took 64 in all. It was 24, then 30, then 148. TASK 6 moved 192 bytes of `rowMul`/`unitMul` out to `&5400`; TASK 3 spent 82 of that on `FontCell` and TASK 8 moved those 82 into the font region. The sprite colour work then spent 94: `SprSetColour`, `sprColPat`, `sprColour` and the player's colour arms in `SprAnimateAll`, all of which have to be resident because the blitter calls them with a sprite bank paged in |
 | `&3000–&366F` | 1,648 B | Layer 9's text font, `PARAFNT` — 103 glyphs × **16 B, 1bpp**, the C64's own bytes, expanded by `FontCell` as it draws. Layer 13a TASK 3 |
 | `&3670–&36CF` | 96 B | The status box's twelve border cells, same file, also 1bpp |
 | `&36D0–&3CD5` | 1,542 B | `constrings` — the `$C000` string table, **one copy**, read by the console in bank 6 and the droid database in bank 7 alike. Same `PARAFNT` file. Layer 13a TASK 7 |
@@ -123,7 +123,9 @@ staged on the panel and copied down last — see the boot code and `layer-11-sou
 
 ## SWRAM bank 4 — `PARADAT`
 
-`&8000–&BF97`, **105 free** (2026-08-24, Layer 15's space pass — see §"Layer 15 space pass" below.
+`&8000–&BFFE`, **2 free** (2026-08-25, after Layer 15's endgame spent the space pass's 105 and DECISION 6's cleared-deck fix took the rest — the
+deck and ship payouts, the `shipClear` flag, the `GameStart`/`EnterShip4` split, and `DEBUG_DECK`'s
+69-byte arm moved in from main RAM. The space pass itself — see §"Layer 15 space pass" below.
 Before it, 8. It was 3 on 2026-08-21, layer-11e stage 3, when this was THE FULLEST REGION IN THE MACHINE:
 the sound driver (908 B), its data, the trigger posts, `SndAmbient` and the hum tables took
 Layer 13d's 1,161 and every squeeze after it. Paid by ZX0-packing the char bitmaps AND

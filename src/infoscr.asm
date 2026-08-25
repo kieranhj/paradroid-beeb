@@ -40,6 +40,14 @@ IS_SCR_001   = 0                \ NewShipInfo
 IS_SCR_XFER1 = 1                \ ShowXferInfo, the unit you control
 IS_SCR_XFER2 = 2                \ ShowXferInfo, the unit you want
 IS_SCR_OVER  = 3                \ EndGame's page
+IS_SCR_CLEAR = 4                \ ShowShipClear ($3816) -- Layer 15's,
+                                \ and it needed no drawing code at all:
+                                \ $3816 is GotoHires, ClearGameScreen,
+                                \ ShowRobotType, BuildIntroSprites and
+                                \ PrintTokenString, which is is_st_norm
+                                \ below, instruction for instruction.
+                                \ So this screen is FIVE TABLE ENTRIES
+                                \ and a token list. Layer-15 DECISION 2
 
 \ ---- what happens when the screen is dismissed ---------------
 \ Left in infoAct for the main-RAM half to act on, because all three
@@ -52,6 +60,12 @@ IS_SCR_OVER  = 3                \ EndGame's page
 IS_ACT_GAME  = 0                \ back to the deck
 IS_ACT_BOARD = 1                \ on into the transfer game
 IS_ACT_TITLE = 2                \ the game over: on to the title
+IS_ACT_NEWSHIP = 3              \ the ship is clear: on to the next one.
+                                \ $1286 falls straight out of
+                                \ ShowShipClear into _entership ($1289),
+                                \ and this is that fall-through -- see
+                                \ EnterShip4 in droid.asm. It is bank 4's
+                                \ and InfoCall already has that bank in
 
 \ ---- the hold ------------------------------------------------
 \ $371F counts 72 down, each iteration a ReadJoystick and a
@@ -379,19 +393,19 @@ IS_BLANK = &FF                  \ IsEntry's third door, and not a screen
 \ to be re-authored, and the sentences come out in the original's words.
 
 .isTokLo
-  EQUB LO(isTok001), LO(isTokXf1), LO(isTokXf2), 0
+  EQUB LO(isTok001), LO(isTokXf1), LO(isTokXf2), 0, LO(isTokClr)
 .isTokHi
-  EQUB HI(isTok001), HI(isTokXf1), HI(isTokXf2), 0
+  EQUB HI(isTok001), HI(isTokXf1), HI(isTokXf2), 0, HI(isTokClr)
 
 \ $FF is the player's own type, from PanelTick's pmType mirror, and $FE
 \ the transfer target's, which the trigger site gathers because only main
 \ RAM can see bank 4's drType. Anything else is a literal type.
 .isTypeFor
-  EQUB 0, &FF, &FE, IS_OVER_TYPE
+  EQUB 0, &FF, &FE, IS_OVER_TYPE, &FF
 
 \ Entry 1 is never read: the first transfer page chains inside IsDone.
 .isActFor
-  EQUB IS_ACT_GAME, IS_ACT_GAME, IS_ACT_BOARD, IS_ACT_TITLE
+  EQUB IS_ACT_GAME, IS_ACT_GAME, IS_ACT_BOARD, IS_ACT_TITLE, IS_ACT_NEWSHIP
 
 \ The effect each screen announces itself with: $374A, $376B, $37FE, and
 \ $1282's announce for the 001.
@@ -401,7 +415,7 @@ IS_FX_OVER     = &05
 IS_FX_DECK     = &07            \ $1334, and it is IsDone's now
 
 .isSndFor
-  EQUB IS_FX_ANNOUNCE, IS_FX_ANNOUNCE, IS_FX_ANNOUNCE2, IS_FX_OVER
+  EQUB IS_FX_ANNOUNCE, IS_FX_ANNOUNCE, IS_FX_ANNOUNCE2, IS_FX_OVER, IS_FX_ANNOUNCE
 
 \ "This is the unit that you currently control. Prepare to board
 \  Robo-<ship> influence to eliminate all rogue robots."
@@ -416,6 +430,20 @@ IS_FX_DECK     = &07            \ $1334, and it is IsDone's now
 .isShipTok
   EQUB &00                      \ $6DAD: 104 + shipLevel, written by IsShip
   EQUB &2E, &65, &66, &67, &68, &FE, &FF
+
+\ "Congratulations! Ship is now clear of all robot activity.
+\  Bonus of 2000 awarded."
+\n\ SIXTEEN BYTES, NOT TEN. $6DCE is TWO sentences -- the listing
+\ prints the first as one .BYTE run ending $FE and the second,
+\ $6DD8, as another -- and the $FF that ends the list is at $6DDD.
+\ The Layer 15 scoping note counted only the first run and called
+\ the string ten bytes; it is the whole sixteen, and the second
+\ sentence is what announces T3's two thousand points.
+\n\ NO SHIP NAME IS PATCHED IN, unlike isTok001: the C64 loads $CE/$6D
+\ straight into src and prints, with no $36C7 beforehand.
+.isTokClr
+  EQUB &DD, &3F, &33, &DF, &DE, &2C, &66, &0A, &50, &FE
+  EQUB &E0, &2C, &E1, &F8, &FE, &FF
 
 \ "This is the unit that you currently control."
 .isTokXf1

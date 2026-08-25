@@ -179,15 +179,10 @@ DR_LOS_MAX = 96
 \ lift are in here, the two debug deck keys are in the main loop where
 \ the data bank is the resting state.
 .LoadDeck
-  LDA #0                        \ A NEW DECK IS NOT CLEARED until its own
-  STA deckClear                 \ compaction says so, and this must be
-                                \ FIRST: ReframeView below ends in
-                                \ RedrawAll, which calls SetPalette, and
-                                \ that is the only time the deck's
-                                \ palette is built. Clearing it in
-                                \ DroidsInit was too late by exactly one
-                                \ routine and the new deck stayed blue.
-                                \ Layer-14 DECISION 6
+\ deckClear is DroidsInit's, below: it is the only thing that knows
+\ whether this deck has any droids left on it. It used to be zeroed
+\ here because ReframeView ran first and built the palette; now
+\ DroidsInit runs first and sets it either way. Layer-15 DECISION 6
   LDA deck
   JSR BuildCharset              \ charset is deck specific
   JSR AnimReset                 \ ...which puts the alert lamp back on its
@@ -233,8 +228,13 @@ DR_LOS_MAX = 96
   JSR DoorInit                  \ a door left open on the deck we are
                                 \ leaving would patch a tile position on
                                 \ the one we are entering
+  JSR DroidsInit                \ the deck's droids, on its waypoints.
+                                \ ABOVE ReframeView since Layer 15:
+                                \ ReframeView ends in RedrawAll, which
+                                \ calls SetPalette, and DroidsInit is now
+                                \ what decides whether this deck is
+                                \ already clear. Layer-15 DECISION 6
   JSR ReframeView
-  JSR DroidsInit                \ the deck's droids, on its waypoints
 IF NOT(DEBUG_ENERGY)
   JSR PanelSetup                \ Layer 9: the static words and the deck
                                 \ number. AFTER DroidsInit, so the droid
@@ -284,15 +284,13 @@ ENDIF
   STA cbNoScore
   STA disrFlash
 
-  LDA #1
-  STA shipLevel                 \ $1255 zeroes it and NextLevel's INC at
-                                \ $129E makes it 1. NewShipDroids is that
-                                \ routine's roster half only, so the count
-                                \ is set here instead of incremented
-
-  JSR NewShipDroids             \ $129E: the ship's complement, generated
-                                \ once and then owned by the decks — it
-                                \ reads shipLevel, so it follows it
+  LDA #0
+  STA shipLevel                 \ $1255 ZEROES IT, and EnterShip4's INC
+                                \ below is NextLevel's at $129E. The port
+                                \ used to write 1 here because the two
+                                \ halves were fused and there was nothing
+                                \ to do the increment; now that the split
+                                \ is real this is the original's own value
 
   JSR CombatInit                \ $1345, the energy the entry animation
                                 \ ends on, and $1259-$1263's weapon, score
@@ -300,6 +298,54 @@ ENDIF
                                 \ the PLAYER, and this seeds it — before
                                 \ LoadDeck, because DroidsInit places
                                 \ droids around it
+
+\ ============================================================
+\ EnterShip4 -- _entership ($1289), and it is callable alone
+\ ============================================================
+\ LAYER 15, T5. Everything below this label is the SECOND of the
+\ C64's two entry points, and the split is the original's own: $1242
+\ StartGame falls through into $1289 _entership, and $1286
+\ ShowShipClear falls into it too. The port had them fused because
+\ until now nothing could reach the second half by itself.
+\
+\ WHAT IS ABOVE AND WHAT IS BELOW IS NOT A JUDGEMENT CALL. Above is
+\ what a NEW GAME needs and a new SHIP must not have: the title's
+\ seed, the disruptor state, shipLevel back to zero, and CombatInit
+\ -- which zeroes the SCORE. Call that on a ship transition and the
+\ two thousand points just awarded are wiped, along with everything
+\ else the player earned. That is why the C64 keeps the halves apart
+\ and it is the whole reason this task existed.
+\
+\ WHAT CARRIES OVER, and it surprises: $1289 does NOT reset
+\ droidType. The player keeps the droid they captured into the next
+\ ship. $12A5-$12AA then drop energy to 7 and $12A1 sets the
+\ materialise mode, so they arrive weak but still riding it.
+\
+\ IT IS REACHED FROM InfoCall, not from here, when the ship-clear
+\ screen is dismissed -- IS_ACT_NEWSHIP. GameStart still falls
+\ straight through, which is $1242's own behaviour.
+.EnterShip4
+
+\ ---- the eighth ship is the last one -----------------------
+\ [DECISION 5] The C64 never ends: NextLevel caps shipLevel at 8, the
+\ console wraps the name at (shipLevel - 1) AND 7, and the player
+\ clears ship after ship until they die. KC chose an ENDING instead --
+\ eight ships cleared is a win -- so that is a deviation, and the only
+\ one in the layer.
+\
+\ THE TEST IS NOT HERE. It is in InfoHigh, main.asm: both things it
+\ does on the last ship -- raise hsArmed and go to GoTitle -- are main
+\ RAM, and InfoHigh already holds the JMP GoTitle it would need. So
+\ this routine is only ever reached when there IS a next ship, and
+\ shipLevel therefore runs 1 to 8 and needs no cap of its own.
+
+  INC shipLevel                 \ $129E NextLevel's own increment
+
+  JSR NewShipDroids             \ $129E: the ship's complement, generated
+                                \ once and then owned by the decks — it
+                                \ reads shipLevel, so it follows it
+
+
 
 \ ---- nothing modal owns the machine ------------------------
 \ None of this matters on the first game, when the assembled defaults are
@@ -503,6 +549,20 @@ ENDIF
   ADC #HI(shipDroids)
   STA mapptr+1
 
+\ $1377/$138E: THE DECK IS ASSUMED CLEAR UNTIL SOMETHING IS PLACED.
+\ The C64 writes 15 to numDeckDroids here and overrides it with 1 at
+\ $138E when InitDeckDroids placed nothing; ours reaches the same two
+\ values from the other end, which is cheaper and needs no counter.
+\
+\ A COUNT OF 1 IS WHAT MAKES THE EVENT FIRE ONCE. It makes
+\ DroidsUpdate's guard return every pass, so the compaction never runs
+\ and the deck-clear arm is never reached -- which is exactly what
+\ $138E-$1390 buys by skipping RunDroids outright. Without it, walking
+\ back onto a deck already cleared re-ran the whole event: the sound,
+\ the colour AND another 500 points, every time. Layer-15 DECISION 6.
+  LDA #1
+  STA drCount
+  STA deckClear
   LDY #DR_SLOTS-1
 .di_loop
   STY diIdx
@@ -526,6 +586,15 @@ ENDIF
 .di_place
 
   STA drType,Y
+  LDA #DR_SLOTS                 \ and it is NOT clear. DR_SLOTS because
+                                \ the roster row is walked from 15 down
+                                \ and the occupied slots are not
+                                \ contiguous, so the compaction has to
+                                \ scan the whole table. A is free here --
+                                \ TYA overwrites it two lines below
+  STA drCount
+  LDA #0
+  STA deckClear
   TYA
   CLC
   ADC drDeckBase                \ where it lives in the ship roster, so
@@ -558,10 +627,12 @@ ENDIF
   ADDPTR src, 3                 \ one record per INDEX, occupied or not
   LDY diIdx
   DEY
-  BNE di_loop
+  BEQ di_loopend
+  JMP di_loop                   \ Layer 15 grew the block past a branch,
+                                \ the same way the copy-down in
+                                \ DroidsUpdate did
+.di_loopend
 
-  LDA #DR_SLOTS
-  STA drCount
   LDA #0
 \ ENTRY 0 IS THE PLAYER FROM LAYER 7a ON, and this used to clear it —
 \ "the sentinel is always empty". It is not a sentinel: drType[0] is the
@@ -719,17 +790,54 @@ ENDIF
 \ at the top of this routine returns early from the next pass on --
 \ drCount is 1 and never reaches here again.
 \
-\ WE DO LESS THAN THE ORIGINAL. $17DC runs InitColors (the colour),
-\ then AddScore twice with 250 -- FIVE HUNDRED POINTS -- then
-\ sndFx1 = $17, and finally INC notInDeck when shipNumDroids is
-\ zero as well. Only the colour is ported: KC asked for the
-\ background, and the score, the sound and the ship-clear arm are
-\ not in the port at all. Layer-14 DECISION 6 lists them as open.
+\ ALL OF $17DC IS HERE NOW. It was the colour alone when Layer 14
+\ landed the floor; Layer 15 added the rest of the event in the
+\ original's own order -- InitColors, AddScore twice with 250,
+\ sndFx1 = $17, and the shipNumDroids test that decides whether the
+\ whole SHIP has just been cleared as well.
   CPY #1
   BNE dru_notclear
   STY deckClear                 \ Y is 1: the deck is clear, and the
   JSR SetPalette                \ floor turns blue until DroidsInit
                                 \ says otherwise
+
+\ ---- $17DF: FIVE HUNDRED POINTS, and the effect -----------
+\ TWO CALLS OF 250 AND NOT ONE OF 500, because AddScore takes a
+\ BYTE. $17DF and $17E4 are the same instruction twice and this is
+\ that, not an equivalent. The points are PENDING, not scored:
+\ DoScore drains scoreAdd one point a pass, so the panel climbs
+\ over the next twenty seconds rather than jumping. Layer-15 T1.
+  LDA #250 : JSR AddScore
+  LDA #250 : JSR AddScore
+  LDA #&17                      \ $17E9, the deck-cleared chord
+  STA sndFx1
+
+\ ---- $17ED: and is the whole SHIP clear? ------------------
+\ The C64 tests shipNumDroids here and does INC notInDeck, its
+\ shared "leave this loop" flag. The port has no notInDeck and
+\ reaches the lift, the console and the transfer by other means,
+\ so this raises a dedicated byte that the main loop tests beside
+\ them. Layer-15 DECISION 4, and T2.
+\
+\ IT FIRES ONCE, for the same reason the deck clear does: the
+\ guard at the top of DroidsUpdate returns early from the next
+\ pass on, so this code is never reached twice.
+  LDA shipNumDroids
+  BNE dru_notclear
+
+\ ---- $1272 _shipclean: TWO THOUSAND POINTS ---------------
+\ Ten calls of 200 and a counter, $1274-$127D verbatim, and again
+\ because AddScore takes a byte. $127F FindStrings has no port --
+\ the string table is scanned rather than indexed, see infoscr.asm
+\ -- and $1282 sndFx1 = $B is IsStart's, posted from isSndFor when
+\ the screen goes up. So what is left of _shipclean is the bonus
+\ and the flag. Layer-15 T3.
+  LDX #10                       \ $1272: tmp2
+.dru_shipbonus
+  LDA #200 : JSR AddScore
+  DEX
+  BNE dru_shipbonus
+  INC shipClear                 \ $1286: and ShowShipClear next
 .dru_notclear
   JSR DrBulletHit               \ before the pair loop — see its header
   JMP DrCollide
@@ -2517,6 +2625,10 @@ ENDIF
 .deckClear   EQUB 0             \ and THIS says the floor should be blue:
                                 \ set by the compaction, cleared at the
                                 \ top of LoadDeck. Layer-14 DECISION 6
+.shipClear   EQUB 0             \ the C64's notInDeck, narrowed to the
+                                \ one thing the port needs it for: the
+                                \ main loop sees it, opens the ship-clear
+                                \ screen and clears it. Layer-15 DECISION 4
 .drIdx       EQUB 0
 .drDst       EQUB 0
 .drTick      EQUB 0

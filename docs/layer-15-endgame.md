@@ -1,7 +1,9 @@
 # Layer 15 — the endgame: clearing a ship, and the next one
 
-**Scoping document, 2026-08-24. Nothing here is built — except §4's space pass, which ran the same
-day and unblocked the rest.** It exists because KC asked whether the
+**BUILT AND VERIFIED 2026-08-24.** This began as a scoping document, and §§1–3 are that scoping,
+kept because they are the analysis the build followed. §4 is the space pass that unblocked it;
+§5 is what was built. **The port now has a win condition and a ship progression; before this it
+had neither, and `shipNumDroids` was maintained and never read.** It exists because KC asked whether the
 "all decks complete" screen was in, and the answer turned out to be bigger than a screen: **the port
 has no win condition and no ship progression at all.** `shipNumDroids` is maintained and never read.
 
@@ -204,22 +206,212 @@ its own** — read it, never infer it.
   `PLAN.md`'s broken-debug-builds row can be narrowed by that much, and it is close enough to be
   worth another look when convenient.
 
-## 5. Suggested order
+## 5. What was built
 
-1. **T4**, the screen — bank 7 has room, it reuses three existing siblings, and it is the visible
-   half of what was asked about.
-2. ~~**The space pass**~~ — **DONE 2026-08-24**, bank 4 has 105 B. See §4.
-3. **T1 + T2 + T3** — one hook, one flag, one payout each; a single sitting once there is room.
-4. **T5** — last, alone, with its own verification.
+All five tasks, in one sitting, after §4's space pass. **Order taken: the enabling bank move, then
+T4 (the screen), then T1/T2/T3 (the hook), then T5 (the split).** The doc's original suggestion put
+T4 first for its own sake; in the event the main-RAM move had to come first, because nothing else
+would fit.
+
+| | what landed | where |
+|---|---|---|
+| T1 | 500 for a deck, `sndFx1 = $17` | `DroidsUpdate`'s clear hook, bank 4 |
+| T2 | `shipClear`, raised at the hook, acted on in the main loop | bank 4 + the code image |
+| T3 | 2,000 for a ship, ten `AddScore #200` | the same hook |
+| T4 | `ShowShipClear` as `IS_SCR_CLEAR`, a fifth information screen | `infoscr.asm`, bank 7 |
+| T5 | `GameStart` split at the C64's own seam so `EnterShip4` is callable | `droid.asm`, bank 4 |
+
+### T4 cost almost nothing, and that is the point
+
+`ShowShipClear` (`$3816`) is `GotoHires`, `ClearGameScreen`, `ShowRobotType`, `BuildIntroSprites`,
+`PrintTokenString` — which is `IsStart`'s `is_st_norm` path instruction for instruction. So the
+screen is **five table entries and a token list**, and not one line of drawing code.
+
+**The token list is sixteen bytes, not the ten §1 claimed.** `$6DCE` is two sentences: the listing
+prints the first as one `.BYTE` run ending `$FE`, the second (`$6DD8`) as another, and the `$FF`
+that ends the list is at `$6DDD`. The full text is *"congratulations! ship is now clear of all robot
+activity. bonus of 2000 awarded."* — the second sentence is what announces T3's payout.
+
+### T5 was a re-labelling, exactly as §3 hoped
+
+`GameStart` now writes `shipLevel = 0` — **`$1255`'s own value**, where the port used to write 1 —
+and falls through into `.EnterShip4`, whose first act is the `INC` that is `NextLevel`'s at `$129E`.
+The split point is not a judgement call: **above it is what a new game needs and a new ship must not
+have**, and the decisive member of that set is `CombatInit`, *which zeroes the score*. Call it on a
+ship transition and the two thousand points just awarded go with everything else the player earned.
+That is why the C64 keeps `StartGame` and `_entership` apart, and it is the whole reason T5 existed.
+
+**`_entership` falls straight into `NewShipInfo` at `$12C7`, before `BuildLevel`** — which §1 did not
+record. So a ship transition shows the "prepare to board Robo-*&lt;ship&gt;*" screen too, and the port
+already had it as `IS_SCR_001`. `InfoHigh`'s new-ship arm reproduces `GameStartInfo`'s sequence for
+it: `infoActive` first so `LoadDeck`'s `ReframeView` is a no-op, then `pmShip` by hand.
+
+**What carries over, and it surprises:** `$1289` does *not* reset `droidType`. The player keeps the
+droid they captured into the next ship, at energy 7 and in the materialise mode.
+
+### Two bugs found on the way, both pre-existing
+
+1. **The string table was one string short.** `export_strings.py` stopped at `count - 1` on the
+   stated reasoning that the C64 never prints its last string. It does: **string 248 is "awarded"**,
+   the last word of `ShipClear_txt`, and this screen is the first thing in the port to ask for it.
+   Token `$F8` was landing on the sentinel, so the screen read *"Bonus of 2000 ."* with a
+   word-shaped hole in it. `CON_STR_COUNT` 248 → 249, `CON_STR_BYTES` 1542 → 1549.
+   **Regenerating needs `export_strings.main()` called explicitly — the script has no `__main__`
+   block, and `build.ps1` does not run the exporters anyway.**
+2. **`hsArmed` is bank 7's, and the first attempt wrote it from bank 4.** `hstable.asm` assembles
+   into the `PARXFER` block, so `hsArmed` lives at `&B525` *of bank 7*. `InfoHigh` runs in main RAM
+   with **bank 4** paged — `InfoCall` puts it back before the dispatch — so `STA hsArmed` there
+   corrupted a byte of bank-4 code and armed nothing: the game ended straight onto the title with no
+   high-score entry, silently. **Moved into `IsDone`, in bank 7, where the game over already arms
+   it.** This is precisely the failure `bufcore.asm`'s header warns about, and nothing diagnoses it.
+
+### The numbers after
+
+| region | before the layer | after |
+|---|---|---|
+| bank 4 | 105 B | **2 B** (13 before DECISION 6's fix) |
+| main RAM | 3 B | **2 B** (26 before DECISION 5 was revised) |
+| bank 7 | 314 B | **314 B** (the screen fell into `planInk`'s `ALIGN` hole) |
+| bank 5 / bank 6 | 1,033 / 4 | unchanged |
+
+Main RAM took DECISION 1's 69 bytes back from `DEBUG_DECK` and has now spent nearly all of them:
+the ship-clear arm, `InfoHigh`, and DECISION 5's cap and name counter.
+
+### Verified in jsbeeb
+
+The ship clear was reached by poking `shipNumDroids` to the deck's own droid count and pressing
+**C**, so `DrKillDroid` takes the count to zero through the real kill path rather than a shortcut.
+
+- **The deck payout**: the score climbs 500 over the following passes, `$17` posted.
+- **The ship-clear screen**: the C64's full sentence, with the player's droid from the portrait pool.
+- **The progression**: `shipLevel` 1 → 2, a fresh 119-droid roster from `NewShipDroids`, the
+  "prepare to board" screen, and ship 2's first deck playing — with the score carried, not reset.
+- **Ship 8 and beyond** (DECISION 5): with `shipLevel` and `shipName` both forced to 8, clearing
+  the ship left `shipLevel` at **8** (the cap held), cycled `shipName` to **1**, built a fresh
+  119-droid roster and played on. The game did not end.
+- **`shipLevel` = 1 on a cold start**, so the `STA #0` + `INC` split reproduces the old value.
+- **The relocated deck hop**: deck 5 → 6 → 5, drawing correctly both ways.
 
 ---
 
-## 6. Open decisions
+## 6. Decisions
 
-1. **Does clearing the ship advance to the next one (as the C64 does) or end the game?** Everything
-   else follows from this. The port can currently be neither won nor advanced.
-2. **T2's flag**: a dedicated `shipClear`, or `notInDeck` ported as the shared exit flag?
-3. **T4's picture**: the existing portrait pool?
-4. **After ship 8** — keep raising the difficulty with the name wrapping, as the C64 does?
-5. ~~**`DEBUG_KILL` off to pay for it?**~~ — **closed 2026-08-24: not needed.** The space pass found
-   the room elsewhere and `DEBUG_KILL` stays on. See §4.
+1. **`DEBUG_DECK`'s arm moves to bank 4** (`src/dbgdeck.asm`), because T2's main-loop arm wants ~18
+   bytes of `&1100-&3000` and the default build had 3. A shipping build has 72 — `DEBUG_DECK` alone
+   costs 69 — so without this the layer would have been unbuildable in the one configuration that
+   can reasonably test it: clearing a ship means clearing all sixteen decks, and without the hop
+   that is minutes of lift rides per attempt. The same trade `dbgkill.asm` made, one size up.
+   **NOT in `colourMap`'s padding**: 69 more would push the `ALIGN` past the page and cost 256 at a
+   stroke, so it is assembled after the aligns and simply spends the bank's own free space.
+2. **The ship-clear screen is a fifth `IS_SCR_*`**, reusing `infoscr.asm`'s printer, geometry and
+   the portrait pool, with `isTypeFor = $FF` — the player's own droid, as `$381E` does.
+3. **`InfoCall` gains a fourth continuation, `IS_ACT_NEWSHIP`**, and its dispatch tail moved to
+   `InfoHigh` in the code image: the low overlay had one byte free and the arm wanted six, so the
+   overlay JMPs out — a JMP for a JMP, costing that region nothing.
+4. **A dedicated `shipClear` byte, not a ported `notInDeck`.** The port reaches the lift, the console
+   and the transfer by other means, so there was no shared exit flag to hang this on, and inventing
+   one would have meant surgery on three working subsystems for no behaviour the port lacks.
+5. **The game never ends; the difficulty stops at ship 8 and the names cycle.** *KC 2026-08-25,
+   replacing an earlier decision to end the game after eight ships — that was built, verified and
+   then reversed, and nothing of it remains.*
+
+   **What the C64 does, exactly.** `NextLevel` `$15E8` increments `shipLevel` and takes it straight
+   back if it reached 9:
+
+   ```
+   15F1  INC shipLevel
+   15F3  LDA shipLevel
+   15F5  CMP #9
+   15F7  BCC _2
+   15F9  DEC shipLevel      ; hard cap at 8
+   ```
+
+   So the level — and with it the difficulty: `NewShipDroids`' `ADC shipLevel`, `combat.asm`'s
+   `SBC shipLevel` and the fire rate's `CMP shipLevel` — stops at 8, and the game runs for ever.
+
+   **One deliberate improvement on it.** Because the C64 pins `shipLevel`, and the console's ship
+   name is `(shipLevel - 1) AND 7`, *the name is pinned too*: on the original the eighth ship and
+   every ship after it carries the same name. KC asked for the names to keep cycling under the
+   frozen difficulty, so the port splits what the C64 conflates:
+
+   - **`shipLevel`** caps at 8 and drives the difficulty, exactly as `$15F5` does.
+   - **`shipName`** counts 1-8 and wraps back to 1, and is the only thing that names the ship.
+
+   `PanelTick`'s `pmShip` mirror now carries `shipName` rather than `shipLevel`, so both readers —
+   the console's ship line and `IsShip`'s token patch on the "prepare to board" screen — cycle with
+   no change of their own. Holding `shipName` in 1-8 is what makes that free: the console already
+   masks with `AND 7`, and `IsShip`'s unmasked `+ 104` stays inside the eight names.
+
+   **The cap is applied in main RAM, not in `EnterShip4`.** `EnterShip4` INCs `shipLevel`, so
+   `InfoHigh` pulls it back to 7 when it is already 8 and the INC lands on 8 again. It must happen
+   *before* the call, because `NewShipDroids` reads `shipLevel` to pick the droid classes — and it
+   is on that side because bank 4 has two bytes left and the code image had room.
+
+6. **An already-cleared deck shows the cleared floor but does NOT replay the event.** KC heard the
+   power-down effect on every deck entry in playtesting, and asked whether the C64 does that. It
+   does not, and the original is explicit about it — `$1359`, the deck-entry path:
+
+   ```
+   1375  LDX #$F / STX numDeckDroids   ; the whole table, like our DR_SLOTS
+   1385  JSR InitDeckDroids            ; place the deck's droids
+   1388  LDA xfer_plySpriteX           ; how many were placed
+   138A  BNE _ed_2
+   138C  LDA #1 / STA numDeckDroids    ; NONE: force 1...
+   1390  BNE _ed_3                     ; ...and SKIP RunDroids entirely
+   _ed_2:
+   1392  JSR RunDroids
+   _ed_3:
+   1395  JSR InitColors                ; unconditional
+   ```
+
+   So the two halves are deliberately separated. **`InitColors` runs on every deck entry and reads
+   `numDeckDroids`** (`$27F1`), which is why a deck that is already clear comes up in the cleared
+   colours — KC's blue floor is faithful. But the payout, the effect and the colour *change* all
+   live inside `RunDroids`, and the C64 skips `RunDroids` outright when nothing was placed, so the
+   event fires once when the last droid dies and never again.
+
+   The port had no equivalent test: `DroidsInit` set `drCount = DR_SLOTS` unconditionally, so the
+   next pass's compaction landed on 1 and re-ran everything — the sound, the colour **and another
+   500 points**, every time you walked back onto a cleared deck. A scoring exploit as well as a
+   noise.
+
+   **The fix, and it is cheaper than the original's.** `DroidsInit` now assumes the deck is clear
+   (`drCount = 1`, `deckClear = 1`) and lets the first placement say otherwise (`drCount =
+   DR_SLOTS`, `deckClear = 0`). A count of 1 makes `DroidsUpdate`'s guard return every pass, so the
+   compaction never runs and the arm is never reached — the same outcome as skipping `RunDroids`,
+   without needing `InitDeckDroids` to report a count.
+
+   Two consequences worth knowing:
+   - **`DroidsInit` moved ABOVE `ReframeView` in `LoadDeck`**, because `ReframeView` ends in
+     `RedrawAll` which calls `SetPalette`, and `DroidsInit` is now what decides the floor. The
+     `deckClear = 0` that layer 14 put at the top of `LoadDeck` is gone with it — `DroidsInit` owns
+     the flag either way now, which is simpler than the ordering dance it replaced.
+   - **`di_loop`'s branch went out of range** and is now `BEQ` + `JMP`, the same way the copy-down
+     block in `DroidsUpdate` already had to.
+
+   **Verified**: a populated deck enters with its own colours and no event; clearing one fires once
+   (score 0 → 975 on that deck, floor blue); leaving and returning leaves the score at **975
+   unchanged** with the floor still blue and no effect. Bank 4 is down to **2 bytes**.
+
+---
+
+## 7. Open
+
+- ~~**The high-score entry overlaps the congratulations screen's name line.**~~ **Moot since DECISION 5 was revised**: clearing a ship no longer goes anywhere near the high-score entry, so it cannot be reached. Kept because the underlying fact still holds for anything else put in front of that screen — `HsRun` does not clear;
+  it writes its title and prompt onto whatever page is already there, as `$E4E5` does. On the game
+  over that works, because `EndGame`'s top line is the twelve characters of "Transmission" at column
+  13 and the 24-character title covers it completely. **This page's top line is thirty-one
+  characters** — "Unit type 001 ~ Influence device" — so its first and last few show and the screen
+  reads *"U Lowest Score of the Day! ice"*. Everything else on it is correct.
+  **A wipe of that row was tried and reverted.** Blanking buffer row 1 with forty `DbGlyph` spaces
+  before arming left the *whole* play area blank and the entry hung waiting for initials, so the
+  cause is not understood and the fix is not as simple as it looks. Reverted rather than shipped
+  half-working; the overlap is cosmetic and only on the win.
+- **The score drains at one point a pass**, which is `DoScore` and the original's own feel — but the
+  port runs its loop at 25 Hz where the C64's runs faster, so 2,000 points take about 80 seconds to
+  tick up on the panel. Faithful, and possibly too slow to read as a reward. KC's ear.
+- **The deck payout's `$17` and the screen's `$B`** are posted back to back, as `$17E9` and `$1282`
+  are. Not yet listened to.
+- **Bank 4 has 2 bytes.** The next thing to touch it needs room found first — read `CLAUDE.md`'s padding note, and note that `DEBUG_KILL` off returns about 45.
+- **A whole ship has never been cleared by playing.** Every run above forced the count; the honest
+  end-to-end test is sixteen decks of real play.

@@ -194,7 +194,8 @@ ENDIF
   LDA #1
   STA infoActive
   JSR GameStart
-  LDA shipLevel
+  LDA #1                        \ a new game starts on ship 1, and shipName
+  STA shipName                  \ is main RAM so nothing else resets it
   STA pmShip
   LDX #IS_SCR_001+1
   JMP InfoCall

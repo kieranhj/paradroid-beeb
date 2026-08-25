@@ -562,7 +562,11 @@ LAMP_OFF = 1                    \ logical 1 is black on every deck
   BEQ ic_game
   DEX
   BEQ ic_board
-  JMP GoTitle                   \ IS_ACT_TITLE, and GameStart after it
+  JMP InfoHigh                  \ acts 2 and 3, and they are in the CODE
+                                \ IMAGE: this overlay had ONE byte left and
+                                \ the fourth arm wants six. A JMP for a JMP
+                                \ costs the overlay nothing. Layer-15
+                                \ DECISION 3
 .ic_board
   JMP XferEnter                 \ IS_ACT_BOARD: on into the minigame
 .ic_game

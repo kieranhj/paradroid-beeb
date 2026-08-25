@@ -189,10 +189,12 @@ addresses from the `beebasm` output rather than from any document.** In outline:
 | SWRAM bank 7 | `PARXFER` — Layer 10's transfer minigame, Layer 8b's lift screen, the console's ship, deck-plan and droid-database pages, and Layer 11's game over. The title is NOT here any more — it is the `PARTITL` disc overlay. **5,690 B free, reserved for the droid portrait pool** |
 
 **RAM is the binding constraint. Measured from the build of 2026-08-24**, not remembered: the
-main-RAM code image ends at `&2FFD`, so **3 bytes** below `&3000`, and **bank 4 has 105 B** after
-Layer 15's space pass — any figure elsewhere claiming 2, 8, 47 or 60 is stale. The pass deleted
+main-RAM code image ends at `&2FFE`, so **2 bytes** below `&3000`, and **bank 4 has 2 B** after
+Layer 15 built its endgame on the space pass's 105 and then fixed the cleared-deck re-fire — any figure elsewhere claiming 2, 8, 47 or 60 is stale. The pass deleted
 112 bytes of per-deck tables that nothing read and spent 15 back on a self-healing page pad in
-`sound.asm`; `docs/memory-map.md` §"Layer 15 space pass" has the detail, and the pad means a
+`sound.asm`; Layer 15 then spent 92 of the rest on the endgame. **Main RAM went UP, 3 → 26**, because
+`DEBUG_DECK`'s 69-byte arm moved to bank 4 (`src/dbgdeck.asm`, layer-15 DECISION 1) the way
+`dbgkill.asm` did. `docs/memory-map.md` §"Layer 15 space pass" has the detail, and the pad means a
 future bank-4 edit can move the gauge by up to 37 bytes on its own — read it, do not infer it. Both moved that day: the title's random boot deck
 gave main RAM 4 back (`docs/layer-14-visual.md` DECISION 5) and the console's icon selection gave
 bank 4 46 (`docs/layer-9-hud.md` DECISION 18). **Main RAM is by a wide margin the tightest thing in the
@@ -263,7 +265,7 @@ without the GUARD an overrun assembles silently and corrupts `PARAFNT` at run ti
 stops with *Guard point hit* at `sprScan0` means the code image is full. **Everything in `src/` is in the build** — the five inherited Master/HAL files that
 were not have been deleted, so nothing there is dead. Keep it that way.
 
-**Six files assemble into SWRAM bank 4 (seven with `DEBUG_KILL`), not main RAM**: `screen.asm`, `scroll.asm`, `level.asm`,
+**Six files assemble into SWRAM bank 4 (eight with `DEBUG_KILL` and `DEBUG_DECK`), not main RAM**: `screen.asm`, `scroll.asm`, `level.asm`,
 `zx0depack.asm`, `droid.asm`, `consolesel.asm` and (on a `DEBUG_KILL` build) `dbgkill.asm`
 are included from inside the `PARADAT` block, next
 to the tile, deck and waypoint data they read. **`consolesel.asm`'s and `dbgkill.asm`'s position in that block is load
