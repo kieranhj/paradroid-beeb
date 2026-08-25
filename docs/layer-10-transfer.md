@@ -95,6 +95,9 @@ is `WinningColor == LeftColor`.
    unreachable — one bank at a time). PanelTick is skipped while the game runs;
    `PanelSetup` repaints on exit. Verdicts read "transfer done / transfer failed / short
    circuit" in lowercase (wide capitals need the two-cell machinery).
+   **SUPERSEDED IN PART BY DECISION 15**: those three strings were invented rather than
+   taken from the original, and blanking the whole panel line — logo and score with it —
+   was this port's own doing. The one-line field and the lowercase are still right.
 7. **[DECISION] The side-select droids are numbers, not sprites.** The original slides
    the two droid sprites left and right; there is no sprite engine under the board, so
    the panel line shows the human's number on the side the stick last chose. The stock
@@ -262,6 +265,55 @@ is `WinningColor == LeftColor`.
       pressing right swaps them, each keeping its colour, and the panel line agrees; a full
       game plays to its verdict with both icons untouched, confirming the no-repaint
       analysis live. Re-checked after the target went black: 001 yellow, 329 black.
+
+15. **[DECISION] The panel line is the C64's again — its layout, its words** (KC,
+    2026-08-25). KC read the original in the emulator and said the port's top panel was
+    wrong: it should keep the Paradroid logo in the middle and the score on the right, both
+    red, with only the left-hand text changing. Right on both counts, and the strings were
+    wrong too.
+
+    - **What the C64 does.** Every transfer message is a 13-byte string beginning `2, 2` —
+      column 2, row 2, which is the same eleven-cell mode-word field `panel.asm` already
+      fills with Mobile/Weapon/Transfer. The logo (cols 15-23) and the score (cols 30-37)
+      are never touched.
+
+      | when | string | drawn at |
+      |---|---|---|
+      | entry | `Captured` (`$69CB`) | `$22A0`, `Capture` |
+      | select | `Colour⟨?⟩ 00` (`$E6DB`) | `$E1F2`, `SubGameSelectSide` |
+      | play | `Finish -99` (`$69BE`) | `$20F9`, `xferDoCounter` |
+      | win | `Complete` (`$69FD`) | `$221D`, `FinishTransfer1` |
+      | loss | `Burnt Out` (`$69F1`) | `$222F`, `FinishTransfer1` |
+      | tie | `Deadlock` (`$69A4`) | `$22D3`, `Capture`'s replay loop |
+
+      **The countdown is not a separate field.** It is the last two bytes of the left
+      word's own string, which is why `$20EF`/`$20F6` and `$E1E4`/`$E1EB` write to `+$A`
+      and `+$B`. These were decoded from the raw bytes through `export_strings.py`'s
+      C64→glyph map rather than taken from the annotator's labels — necessary, because
+      there are TWO "Colour" strings: `Colour_txt` at `$69B1`, plain, used by the console
+      at `$32C1`, and the select-phase one at `$E6DB` with the digits built in.
+    - **What the port did wrong.** `XfTextClear` walked `xfTxtCol` from 0 to `PN_COLS`,
+      blanking the whole line — logo and score with it. That was this port's invention;
+      the C64 never clears more than its own field. And DECISION 6 invented the verdicts:
+      "transfer done", "transfer failed" and "short circuit" against the original's
+      **Complete**, **Burnt Out** and **Deadlock**. There was no `Captured` or `Colour` at
+      all — `XfSelectText` put the two droid numbers there instead, DECISION 7's stand-in.
+    - **What is there now.** `XF_COL_MSG` is 2 and `XF_MSG_CELLS` 11, the C64's field;
+      `XfTextClear` clears only that; `XF_COL_TIME` is 10, the field's last pair, and
+      "colour" and "finish -" are eight cells so the digits land there. The words are the
+      original's, **in lowercase**: `XfGlyphAt` is one cell a glyph and the original's
+      capitals are two cells each, which is bank 6's `PnGlyph` and unreachable from bank 7.
+      The words are the original's; the casing is not.
+    - **[DECISION] `XfNum3` and `XfSelectText` are deleted.** They were DECISION 7's
+      substitute for the icons; DECISION 14 draws the real ones on the board, where the
+      original puts them, so the stand-in has outlived its reason. That is what paid for
+      the new strings — the change came out byte-neutral, bank 7 still at 7 B of tail.
+    - **The ink was wrong too, and that was one byte.** `XfGlyphAt` set `fontMask = &FF`
+      with a comment saying it "never had an ink mask", so the word drew BLACK on the white
+      panel. `panel.asm` has said `THE MODE FIELD IS RED, like the logo` since Layer 9; it
+      is `PN_INK_RED` now, the same ink `PnMode` uses.
+    - **Verified in jsbeeb 2026-08-25**: "colour 93", then "finish -49", then "burnt out",
+      all red at column 2, with the logo and the score standing in red throughout.
 
 **Open item from 13 — CLOSED, and it was never worth doing.** Moving the repeat filter
 behind `plandata.asm`'s `ALIGN` would have restored the *tail* figure while costing its 46

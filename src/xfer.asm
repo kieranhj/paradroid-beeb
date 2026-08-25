@@ -83,6 +83,8 @@ ASSERT PLAY_VIS_ROWS + 1 == 16  \ the board needs all 16 rows
   JSR XfIcons                   \ DECISION 14, ABOVE the repaint: the
                                 \ icons are not in the shadows
   JSR XfTextClear
+  LDA #LO(xfTxtCapt) : LDY #HI(xfTxtCapt)
+  JSR XfMessage                 \ $22A0: "Captured", the moment it starts
   LDA #9                        \ Capture's entry pair: $22C1 on voice 2
   STA sndFx2                    \ and $22C8 on voice 1
   LDA #&1B
@@ -120,8 +122,10 @@ ASSERT PLAY_VIS_ROWS + 1 == 16  \ the board needs all 16 rows
   STA xfTime
   LDA #XF_PH_SELECT
   STA xfPhase
+  JSR XfTextClear
+  LDA #LO(xfTxtColour) : LDY #HI(xfTxtColour)
+  JSR XfMessage                 \ $E1F2's Color_txt, countdown and all
   JSR XfTimeText
-  JSR XfSelectText
 .xtk_run
   LDA #0
   RTS
@@ -192,7 +196,6 @@ XF_PH_REPLAY  = 4
 .xsl_17
   JSR XfDrawResult              \ X = LeftColor: the default verdict
   JSR XfDrawPulserCols
-  JSR XfSelectText
 
   LDA xfFire
   BNE xsl_18
@@ -219,8 +222,9 @@ XF_PH_REPLAY  = 4
   LDA #XF_PH_PLAY
   STA xfPhase
   JSR XfTextClear
+  LDA #LO(xfTxtFinish) : LDY #HI(xfTxtFinish)
+  JSR XfMessage                 \ $20F9's Finish_txt for the rest of the game
   JSR XfTimeText
-  JSR XfSelectText              \ the two numbers stay up through play
 .xsl_x
   LDA #0
   RTS
@@ -1816,10 +1820,13 @@ XF_REPLAY_PASSES = 50
 \ repaints on exit. This is a minimal copy of PnGlyph — bank 6 owns the
 \ real one and only one bank is visible — reading the same font from
 \ main RAM.
-XF_COL_MSG   = 4                \ verdict messages
-XF_COL_LNUM  = 12               \ the left side's droid number
-XF_COL_RNUM  = 25               \ the right side's
-XF_COL_TIME  = 19               \ the countdown, centre
+XF_COL_MSG   = 2                \ THE C64'S MODE-WORD FIELD, col 2 and
+XF_MSG_CELLS = 11               \ eleven cells -- the same slot panel.asm
+                                \ fills with Mobile/Weapon/Transfer, and
+                                \ the same one $698A-$6A16 are written to
+XF_COL_TIME  = 10               \ the countdown: the field's last two
+                                \ cells, as $20EF/$20F6 and $E1E4/$E1EB
+                                \ write Finish_txt+$A and +$B
 ASSERT PN_TEXT_ADDR > 0         \ panel.asm's constants are visible here
 
 .XfGlyphAt                      \ A = glyph, xfTxtCol = column; advances
@@ -1849,8 +1856,11 @@ ASSERT PN_TEXT_ADDR > 0         \ panel.asm's constants are visible here
   LDA swDst   : ADC #LO(PN_TEXT_ADDR) : STA swDst
   LDA swDst+1 : ADC #HI(PN_TEXT_ADDR) : STA swDst+1
 
-  LDA #&FF                      \ this one draws in every plane it is
-  STA fontMask                  \ given — it never had an ink mask
+  LDA #PN_INK_RED               \ RED, because the C64's mode field is:
+  STA fontMask                  \ panel.asm's own $6917 note, and the same
+                                \ ink PnMode uses for Mobile/Weapon. This
+                                \ was &FF and drew the word in black, which
+                                \ is what KC saw
   JSR FontCell                  \ top cell
   CLC
   LDA swDst   : ADC #LO(ROW_BYTES) : STA swDst
@@ -1862,14 +1872,14 @@ ASSERT PN_TEXT_ADDR > 0         \ panel.asm's constants are visible here
   INC xfTxtCol
   RTS
 
-.XfTextClear
-  LDA #0
-  STA xfTxtCol
-.xtc_1
-  LDA #PN_SPACE
-  JSR XfGlyphAt
+.XfTextClear                    \ the WORD only. The C64 never clears more
+  LDA #XF_COL_MSG               \ than this field either: the logo at cols
+  STA xfTxtCol                  \ 15-23 and the score at 30-37 stand through
+.xtc_1                          \ the whole subgame, in red, exactly as they
+  LDA #PN_SPACE                 \ do on the deck. Blanking the line was this
+  JSR XfGlyphAt                 \ port's own invention and KC spotted it
   LDA xfTxtCol
-  CMP #PN_COLS
+  CMP #XF_COL_MSG + XF_MSG_CELLS
   BNE xtc_1
   RTS
 
@@ -1887,47 +1897,11 @@ ASSERT PN_TEXT_ADDR > 0         \ panel.asm's constants are visible here
   ADC #PN_DIGIT0
   JMP XfGlyphAt
 
-.XfNum3                         \ A = droid type, at xfTxtCol
-  TAY
-  LDA pnTabCent,Y
-  CLC
-  ADC #PN_DIGIT0
-  STY xfTmp1
-  JSR XfGlyphAt
-  LDY xfTmp1
-  LDA pnTabNum,Y
-  LSR A : LSR A : LSR A : LSR A
-  CLC
-  ADC #PN_DIGIT0
-  JSR XfGlyphAt
-  LDY xfTmp1
-  LDA pnTabNum,Y
-  AND #&0F
-  CLC
-  ADC #PN_DIGIT0
-  JMP XfGlyphAt
-
-\ The select phase's stand-in for the two droid sprites: the human's
-\ number sits on the side the stick chose, the target's on the other.
-.XfSelectText
-  LDA #XF_COL_LNUM
-  STA xfTxtCol
-  LDA xfLeftColor
-  CMP xfPlyColor
-  BNE xstx_swap
-  LDA xfmPlyType
-  JSR XfNum3
-  LDA #XF_COL_RNUM
-  STA xfTxtCol
-  LDA xfmTgtType
-  JMP XfNum3
-.xstx_swap
-  LDA xfmTgtType
-  JSR XfNum3
-  LDA #XF_COL_RNUM
-  STA xfTxtCol
-  LDA xfmPlyType
-  JMP XfNum3
+\ XfNum3 and XfSelectText are GONE. They put the two droid numbers on
+\ the panel line as DECISION 7's stand-in for the sprites the port had
+\ no way to draw; DECISION 14 draws the real icons on the board, which
+\ is where the original puts them, so the stand-in has outlived its
+\ reason and the panel line is the C64's again.
 
 .XfMessage                      \ A/Y = a glyph string, $FF-terminated
   STA xmg_get+1
@@ -1949,18 +1923,34 @@ ASSERT PN_TEXT_ADDR > 0         \ panel.asm's constants are visible here
   RTS
 
 XF_LC = PN_LOWER_A
-.xfTxtDone                      \ "transfer done"
-  EQUB XF_LC+19, XF_LC+17, XF_LC+0, XF_LC+13, XF_LC+18, XF_LC+5, XF_LC+4, XF_LC+17
+\ THE C64'S OWN WORDS, decoded from the $69xx strings rather than
+\ invented: Captured_txt ($69CB) at entry, Color_txt ($E6DB) through
+\ select, Finish_txt ($69BE) through play, then Complete_txt ($69FD),
+\ BurntOut_txt ($69F1) and Deadlock_txt ($69A4). The first cut of this
+\ layer made up "transfer done", "transfer failed" and "short circuit";
+\ KC caught it. LOWERCASE, because the original's capitals are two cells
+\ each and XfGlyphAt is one cell a glyph -- bank 6's PnGlyph does the
+\ wide ones and is unreachable from here. The words are the original's;
+\ the casing is not.
+\
+\ "colour" and "finish -" are eight cells so the countdown's two digits
+\ land on XF_COL_TIME, the field's last pair, where the C64 puts them.
+.xfTxtCapt                      \ "captured"
+  EQUB XF_LC+2, XF_LC+0, XF_LC+15, XF_LC+19, XF_LC+20, XF_LC+17, XF_LC+4, XF_LC+3, &FF
+.xfTxtColour                    \ "colour  "
+  EQUB XF_LC+2, XF_LC+14, XF_LC+11, XF_LC+14, XF_LC+20, XF_LC+17
+  EQUB PN_SPACE, PN_SPACE, &FF
+.xfTxtFinish                    \ "finish -"
+  EQUB XF_LC+5, XF_LC+8, XF_LC+13, XF_LC+8, XF_LC+18, XF_LC+7
+  EQUB PN_SPACE, PN_DASH, &FF
+.xfTxtDone                      \ "complete"
+  EQUB XF_LC+2, XF_LC+14, XF_LC+12, XF_LC+15, XF_LC+11, XF_LC+4, XF_LC+19, XF_LC+4, &FF
+.xfTxtFail                      \ "burnt out"
+  EQUB XF_LC+1, XF_LC+20, XF_LC+17, XF_LC+13, XF_LC+19
   EQUB PN_SPACE
-  EQUB XF_LC+3, XF_LC+14, XF_LC+13, XF_LC+4, &FF
-.xfTxtFail                      \ "transfer failed"
-  EQUB XF_LC+19, XF_LC+17, XF_LC+0, XF_LC+13, XF_LC+18, XF_LC+5, XF_LC+4, XF_LC+17
-  EQUB PN_SPACE
-  EQUB XF_LC+5, XF_LC+0, XF_LC+8, XF_LC+11, XF_LC+4, XF_LC+3, &FF
-.xfTxtShort                     \ "short circuit"
-  EQUB XF_LC+18, XF_LC+7, XF_LC+14, XF_LC+17, XF_LC+19
-  EQUB PN_SPACE
-  EQUB XF_LC+2, XF_LC+8, XF_LC+17, XF_LC+2, XF_LC+20, XF_LC+8, XF_LC+19, &FF
+  EQUB XF_LC+14, XF_LC+20, XF_LC+19, &FF
+.xfTxtShort                     \ "deadlock"
+  EQUB XF_LC+3, XF_LC+4, XF_LC+0, XF_LC+3, XF_LC+11, XF_LC+14, XF_LC+2, XF_LC+10, &FF
 
 \ ============================================================
 \ state
