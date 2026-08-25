@@ -23,6 +23,13 @@ own speeds and dwells, burbling to itself as it goes, with the live score table 
 portrait on its last page. The manual's text is hand-editable (`src/data/briefing.txt`), and every
 front-end screen wears the palette of the last deck played.
 
+And it now has an **endgame**. Clear a deck and it pays 500, sounds its chord and the floor
+goes to the cleared colour; clear every deck on the ship and it pays 2,000 and puts up the
+original's own congratulations screen before boarding the next ship — a fresh roster, a new
+name, and your captured droid carried across at seven energy, as the C64 does it. The
+difficulty stops climbing at the eighth ship and the eight ship names cycle under it, so the
+game is not won so much as survived: it runs until you die, which is the original's shape.
+
 The **visual pass has started**. The BBC's palette is fully saturated where the C64's is not, so a
 deck floor of solid red or cyan reads far harsher here than the original ever did: half the floor's
 pixels now take black in a 2x2 checker, and it comes out at half intensity. That turns out to add a
@@ -32,7 +39,9 @@ static text screens do not dither; they take a solid background of their own, ch
 because a floor that looks right underfoot is often far too bright to read white text on.
 
 **What is left** is the rest of the visual pass, the balance pass, a volume control, and trimming
-the front end's disc loads. See [`PLAN.md`](PLAN.md) for the layered build plan, the memory map, decisions taken
+the front end's disc loads. RAM is the binding constraint now rather than any of them: main RAM
+and the data bank are down to single-figure bytes each, so the next feature of any size has to buy
+its room from somewhere first. See [`PLAN.md`](PLAN.md) for the layered build plan, the memory map, decisions taken
 and current status.
 
 ## Target
@@ -91,6 +100,10 @@ emulator before the next begins:
     testing on real machines outstanding
 14. **Visual pass** — the deck dither and the per-deck text-screen backgrounds ✅ done; the
     remaining palettes and the characters that fight MODE 1 outstanding
+15. **The endgame** — ✅ done: the deck and ship payouts, the congratulations screen, and the
+    ship progression. Before this the port had no win condition at all — `shipNumDroids` was
+    maintained and never read, and the C64's two entry points were fused into one routine so
+    the second could not be reached
 
 Each completed layer keeps its working notes in [`docs/`](docs/) — the measurements, the dead ends
 and the hardware facts bought the hard way, including several options that were costed and
