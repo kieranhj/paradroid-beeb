@@ -186,7 +186,7 @@ addresses from the `beebasm` output rather than from any document.** In outline:
 | SWRAM bank 4 | `PARADAT` — tiles, levels, palettes, droid game data, **the level-draw code, the droid AI, Layer 10's entry/exit and Layer 11e's sound driver**. The char bitmaps ship ZX0-packed; `BuildCharset` unpacks them into the idle sprite save areas at deck load |
 | SWRAM bank 5 | `PARASPR` — the blitter, shifts 0 and 1 px. **Evicted for the briefing**, which loads `PARMAN` over it: the manual's text, `briefman.asm` and the chatter's effect records. Both exits reload the blitter |
 | SWRAM bank 6 | `PARSPR2` — shifts 2 and 3 px, same layout, plus Layer 9's panel/console, Layer 11f's `PnBriefing` and the 912 B `dfsSave` snapshot — **full** (16 B) |
-| SWRAM bank 7 | `PARXFER` — Layer 10's transfer minigame, Layer 8b's lift screen, the console's ship, deck-plan and droid-database pages, and Layer 11's game over. The title is NOT here any more — it is the `PARTITL` disc overlay. **5,690 B free, reserved for the droid portrait pool** |
+| SWRAM bank 7 | `PARXFER` — Layer 10's transfer minigame, Layer 8b's lift screen, the console's ship, deck-plan and droid-database pages, and Layer 11's game over. The title is NOT here any more — it is the `PARTITL` disc overlay. **58 B free** — the portrait-pool reservation it used to carry is long gone |
 
 **RAM is the binding constraint. Measured from the build of 2026-08-24**, not remembered: the
 main-RAM code image ends at `&2FFE`, so **2 bytes** below `&3000`, and **bank 4 has 3 B** after
@@ -204,8 +204,9 @@ palettes. **Bank 4 also has alignment padding in front of `colourMap` that the f
 Layer 11f's front end spent bank 4's margin down again (the sixteen-row change had bought it back
 to 60 by collapsing three copies of the `t1i3` restore into one in `ReframeView` — see
 `docs/layer-9-hud.md` §6g). The build PRINTs bank 4's fuel gauge every run; the other three come
-from `&C000` minus the end addresses it also PRINTs — **bank 5 1,033 B, bank 6 4 B, bank 7 314 B**
-as of 2026-08-24, the low overlay 1 B and `lowcode2` 8 B.
+from `&C000` minus the end addresses it also PRINTs — **bank 5 1,033 B, bank 6 4 B, bank 7 58 B**
+as of 2026-08-25 (bank 7 was 314 B until Layer 10 DECISION 13's repeat filter rolled
+`plandata.asm`'s `ALIGN` to the next page — 54 bytes of code that cost 256), the low overlay 1 B and `lowcode2` 8 B.
 
 **The `PARBRF` overlay at `&0400` has a hard ceiling of `&0800` and 3 bytes free**, and the
 ceiling is measured, not caution: `&0800-&08FF` is the MOS's sound workspace and its IRQ writes

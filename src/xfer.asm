@@ -85,6 +85,9 @@ ASSERT PLAY_VIS_ROWS + 1 == 16  \ the board needs all 16 rows
   STA sndFx2                    \ and $22C8 on voice 1
   LDA #&1B
   STA sndFx1
+  LDA #0                        \ the repeat filter starts disarmed, so a
+  STA xfRptDir                  \ key still held from the deck cannot eat
+  STA xfRptCtr                  \ the first row of the game
   LDA #XF_PH_RELEASE
   STA xfPhase
   RTS
@@ -146,6 +149,15 @@ ASSERT PLAY_VIS_ROWS + 1 == 16  \ the board needs all 16 rows
   JMP XfEndTick
 .xtk_replay
   JMP XfReplayTick
+
+\ ---- the keyboard's repeat filter (Layer 10 DECISION 13) -----
+\ Passes, at FRAME_LOCK's 25 Hz. DELAY 3 puts the second row 4 passes
+\ (160 ms) after the first, RATE 1 puts every row after that 2 passes
+\ (80 ms) apart — 12.5 rows/s held, against the original's 25.
+\ 160 ms is the guarantee: a tap shorter than that is exactly one row.
+\ It was 5 (240 ms) on the first cut and KC asked for less hold-off.
+XF_RPT_DELAY = 3
+XF_RPT_RATE  = 1
 
 XF_PH_RELEASE = 0
 XF_PH_SELECT  = 1
@@ -893,8 +905,48 @@ XF_REPLAY_PASSES = 50
   STA xfYWant
   RTS
 .xgm_human
-  JMP XfReadInput               \ $214F: the joystick, re-read — the CPU
+  JSR XfReadInput               \ $214F: the joystick, re-read — the CPU
                                 \ half-turn has been through these vars
+
+\ ---- the keyboard's repeat filter — NOT in the C64 -----------
+\ Layer 10 DECISION 13. The original is level-triggered: xfer_DoMove
+\ moves one row for any non-zero joyYDir, so a held stick walks the
+\ cursor one row per iteration — 25 rows/s, the whole 12-wire bus in
+\ under half a second. That is fine on a self-centring microswitch
+\ stick, where a flick fits inside one 40 ms iteration, and it is not
+\ fine on a keyboard, where the shortest honest tap is two or three
+\ rows. So the human's axis — and ONLY the human's; the CPU arm above
+\ returns before this — is edge-triggered with a hold-off:
+\   a new direction  moves at once, then waits XF_RPT_DELAY+1 passes
+\   held after that  moves every XF_RPT_RATE+1 passes
+\   released         re-arms the edge
+\ A tap of any length under 240 ms is therefore exactly one row, and a
+\ hold still crosses the bus. Nothing else changes: the iteration rate,
+\ the countdown and the CPU's own every-other-frame throttle are all
+\ still the original's.
+  LDA joyYDir
+  BEQ xgm_release               \ nothing held: arm the next edge
+  CMP xfRptDir
+  BEQ xgm_held
+  STA xfRptDir                  \ a NEW direction, reversals included:
+  LDA #XF_RPT_DELAY             \ this row moves, the next one waits
+  STA xfRptCtr
+  RTS
+.xgm_held
+  LDA xfRptCtr
+  BEQ xgm_repeat
+  DEC xfRptCtr
+  LDA #0                        \ inside the hold-off: the key is down
+  STA joyYDir                   \ but the cursor does not move
+  RTS
+.xgm_repeat
+  LDA #XF_RPT_RATE
+  STA xfRptCtr
+  RTS
+.xgm_release
+  STA xfRptDir                  \ A = 0
+  STA xfRptCtr
+  RTS
 
 \ ============================================================
 \ XfDoMove — xfer_DoMove ($1D75)
@@ -1929,6 +1981,8 @@ XF_LC = PN_LOWER_A
 .xfColTmp    EQUB 0             \ the C64 parks this in xfer_cpuSpriteX
 .xfCurIdx    EQUB 0
 .xfSprCol    EQUB 0             \ Colorize4 parks the colour here
+.xfRptDir    EQUB 0             \ the repeat filter's held direction...
+.xfRptCtr    EQUB 0             \ ...and passes still to wait
 .xfWval      EQUB 0             \ write-helper saves
 .xfWsx       EQUB 0
 .xfWsy       EQUB 0

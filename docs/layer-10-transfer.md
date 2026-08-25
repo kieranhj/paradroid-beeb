@@ -135,6 +135,74 @@ is `WinningColor == LeftColor`.
     play counter every other iteration as `$20DA` does; `DoScore` keeps dribbling banked
     points during the game where the C64's modal loop froze them.
 
+13. **[DECISION] The transfer cursor is edge-triggered with a hold-off** (KC, 2026-08-25).
+    The only place the port's controls deliberately leave the original. KC's play-testing
+    said the subgame was "too fast and a bit twitchy on the keyboard compared to the C64
+    joystick"; the investigation that followed found the *clock* is faithful and the
+    *input model* is the problem.
+
+    - **The countdown is right, and 2 MHz does not touch it.** Mechanism is verbatim:
+      BCD `xfTime` from `&99`, decremented on every other iteration (`xfFrame AND 1`,
+      `$20DA`'s own test), then `xfGrace` = `&55` iterations of grace. The port runs one
+      iteration per pass, and a pass is `FRAME_LOCK` = 2 fields — **measured in jsbeeb at
+      79,886 cycles between consecutive `XfPlayTick` entries, i.e. 39.94 ms, exactly two
+      fields with no overrun**, against a body costing 67,550 cycles (85% of the pass).
+      So 99 x 2 x 2 fields = **7.92 s of countdown + 3.4 s of grace**.
+    - **The C64 lands on the same 25 Hz, by a different route.** `doSubGame` ($2166) gates
+      *each half-turn* on `irqToggle`, which the raster chain sets at line 246 and clears
+      at line 118. Both waits are live (`F0 FC`) — worth noting that three of GameLoop's
+      five equivalents were nopped to `D0 00` in this CE listing, with a `!! remove`
+      comment beside them; that is the "CE runs more iterations per second" dial, and the
+      subgame was left out of it. The gate is work-dependent, so it was costed: one
+      half-turn is dominated by 3 x `xfer_DoColumn`, 12 rows each through
+      `xsub_Black4`/`xfer_Colorize4`, ~21,000 cycles = ~21 ms, which exceeds one PAL frame
+      (19,656). Each half-turn therefore takes its own frame: 2 frames an iteration, 25 Hz.
+      **This half is an estimate from the listing, not a measurement** — there is no C64
+      emulator in this toolchain — but the port's measured 67,550-cycle body corroborates
+      it, being the same instruction stream plus the MODE 1 cell repaints the C64 has no
+      need of. If the C64's half-turn were under ~11.7 ms the gate would pass two per frame
+      and the original would be up to 2x faster than the port; the cycle count says it is
+      not, comfortably.
+    - **So the twitchiness is the input model, and it is the original's.** `xfer_DoMove`
+      ($1D75) is level-triggered — any non-zero `joyYDir` moves exactly one row — and
+      `ReadKeys` is a raw OSBYTE `&81` matrix scan, so the port's key state is level too.
+      One row per 40 ms, 25 rows/s, the whole 12-wire bus in under half a second. That is
+      playable on a self-centring microswitch stick, where a flick fits inside one 40 ms
+      iteration; it is not playable on keys, where the shortest honest tap is two or three
+      rows and single-row movement is impossible.
+    - **What was built**, in `XfGetMove`'s human arm only (the CPU arm returns above it, so
+      the CPU's own every-other-frame throttle is untouched): a new direction moves at once
+      and then waits `XF_RPT_DELAY`+1 = 4 passes (160 ms); held after that, one row every
+      `XF_RPT_RATE`+1 = 2 passes (80 ms, 12.5 rows/s); released, the edge re-arms. A
+      reversal counts as a new direction and moves immediately. `XfStart` clears the two
+      state bytes so a key still held from the deck cannot eat the first row.
+    - **The hold-off was 6 passes (240 ms) on the first cut**; KC played it and asked for
+      less, so `XF_RPT_DELAY` went 5 -> 3. 160 ms is the guarantee it buys: a tap shorter
+      than that is exactly one row, and anything longer starts repeating.
+    - **Verified in jsbeeb, 2026-08-25** (entered by poking the main-RAM `xferDroid`
+      mirror). At the first cut's 240 ms: a 160 ms tap moved **1** row where it used to
+      move 4, an 800 ms hold moved **9**, a reversal tap moved exactly 1 the other way,
+      the countdown still ticked 99 -> 35 over 254 frames (256 predicted), and the game
+      ran to its verdict clean. Re-measured at the shipped 160 ms: a 120 ms tap moves
+      **1** row, a 200 ms hold moves **2** — the boundary sits where the constant says.
+    - **The cost, and it is out of proportion: 256 bytes of bank 7.** The filter is 54
+      bytes, but `plandata.asm`'s `ALIGN &100` had only 27 bytes of padding spare, so the
+      addition rolled `planInk` to the next page. **Bank 7 went 314 B free -> 58 B**
+      (`xfer_end` = `&BFC6`). Recoverable by assembling the routine *behind* the ALIGN —
+      the `consolesel.asm`-in-bank-4 trick — at the price of splitting it away from
+      `XfGetMove`. Left where it reads correctly for now; see the open item below.
+    - **Not changed, deliberately**: the select countdown, which is the one real timing
+      deviation found. `SubGameSelectSide`'s `_14` loop is paced by `DelayScore(80)` —
+      ~103,000 cycles, ~105 ms a tick before badline steal — so the original takes ~11 s
+      over 99 ticks where the port's every-other-pass tick takes 7.92 s, ~30-40% fast.
+      Fire confirms immediately either way, so it only shows if the player dithers. Fixing
+      it needs a mod-3 counter rather than the present `AND #1`. KC's call, left alone.
+
+**Open item from 13:** whether to buy bank 7's 256 bytes back by moving the repeat filter
+behind `plandata.asm`'s `ALIGN`. Bank 7's spare is nominally reserved for the droid portrait
+pool, and main RAM — not bank 7 — is the project's binding constraint, so this was not done
+unilaterally.
+
 ## 4. The interfaces, for whoever touches this next
 
 - `dc_player` (bank 4) sets `xferDroid` and returns — no bounce, no debounce, the
