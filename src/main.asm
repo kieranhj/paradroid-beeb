@@ -2902,6 +2902,11 @@ INCLUDE "src/data/droids.asm"
 \ scarcer of the two now that the level draw and the droid AI are in it.
 INCLUDE "src/data/effects.asm"
 ASSERT EF_SPRITE_ROWS == SPR_H
+
+\ The effect blitter rides beside its artwork — moved out of the code
+\ image in RAM pass 2. Read src/sprfx.asm's header before touching it:
+\ every entry relies on this bank being paged in already.
+INCLUDE "src/sprfx.asm"
 .spr_end
 SAVE "PARASPR", spr_start, spr_end, DATA_LOAD, DATA_LOAD
 
