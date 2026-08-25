@@ -4,15 +4,15 @@
 \ ITS POSITION IN THE PARXFER BLOCK IS LOAD BEARING, the same way
 \ src/consolesel.asm's is in bank 4 — but the OTHER way round.
 \ plandata.asm's ALIGN &100 leaves padding that anything assembled
-\ BEFORE it rides in for free, and after the Layer 10 glyph-pool pass
-\ that padding was 126 B. The icons are 421 B all told, so they cannot
-\ all ride: what does is droidicon7.asm's 110 B of rotor and digits and
-\ the 14 B of state in xfer.asm, which together leave the padding at 2.
-\ This file — the code, ~297 B — is therefore assembled BEHIND the
-\ ALIGN, where it costs its own size and nothing more.
-\ Move it in front and the padding rolls a page: 256 B of bank 7 gone
-\ at a stroke, and the bank is 33 B from full. Measured 2026-08-25;
-\ read docs/layer-10-transfer.md DECISION 14 before touching it.
+\ BEFORE it rides in for free. After the Layer 10 glyph-pool pass,
+\ xfer.asm's 14 B of state and droidicon7.asm's 110 B rode there; RAM
+\ pass 3b then retired droidicon7.asm (the one icon copy is main RAM's
+\ now, beside sprite.asm), so the padding is wide again — measure it
+\ from the listing, not from here. This file — the code, ~297 B — is
+\ still assembled BEHIND the ALIGN, where it costs its own size and
+\ nothing more. Move it in front and its size comes out of the padding
+\ and can roll a page: 256 B of bank 7 gone at a stroke. Read
+\ docs/layer-10-transfer.md DECISION 14 before touching it.
 
 \ ============================================================
 \ XfIcons — the two droid number icons, DECISION 14
@@ -186,7 +186,7 @@ XI_ROWS = 21                    \ a C64 sprite, and rows 21-23 of the
   TAY
   LDX #0
 .xir_rcopy
-  LDA conDrRotor7,Y
+  LDA conDrRotor,Y
   STA xiSrc,X
   INY
   INX
@@ -210,7 +210,7 @@ XI_ROWS = 21                    \ a C64 sprite, and rows 21-23 of the
   CLC : ADC xiTmp
   TAY
   LDX xiTmp2
-  LDA conDrDigits7,Y
+  LDA conDrDigits,Y
   STA xiSrc,X
   INX
   CPX #3

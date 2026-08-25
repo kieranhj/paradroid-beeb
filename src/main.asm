@@ -2555,6 +2555,13 @@ INCLUDE "src/door.asm"
 INCLUDE "src/lift.asm"
 INCLUDE "src/sprite.asm"
 
+\ The console's droid icon — rotor and digits, 110 B of data. MAIN RAM
+\ (RAM pass 3b), not a bank: console.asm draws it from bank 6 and
+\ xfericon.asm from bank 7, and both can always see main RAM. One copy
+\ here retires the second copy each bank used to carry (DECISION 14's
+\ droidicon7.asm is gone again, this time with its labels).
+INCLUDE "src/data/droidicon.asm"
+
 IF DEBUG_TIME
 \ ============================================================
 \ TimeCall — bracket ONE routine with the User VIA T1 counter
@@ -2896,7 +2903,9 @@ INCLUDE "src/sprsplit.asm"
 \ because the droid database in bank 7 needed the same 1,542 bytes and
 \ could not see this copy. See CON_STR_ADDR at the top of this file.
 INCLUDE "src/data/conicons.asm"
-INCLUDE "src/data/droidicon.asm"
+\ The droid icon (droidicon.asm) is NOT here any more either — same
+\ story as the string table: bank 7 needed the same 110 bytes, so one
+\ copy lives in main RAM now, read by both banks (RAM pass 3b).
 \ The DFS workspace snapshot — the two spans the low overlay buries and
 \ the filing system cannot live without: &0D60-&0DEF (the extended
 \ vector table DFS 1.2 routes FILEV through, under lowcode2) and
@@ -2922,10 +2931,9 @@ ORG SWRAM_BASE
 .xfer_start
 INCLUDE "src/xfer.asm"
 INCLUDE "src/data/xferboard.asm"
-INCLUDE "src/data/droidicon7.asm"   \ DECISION 14: the icon rotor and
-                                    \ digits, bank 6's copy under second
-                                    \ labels. Deleted in Layer 13d with
-                                    \ the database stand-in, back now
+\ droidicon7.asm (DECISION 14's second copy of the icon rotor and
+\ digits) is gone AGAIN — the one copy is main RAM's now, beside
+\ sprite.asm, where this bank can see it (RAM pass 3b).
 \ Layer 8b's lift screen shares the bank AND the machinery — the shadow
 \ screens, the glyph page, the row tables and the panel-line text are
 \ all xfer.asm's, safe because the two can never be up at once.
