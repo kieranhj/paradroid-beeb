@@ -2969,6 +2969,10 @@ ORG SWRAM_BASE
 .xfer_start
 INCLUDE "src/xfer.asm"
 INCLUDE "src/data/xferboard.asm"
+INCLUDE "src/data/droidicon7.asm"   \ DECISION 14: the icon rotor and
+                                    \ digits, bank 6's copy under second
+                                    \ labels. Deleted in Layer 13d with
+                                    \ the database stand-in, back now
 \ Layer 8b's lift screen shares the bank AND the machinery — the shadow
 \ screens, the glyph page, the row tables and the panel-line text are
 \ all xfer.asm's, safe because the two can never be up at once.
@@ -2998,6 +3002,9 @@ INCLUDE "src/data/plandata.asm"
 \ ALIGN &100 for planInk, and whatever sits before it pays the padding.
 \ Behind it, this block costs the bank its own size and nothing more.
 INCLUDE "src/data/sideview.asm"
+\ DECISION 14's icon code, BEHIND the ALIGN on purpose — its own
+\ header says why, and moving it in front costs the bank 256 B.
+INCLUDE "src/xfericon.asm"
 .xfer_end
 SAVE "PARXFER", xfer_start, xfer_end, DATA_LOAD, DATA_LOAD
 

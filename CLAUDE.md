@@ -186,7 +186,7 @@ addresses from the `beebasm` output rather than from any document.** In outline:
 | SWRAM bank 4 | `PARADAT` — tiles, levels, palettes, droid game data, **the level-draw code, the droid AI, Layer 10's entry/exit and Layer 11e's sound driver**. The char bitmaps ship ZX0-packed; `BuildCharset` unpacks them into the idle sprite save areas at deck load |
 | SWRAM bank 5 | `PARASPR` — the blitter, shifts 0 and 1 px. **Evicted for the briefing**, which loads `PARMAN` over it: the manual's text, `briefman.asm` and the chatter's effect records. Both exits reload the blitter |
 | SWRAM bank 6 | `PARSPR2` — shifts 2 and 3 px, same layout, plus Layer 9's panel/console, Layer 11f's `PnBriefing` and the 912 B `dfsSave` snapshot — **full** (16 B) |
-| SWRAM bank 7 | `PARXFER` — Layer 10's transfer minigame, Layer 8b's lift screen, the console's ship, deck-plan and droid-database pages, and Layer 11's game over. The title is NOT here any more — it is the `PARTITL` disc overlay. **58 B free** — the portrait-pool reservation it used to carry is long gone |
+| SWRAM bank 7 | `PARXFER` — Layer 10's transfer minigame and its droid icons, Layer 8b's lift screen, the console's ship, deck-plan and droid-database pages, and Layer 11's game over. The title is NOT here any more — it is the `PARTITL` disc overlay. **9 B free (2 padding + 7 tail) — FULL** |
 
 **RAM is the binding constraint. Measured from the build of 2026-08-24**, not remembered: the
 main-RAM code image ends at `&2FFE`, so **2 bytes** below `&3000`, and **bank 4 has 3 B** after
@@ -204,14 +204,15 @@ palettes. **Bank 4 also has alignment padding in front of `colourMap` that the f
 Layer 11f's front end spent bank 4's margin down again (the sixteen-row change had bought it back
 to 60 by collapsing three copies of the `t1i3` restore into one in `ReframeView` — see
 `docs/layer-9-hud.md` §6g). The build PRINTs bank 4's fuel gauge every run; the other three come
-from `&C000` minus the end addresses it also PRINTs — **bank 5 1,033 B, bank 6 4 B, bank 7 314 B**
+from `&C000` minus the end addresses it also PRINTs — **bank 5 1,033 B, bank 6 4 B, bank 7 7 B**
 as of 2026-08-25. **Bank 7's tail figure ALWAYS understates it**, for the same reason bank
 4's does: `plandata.asm` carries an `ALIGN &100` for `planInk`, and the padding in front of
-it — **126 B** now — is free to anything assembled before
-`INCLUDE "src/data/plandata.asm"`. Real free space in bank 7 is 126 + 314 = **440 B**, of
-which 126 is reachable only from before that include, and spending 127 costs 256 at a
-stroke. Quote the pair, never the tail alone: Layer 10 DECISION 13's repeat filter cost
-54 B and its tail figure made it look like 256, the low overlay 1 B and `lowcode2` 8 B.
+it is free to anything assembled before `INCLUDE "src/data/plandata.asm"`. Quote the pair,
+never the tail alone — but the pair is now **2 B of padding and 7 B of tail, 9 B real**:
+Layer 10 DECISION 14's droid icons spent everything the glyph-pool pass found.
+**Bank 7 is FULL**, and anything further there needs its own pass first. Spending one byte
+past the padding costs 256 at a stroke, which is why `src/xfericon.asm` is included AFTER
+`plandata.asm` and its header says so, the low overlay 1 B and `lowcode2` 8 B.
 
 **The `PARBRF` overlay at `&0400` has a hard ceiling of `&0800` and 3 bytes free**, and the
 ceiling is measured, not caution: `&0800-&08FF` is the MOS's sound workspace and its IRQ writes
@@ -270,6 +271,11 @@ releases beebasm's own overwrite check over exactly the range an over-long image
 without the GUARD an overrun assembles silently and corrupts `PARAFNT` at run time. A build that
 stops with *Guard point hit* at `sprScan0` means the code image is full. **Everything in `src/` is in the build** — the five inherited Master/HAL files that
 were not have been deleted, so nothing there is dead. Keep it that way.
+
+**`src/xfericon.asm` assembles into bank 7 BEHIND `plandata.asm`'s `ALIGN`, and that
+position is load bearing** — the same trap as `consolesel.asm` in bank 4, the other way
+round. Read its header before moving it; in front of the ALIGN the padding rolls a page
+and the bank overflows.
 
 **Six files assemble into SWRAM bank 4 (eight with `DEBUG_KILL` and `DEBUG_DECK`), not main RAM**: `screen.asm`, `scroll.asm`, `level.asm`,
 `zx0depack.asm`, `droid.asm`, `consolesel.asm` and (on a `DEBUG_KILL` build) `dbgkill.asm`

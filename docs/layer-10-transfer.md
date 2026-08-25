@@ -201,6 +201,68 @@ is `WinningColor == LeftColor`.
       Fire confirms immediately either way, so it only shows if the player dithers. Fixing
       it needs a mod-3 counter rather than the present `AND #1`. KC's call, left alone.
 
+14. **[DECISION] The droid number icons are back, on the board** (KC, 2026-08-25).
+    KC played the transfer game and said the icons were missing. They were: DECISION 7
+    dropped them in August, replacing them with the panel line's two numbers. This restores
+    them, and corrects what DECISION 7 said the original does.
+
+    - **What the C64 actually draws.** `SubGameSelectSide` puts two hardware sprites either
+      side of the board — sprite 7 with image `$4F` for the player (`$E12B-$E14C`) and the
+      target's with `droidSprNum,X + $48` (`$E14F-$E175`). `$48 * 64 = $5200`, the dynamic
+      sprite area, so these are the **live droid sprites**: rotor top and bottom with the
+      three-digit number between, exactly what `BuildDroidSprite` (`$3C77`) and
+      `AnimateDroids` (`$3CFB`) compose.
+    - **They do not slide, and DECISION 7's wording that they do was wrong** (KC's
+      correction). `$E1B5-$E1C7` writes `plySpriteX`/`cpuSpriteX` as one of two values, 88
+      or 255, and `$E1F5-$E213` pushes those at the sprite registers: the icons **swap
+      sides** when the stick changes its mind. Each keeps its own colour throughout — `$F1`
+      white for the player at `$E144`, `0` black for the target at `$E165` — so the colour
+      names the DROID, never the side.
+    - **[DECISION] Colour: the player's own yellow, the target BLACK** (KC, in two
+      steps). The transfer palette has no white, so the player's icon takes the player's
+      own yellow, logical 1. Magenta was the first cut for the target and KC changed it to
+      black, logical 3 — which is both better on the eye against the blue and closer to
+      the original, whose target sprite is literally black (`SpriteColor` 0 at `$E165`).
+      It also removes a wrinkle the magenta version had: yellow and magenta are the LEFT
+      and RIGHT *side* colours here, so a player on the right saw their yellow icon over
+      the magenta side and the two readings of the colour disagreed. Black is not a side
+      colour, so the icon colour now means only "whose droid this is", as the C64's does.
+    - **The colour step is general, and turning the target black PAID FOR ITSELF.** Black
+      needs both bit planes where yellow needs one, so `XfIconPix` builds the logical-3
+      byte — the top nibble is the high plane, the same nibble shifted down is the low one,
+      OR them — and ANDs it with the icon's mask: `&0F` yellow, `&F0` magenta, `&FF` black.
+      One routine for any of the four logical colours. It cost two bytes there and gave six
+      back at the call sites, because `XfIcons` now passes the mask straight in Y and
+      `XfIcon` needs no pen-to-plane decision at all. **Bank 7 went 3 B free to 9.**
+    - **Position: board columns 8 and 28, rows 0-2.** `x=88` and `x=255` are screen pixels
+      64 and 231 once the C64's 24-pixel border offset comes off. Both sit in the blank
+      spans of the three-row top block — `xbTop` has content only at 19-20 (row 0), 3 and
+      18-21 and 36 (row 1), 3-5 and 18-21 and 34-36 (row 2) — so **the icons overlap no
+      wire**, which was KC's own observation and is confirmed against the exported layout.
+    - **Drawn once, and nothing repaints them.** `XfDoColumn` walks only the twelve wire
+      rows, `XfDrawCBar` columns 19-20, `XfDrawResult` row 1 columns 19-20,
+      `XfDrawPulserCols` columns 1 and 38. So the icons are drawn at setup (`XfStart` and
+      `XfReplayTick`, both above `XfRepaintAll` — they are not in the shadows) and again
+      only when the stick actually changes side in `XfSelectTick`. Nothing runs during play.
+      Blank rows write logical 0, which is the board's own background, so a swap needs no
+      separate clear.
+    - **`src/xfericon.asm`, and ITS POSITION IN THE BLOCK IS LOAD BEARING** — the
+      `consolesel.asm` trick, but the other way round. The icons are 421 B all told against
+      126 B of `ALIGN` padding, so they cannot all ride in it. What does is
+      `droidicon7.asm`'s 110 B (regenerated — `export_droidicon.py` still had the `OUT7`
+      path Layer 13d stopped using) plus the state; the ~297 B of code is assembled
+      **behind** the ALIGN. Move it in front and the padding rolls a page and the bank
+      overflows. This was not theory: the first cut put everything in front and overran by
+      198 B, and getting it to fit took the split, a tighter swap test in `XfSelectTick`
+      (`STX` does not touch flags, so `CPX`'s Z survives it) and dropping a variable by
+      deriving the second column as `XI_LCOL + XI_RCOL - xiCol`.
+    - **Bank 7 is effectively FULL: 2 B of padding and 7 B of tail, 9 B real.** The 154 B
+      the glyph pool found is spent. Anything further in bank 7 needs its own pass first.
+    - **Verified in jsbeeb 2026-08-25**: 001 yellow left and 329 magenta right at setup;
+      pressing right swaps them, each keeping its colour, and the panel line agrees; a full
+      game plays to its verdict with both icons untouched, confirming the no-repaint
+      analysis live. Re-checked after the target went black: 001 yellow, 329 black.
+
 **Open item from 13 — CLOSED, and it was never worth doing.** Moving the repeat filter
 behind `plandata.asm`'s `ALIGN` would have restored the *tail* figure while costing its 46
 bytes 1:1 out of the tail, leaving real free space unchanged at 286 B and putting the routine

@@ -80,6 +80,8 @@ ASSERT PLAY_VIS_ROWS + 1 == 16  \ the board needs all 16 rows
   JSR XfClearSubGame
   JSR XfSelectSide              \ the board, into the shadows
   JSR XfRepaintAll              \ and once onto the screen
+  JSR XfIcons                   \ DECISION 14, ABOVE the repaint: the
+                                \ icons are not in the shadows
   JSR XfTextClear
   LDA #9                        \ Capture's entry pair: $22C1 on voice 2
   STA sndFx2                    \ and $22C8 on voice 1
@@ -183,7 +185,10 @@ XF_PH_REPLAY  = 4
 .xsl_15
   LDX xfPlyColor
 .xsl_16
-  STX xfLeftColor
+  CPX xfLeftColor               \ DECISION 14: the sides only swap when the
+  STX xfLeftColor               \ stick changes its mind, so the icons are
+  BEQ xsl_17                    \ redrawn then and at setup, never in play.
+  JSR XfIcons                   \ STX does not touch flags, so CPX's Z lives
 .xsl_17
   JSR XfDrawResult              \ X = LeftColor: the default verdict
   JSR XfDrawPulserCols
@@ -346,6 +351,7 @@ XF_REPLAY_PASSES = 50
   JSR XfClearSubGame
   JSR XfSelectSide
   JSR XfRepaintAll
+  JSR XfIcons                   \ a replay rebuilds the board under them
   JSR XfTextClear
   LDA #&99
   STA xfTime
