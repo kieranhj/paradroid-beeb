@@ -186,15 +186,17 @@ addresses from the `beebasm` output rather than from any document.** In outline:
 | SWRAM bank 4 | `PARADAT` — tiles, levels, palettes, droid game data, **the level-draw code, the droid AI, Layer 10's entry/exit and Layer 11e's sound driver**. The char bitmaps ship ZX0-packed; `BuildCharset` unpacks them into the idle sprite save areas at deck load |
 | SWRAM bank 5 | `PARASPR` — the blitter, shifts 0 and 1 px. **Evicted for the briefing**, which loads `PARMAN` over it: the manual's text, `briefman.asm` and the chatter's effect records. Both exits reload the blitter |
 | SWRAM bank 6 | `PARSPR2` — shifts 2 and 3 px, same layout, plus Layer 9's panel/console, Layer 11f's `PnBriefing` and the 912 B `dfsSave` snapshot — **full** (16 B) |
-| SWRAM bank 7 | `PARXFER` — Layer 10's transfer minigame, Layer 8b's lift screen, the console's ship, deck-plan and droid-database pages, and Layer 11's game over. The title is NOT here any more — it is the `PARTITL` disc overlay. **5,690 B free, reserved for the droid portrait pool** |
+| SWRAM bank 7 | `PARXFER` — Layer 10's transfer minigame and its droid icons, Layer 8b's lift screen, the console's ship, deck-plan and droid-database pages, and Layer 11's game over. The title is NOT here any more — it is the `PARTITL` disc overlay. **9 B free (2 padding + 7 tail) — FULL** |
 
 **RAM is the binding constraint. Measured from the build of 2026-08-24**, not remembered: the
 main-RAM code image ends at `&2FFE`, so **2 bytes** below `&3000`, and **bank 4 has 3 B** after
 Layer 15 built its endgame on the space pass's 105 and then fixed the cleared-deck re-fire — any figure elsewhere claiming 2, 8, 47 or 60 is stale. The pass deleted
 112 bytes of per-deck tables that nothing read and spent 15 back on a self-healing page pad in
-`sound.asm`; Layer 15 then spent 92 of the rest on the endgame. **Main RAM went UP, 3 → 26**, because
-`DEBUG_DECK`'s 69-byte arm moved to bank 4 (`src/dbgdeck.asm`, layer-15 DECISION 1) the way
-`dbgkill.asm` did. `docs/memory-map.md` §"Layer 15 space pass" has the detail, and the pad means a
+`sound.asm`; Layer 15 then spent 92 of the rest on the endgame. `DEBUG_DECK`'s 69-byte arm moved
+to bank 4 (`src/dbgdeck.asm`, layer-15 DECISION 1) the way `dbgkill.asm` did.
+**A "Main RAM went UP, 3 → 26" once stood here and was WRONG** — it contradicted the `&2FFE`
+two lines above it, and re-measured on 2026-08-25 the image still ends at `&2FFE`. **Main RAM
+has 2 bytes.** Take it from `PRINT "code"` in the build output, never from this paragraph. `docs/memory-map.md` §"Layer 15 space pass" has the detail, and the pad means a
 future bank-4 edit can move the gauge by up to 37 bytes on its own — read it, do not infer it. Both moved that day: the title's random boot deck
 gave main RAM 4 back (`docs/layer-14-visual.md` DECISION 5) and the console's icon selection gave
 bank 4 46 (`docs/layer-9-hud.md` DECISION 18). **Main RAM is by a wide margin the tightest thing in the
@@ -204,8 +206,15 @@ palettes. **Bank 4 also has alignment padding in front of `colourMap` that the f
 Layer 11f's front end spent bank 4's margin down again (the sixteen-row change had bought it back
 to 60 by collapsing three copies of the `t1i3` restore into one in `ReframeView` — see
 `docs/layer-9-hud.md` §6g). The build PRINTs bank 4's fuel gauge every run; the other three come
-from `&C000` minus the end addresses it also PRINTs — **bank 5 1,033 B, bank 6 4 B, bank 7 314 B**
-as of 2026-08-24, the low overlay 1 B and `lowcode2` 8 B.
+from `&C000` minus the end addresses it also PRINTs — **bank 5 1,033 B, bank 6 4 B, bank 7 7 B**
+as of 2026-08-25. **Bank 7's tail figure ALWAYS understates it**, for the same reason bank
+4's does: `plandata.asm` carries an `ALIGN &100` for `planInk`, and the padding in front of
+it is free to anything assembled before `INCLUDE "src/data/plandata.asm"`. Quote the pair,
+never the tail alone — but the pair is now **2 B of padding and 7 B of tail, 9 B real**:
+Layer 10 DECISION 14's droid icons spent everything the glyph-pool pass found.
+**Bank 7 is FULL**, and anything further there needs its own pass first. Spending one byte
+past the padding costs 256 at a stroke, which is why `src/xfericon.asm` is included AFTER
+`plandata.asm` and its header says so, the low overlay 1 B and `lowcode2` 8 B.
 
 **The `PARBRF` overlay at `&0400` has a hard ceiling of `&0800` and 3 bytes free**, and the
 ceiling is measured, not caution: `&0800-&08FF` is the MOS's sound workspace and its IRQ writes
@@ -264,6 +273,11 @@ releases beebasm's own overwrite check over exactly the range an over-long image
 without the GUARD an overrun assembles silently and corrupts `PARAFNT` at run time. A build that
 stops with *Guard point hit* at `sprScan0` means the code image is full. **Everything in `src/` is in the build** — the five inherited Master/HAL files that
 were not have been deleted, so nothing there is dead. Keep it that way.
+
+**`src/xfericon.asm` assembles into bank 7 BEHIND `plandata.asm`'s `ALIGN`, and that
+position is load bearing** — the same trap as `consolesel.asm` in bank 4, the other way
+round. Read its header before moving it; in front of the ALIGN the padding rolls a page
+and the bank overflows.
 
 **Six files assemble into SWRAM bank 4 (eight with `DEBUG_KILL` and `DEBUG_DECK`), not main RAM**: `screen.asm`, `scroll.asm`, `level.asm`,
 `zx0depack.asm`, `droid.asm`, `consolesel.asm` and (on a `DEBUG_KILL` build) `dbgkill.asm`

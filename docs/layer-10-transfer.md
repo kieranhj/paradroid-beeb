@@ -95,6 +95,9 @@ is `WinningColor == LeftColor`.
    unreachable — one bank at a time). PanelTick is skipped while the game runs;
    `PanelSetup` repaints on exit. Verdicts read "transfer done / transfer failed / short
    circuit" in lowercase (wide capitals need the two-cell machinery).
+   **SUPERSEDED IN PART BY DECISION 15**: those three strings were invented rather than
+   taken from the original, and blanking the whole panel line — logo and score with it —
+   was this port's own doing. The one-line field and the lowercase are still right.
 7. **[DECISION] The side-select droids are numbers, not sprites.** The original slides
    the two droid sprites left and right; there is no sprite engine under the board, so
    the panel line shows the human's number on the side the stick last chose. The stock
@@ -134,6 +137,248 @@ is `WinningColor == LeftColor`.
     every other pass (~8 s for 99 BCD, near the original's `DelayScore(80)` pacing); the
     play counter every other iteration as `$20DA` does; `DoScore` keeps dribbling banked
     points during the game where the C64's modal loop froze them.
+
+13. **[DECISION] The transfer cursor is edge-triggered with a hold-off** (KC, 2026-08-25).
+    The only place the port's controls deliberately leave the original. KC's play-testing
+    said the subgame was "too fast and a bit twitchy on the keyboard compared to the C64
+    joystick"; the investigation that followed found the *clock* is faithful and the
+    *input model* is the problem.
+
+    - **The countdown is right, and 2 MHz does not touch it.** Mechanism is verbatim:
+      BCD `xfTime` from `&99`, decremented on every other iteration (`xfFrame AND 1`,
+      `$20DA`'s own test), then `xfGrace` = `&55` iterations of grace. The port runs one
+      iteration per pass, and a pass is `FRAME_LOCK` = 2 fields — **measured in jsbeeb at
+      79,886 cycles between consecutive `XfPlayTick` entries, i.e. 39.94 ms, exactly two
+      fields with no overrun**, against a body costing 67,550 cycles (85% of the pass).
+      So 99 x 2 x 2 fields = **7.92 s of countdown + 3.4 s of grace**.
+    - **The C64 lands on the same 25 Hz, by a different route.** `doSubGame` ($2166) gates
+      *each half-turn* on `irqToggle`, which the raster chain sets at line 246 and clears
+      at line 118. Both waits are live (`F0 FC`) — worth noting that three of GameLoop's
+      five equivalents were nopped to `D0 00` in this CE listing, with a `!! remove`
+      comment beside them; that is the "CE runs more iterations per second" dial, and the
+      subgame was left out of it. The gate is work-dependent, so it was costed: one
+      half-turn is dominated by 3 x `xfer_DoColumn`, 12 rows each through
+      `xsub_Black4`/`xfer_Colorize4`, ~21,000 cycles = ~21 ms, which exceeds one PAL frame
+      (19,656). Each half-turn therefore takes its own frame: 2 frames an iteration, 25 Hz.
+      **This half is an estimate from the listing, not a measurement** — there is no C64
+      emulator in this toolchain — but the port's measured 67,550-cycle body corroborates
+      it, being the same instruction stream plus the MODE 1 cell repaints the C64 has no
+      need of. If the C64's half-turn were under ~11.7 ms the gate would pass two per frame
+      and the original would be up to 2x faster than the port; the cycle count says it is
+      not, comfortably.
+    - **So the twitchiness is the input model, and it is the original's.** `xfer_DoMove`
+      ($1D75) is level-triggered — any non-zero `joyYDir` moves exactly one row — and
+      `ReadKeys` is a raw OSBYTE `&81` matrix scan, so the port's key state is level too.
+      One row per 40 ms, 25 rows/s, the whole 12-wire bus in under half a second. That is
+      playable on a self-centring microswitch stick, where a flick fits inside one 40 ms
+      iteration; it is not playable on keys, where the shortest honest tap is two or three
+      rows and single-row movement is impossible.
+    - **What was built**, in `XfGetMove`'s human arm only (the CPU arm returns above it, so
+      the CPU's own every-other-frame throttle is untouched): a new direction moves at once
+      and then waits `XF_RPT_DELAY`+1 = 4 passes (160 ms); held after that, one row every
+      `XF_RPT_RATE`+1 = 2 passes (80 ms, 12.5 rows/s); released, the edge re-arms. A
+      reversal counts as a new direction and moves immediately. `XfStart` clears the two
+      state bytes so a key still held from the deck cannot eat the first row.
+    - **The hold-off was 6 passes (240 ms) on the first cut**; KC played it and asked for
+      less, so `XF_RPT_DELAY` went 5 -> 3. 160 ms is the guarantee it buys: a tap shorter
+      than that is exactly one row, and anything longer starts repeating.
+    - **Verified in jsbeeb, 2026-08-25** (entered by poking the main-RAM `xferDroid`
+      mirror). At the first cut's 240 ms: a 160 ms tap moved **1** row where it used to
+      move 4, an 800 ms hold moved **9**, a reversal tap moved exactly 1 the other way,
+      the countdown still ticked 99 -> 35 over 254 frames (256 predicted), and the game
+      ran to its verdict clean. Re-measured at the shipped 160 ms: a 120 ms tap moves
+      **1** row, a 200 ms hold moves **2** — the boundary sits where the constant says.
+    - **The cost is 54 bytes, and the first telling of this said 256.** The tail figure
+      does move `314 B -> 58 B` (`xfer_end` = `&BFC6`), because `plandata.asm`'s
+      `ALIGN &100` had 26 bytes spare and the addition rolled `planInk` to the next page.
+      But **the padding is usable space**, exactly as bank 4's is: anything assembled
+      before `INCLUDE "src/data/plandata.asm"` rides in it for nothing, and there are now
+      **228 B of it**. Real free space in bank 7 is 228 + 58 = **286 B**, and the filter
+      took 54 of the 340 that were there before it. The correction matters because the
+      256 figure was used to argue that DECISION 14's droid icons could not be afforded;
+      on the true numbers they very nearly can.
+    - **Not changed, deliberately**: the select countdown, which is the one real timing
+      deviation found. `SubGameSelectSide`'s `_14` loop is paced by `DelayScore(80)` —
+      ~103,000 cycles, ~105 ms a tick before badline steal — so the original takes ~11 s
+      over 99 ticks where the port's every-other-pass tick takes 7.92 s, ~30-40% fast.
+      Fire confirms immediately either way, so it only shows if the player dithers. Fixing
+      it needs a mod-3 counter rather than the present `AND #1`. KC's call, left alone.
+
+14. **[DECISION] The droid number icons are back, on the board** (KC, 2026-08-25).
+    KC played the transfer game and said the icons were missing. They were: DECISION 7
+    dropped them in August, replacing them with the panel line's two numbers. This restores
+    them, and corrects what DECISION 7 said the original does.
+
+    - **What the C64 actually draws.** `SubGameSelectSide` puts two hardware sprites either
+      side of the board — sprite 7 with image `$4F` for the player (`$E12B-$E14C`) and the
+      target's with `droidSprNum,X + $48` (`$E14F-$E175`). `$48 * 64 = $5200`, the dynamic
+      sprite area, so these are the **live droid sprites**: rotor top and bottom with the
+      three-digit number between, exactly what `BuildDroidSprite` (`$3C77`) and
+      `AnimateDroids` (`$3CFB`) compose.
+    - **They do not slide, and DECISION 7's wording that they do was wrong** (KC's
+      correction). `$E1B5-$E1C7` writes `plySpriteX`/`cpuSpriteX` as one of two values, 88
+      or 255, and `$E1F5-$E213` pushes those at the sprite registers: the icons **swap
+      sides** when the stick changes its mind. Each keeps its own colour throughout — `$F1`
+      white for the player at `$E144`, `0` black for the target at `$E165` — so the colour
+      names the DROID, never the side.
+    - **[DECISION] Colour: the player's own yellow, the target BLACK** (KC, in two
+      steps). The transfer palette has no white, so the player's icon takes the player's
+      own yellow, logical 1. Magenta was the first cut for the target and KC changed it to
+      black, logical 3 — which is both better on the eye against the blue and closer to
+      the original, whose target sprite is literally black (`SpriteColor` 0 at `$E165`).
+      It also removes a wrinkle the magenta version had: yellow and magenta are the LEFT
+      and RIGHT *side* colours here, so a player on the right saw their yellow icon over
+      the magenta side and the two readings of the colour disagreed. Black is not a side
+      colour, so the icon colour now means only "whose droid this is", as the C64's does.
+    - **The colour step is general, and turning the target black PAID FOR ITSELF.** Black
+      needs both bit planes where yellow needs one, so `XfIconPix` builds the logical-3
+      byte — the top nibble is the high plane, the same nibble shifted down is the low one,
+      OR them — and ANDs it with the icon's mask: `&0F` yellow, `&F0` magenta, `&FF` black.
+      One routine for any of the four logical colours. It cost two bytes there and gave six
+      back at the call sites, because `XfIcons` now passes the mask straight in Y and
+      `XfIcon` needs no pen-to-plane decision at all. **Bank 7 went 3 B free to 9.**
+    - **Position: board columns 8 and 28, rows 0-2.** `x=88` and `x=255` are screen pixels
+      64 and 231 once the C64's 24-pixel border offset comes off. Both sit in the blank
+      spans of the three-row top block — `xbTop` has content only at 19-20 (row 0), 3 and
+      18-21 and 36 (row 1), 3-5 and 18-21 and 34-36 (row 2) — so **the icons overlap no
+      wire**, which was KC's own observation and is confirmed against the exported layout.
+    - **Drawn once, and nothing repaints them.** `XfDoColumn` walks only the twelve wire
+      rows, `XfDrawCBar` columns 19-20, `XfDrawResult` row 1 columns 19-20,
+      `XfDrawPulserCols` columns 1 and 38. So the icons are drawn at setup (`XfStart` and
+      `XfReplayTick`, both above `XfRepaintAll` — they are not in the shadows) and again
+      only when the stick actually changes side in `XfSelectTick`. Nothing runs during play.
+      Blank rows write logical 0, which is the board's own background, so a swap needs no
+      separate clear.
+    - **`src/xfericon.asm`, and ITS POSITION IN THE BLOCK IS LOAD BEARING** — the
+      `consolesel.asm` trick, but the other way round. The icons are 421 B all told against
+      126 B of `ALIGN` padding, so they cannot all ride in it. What does is
+      `droidicon7.asm`'s 110 B (regenerated — `export_droidicon.py` still had the `OUT7`
+      path Layer 13d stopped using) plus the state; the ~297 B of code is assembled
+      **behind** the ALIGN. Move it in front and the padding rolls a page and the bank
+      overflows. This was not theory: the first cut put everything in front and overran by
+      198 B, and getting it to fit took the split, a tighter swap test in `XfSelectTick`
+      (`STX` does not touch flags, so `CPX`'s Z survives it) and dropping a variable by
+      deriving the second column as `XI_LCOL + XI_RCOL - xiCol`.
+    - **Bank 7 is effectively FULL: 2 B of padding and 7 B of tail, 9 B real.** The 154 B
+      the glyph pool found is spent. Anything further in bank 7 needs its own pass first.
+    - **Verified in jsbeeb 2026-08-25**: 001 yellow left and 329 magenta right at setup;
+      pressing right swaps them, each keeping its colour, and the panel line agrees; a full
+      game plays to its verdict with both icons untouched, confirming the no-repaint
+      analysis live. Re-checked after the target went black: 001 yellow, 329 black.
+
+15. **[DECISION] The panel line is the C64's again — its layout, its words** (KC,
+    2026-08-25). KC read the original in the emulator and said the port's top panel was
+    wrong: it should keep the Paradroid logo in the middle and the score on the right, both
+    red, with only the left-hand text changing. Right on both counts, and the strings were
+    wrong too.
+
+    - **What the C64 does.** Every transfer message is a 13-byte string beginning `2, 2` —
+      column 2, row 2, which is the same eleven-cell mode-word field `panel.asm` already
+      fills with Mobile/Weapon/Transfer. The logo (cols 15-23) and the score (cols 30-37)
+      are never touched.
+
+      | when | string | drawn at |
+      |---|---|---|
+      | entry | `Captured` (`$69CB`) | `$22A0`, `Capture` |
+      | select | `Colour⟨?⟩ 00` (`$E6DB`) | `$E1F2`, `SubGameSelectSide` |
+      | play | `Finish -99` (`$69BE`) | `$20F9`, `xferDoCounter` |
+      | win | `Complete` (`$69FD`) | `$221D`, `FinishTransfer1` |
+      | loss | `Burnt Out` (`$69F1`) | `$222F`, `FinishTransfer1` |
+      | tie | `Deadlock` (`$69A4`) | `$22D3`, `Capture`'s replay loop |
+
+      **The countdown is not a separate field.** It is the last two bytes of the left
+      word's own string, which is why `$20EF`/`$20F6` and `$E1E4`/`$E1EB` write to `+$A`
+      and `+$B`. These were decoded from the raw bytes through `export_strings.py`'s
+      C64→glyph map rather than taken from the annotator's labels — necessary, because
+      there are TWO "Colour" strings: `Colour_txt` at `$69B1`, plain, used by the console
+      at `$32C1`, and the select-phase one at `$E6DB` with the digits built in.
+    - **What the port did wrong.** `XfTextClear` walked `xfTxtCol` from 0 to `PN_COLS`,
+      blanking the whole line — logo and score with it. That was this port's invention;
+      the C64 never clears more than its own field. And DECISION 6 invented the verdicts:
+      "transfer done", "transfer failed" and "short circuit" against the original's
+      **Complete**, **Burnt Out** and **Deadlock**. There was no `Captured` or `Colour` at
+      all — `XfSelectText` put the two droid numbers there instead, DECISION 7's stand-in.
+    - **What is there now.** `XF_COL_MSG` is 2 and `XF_MSG_CELLS` 11, the C64's field;
+      `XfTextClear` clears only that; `XF_COL_TIME` is 10, the field's last pair, and
+      "colour" and "finish -" are eight cells so the digits land there. The words are the
+      original's, **in lowercase**: `XfGlyphAt` is one cell a glyph and the original's
+      capitals are two cells each, which is bank 6's `PnGlyph` and unreachable from bank 7.
+      The words are the original's; the casing is not.
+    - **[DECISION] `XfNum3` and `XfSelectText` are deleted.** They were DECISION 7's
+      substitute for the icons; DECISION 14 draws the real ones on the board, where the
+      original puts them, so the stand-in has outlived its reason. That is what paid for
+      the new strings — the change came out byte-neutral, bank 7 still at 7 B of tail.
+    - **The ink was wrong too, and that was one byte.** `XfGlyphAt` set `fontMask = &FF`
+      with a comment saying it "never had an ink mask", so the word drew BLACK on the white
+      panel. `panel.asm` has said `THE MODE FIELD IS RED, like the logo` since Layer 9; it
+      is `PN_INK_RED` now, the same ink `PnMode` uses.
+    - **Verified in jsbeeb 2026-08-25**: "colour 93", then "finish -49", then "burnt out",
+      all red at column 2, with the logo and the score standing in red throughout.
+
+**Open item from 13 — CLOSED, and it was never worth doing.** Moving the repeat filter
+behind `plandata.asm`'s `ALIGN` would have restored the *tail* figure while costing its 46
+bytes 1:1 out of the tail, leaving real free space unchanged at 286 B and putting the routine
+somewhere it reads worse. It stays where it is. What the exercise did produce is the bank-7
+map below, which is the thing worth keeping.
+
+## 6. Bank 7's map, measured 2026-08-25
+
+| chunk | start | size |
+|---|---|---|
+| `xfer.asm` | `&8000` | 3,997 |
+| `xferboard.asm` | `&8F9D` | 1,033 -> **876** (see below) |
+| `liftview.asm` | `&93A6` | 867 |
+| `condeck.asm` | `&9709` | 361 |
+| `condb.asm` | `&9872` | 1,559 |
+| `portraits.asm` | `&9E89` | **4,736** |
+| `portrait.asm` | `&B109` | 559 |
+| `infoscr.asm` | `&B338` | 534 |
+| `hstable.asm` | `&B54E` | 15 |
+| `droidinfo.asm` | `&B55D` | 711 |
+| `plandata.asm` head | `&B824` | 248 |
+| **`ALIGN` padding** | `&B91C` | **228 — free to anything before the plandata include** |
+| `planInk` onwards | `&BA00` | 739 |
+| `sideview.asm` | `&BBFF` | 966 |
+| tail | `&BFC6` | **58 — free to anything** |
+
+The portrait pool is 63 images at 64 B, already deduplicated by `export_portraits.py`, so
+there is no cheap win in the biggest chunk.
+
+### The glyph pool — 154 B found, 2026-08-25
+
+`xferboard.asm` shipped the 17 board characters three times over, once per ownership set
+(DECISION 1). **13 of those 51 cells were duplicates.** A character whose every logical-3
+pixel is *structural* is byte-identical in all three sets — which is DECISION 2 showing up in
+the data — and several others coincide pairwise. The identical-in-all-three ones are `$00`,
+`$D0`, `$D1`, `$FB` and `$FC`: the blank, the two bar caps and the central bar's two ends.
+
+`export_xfer.py` now emits one pool of the **38 distinct glyphs** plus a 51-byte `xbSlot`
+table, and `XfCellPaint` reaches the glyph through it: `xsGlyphOf` gives 0..16, `xfSetOfs`
+(a 4-byte pen -> run table, replacing `xfSetLo`/`xfSetHi`) picks the set's run, and `xbSlot`
+names the pool entry. Six more instructions, ~8 cycles a repainted cell — nothing against a
+pass with 12,000 spare — and **816 B of glyphs became 659**.
+
+| | before | after |
+|---|---|---|
+| `ALIGN` padding | 228 B | **126 B** |
+| tail | 58 B | **314 B** |
+| **real free** | **286 B** | **440 B** |
+
+**Verified, and not by the obvious method.** A straight before/after diff of the 10,240-byte
+play buffer showed 758 bytes differing — confined to the twelve wire rows in the gate
+columns, with the frame rows, buses and stock columns identical. That is the RNG moving, not
+the glyphs: `XfStart` seeds from `USR_VIA_T1CL EOR fieldCount`, and six extra instructions a
+cell shift the cycle at which it samples, so the gate placement changes. The seed makes a
+before/after diff worthless here.
+
+What proves it instead is an **independent reconstruction**: dump the shadow screen and
+colour shadow (`xsScr`/`xsCram` at `SPR_SAVE = &3E00`, *not* `&3000`), and rebuild the whole
+10,240-byte buffer on the host from `export_xfer.mode1_char` — the pre-dedup algorithm —
+through `xfPenOf`. **All 10,240 bytes matched.** The exporter also asserts by construction
+that `pool[slot[set][code]]` is the exact byte string the flat table held, for all 51 pairs.
+
+`src/data/` is gitignored and `build.ps1` does not run the exporters, so a clean checkout
+needs `python tools/export_xfer.py` before it will build.
 
 ## 4. The interfaces, for whoever touches this next
 

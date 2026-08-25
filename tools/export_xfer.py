@@ -138,18 +138,51 @@ def main():
     out.append('  EQUB ' + ', '.join('&%02X' % c for c in codes))
     out.append('')
 
-    for name, remap3, label in (('xbChars', 3, 'NEUTRAL: multicolour 11 stays logical 3'),
-                                ('xbCharsPly', 1, 'PLAYER: 11 pairs become logical 1'),
-                                ('xbCharsCpu', 2, 'CPU: 11 pairs become logical 2')):
-        out.append('\\ %s. 16 bytes each: left half\'s 8 scanlines then right\'s.' % label)
-        out.append('.%s' % name)
+    # ---- the three sets, deduplicated into one pool -------------
+    # The sets differ only where ownership shows, so a character whose
+    # every logical-3 pixel is STRUCTURAL (decision 2) is byte-identical
+    # in all three, and several others coincide pairwise. Emitting the
+    # 51 slots as a pool of distinct glyphs plus a 51-byte slot table
+    # saves 157 B of bank 7, which is what pays for the droid icons.
+    SETS = (('NEUTRAL', 3), ('PLAYER', 1), ('CPU', 2))
+    pool, slot = [], []
+    for _label, remap3 in SETS:
         for c in codes:
-            data = mode1_char(mem, c, remap3)
-            out.append('  \\ code &%02X' % c)
-            out.append('  EQUB ' + ', '.join('&%02X' % b for b in data))
-        out.append('.%s_end' % name)
-        out.append('ASSERT %s_end - %s == XB_CHARS * 16' % (name, name))
-        out.append('')
+            g = tuple(mode1_char(mem, c, remap3))
+            if g not in pool:
+                pool.append(g)
+            slot.append(pool.index(g))
+
+    # Proof by construction: the pool entry each slot names must be the
+    # exact bytes that (set, code) pair produced before the dedup.
+    for si, (_label, remap3) in enumerate(SETS):
+        for ci, c in enumerate(codes):
+            assert pool[slot[si * len(codes) + ci]] == tuple(mode1_char(mem, c, remap3)), (
+                'dedup changed set %d code $%02X' % (si, c))
+    assert len(slot) == 3 * len(codes)
+
+    out.append('XB_GLYPHS = %d' % len(pool))
+    out.append('')
+    out.append('\\ The glyph POOL: the distinct 16-byte cells behind the 3 x XB_CHARS')
+    out.append("\\ (set, code) slots. 16 bytes each: left half's 8 scanlines then")
+    out.append("\\ right's. NOTHING indexes this directly - go through xbSlot.")
+    out.append('.xbPool')
+    for i, g in enumerate(pool):
+        out.append('  \\ glyph %d' % i)
+        out.append('  EQUB ' + ', '.join('&%02X' % b for b in g))
+    out.append('.xbPool_end')
+    out.append('ASSERT xbPool_end - xbPool == XB_GLYPHS * 16')
+    out.append('')
+    out.append("\\ (set, code) -> pool glyph. Three runs of XB_CHARS, in the order")
+    out.append("\\ the renderer's xfSetOfs names them: neutral, player, CPU.")
+    out.append('.xbSlot')
+    for si, (label, _r) in enumerate(SETS):
+        run = slot[si * len(codes):(si + 1) * len(codes)]
+        out.append('  \\ %s' % label)
+        out.append('  EQUB ' + ', '.join('%d' % v for v in run))
+    out.append('.xbSlot_end')
+    out.append('ASSERT xbSlot_end - xbSlot == XB_CHARS * 3')
+    out.append('')
 
     def rows(name, data, n):
         out.append('.%s' % name)
@@ -166,9 +199,13 @@ def main():
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text('\n'.join(out) + '\n')
-    total = len(codes) * 16 * 3 + 5 * COLS + len(codes)
+    flat = len(codes) * 16 * 3
+    pooled = len(pool) * 16 + len(slot)
+    total = pooled + 5 * COLS + len(codes)
     print(f'wrote {OUT}')
-    print(f'  {len(codes)} characters x 3 sets, {len(codes)*48} B; board 5 rows, {5*COLS} B; total {total} B')
+    print(f'  {len(codes)} characters x 3 sets = {len(slot)} slots, {len(pool)} distinct')
+    print(f'  glyphs {flat} B flat -> {pooled} B pooled (saves {flat - pooled} B)')
+    print(f'  board 5 rows, {5*COLS} B; total {total} B')
     print('  codes: ' + ' '.join('$%02X' % c for c in codes))
 
 

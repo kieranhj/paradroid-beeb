@@ -80,11 +80,18 @@ ASSERT PLAY_VIS_ROWS + 1 == 16  \ the board needs all 16 rows
   JSR XfClearSubGame
   JSR XfSelectSide              \ the board, into the shadows
   JSR XfRepaintAll              \ and once onto the screen
+  JSR XfIcons                   \ DECISION 14, ABOVE the repaint: the
+                                \ icons are not in the shadows
   JSR XfTextClear
+  LDA #LO(xfTxtCapt) : LDY #HI(xfTxtCapt)
+  JSR XfMessage                 \ $22A0: "Captured", the moment it starts
   LDA #9                        \ Capture's entry pair: $22C1 on voice 2
   STA sndFx2                    \ and $22C8 on voice 1
   LDA #&1B
   STA sndFx1
+  LDA #0                        \ the repeat filter starts disarmed, so a
+  STA xfRptDir                  \ key still held from the deck cannot eat
+  STA xfRptCtr                  \ the first row of the game
   LDA #XF_PH_RELEASE
   STA xfPhase
   RTS
@@ -115,8 +122,10 @@ ASSERT PLAY_VIS_ROWS + 1 == 16  \ the board needs all 16 rows
   STA xfTime
   LDA #XF_PH_SELECT
   STA xfPhase
+  JSR XfTextClear
+  LDA #LO(xfTxtColour) : LDY #HI(xfTxtColour)
+  JSR XfMessage                 \ $E1F2's Color_txt, countdown and all
   JSR XfTimeText
-  JSR XfSelectText
 .xtk_run
   LDA #0
   RTS
@@ -147,6 +156,15 @@ ASSERT PLAY_VIS_ROWS + 1 == 16  \ the board needs all 16 rows
 .xtk_replay
   JMP XfReplayTick
 
+\ ---- the keyboard's repeat filter (Layer 10 DECISION 13) -----
+\ Passes, at FRAME_LOCK's 25 Hz. DELAY 3 puts the second row 4 passes
+\ (160 ms) after the first, RATE 1 puts every row after that 2 passes
+\ (80 ms) apart — 12.5 rows/s held, against the original's 25.
+\ 160 ms is the guarantee: a tap shorter than that is exactly one row.
+\ It was 5 (240 ms) on the first cut and KC asked for less hold-off.
+XF_RPT_DELAY = 3
+XF_RPT_RATE  = 1
+
 XF_PH_RELEASE = 0
 XF_PH_SELECT  = 1
 XF_PH_PLAY    = 2
@@ -171,11 +189,13 @@ XF_PH_REPLAY  = 4
 .xsl_15
   LDX xfPlyColor
 .xsl_16
-  STX xfLeftColor
+  CPX xfLeftColor               \ DECISION 14: the sides only swap when the
+  STX xfLeftColor               \ stick changes its mind, so the icons are
+  BEQ xsl_17                    \ redrawn then and at setup, never in play.
+  JSR XfIcons                   \ STX does not touch flags, so CPX's Z lives
 .xsl_17
   JSR XfDrawResult              \ X = LeftColor: the default verdict
   JSR XfDrawPulserCols
-  JSR XfSelectText
 
   LDA xfFire
   BNE xsl_18
@@ -202,8 +222,9 @@ XF_PH_REPLAY  = 4
   LDA #XF_PH_PLAY
   STA xfPhase
   JSR XfTextClear
+  LDA #LO(xfTxtFinish) : LDY #HI(xfTxtFinish)
+  JSR XfMessage                 \ $20F9's Finish_txt for the rest of the game
   JSR XfTimeText
-  JSR XfSelectText              \ the two numbers stay up through play
 .xsl_x
   LDA #0
   RTS
@@ -334,6 +355,7 @@ XF_REPLAY_PASSES = 50
   JSR XfClearSubGame
   JSR XfSelectSide
   JSR XfRepaintAll
+  JSR XfIcons                   \ a replay rebuilds the board under them
   JSR XfTextClear
   LDA #&99
   STA xfTime
@@ -893,8 +915,48 @@ XF_REPLAY_PASSES = 50
   STA xfYWant
   RTS
 .xgm_human
-  JMP XfReadInput               \ $214F: the joystick, re-read — the CPU
+  JSR XfReadInput               \ $214F: the joystick, re-read — the CPU
                                 \ half-turn has been through these vars
+
+\ ---- the keyboard's repeat filter — NOT in the C64 -----------
+\ Layer 10 DECISION 13. The original is level-triggered: xfer_DoMove
+\ moves one row for any non-zero joyYDir, so a held stick walks the
+\ cursor one row per iteration — 25 rows/s, the whole 12-wire bus in
+\ under half a second. That is fine on a self-centring microswitch
+\ stick, where a flick fits inside one 40 ms iteration, and it is not
+\ fine on a keyboard, where the shortest honest tap is two or three
+\ rows. So the human's axis — and ONLY the human's; the CPU arm above
+\ returns before this — is edge-triggered with a hold-off:
+\   a new direction  moves at once, then waits XF_RPT_DELAY+1 passes
+\   held after that  moves every XF_RPT_RATE+1 passes
+\   released         re-arms the edge
+\ A tap of any length under 240 ms is therefore exactly one row, and a
+\ hold still crosses the bus. Nothing else changes: the iteration rate,
+\ the countdown and the CPU's own every-other-frame throttle are all
+\ still the original's.
+  LDA joyYDir
+  BEQ xgm_release               \ nothing held: arm the next edge
+  CMP xfRptDir
+  BEQ xgm_held
+  STA xfRptDir                  \ a NEW direction, reversals included:
+  LDA #XF_RPT_DELAY             \ this row moves, the next one waits
+  STA xfRptCtr
+  RTS
+.xgm_held
+  LDA xfRptCtr
+  BEQ xgm_repeat
+  DEC xfRptCtr
+  LDA #0                        \ inside the hold-off: the key is down
+  STA joyYDir                   \ but the cursor does not move
+  RTS
+.xgm_repeat
+  LDA #XF_RPT_RATE
+  STA xfRptCtr
+  RTS
+.xgm_release
+  STA xfRptDir                  \ A = 0
+  STA xfRptCtr
+  RTS
 
 \ ============================================================
 \ XfDoMove — xfer_DoMove ($1D75)
@@ -1623,8 +1685,12 @@ XF_REPLAY_PASSES = 50
   LDA xfPen
   BEQ xcp_blank                 \ pen 0: invisible, so wipe the cell
   TAY
-  LDX xfChar                    \ token -> glyph index -> set base + *16
-  LDA xsGlyphOf,X
+  LDX xfChar                    \ token -> glyph index -> pool slot -> *16
+  LDA xsGlyphOf,X               \ 0..XB_CHARS-1, unknown codes clamp to 0
+  CLC
+  ADC xfSetOfs,Y                \ Y is the pen: this set's run of xbSlot
+  TAX
+  LDA xbSlot,X                  \ -> the pool glyph the pair shares
   STA xgs
   LDA #0
   STA xgs+1
@@ -1633,8 +1699,8 @@ XF_REPLAY_PASSES = 50
   ASL xgs : ROL xgs+1
   ASL xgs : ROL xgs+1
   CLC
-  LDA xgs   : ADC xfSetLo,Y : STA xgs
-  LDA xgs+1 : ADC xfSetHi,Y : STA xgs+1
+  LDA xgs   : ADC #LO(xbPool) : STA xgs
+  LDA xgs+1 : ADC #HI(xbPool) : STA xgs+1
   LDY #15
 .xcp_copy
   LDA (xgs),Y
@@ -1681,10 +1747,16 @@ XF_REPLAY_PASSES = 50
   EQUB 0, 3, 0, 3, 3, 3, 3, 3
   EQUB 3, 3, 3, 3, 2, 3, 3, 1
 
-.xfSetLo
-  EQUB 0, LO(xbCharsPly), LO(xbCharsCpu), LO(xbChars)
-.xfSetHi
-  EQUB 0, HI(xbCharsPly), HI(xbCharsCpu), HI(xbChars)
+\ Pen -> where that set's run starts in xbSlot. The three glyph sets
+\ used to be three parallel 17-entry tables of 16-byte cells; 13 of
+\ those 51 cells were duplicates, because a character whose every
+\ logical-3 pixel is STRUCTURAL (decision 2) is identical in all
+\ three. They are one pool of 38 behind this indirection now - 157 B
+\ of bank 7, which is what paid for the droid icons. See
+\ tools/export_xfer.py, which asserts the pool reproduces every
+\ (set, code) pair byte for byte.
+.xfSetOfs
+  EQUB 0, XB_CHARS, XB_CHARS * 2, 0
 
 \ shadow row bases, C64-row-indexed (0-24; rows 0-8 are above the board
 \ and clamp to row 0, which nothing reaches) and shadow-row-indexed.
@@ -1748,10 +1820,13 @@ XF_REPLAY_PASSES = 50
 \ repaints on exit. This is a minimal copy of PnGlyph — bank 6 owns the
 \ real one and only one bank is visible — reading the same font from
 \ main RAM.
-XF_COL_MSG   = 4                \ verdict messages
-XF_COL_LNUM  = 12               \ the left side's droid number
-XF_COL_RNUM  = 25               \ the right side's
-XF_COL_TIME  = 19               \ the countdown, centre
+XF_COL_MSG   = 2                \ THE C64'S MODE-WORD FIELD, col 2 and
+XF_MSG_CELLS = 11               \ eleven cells -- the same slot panel.asm
+                                \ fills with Mobile/Weapon/Transfer, and
+                                \ the same one $698A-$6A16 are written to
+XF_COL_TIME  = 10               \ the countdown: the field's last two
+                                \ cells, as $20EF/$20F6 and $E1E4/$E1EB
+                                \ write Finish_txt+$A and +$B
 ASSERT PN_TEXT_ADDR > 0         \ panel.asm's constants are visible here
 
 .XfGlyphAt                      \ A = glyph, xfTxtCol = column; advances
@@ -1781,8 +1856,11 @@ ASSERT PN_TEXT_ADDR > 0         \ panel.asm's constants are visible here
   LDA swDst   : ADC #LO(PN_TEXT_ADDR) : STA swDst
   LDA swDst+1 : ADC #HI(PN_TEXT_ADDR) : STA swDst+1
 
-  LDA #&FF                      \ this one draws in every plane it is
-  STA fontMask                  \ given — it never had an ink mask
+  LDA #PN_INK_RED               \ RED, because the C64's mode field is:
+  STA fontMask                  \ panel.asm's own $6917 note, and the same
+                                \ ink PnMode uses for Mobile/Weapon. This
+                                \ was &FF and drew the word in black, which
+                                \ is what KC saw
   JSR FontCell                  \ top cell
   CLC
   LDA swDst   : ADC #LO(ROW_BYTES) : STA swDst
@@ -1794,14 +1872,14 @@ ASSERT PN_TEXT_ADDR > 0         \ panel.asm's constants are visible here
   INC xfTxtCol
   RTS
 
-.XfTextClear
-  LDA #0
-  STA xfTxtCol
-.xtc_1
-  LDA #PN_SPACE
-  JSR XfGlyphAt
+.XfTextClear                    \ the WORD only. The C64 never clears more
+  LDA #XF_COL_MSG               \ than this field either: the logo at cols
+  STA xfTxtCol                  \ 15-23 and the score at 30-37 stand through
+.xtc_1                          \ the whole subgame, in red, exactly as they
+  LDA #PN_SPACE                 \ do on the deck. Blanking the line was this
+  JSR XfGlyphAt                 \ port's own invention and KC spotted it
   LDA xfTxtCol
-  CMP #PN_COLS
+  CMP #XF_COL_MSG + XF_MSG_CELLS
   BNE xtc_1
   RTS
 
@@ -1819,47 +1897,11 @@ ASSERT PN_TEXT_ADDR > 0         \ panel.asm's constants are visible here
   ADC #PN_DIGIT0
   JMP XfGlyphAt
 
-.XfNum3                         \ A = droid type, at xfTxtCol
-  TAY
-  LDA pnTabCent,Y
-  CLC
-  ADC #PN_DIGIT0
-  STY xfTmp1
-  JSR XfGlyphAt
-  LDY xfTmp1
-  LDA pnTabNum,Y
-  LSR A : LSR A : LSR A : LSR A
-  CLC
-  ADC #PN_DIGIT0
-  JSR XfGlyphAt
-  LDY xfTmp1
-  LDA pnTabNum,Y
-  AND #&0F
-  CLC
-  ADC #PN_DIGIT0
-  JMP XfGlyphAt
-
-\ The select phase's stand-in for the two droid sprites: the human's
-\ number sits on the side the stick chose, the target's on the other.
-.XfSelectText
-  LDA #XF_COL_LNUM
-  STA xfTxtCol
-  LDA xfLeftColor
-  CMP xfPlyColor
-  BNE xstx_swap
-  LDA xfmPlyType
-  JSR XfNum3
-  LDA #XF_COL_RNUM
-  STA xfTxtCol
-  LDA xfmTgtType
-  JMP XfNum3
-.xstx_swap
-  LDA xfmTgtType
-  JSR XfNum3
-  LDA #XF_COL_RNUM
-  STA xfTxtCol
-  LDA xfmPlyType
-  JMP XfNum3
+\ XfNum3 and XfSelectText are GONE. They put the two droid numbers on
+\ the panel line as DECISION 7's stand-in for the sprites the port had
+\ no way to draw; DECISION 14 draws the real icons on the board, which
+\ is where the original puts them, so the stand-in has outlived its
+\ reason and the panel line is the C64's again.
 
 .XfMessage                      \ A/Y = a glyph string, $FF-terminated
   STA xmg_get+1
@@ -1881,18 +1923,34 @@ ASSERT PN_TEXT_ADDR > 0         \ panel.asm's constants are visible here
   RTS
 
 XF_LC = PN_LOWER_A
-.xfTxtDone                      \ "transfer done"
-  EQUB XF_LC+19, XF_LC+17, XF_LC+0, XF_LC+13, XF_LC+18, XF_LC+5, XF_LC+4, XF_LC+17
+\ THE C64'S OWN WORDS, decoded from the $69xx strings rather than
+\ invented: Captured_txt ($69CB) at entry, Color_txt ($E6DB) through
+\ select, Finish_txt ($69BE) through play, then Complete_txt ($69FD),
+\ BurntOut_txt ($69F1) and Deadlock_txt ($69A4). The first cut of this
+\ layer made up "transfer done", "transfer failed" and "short circuit";
+\ KC caught it. LOWERCASE, because the original's capitals are two cells
+\ each and XfGlyphAt is one cell a glyph -- bank 6's PnGlyph does the
+\ wide ones and is unreachable from here. The words are the original's;
+\ the casing is not.
+\
+\ "colour" and "finish -" are eight cells so the countdown's two digits
+\ land on XF_COL_TIME, the field's last pair, where the C64 puts them.
+.xfTxtCapt                      \ "captured"
+  EQUB XF_LC+2, XF_LC+0, XF_LC+15, XF_LC+19, XF_LC+20, XF_LC+17, XF_LC+4, XF_LC+3, &FF
+.xfTxtColour                    \ "colour  "
+  EQUB XF_LC+2, XF_LC+14, XF_LC+11, XF_LC+14, XF_LC+20, XF_LC+17
+  EQUB PN_SPACE, PN_SPACE, &FF
+.xfTxtFinish                    \ "finish -"
+  EQUB XF_LC+5, XF_LC+8, XF_LC+13, XF_LC+8, XF_LC+18, XF_LC+7
+  EQUB PN_SPACE, PN_DASH, &FF
+.xfTxtDone                      \ "complete"
+  EQUB XF_LC+2, XF_LC+14, XF_LC+12, XF_LC+15, XF_LC+11, XF_LC+4, XF_LC+19, XF_LC+4, &FF
+.xfTxtFail                      \ "burnt out"
+  EQUB XF_LC+1, XF_LC+20, XF_LC+17, XF_LC+13, XF_LC+19
   EQUB PN_SPACE
-  EQUB XF_LC+3, XF_LC+14, XF_LC+13, XF_LC+4, &FF
-.xfTxtFail                      \ "transfer failed"
-  EQUB XF_LC+19, XF_LC+17, XF_LC+0, XF_LC+13, XF_LC+18, XF_LC+5, XF_LC+4, XF_LC+17
-  EQUB PN_SPACE
-  EQUB XF_LC+5, XF_LC+0, XF_LC+8, XF_LC+11, XF_LC+4, XF_LC+3, &FF
-.xfTxtShort                     \ "short circuit"
-  EQUB XF_LC+18, XF_LC+7, XF_LC+14, XF_LC+17, XF_LC+19
-  EQUB PN_SPACE
-  EQUB XF_LC+2, XF_LC+8, XF_LC+17, XF_LC+2, XF_LC+20, XF_LC+8, XF_LC+19, &FF
+  EQUB XF_LC+14, XF_LC+20, XF_LC+19, &FF
+.xfTxtShort                     \ "deadlock"
+  EQUB XF_LC+3, XF_LC+4, XF_LC+0, XF_LC+3, XF_LC+11, XF_LC+14, XF_LC+2, XF_LC+10, &FF
 
 \ ============================================================
 \ state
@@ -1929,6 +1987,8 @@ XF_LC = PN_LOWER_A
 .xfColTmp    EQUB 0             \ the C64 parks this in xfer_cpuSpriteX
 .xfCurIdx    EQUB 0
 .xfSprCol    EQUB 0             \ Colorize4 parks the colour here
+.xfRptDir    EQUB 0             \ the repeat filter's held direction...
+.xfRptCtr    EQUB 0             \ ...and passes still to wait
 .xfWval      EQUB 0             \ write-helper saves
 .xfWsx       EQUB 0
 .xfWsy       EQUB 0
