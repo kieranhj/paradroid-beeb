@@ -2745,7 +2745,15 @@ ENDIF
 \ Three arms, the original's: take the droid, drop back to a 001 with
 \ the bump fine, or — already a 001 — burn out entirely. The caller
 \ finishes with PanelSetup, which cannot be reached from this bank.
-.XferExit4
+\ ---- XferFinish4: FinishTransfer1 ($21CF) on its own ------
+\ SPLIT OUT OF XferExit4, because the C64 runs it BEFORE the sweep and
+\ not after. $21FC-$221A swaps the droid, takes its energy and calls
+\ AddScore, and only THEN does $21F8/$2228/$223A enter FinishTransfer2,
+\ whose forty iterations each call DelayScore, which ends in DoScore.
+\ So the points are banked at the verdict and dribble up the panel while
+\ the board is still on screen. KC, 2026-08-25: "on c64 the score goes
+\ up before the transfer game screen exits."
+.XferFinish4
   LDA xfmResult
   CMP #1
   BNE xx4_lost
@@ -2761,7 +2769,7 @@ ENDIF
   LDA drShootScore,X
   JSR AddScore
   JSR XferInitDroid
-  JMP xx4_consume
+  RTS
 
 .xx4_lost
   LDA xfmPlyType
@@ -2774,15 +2782,21 @@ ENDIF
   STA drType
   STA sprType+PLY_SLOT
   JSR XferInitDroid
-  JMP xx4_consume
+  RTS
 
 .xx4_burnt
   LDA #0                        \ a 001 that loses is finished —
   STA drEnergy                  \ CbCheckDeath takes it from here
+  RTS
 
-\ FinishTransfer2: the target droid is consumed in EVERY outcome. Energy
-\ 0 makes the compaction drop its table entry; the slot goes back to the
-\ pool; DrRemoveShip takes it off the ship's roster for good.
+\ ============================================================
+\ XferExit4 — FinishTransfer2 ($2260), after the sweep
+\ ============================================================
+\ The target droid is consumed in EVERY outcome. Energy 0 makes the
+\ compaction drop its table entry; the slot goes back to the pool;
+\ DrRemoveShip takes it off the ship's roster for good. Everything ABOVE
+\ is XferFinish4 and runs at the verdict instead — see its header.
+.XferExit4
 .xx4_consume
   LDX xferDroid
   LDA #0

@@ -2075,8 +2075,12 @@ ENDMACRO
 .xfmTgtType EQUB 0              \ and the target's
 .xfmResult  EQUB 0              \ 1 = took the droid, 2 = lost
 .xfmDone    EQUB 0              \ set by XfEndTick when the hold expires
+.xfmScored  EQUB 0              \ XferFinish4 has run: it is FinishTransfer1
+                                \ and fires ONCE, at the verdict
 
 .XferEnter
+  LDA #0
+  STA xfmScored                 \ before anything can set the verdict
   JSR XferEnter4                \ bank 4: gather, flatten, palette, t1i3
   PAGEBANK SWRAM_XFER
   JSR XfStart
@@ -2321,12 +2325,34 @@ ENDMACRO
   JSR XfTick
   PAGEBANK SWRAM_DATA
   LDA xfmDone
+  BNE xt_done
+
+\ ---- the verdict is in, and the sweep is running ------------
+\ FinishTransfer1 banks the score and swaps the droid, and only then does
+\ FinishTransfer2 run, whose forty iterations each call DelayScore and so
+\ DoScore. The points therefore climb the panel WHILE THE BOARD IS STILL
+\ UP, which is what the original does and what this missed. KC, 2026-08-25.
+\
+\ PanelTick is safe here even though DECISION 6 skips it for the rest of
+\ the game: PanelUpdate repaints a field only when its shadow moves, and
+\ the only one moving is the score. pnShMode still holds the mode the deck
+\ left, so the word bank 7 drew over that field is not touched.
+  LDA xfmResult
   BEQ xt_x
-  JSR XferExit4                 \ bank 4: the outcome, and ReframeView
-  JMP PanelSetup                \ the bank-6 trampoline — NOT callable
-                                \ from inside bank 4, hence here
+  LDA xfmScored
+  BNE xt_dribble
+  INC xfmScored                 \ $21CF, once
+  JSR XferFinish4
+.xt_dribble
+  JSR DoScore                   \ DelayScore's tail, once a pass
+  JMP PanelTick
 .xt_x
   RTS
+
+.xt_done
+  JSR XferExit4                 \ bank 4: $2260 on, and ReframeView
+  JMP PanelSetup                \ the bank-6 trampoline, NOT callable
+                                \ from inside bank 4, hence here
 
 \ ============================================================
 \ keydown — is a key held?  X = negative INKEY code, Z set if down
