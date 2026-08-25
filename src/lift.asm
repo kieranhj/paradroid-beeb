@@ -156,27 +156,13 @@ LIFT_LAST  = 30                 \ and so is 31
   LDX liftPos
 
   LDA liftTileCol,X             \ plyX = tileCol * 32
-  STA lpTmp
-  LDA #0
-  STA lpTmp+1
-  ASL lpTmp : ROL lpTmp+1
-  ASL lpTmp : ROL lpTmp+1
-  ASL lpTmp : ROL lpTmp+1
-  ASL lpTmp : ROL lpTmp+1
-  ASL lpTmp : ROL lpTmp+1
+  JSR LpMul32
   LDA lpTmp   : STA plyX
   LDA lpTmp+1 : STA plyX+1
 
   LDX liftPos
   LDA liftTileRow,X             \ posY = tileRow * 32 - 48
-  STA lpTmp
-  LDA #0
-  STA lpTmp+1
-  ASL lpTmp : ROL lpTmp+1
-  ASL lpTmp : ROL lpTmp+1
-  ASL lpTmp : ROL lpTmp+1
-  ASL lpTmp : ROL lpTmp+1
-  ASL lpTmp : ROL lpTmp+1
+  JSR LpMul32
   SEC
   LDA lpTmp   : SBC #48 : STA posY
   LDA lpTmp+1 : SBC #0  : STA posY+1
@@ -228,6 +214,20 @@ LIFT_LAST  = 30                 \ and so is 31
 .prevLD     EQUB 0              \ apart from the debug hop's
 .lfCol      EQUB 0
 .lfRow      EQUB 0
+\ lpTmp = A * 32, 16 bits. A loop, not an unroll: LiftPlace runs once
+\ per deck load, so the ~45 extra cycles a call buy 25 bytes each of
+\ the code image back (RAM pass 4). Y, not X — X holds liftPos.
+.LpMul32
+  STA lpTmp
+  LDA #0
+  STA lpTmp+1
+  LDY #5
+.lpm_loop
+  ASL lpTmp : ROL lpTmp+1
+  DEY
+  BNE lpm_loop
+  RTS
+
 .lpTmp      EQUW 0
 .lvSelDeck  EQUB 0              \ the deck the selection is on — bank 7
                                 \ shows it, LvStep (bank 4) moves it
