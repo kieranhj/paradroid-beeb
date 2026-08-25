@@ -188,7 +188,7 @@ about 1.1 s — but three of the four are avoidable, and what is left is **one l
 
 | | | |
 |---|---|---|
-| `PARDEPK` | **not loaded** | The unpack needs a depacker in *main RAM* (only one bank is visible, so bank 4's copy cannot write bank 5). The briefing carries the `ZX0_DEPACKER` macro in its own 12 K of spare and **copies ~273 B of it into the strip** before it pages itself out. A third copy of a macro that already exists twice |
+| `PARDEPK` | **not loaded** | The unpack needs a depacker in *main RAM* (only one bank is visible, so bank 4's copy cannot write bank 5). The briefing carries the `ZX0_DEPACKER` macro in its own 12 K of spare and **copies ~273 B of it into the strip** before it pages itself out. A third copy of a macro that already exists twice. **HAZARD since RAM pass 3a**: `UnpackBankIn` itself now lives in PARDEPK, so this plan must also copy or replace that entry — the current exit path *depends* on reloading PARDEPK |
 | `PARAFNT` | **not reloaded** | It only ever came back because `PARDEPK` lands at `&3000`, on the font. With no `PARDEPK` the font is never disturbed, and the stream can land in the strip too — 10 K, holding nothing but the briefing's last page, which `LoadDeck` is about to redraw |
 | `PARALOW` | **not reloaded** | The low overlay is lost to the load only because DFS wants `&0E00`–`&10FF` back. Snapshot it into the strip and copy it home afterwards — the mirror image of what `SaveDfsWs`/`RestoreDfsWs` already do for DFS's side, same two spans (`&0D60`–`&0DEF`, `&0E00`–`&10FF`, 912 B) |
 | `PARASPR` | **2,833 B, ≈ 0.4 s** | Irreducible: it is the thing that was evicted |

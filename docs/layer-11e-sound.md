@@ -134,8 +134,10 @@ both `ROMSHAD` and `ROMSEL`. ~60–80 cycles of overhead on top of the tick prop
 the standing rule** — "the IRQ reads neither bank" becomes "the IRQ pages explicitly and
 restores what it found" — and `bufcore.asm`'s header, `main.asm`'s rupture note and `CLAUDE.md`
 must all be updated when it lands. The rule audit it depends on: nothing may ever write `ROMSEL`
-without `ROMSHAD` (true today — `PAGEBANK` and `PageBankIn` are the only writers) and nothing
-may run with them disagreeing across an STA pair — the macro's order (shadow first) already
+without `ROMSHAD` (true today — the `PAGEBANK` macro and, since RAM pass 5, its subroutine forms
+`PgData`/`PgSpr`/`PgSpr2`/`PgXfer` keep the pair adjacent and shadow-first inside the helper;
+`PAGESPRBANK`, `SprFetchRow`, the low overlay and the IRQ itself stay inline) and nothing
+may run with them disagreeing across an STA pair — the shadow-first order already
 guarantees the IRQ sees a consistent claim.
 
 **Placement within the field**: appended to the `RuptVSync` path, after its CRTC work, so it
@@ -399,8 +401,9 @@ The port has no `sndState $11`: 11f [DECISION 11].)*
      already picks the right channel. Bank 4 has 4 bytes, so the cheap form is the difference
      between this landing and another RAM hunt. **Costed, not tested**: check the branch range
      and that `snfv_off` is right for a live noise voice before relying on it.
-  2. **The key poll needs a home, and every region is full**: main RAM 2 B, bank 4 4 B, PARBRF
-     3 B, the low overlay 2 B, `lowcode2` 8 B (measured 2026-08-22). It wants somewhere that runs
+  2. **The key poll needs a home — and since the RAM recovery pass (2026-08-25) it has one
+     everywhere**: main RAM 639 B, bank 4 51 B, PARBRF 56 B. (When this was written every
+     region was full — 2 / 4 / 3 B — and that was the blocker; it is gone.) It wants somewhere that runs
      once a pass in game — `SndAmbient` is already called there, in the right bank — and once a
      field in the briefing, where `BrWaitField` is now the established hook. See
      `docs/memory-map.md`'s free-RAM section and `docs/layer-13-ram-pass.md` for where bytes can

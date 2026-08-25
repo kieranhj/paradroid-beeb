@@ -625,7 +625,8 @@ exactly as on the C64, and the per-pass sprite cost does not grow.
   pass" and not "something was touching". Debouncing all three arms was the other half of
   BUGS.md #11.
 
-> **A bank-4 routine cannot page itself out, and this is where that bit.** `DrAddBullet` needs
+> **A bank-4 routine cannot page itself out, and this is where that bit.** (The effect tables —
+> and, since RAM pass 2, the effect blitter itself — live in bank 5.) `DrAddBullet` needs
 > `efBullet`, which is in bank 5 with the artwork, and a `PAGEBANK SWRAM_SPR` there swaps bank 5 in
 > at `&8000` *while the 6502 is executing from `&8000`* — the next instruction fetch comes out of
 > the blitter. It crashed instantly, landing at `PC = &B3C9` with a ROM paged in. The fix is

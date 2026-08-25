@@ -1,5 +1,8 @@
 # Layer 13a — The RAM pass
 
+> Layer **13a**, the first RAM pass (2026-08-19). The 2026-08-25 **RAM recovery pass** is a
+> different, later exercise — see [`ram-pass.md`](ram-pass.md).
+
 **Status: in progress, started 2026-08-19.** Scoped with KC after the Layer 11 notes recorded that
 main RAM had 30 bytes, bank 4 fifteen and bank 6 forty, and that 11c's loop, 11d and 11e were all
 blocked on room rather than on design.
@@ -33,10 +36,10 @@ holds less game than the C64's 64 K:
    to, where the C64's screen RAM *is* its tile map.
 3. **2bpp doubling, ≈ +5 K.** MODE 1 doubles the charset (2,192 against 1,096, and the 1bpp source
    is kept too, to rebuild per deck), the text font, the effect artwork and every bank-7 glyph set.
-4. **The bank tax, ≈ +4–5 K.** One bank visible at a time, so `constrings7`, `droidicon7` (both
-   since gone — TASK 7 took the strings to one main-RAM copy, and 13d deleted `droidicon7` with
-   the portrait stand-in) and
-   `conDrDigits7` are literal second copies (~1.8 K); the transfer and lift glyph sets ship
+4. **The bank tax, ≈ +4–5 K.** One bank visible at a time, so `constrings7` and `droidicon7`
+   (with its `conDrRotor7`/`conDrDigits7`) were literal second copies (~1.8 K) — all since
+   gone: TASK 7 took the strings to one main-RAM copy, and after a 13d-deletion and a
+   layer-10 revival, RAM pass 3b put the droid icon in main RAM for good; the transfer and lift glyph sets ship
    pre-recoloured variants (~1.1 K); the shadow screen was 2 K of bank rather than a reuse; plus
    shims, paging and ~900 bytes of alignment holes.
 5. **The side costs of having no hardware sprites, +2.8 K** — save areas 2,048, `SPR_MASKTAB` 256,
@@ -282,8 +285,8 @@ the room TASK 3 freed: `PARAFNT` carries it straight after the border cells.
 &3000  font        1,648      1bpp, TASK 3
 &3670  panelframe     96
 &36D0  constrings  1,542      <- TASK 7, one copy, loaded not paged
-&3CD6  PN_TABS        96      runtime-filled by PageTabsIn
-&3D36  free          202
+&3CD6  PN_TABS        96      runtime-filled by PageTabsIn (48 B since RAM pass 1)
+&3D36  free          202      (~49 B at today's sizes)
 &3E00  SPR_SAVE
 ```
 
@@ -316,8 +319,8 @@ TASK 3 freed is main RAM too. So they moved into the `PARAFNT` file, after the s
 &3670  panelframe     96
 &36D0  constrings  1,542   one copy, TASK 7
 &3CD6  FontCell       82   TASK 8 — the decoder, with the font it decodes
-&3D28  PN_TABS        96   runtime-filled by PageTabsIn
-&3D88  free          120
+&3D28  PN_TABS        96   runtime-filled by PageTabsIn (48 B since RAM pass 1)
+&3D88  free          120   (~49 B at today's sizes)
 &3E00  SPR_SAVE
 ```
 

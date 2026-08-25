@@ -28,8 +28,8 @@ sections below are in neither. **The table is the index; read it first.**
 | **13** | [The ALERT sign's lamp is dead; it should track the alert level](#13-the-alert-signs-lamp-is-dead--it-should-track-the-alert-level--2026-08-17) | **Fixed** 2026-08-20 | one character rebuilt when `Alert` crosses a threshold, and the sign repainted. The ramp is four *states*, not four colours — [DECISION 11] in `docs/layer-7-combat.md`, **not yet ratified** |
 | **14** | [`XfRand` is not a maximal LFSR — its low two bits are always zero](#14-xfrand-is-not-a-maximal-lfsr--its-low-two-bits-are-always-zero--fixed-2026-08-19) | **Fixed** 2026-08-19 |  |
 | **15** | [Incremental draw disagrees with `RedrawAll` beside an animating door](#15-incremental-draw-disagrees-with-redrawall-beside-an-animating-door--2026-08-19-unconfirmed) | **Open, unconfirmed** | did not reproduce in five clean runs. Correlates with poking a modal flag, not with the level draw |
-| **18** | [`HS_STR_ADDR` was `PN_TABS`](#18-hs_str_addr-was-pn_tabs--fixed-2026-08-21) | **Fixed** 2026-08-21 | Layer 11f. Strings landed on the mirrored droid tables; a runaway `DbStr` then smashed bank 7. Root cause proven by write watch. **`font_end` + 96 is `PN_TABS` — the gap there is 8 bytes, not 104** |
-| **17** | [Four debug flags silently push the code image past `&3000`](#17-four-debug-flags-silently-push-the-code-image-past-3000--partly-fixed-2026-08-20) | **Fixed** 2026-08-20, bar one | VSYNC, POS and ENERGY fixed and a `GUARD` added so it can never be silent again. RASTER, DRAW and TIME **fit again** since the raster-timing pass moved the tranche decision into bank 6 (code image 11 B free → 323); none has been run since. Only MAPGUARD still fails, on bank 4 |
+| **18** | [`HS_STR_ADDR` was `PN_TABS`](#18-hs_str_addr-was-pn_tabs--fixed-2026-08-21) | **Fixed** 2026-08-21 | Layer 11f. Strings landed on the mirrored droid tables; a runaway `DbStr` then smashed bank 7. Root cause proven by write watch. **`font_end` is not the end of the region — `PN_TABS` follows it.** (At the time: 96 B of tables, 8 B gap. Since RAM pass 1 `PN_TABS` is 48 B and the gap ~49 — the lesson stands, the numbers moved) |
+| **17** | [Four debug flags silently push the code image past `&3000`](#17-four-debug-flags-silently-push-the-code-image-past-3000--partly-fixed-2026-08-20) | **Fixed** 2026-08-20, bar one | VSYNC, POS and ENERGY fixed and a `GUARD` added so it can never be silent again. RASTER, DRAW and TIME should fit comfortably since the RAM recovery pass (639 B free); none has been run since — try before trusting. MAPGUARD's 1 K still exceeds bank 4's 51 B |
 | **16** | [Enemy droids draw a black rotor and a WHITE number](#16-enemy-droids-draw-a-black-rotor-and-a-white-number--fixed-2026-08-19) | **Fixed** 2026-08-19 | the wrap fallback blits digits interpreted and never sees `colPix` |
 | **19** | [`paradroid_ce_annotated.asm` truncated multi-column `.BYTE` lines](#19-paradroid_ce_annotatedasm-truncated-multi-column-byte-lines--fixed-2026-08-24) | **Fixed** 2026-08-24 | 43% of the listing's data was missing AND what survived was misaligned. `annotate.py`'s `get_content`; `tools/verify_annotation.py` is the standing check |
 
@@ -1009,9 +1009,10 @@ bit 7 was 0 at all four sampling points:
    `FontCell`. The stack gave the whole chain — main loop → `InfoCall` → `IsDone` → `&B58C`
    (highscore) → `DbStr` → `DbGlyph` → `FontCell`.
 
-**The lesson worth keeping: `font_end` is NOT the end of the region.** `PARAFNT`'s file ends at
-`&3D98`, but `PN_TABS`' 96 bytes follow it and `SPR_SAVE` is at `&3E00` — so the gap is **8 free
-bytes, not 104**. Anything that reads "spare" there must check `PN_TABS` first.
+**The lesson worth keeping: `font_end` is NOT the end of the region.** `PARAFNT`'s file ends
+just short of `PN_TABS`, whose mirrors follow it before `SPR_SAVE` at `&3E00` — at the time 96 B
+of tables leaving an 8-byte gap; since RAM pass 1 (2026-08-25) `PN_TABS` is **48 B** and the gap
+**~49**. Anything that reads "spare" there must check `PN_TABS` first.
 
 **The fix, and it is not a smaller version of the same idea.** The strings did not move to another
 resident hole — there was not one, and hunting for 77 bytes was the wrong instinct twice over. KC:
@@ -1026,8 +1027,9 @@ So `PN_TABS` is not written by anything of Layer 11f's any more, and the collisi
 → three initials committed → `hsHiIni` reads G, A, A, `hsArmed` cleared, the low table untouched →
 title.
 
-**The measurement that is worth keeping** is the one in the "lesson" paragraph above: `font_end` is
-not the end of that region, and the gap above it is 8 bytes rather than 104.
+**The measurement that is worth keeping** is the one in the "lesson" paragraph above: `font_end`
+is not the end of that region — take the live gap from the `ASSERT PN_TABS + 48 <= SPR_SAVE`
+arithmetic, not from this entry.
 
 ---
 

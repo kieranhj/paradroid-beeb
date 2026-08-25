@@ -4,11 +4,40 @@
 
 ## Decisions taken
 
-**The table of record is in [`../PLAN.md`](../PLAN.md) — "Decisions taken"** — and is not
-duplicated here, because a copy of it in this file fell out of date (it still said two sideways
-banks and a five-row panel). This file keeps the *reasoning*: why MODE 1, the no-HAL rule and the
-files it deleted, and the evidence for which Paradroid the listing is. Per-layer decisions are
-numbered in each layer's own doc.
+**This table is the record, and this is its only copy** — it moved here from `PLAN.md` on
+2026-08-25 when that file was slimmed to outstanding work. (An earlier era kept a copy in each
+file and the copy fell out of date; one copy, linked from `PLAN.md`, is the fix.) The prose
+sections below keep the *reasoning*: why MODE 1, the no-HAL rule and the files it deleted, and
+the evidence for which Paradroid the listing is. Per-layer decisions are numbered in each layer's
+own doc, and the RAM recovery pass's are in [`ram-pass.md`](ram-pass.md).
+
+| Decision | Choice | Date |
+|---|---|---|
+| Target machine | BBC B / B+ with **4 × 16K sideways RAM banks**, numbered 4–7 as the Master does | 2026-08-16 |
+| Source version | **1985 original / 1986 Competition Edition** lineage, which is what `paradroid_ce.lst` is. Redux's bug list is a spec, not code; Heavy Metal parked as a later tile set | 2026-08-06 |
+| Architecture | No HAL. One working layer at a time, verified in the emulator before moving on | 2026-08-04 |
+| Screen mode | MODE 1, 4 colours, **10K wrap at `&5800–&7FFF`** | 2026-08-04 |
+| Screen layout | 3-cycle vertical rupture: static panel, gap, scrolled play area. The panel is **4 rows**, the C64's 32 scanlines | 2026-08-05/16 |
+| Play area | **320 × 120** — 10 tiles wide, 15 character rows. The 16th row went to the single hardware wrap, which is what smooth vertical scrolling costs. **KC closed this 2026-08-21: 120 is what we ship** — the 20K wrap is not being pursued. It costs the **scrolled deck** only: with the scroll flattened the 16th row is real buffer, and every screen that is not the deck shows it | 2026-08-05, closed 2026-08-21 |
+| Scrolling | CRTC hardware scroll over a circular strip. **4 px horizontal, 1 scanline vertical**. The asymmetry was left open for years and **KC settled it 2026-08-21: 1 scanline stays** — coarsening to 2 or 4 would cost nothing but buys nothing either | 2026-08-05, settled 2026-08-21 |
+| Interrupts | We own IRQ1V outright, System VIA T1 continuous. No MOS chaining, no MOS sound | 2026-08-04 |
+| Game loop rate | **Locked to 2 fields a pass**, not free-running — free-running made the player 20 % slower whenever droids were visible | 2026-08-13 |
+| Sprite blitter | **Compiled**, not interpreted: generated 6502 per rotor row and per digit glyph | 2026-08-13 |
+| The four logical colours have fixed roles | 0 the deck's background, 1 black, 2 the deck's highlight, 3 white. Chosen for the sprites, and what makes a sprite byte its own transparency mask | 2026-08-17 |
+| Sprite colour is not baked in | The artwork is logical 3, so choosing a colour is choosing a nibble, and eleven zero page bytes carry it. Enemies black, player white, the deck's highlight in transfer mode, a 4-field flash below energy 8 | 2026-08-19 |
+| Player top speed | **8 px a pass, not the C64's 7** (`CAM_TOPSPD`). 7 cannot divide the CRTC's 4 px step, so the camera dithers. 14 % fast, bought deliberately | 2026-08-14 |
+| Player speed on a *slow* ride | **4 px a pass** (`CAM_SLOWSPD`) for `PlayerSpeed_t`'s 5 and 6 alike, which dithered the same way and made a slow droid jerkier than a fast one. `plySpdTab` is now `0,4,4,0,8,0,0,0,8` — a ride is fast or slow, nothing between. With `CAM_TOPSPD` these are the only movement numbers not from the original; enemy `DSpeed_t` is untouched. [layer-10 DECISION 11] | 2026-08-21 |
+| **ESCAPE ends the game** | The port's own feature, not the C64's — its only abort is the RUN/STOP `DoPause` reads, which pauses. ESCAPE kills the player **as a 001**, so `CbCheckDeath`'s existing "a 001 has nothing to fall back on" arm ends the game through the whole death, wash, 999 page and title. It replaced `DEBUG_RESTART`, which is gone. `OSBYTE 229,1` makes ESCAPE an ordinary key so the escape condition cannot break `GoTitle`'s loads. [layer-11d DECISION 5] | 2026-08-21 |
+| The disruptor's screen shake | **Not ported.** The strip is 16 rows in one hardware wrap, so a CRTC jitter fetches rows that were never drawn. Palette flash alone | 2026-08-19 |
+| The ALERT lamp's four colours | **Four states, not four hues** — MODE 1 has no fifth colour. Black, the deck's highlight, white, white blinking. The blink is a deviation; **KC 2026-08-21: it stays for now and gets another look in layer 14**, once every palette is settled in one sitting | 2026-08-20, revisit in 14 |
+| Code may live below `&1100` | The reclaimed DFS/OS workspace at `&0C90`–`&10FF`, staged and copied after the last `*LOAD`. Page `&0D`'s NMI half stays untouched | 2026-08-20 |
+| The title is a disc overlay, and a game over reaches it | `PARTITL` at `&3000`, loaded by `TitleSeq` at boot and after a game over ([DECISION 6] restored); `GoTitle` tears the IRQ down, restores the MOS's VIA state and the DFS workspace snapshot, and rebuilds. Layer 13d | 2026-08-20 |
+| The droid portrait is ported | Reversing layer-11's [DECISION 3]: the pool is 4,032 B of verbatim C64 sprites, expanded at draw time — the 6 K / 24 K costing that deferred it was wrong | 2026-08-20 |
+| The deck maps ship ZX0-compressed | Decoded offline, byte-identical maps; the C64's RLE and both its decoders are gone, and bank 4 got ~1.1 K back. sideview stays in bank 7 — the approved move to bank 5 was unbuildable, `dfsSave` moved to bank 6 instead | 2026-08-20 |
+| **The picture sits 3 rows lower on the tube** | `FRAME_DROP_ROWS` moves VSync three rows earlier (`TAIL_R7` 8 → 5) and `T1_I1` the same three rows later, so the panel and play area drop 24 scanlines without the frame or the cycles changing. KC tried four and it looked low. It forced `R7 = 255` out of fire 1 and into `RuptVSync`: at any `TAIL_R7` of 7 or below the 7-row panel cycle reaches the stale value and fires a VSync of its own, which blanked the play area entirely. **The title follows it**: `TiCRTC` sets `TITLE_R7 = 34 - FRAME_DROP_ROWS`, which is the same gap from VSync expressed in its own 39-row frame, and is the OS's own 34 when the drop is zero. [`layer-3-scroll.md`](layer-3-scroll.md) | 2026-08-21 |
+| **Every non-gameplay screen shows all 16 rows** | Started 2026-08-16 as the transfer board alone, on a variable fire-2→3 interval (`t1i3`); the lift's deck select and the deck plan followed. Now the console and its three pages, the four information screens and the game over's wash have it too, so **only the scrolled deck is 15 rows**. Set on entry, restored in **one** place — `ReframeView` — which freed 47 B of bank 4. The **ported** pages (database, information screens, game over) moved down one row onto the C64's own rows; the console main screen stays plotted from row 0 per KC's earlier rule. [`layer-9-hud.md`](layer-9-hud.md) §6g | 2026-08-16, extended 2026-08-21 |
+| The four banks ship ZX0-compressed on disc | Boot 14.4 s → 10.4 s measured. `PARDEPK` (an eighth disc file, the same depack macro as bank 4's) unpacks each bank from `&3200` straight into SWRAM; `tools/make_disc.py` compresses and lays the disc out in boot access order after beebasm — **the raw beebasm image is no longer bootable**. [`loader-compression.md`](loader-compression.md) | 2026-08-21 |
+| **The RAM recovery pass** | Five commits, 2026-08-25: dead tables deleted, the effect blitter to bank 5, the boot loop to `PARDEPK`, one droid-icon copy in main RAM, `PAGEBANK`/`PNMIRROR` as subroutines. Main RAM 2 B → 639 B, every other region up too, for ~57 cycles a pass. [`ram-pass.md`](ram-pass.md) has the decisions, the rejections and the reserves | 2026-08-25 |
 
 ### How the bank count grew from two to four
 

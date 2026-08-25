@@ -168,8 +168,9 @@ its own** — read it, never infer it.
 ### What was rejected
 
 - **Turning `DEBUG_KILL` off.** It was the cheapest source on the list (~45 B) and KC asked for it
-  specifically on 2026-08-24 to test the cleared-deck floor. **It was not needed and is still on**;
-  those 45 bytes remain in reserve if bank 4 is ever squeezed again.
+  specifically on 2026-08-24 to test the cleared-deck floor. **It was not needed and is still on.**
+  (Correction, 2026-08-25: its ~45 B ride in `colourMap`'s `ALIGN` pad — `layer-14-visual.md` has
+  the right reading — so turning it off grows the *pad*, not the gauge.)
 - **Deleting `colourMap`'s `ALIGN`.** Already measured and rejected on 2026-08-24 — `tiledefs.asm`
   aligns next and pads by the same amount. Not re-tried.
 - **Moving anything between banks.** Would have been a deviation needing KC's agreement, and the
@@ -179,11 +180,12 @@ its own** — read it, never infer it.
 
 - **17 B of `colourMap` padding**, free to anything assembled before that `ALIGN` — the
   `src/consolesel.asm` / `src/dbgkill.asm` trick. Past 162 B the `ALIGN` rounds up and costs 256.
-- **`DEBUG_KILL` off, ~45 B**, KC's call.
+- **`DEBUG_KILL` off, ~45 B of pad budget** (not gauge bytes — see the correction above), KC's call.
 - **Bank 7's 314 B**, reachable from bank 4 only through a paging shim — which the console already
   has, so the pattern is proven. T4 wants ~50 of it.
-- **Main RAM is still 3 B** and is now by a wide margin the tightest region in the machine. Nothing
-  in this layer should want it.
+- **Main RAM was 3 B at the time** and the tightest region in the machine. **The RAM recovery
+  pass (2026-08-25, [`ram-pass.md`](ram-pass.md)) has since taken it to 639 B** — the reserves
+  listed here are recorded history, not the current hunt list.
 
 ### Verified
 
@@ -192,9 +194,9 @@ its own** — read it, never infer it.
   pure data removal plus padding.
 - Regenerating `src/data/` left `chardata.asm`, `colours.asm`, `tiledefs.asm` and `plandata.asm`
   byte-identical; only `levels.asm` changed.
-- Main RAM, banks 5, 6 and 7 all end exactly where they did (`&2FFD`, `&BBF7`, `&BFFC`, `&BEC6`).
+- Main RAM, banks 5, 6 and 7 all ended exactly where they did at the time. (Post-RAM-pass they end `&2D81`, `&BDA6`, `&BF8E`, `&BFF9` — measure, do not quote this line.)
 - **In jsbeeb, end to end**: boot → title → briefing → play; a diagonal scroll with the play buffer
-  diffed against a forced `RedrawAll` (`SprDrawAll`/`SprDrawTr` poked to `RTS`), **0 diffs of
+  diffed against a forced `RedrawAll` (`SprDrawAll` and BOTH `SprDrawTr` call sites poked out — three JSRs), **0 diffs of
   10,240**; **C** clearing the deck through `DrKillDroid` with the cleared-deck recolour and the 500
   showing on the panel; a debug deck hop; the console opened from a console tile, all three of its
   pages drawn (droid database with portrait, deck plan off the tile map, ship cutaway) and closed
@@ -460,6 +462,7 @@ The ship clear was reached by poking `shipNumDroids` to the deck's own droid cou
   tick up on the panel. Faithful, and possibly too slow to read as a reward. KC's ear.
 - **The deck payout's `$17` and the screen's `$B`** are posted back to back, as `$17E9` and `$1282`
   are. Not yet listened to.
-- **Bank 4 has 3 bytes and main RAM has 2.** The next thing to touch it needs room found first — read `CLAUDE.md`'s padding note, and note that `DEBUG_KILL` off returns about 45.
+- **Bank 4 had 3 bytes and main RAM 2 when this layer closed.** Superseded by the RAM recovery
+  pass (2026-08-25): 51 and 639 — see [`ram-pass.md`](ram-pass.md) and `CLAUDE.md` for live figures.
 - **A whole ship has never been cleared by playing.** Every run above forced the count; the honest
   end-to-end test is sixteen decks of real play.

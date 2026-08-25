@@ -190,8 +190,9 @@ position has not crossed one.
 | Waypoints, all decks, offline | 0 of 239 in a wall |
 | Decks 5 and 14 | player moves freely from the spawn |
 
-The oracle procedure is the one in `PLAN.md`: poke the `JSR SprDrawAll` in the main loop to three
-`NOP`s so the pool only restores, let it settle, dump `&5800`–`&7FFF`, force a `RedrawAll` with
+The oracle procedure is now in `CLAUDE.md` (and `ram-pass.md`): poke **all three** draw call
+sites — the `JSR SprDrawAll` and both `JSR SprDrawTr`s — to `NOP`s so the pool only restores
+(one site was enough when this layer was built, before the tranche split), let it settle, dump `&5800`–`&7FFF`, force a `RedrawAll` with
 SPACE, dump again, compare. Droids moving during the comparison is fine and is the point — the
 restore has to put back exactly what the draw took, wherever the droid has since walked to.
 

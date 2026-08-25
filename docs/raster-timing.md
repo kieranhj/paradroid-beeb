@@ -198,8 +198,9 @@ not care where anything has moved to since.
 all three draw sites disabled on a split pass the buffer is **0 of 10240** against a forced
 `RedrawAll` — so the two-window restore puts back exactly what the two-window draw took.
 
-> **The oracle needs all THREE draw call sites poked now**, not one: `SprDrawA`, `SprDrawAll` and
-> `SprDrawB`. Poking only the old one leaves the split path drawing and the diff is meaningless.
+> **The oracle needs all THREE draw call sites poked now**, not one: the `JSR SprDrawAll` and
+> both `JSR SprDrawTr`s (the split path's two windows). Poking only the old one leaves the split
+> path drawing and the diff is meaningless.
 
 #### Tranches are overlap components, not slot ranges — **2026-08-15**
 
@@ -386,7 +387,7 @@ change under test. The baseline scoring 0 on the same method was luck of that ru
 The protocol that works:
 
 1. drive the view diagonally so `line != 0` and `mapHX` is odd, then stop;
-2. poke **all three** draw sites to `NOP` — `SprDrawTr(A)`, `SprDrawAll`, `SprDrawTr(B)` — and let
+2. poke **all three** draw sites to `NOP` — the `JSR SprDrawAll` and both `JSR SprDrawTr`s — and let
    a pass or two run, so the restores take every sprite off the buffer;
 3. hold SPACE and break on the `JSR RedrawAll` itself; dump the buffer;
 4. clear that breakpoint, break on the instruction *after* it, run, dump. `RedrawAll` takes more

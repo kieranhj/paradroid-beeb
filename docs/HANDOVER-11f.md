@@ -38,6 +38,9 @@ commits: F1, F4, F5, docs).
 
 ## Numbers (from the build's own PRINTs, 2026-08-22)
 
+> **Superseded by the RAM recovery pass (2026-08-25)** — main RAM 639 B, bank 4 51 B, PARBRF
+> 56 B; see [`ram-pass.md`](ram-pass.md). The figures below are the 11f-era record.
+
 Main RAM `code_end` = `&2FFE` (2 B free — unchanged by all of this). Bank 4: 26 B. Bank 5:
 PARASPR unchanged; PARMAN uses 4,596 of its 16 K when swapped in. PARBRF: ~~1,188 B spare at
 `&0400`~~ **81 B** — that figure was measured to `&0C90` and PARBRF's ceiling is `&0800`, the
@@ -80,7 +83,7 @@ unmoved.
 
 ## Things that cost something to learn (kept from the last session, still true)
 
-1. **`font_end` + 96 is `PN_TABS`** — the gap above the font is 8 bytes, not 104 (BUGS.md #18).
+1. **`font_end` is not the end of the region — `PN_TABS` follows it** (BUGS.md #18). At the time 96 B of tables / 8 B gap; since RAM pass 1 it is 48 B / ~49 B. The lesson holds, the numbers moved.
 2. **R8 is not optional in a CRTC teardown** — the rupture blanks rows with it.
 3. New this session: **`LDA #PN_SPACE : BNE always` never branches** — `PN_SPACE` is zero. It
    shipped once (leading zeros printed as `0`) and is called out in `briefing.asm`.

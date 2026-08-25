@@ -43,13 +43,13 @@ These emit BeebASM sources into `src/data/` (gitignored — converted game artwo
 | `export_droids.py` | `droids.asm` | 24 droid types × 8 rotor phases, as compiled 6502 plus stored rows |
 | | `droidgame.asm` | The game-data half: speeds, waypoints, per-deck type base |
 | `export_strings.py` | `strings.asm` | The `$C000` string table, translated to port glyph indices — ONE copy, main RAM in the `PARAFNT` file since Layer 13a, read from banks 6 and 7 alike |
-| `export_droidicon.py` | `droidicon.asm` | The console's composed droid icon: one rotor phase and ten digits, bank 6. (It used to emit a bank-7 second copy, `droidicon7.asm`; that went with the rotor-and-digits stand-in when the real portrait landed, Layer 13d) |
+| `export_droidicon.py` | `droidicon.asm` | The composed droid icon: one rotor phase and ten digits, **main RAM** since RAM pass 3b, read by bank 6 (console) and bank 7 (transfer) alike. (The bank-7 second copy `droidicon7.asm` has been emitted, deleted in 13d, revived by layer-10 DECISION 14 and deleted for good on 2026-08-25 — the exporter's `OUT7` arm is gone) |
 | `export_droidinfo.py` | `droidinfo.asm` | `DroidInfo_dat` (`$EB00`) less its portrait sprite images: per-type stats and the packed descriptions, bank 7 |
 | `export_portraits.py` | `portraits.asm` | The droid portrait pool: the 63 unique sprite images `BuildIntroSprites` composes from, verbatim, plus the per-type index and the multicolour→MODE 1 tables, bank 7 — Layer 13d |
 | `verify_bbc.py` | — | Round-trips the generated sources back to C64 form and diffs against the listing |
 
 **Nothing exists twice any more.** The string table went to one main-RAM copy in Layer 13a, and
-the droid icon's bank-7 twin went with the database's stand-in in 13d — the pages that used to
+the droid icon followed it in the RAM recovery pass (3b, 2026-08-25) — the pages that used to
 need duplicates now read main RAM, or draw the real portrait from its own pool.
 
 ### Visualising the C64 original

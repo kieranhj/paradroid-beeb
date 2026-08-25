@@ -411,7 +411,9 @@ number and `AnimateDroids` (`$3CFB`) the rotor, which is why `conRedraw` sets `d
 The port's own droid artwork could not be used. `export_droids.py` **compiles** it — 6502 with the
 pixels baked in as immediates — so the compiled form cannot be read back, and it lives in the
 sprite banks, which bank 6 cannot see. `tools/export_droidicon.py` emits a small copy of the two
-pieces instead: one rotor phase, 10 rows × 3 bytes, and the ten digit glyphs at 8 rows × 1 byte.
+pieces instead: one rotor phase, 10 rows × 3 bytes, and the ten digit glyphs at 8 rows × 1 byte —
+**in main RAM since RAM pass 3b (2026-08-25)**, where bank 6's console and bank 7's transfer
+icons both read it.
 **110 bytes** against 1,743 for the full animated set at one shift. One phase, because the console
 is a still screen — the C64's keeps spinning there only because its sprite is the same one the game
 animates.
@@ -454,7 +456,6 @@ The selection is shown by **recolouring the icon**, as the C64 does — see DECI
 was a white marker bar until 2026-08-24, and that bar was ours, not the original's. The old
 `ConsoleRun` ("L leaves, nothing else") is deleted — leaving is the menu's top entry now — which
 put bank 6 back to 62 bytes free.
-is the menu's top entry now — which put bank 6 back to 62 bytes free.
 
 **The ship page is `con_ShipInfo` (`$3062`) faithfully**: the side view drawn once and STATIC —
 the current deck lit, no shaft mark — and fire returns to the console main screen with the
@@ -590,8 +591,9 @@ The decisions, in the pages' pattern:
    Cost: bank 7 goes from 6,170 bytes free to **2,074**; bank 6 and bank 4 are untouched, and
    main RAM pays 33 bytes for the conductor's arm and one flag.
    *(Since superseded on both counts: Layer 13a TASK 7 took the string table to ONE main-RAM
-   copy in the `PARAFNT` file, and Layer 13d deleted `droidicon7.asm` with the portrait
-   stand-in. The costing above is the historical record of why duplication was right when
+   copy in the `PARAFNT` file, and `droidicon7.asm` was deleted by Layer 13d, revived by
+   layer-10 DECISION 14, then deleted for good by RAM pass 3b — the one icon copy is main
+   RAM's now. The costing above is the historical record of why duplication was right when
    bank 7 was the plentiful resource.)*
 2. **[DECISION — RESOLVED 2026-08-20: the page draws the C64's portrait.]** The revisit this
    entry used to carry is done: KC reversed the deferral, the title moved out to the `PARTITL`

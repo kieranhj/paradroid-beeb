@@ -270,7 +270,7 @@ worth confirming early precisely because it sounds too good.
 
 ### The per-deck data, at zero net cost
 
-`deckPalette` is 16 decks × 4 physicals = 64 bytes in bank 4, which has **3 bytes free**. The
+`deckPalette` is 16 decks × 4 physicals = 64 bytes in bank 4, which has **51 bytes free** (post-RAM-pass, 2026-08-25). The
 replacement is not bigger:
 
 - `c64Rgb` — the 16 C64 colours as NuLA byte pairs, shared: **32 bytes**
@@ -404,7 +404,7 @@ for the static pages.
   byte boundary would have to adopt the underlying tile's palette group — Spectrum clash, on a game
   whose droids move over patterned floors.
 - The blitter's four compiled shifts become shifts over a 6-bit field with 2 bits that must be
-  preserved and merged. That is a rewrite of banks 5 and 6, which have 1,033 and 58 bytes free.
+  preserved and merged. That is a rewrite of banks 5 and 6, which have 602 and 114 bytes free (2026-08-25).
 - The tile charset, `chardata.asm`, `CHAR_PTR_LO/HI`, the row geometry and the 10K wrap arithmetic
   all move.
 
@@ -422,7 +422,7 @@ nothing, that is the better tool.
 
 ## 7 The RAM question
 
-Main RAM has ~100 bytes free in pieces (47 below `&3000`), bank 4 has 3, and zero page is fully
+Main RAM has 639 B below `&3000` since the RAM recovery pass, bank 4 has 51, and zero page is fully
 allocated. The plan's net effect, best estimate — every line of it needs confirming against the
 build's own fuel gauge before anything is promised:
 

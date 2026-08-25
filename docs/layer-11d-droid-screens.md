@@ -92,7 +92,8 @@ re-authoring.
 economies came out of that and all three are load-bearing:
 
 - **`IsEntry` is one door.** A tick and an open share one paged region, because a second pair of
-  `PAGEBANK`s is 16 bytes of main RAM.
+  `PAGEBANK`s cost 16 bytes of main RAM at the time (since RAM pass 5 a pair is two 3-byte
+  `JSR`s to the `PgXxx` helpers — which clobber A exactly as the macro does).
 - **`infoAct` carries `$FF` for "still up"**, so the shim tests one byte rather than two.
 - **The flatten is in bank 7.** `scrollS`, `line`, `bandDo`, `colCount` are main-RAM variables and
   `SetCRTCStart` is main RAM too (that is what `bufcore.asm` exists for), so bank 7 parks the

@@ -235,10 +235,9 @@ and returns through it.
 The ship page is unaffected: `ConShipEnter4` saves `palPlay` and installs `palLift`, and
 `ConShipExit4` puts back whatever it found — the text palette or the deck's, either is correct.
 
-**MAIN RAM IS NOW EXACTLY FULL.** The code image ends at `&3000`, on the `GUARD`, with **0 bytes
-free** — those two bytes were the `JMP`'s. The next thing that needs main RAM needs a hunt first.
-If it has to come from here, moving `ct_trydeck`'s `LDA #2 / STA conDeckReq` into a bank-4 tail
-gives 3 bytes back and costs bank 4 8 of its 10.
+**MAIN RAM WAS EXACTLY FULL at this point** — the code image ended at `&3000`, on the `GUARD`,
+with 0 bytes free. (Superseded: the RAM recovery pass of 2026-08-25 took the image to 639 B free,
+[`ram-pass.md`](ram-pass.md) — the hunt this paragraph proposed is moot.)
 
 ### DECISION 4b — the palette changes BEFORE the screen it belongs to
 
@@ -267,8 +266,9 @@ nothing in `ConsoleOpen` reads them; the marker is drawn separately, afterwards,
 has to outlive it — which is why the routine ends in `JSR SetPalPlay` and an `RTS` rather than the
 `JMP` it used to. Costs five bytes and removes the trap that had already caught this once.
 
-**Both tight regions are at 2 bytes free**: main RAM ends at `&2FFE`, bank 4 at `&BFFE`.
-(DECISION 5 below gave main RAM four of those back — it ends at `&2FFA` now.)
+**Both tight regions were at 2 bytes free at the time**: main RAM ended at `&2FFE`, bank 4 at
+`&BFFE`. (DECISION 5 below gave main RAM four back. All since superseded by the RAM recovery
+pass — 639 B and 51 B, [`ram-pass.md`](ram-pass.md).)
 
 ## [DECISION 5] The logo screen is embossed, and the front end picks a deck at boot
 

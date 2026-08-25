@@ -18,7 +18,7 @@ and the one plan reversal.
 |---|---|---|
 | main RAM | 389 B | **161 B** (the seam's `TitleSeq`/`GoTitle`/`UninstallIrq`/snapshot helpers) |
 | bank 4 | 12 B | **1,161 B** |
-| bank 5 | 1,033 B | 1,033 B (untouched — the bullet flicker's) |
+| bank 5 | 1,033 B | 1,033 B (untouched then; the 2026-08-25 RAM pass has since spent 431 on the effect blitter — 602 B now) |
 | bank 6 | 975 B | **63 B** (`dfsSave`) |
 | bank 7 | 4,410 B | **826 B** (title out, portrait in) |
 

@@ -193,7 +193,8 @@ is `WinningColor == LeftColor`.
       `ALIGN &100` had 26 bytes spare and the addition rolled `planInk` to the next page.
       But **the padding is usable space**, exactly as bank 4's is: anything assembled
       before `INCLUDE "src/data/plandata.asm"` rides in it for nothing, and there are now
-      **228 B of it**. Real free space in bank 7 is 228 + 58 = **286 B**, and the filter
+      **228 B of it** (a same-day snapshot — the day's later passes moved it, see the
+      supersession note under §6). Real free space in bank 7 was then 228 + 58 = 286 B, and the filter
       took 54 of the 340 that were there before it. The correction matters because the
       256 figure was used to argue that DECISION 14's droid icons could not be afforded;
       on the true numbers they very nearly can.
@@ -250,17 +251,20 @@ is `WinningColor == LeftColor`.
       Blank rows write logical 0, which is the board's own background, so a swap needs no
       separate clear.
     - **`src/xfericon.asm`, and ITS POSITION IN THE BLOCK IS LOAD BEARING** — the
-      `consolesel.asm` trick, but the other way round. The icons are 421 B all told against
-      126 B of `ALIGN` padding, so they cannot all ride in it. What does is
-      `droidicon7.asm`'s 110 B (regenerated — `export_droidicon.py` still had the `OUT7`
-      path Layer 13d stopped using) plus the state; the ~297 B of code is assembled
+      `consolesel.asm` trick, but the other way round. The icons were 421 B all told against
+      126 B of `ALIGN` padding, so they could not all ride in it. What did was
+      `droidicon7.asm`'s 110 B (regenerated at the time — **RAM pass 3b has since deleted
+      it AGAIN, for good**: the one icon copy is main RAM's now, read by both banks, and
+      `export_droidicon.py`'s `OUT7` arm is gone) plus the state; the ~297 B of code is assembled
       **behind** the ALIGN. Move it in front and the padding rolls a page and the bank
       overflows. This was not theory: the first cut put everything in front and overran by
       198 B, and getting it to fit took the split, a tighter swap test in `XfSelectTick`
       (`STX` does not touch flags, so `CPX`'s Z survives it) and dropping a variable by
       deriving the second column as `XI_LCOL + XI_RCOL - xiCol`.
-    - **Bank 7 is effectively FULL: 2 B of padding and 7 B of tail, 9 B real.** The 154 B
-      the glyph pool found is spent. Anything further in bank 7 needs its own pass first.
+    - **Bank 7 was effectively FULL at this point: 2 B of padding and 7 B of tail.**
+      **Superseded by RAM pass 3b (2026-08-25 evening)**: deleting `droidicon7.asm` grew
+      the `planInk` pad to ~176 B, so the bank has ~183 B real again — pad + tail, quoted
+      as a pair.
     - **Verified in jsbeeb 2026-08-25**: 001 yellow left and 329 magenta right at setup;
       pressing right swaps them, each keeping its colour, and the panel line agrees; a full
       game plays to its verdict with both icons untouched, confirming the no-repaint
@@ -322,6 +326,11 @@ somewhere it reads worse. It stays where it is. What the exercise did produce is
 map below, which is the thing worth keeping.
 
 ## 6. Bank 7's map, measured 2026-08-25
+
+> **Superseded the same evening by RAM pass 3b** ([`ram-pass.md`](ram-pass.md)):
+> `droidicon7.asm` is deleted, every start address from `xferboard.asm` down is shifted, the
+> `ALIGN` padding is ~176 B and the tail 7 B (`xfer_end` = `&BFF9`). The shape and the rules
+> below still hold; regenerate the addresses from the listing before trusting one.
 
 | chunk | start | size |
 |---|---|---|

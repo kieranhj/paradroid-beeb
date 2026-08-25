@@ -46,19 +46,22 @@ seeked back to track 0.
   `DEPK_STREAM = &3200` → `SWRAM_BASE`. A second copy is needed because
   only one bank is visible at a time — bank-4 code cannot fill bank 5 —
   and the code image had no room (46 B free at the time).
-- **The boot** loads PARDEPK once, then for each bank: `*LOAD` drops the
-  compressed stream at `&3200`, and `UnpackBankIn` (which replaced
-  `PageBankIn`) writes ROMSHAD+ROMSEL and JMPs `&3000`. The copy loop's
-  bank-copy entries went with `PageBankIn`; `PageCopyAt` survives for
-  `PageLowIn` and the DFS-workspace snapshot. Net **one byte of code
-  saved** below `&3000` (46 → 47 free — the removed copy heads paid for
-  the extra OSCLI, the string and the stub). Depack ZP is the level
-  draw's scratch, idle
+- **The boot** loads PARDEPK once, then `BootBanks` runs the four
+  load-and-unpack pairs: `*LOAD` drops each compressed stream at
+  `&3200`, and `UnpackBankIn` writes ROMSHAD+ROMSEL and JMPs `&3000`.
+  **Since RAM pass 3a (2026-08-25), `BootBanks`, `UnpackBankIn` and the
+  PARADAT/PARSPR2/PARXFER strings live INSIDE the PARDEPK overlay** —
+  every caller runs with it resident — while `loaddepk` and `loadspr`
+  stay in main RAM because the briefing exit OSCLIs both before its
+  reload. `PageCopyAt` survives in main RAM for `PageLowIn` and the
+  DFS-workspace snapshot. Depack ZP is the level draw's scratch, idle
   at boot; the loads all precede `InstallIrq`, so only the MOS IRQ runs
   during depack and it touches no bank.
-- PARDEPK shares PARAFNT/PARTITL's ground and dies when PARTITL loads —
-  by then all four banks are up, and nothing reloads a bank afterwards
-  (the game-over seam reloads only PARTITL/PARAFNT/PARALOW).
+- PARDEPK shares PARAFNT/PARTITL's ground and dies when PARTITL loads.
+  **One thing DOES reload a bank afterwards**: the briefing exit
+  re-`*LOAD`s PARDEPK and the PARASPR stream to bring the blitter home
+  (`layer-11f-frontend.md`) — which is exactly why the overlay can hold
+  `UnpackBankIn`. The game-over seam reloads only PARTITL/PARAFNT/PARALOW.
 - **`tools/make_disc.py`** post-processes beebasm's image
   (`build/PARADROID-raw.ssd` → `PARADROID.SSD` + the 200K pad):
   compresses the four banks with `bin/zx0.exe` (the reference compressor,
@@ -94,7 +97,7 @@ written by `make_disc.py`. `build.ps1` runs the whole chain.
 - **Compressing PARA/PARAFNT/PARTITL/PARALOW**: under a second combined,
   and each has a complication (see above). Not worth it.
 - **A faster boot depacker** (the macro is sized for bank 4, where every
-  byte counts): PARDEPK has ~240 B slack below `&3200`, so an unrolled
-  or self-modifying variant could claw back a chunk of the ~3.5 s the
-  depack itself costs. Left on the table — raise it if boot time still
-  grates.
+  byte counts): PARDEPK had ~240 B slack below `&3200`; RAM pass 3a's
+  `BootBanks` move spent it down to **~144 B**, so an unrolled variant
+  now has much less to work with. Re-cost before pursuing — raise it if
+  boot time still grates.

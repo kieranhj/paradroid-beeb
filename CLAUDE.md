@@ -62,8 +62,13 @@ months looking like working code.
 **Verify against the buffer, not the screenshot.** Screenshots have repeatedly said "fine" when it
 was not. Diff the play buffer against `RedrawAll` at the same position (SPACE) byte for byte, over
 **odd and even** `mapHX`, **non-zero `line`** and **diagonals** — every scrolling bug so far has
-hidden in one of those. Let the view settle ~1,500,000 cycles first, and poke `JSR SprDrawAll` to
-NOPs so a spinning rotor cannot pollute the diff.
+hidden in one of those. Let the view settle ~1,500,000 cycles first, and poke **all three** draw
+call sites to NOPs — the `JSR SprDrawAll` **and both `JSR SprDrawTr`s** near the top of the main
+loop. NOPing only the first has been insufficient since the tranche split: the split path keeps
+drawing and the diff shows a player-shaped block of false "corruption". Freeze with the player at
+REST (restores replay every pass while draws are off, so a freeze mid-deceleration stamps stale
+tiles into a scrolled buffer), and expect legitimate diffs from doors animating under droids —
+`docs/ram-pass.md` §"The oracle recipe changed" has the full checklist.
 
 For a change meant to be purely mechanical, there is a faster check that is also stronger: reduce
 both builds' beebasm listings to a stream of (mnemonic, addressing class) and compare. A match
@@ -176,60 +181,56 @@ addresses from the `beebasm` output rather than from any document.** In outline:
 | ZP `&00–&8F` | All used. The map is in `main.asm`. `&90` up belongs to the OS |
 | `&0400–&0C90` | MODE 1 charset, built at deck load — reclaimed OS workspace |
 | `&0C90–&10FF` | **The low overlay** (`PARALOW`) — resident code and state in reclaimed DFS/OS workspace. `&0D00–&0D5F` (NMI) and `&0DF0–&0DFF` (ROM private workspace) are **excluded**. Nothing may be *loaded* here; it is staged and copied, and that copy **must be the last filing-system call** |
-| `&1100–…` | Code (`PARA`), starting below DFS's `PAGE`. Ends just short of `&3000` — 47 B free, the binding constraint |
-| `&3000–&37FF` | Sprite background save areas, one page per each of the eight slots |
-| `&3800–&3BFF` | Tile map |
-| `&3C00–&49FF` | Layer 9's text font (`PARAFNT`), border cells and mirrored droid tables |
+| `&1100–…` | Code (`PARA`), starting below DFS's `PAGE`. Also carries the one copy of the droid icon data (`droidicon.asm`), read from banks 6 and 7 |
+| `&3000–&3DFF` | The `PARAFNT` block: text font, panel frame, the shared string table, `FontCell`/`DoScore` and the `PN_TABS` mirrors (48 B) |
+| `&3E00–&45FF` | Sprite background save areas, one page per each of the eight slots; doubles as depack/staging scratch |
+| `&4600–&49FF` | Tile map |
 | `&4A00–&53FF` | Panel — 4 rows × 640, displayed by rupture cycle 1 |
-| `&5500–&57FF` | Character-address and sprite-mask tables, built at startup |
+| `&5400–&57FF` | Row/unit multiply, character-address and sprite-mask tables, built at startup — packed exactly, no slack |
 | `&5800–&7FFF` | Play buffer: circular strip, 16 rows × 640 |
 | SWRAM bank 4 | `PARADAT` — tiles, levels, palettes, droid game data, **the level-draw code, the droid AI, Layer 10's entry/exit and Layer 11e's sound driver**. The char bitmaps ship ZX0-packed; `BuildCharset` unpacks them into the idle sprite save areas at deck load |
-| SWRAM bank 5 | `PARASPR` — the blitter, shifts 0 and 1 px. **Evicted for the briefing**, which loads `PARMAN` over it: the manual's text, `briefman.asm` and the chatter's effect records. Both exits reload the blitter |
-| SWRAM bank 6 | `PARSPR2` — shifts 2 and 3 px, same layout, plus Layer 9's panel/console, Layer 11f's `PnBriefing` and the 912 B `dfsSave` snapshot — **full** (16 B) |
-| SWRAM bank 7 | `PARXFER` — Layer 10's transfer minigame and its droid icons, Layer 8b's lift screen, the console's ship, deck-plan and droid-database pages, and Layer 11's game over. The title is NOT here any more — it is the `PARTITL` disc overlay. **9 B free (2 padding + 7 tail) — FULL** |
+| SWRAM bank 5 | `PARASPR` — the blitter, shifts 0 and 1 px, **and the effect blitter (`src/sprfx.asm`, RAM pass DECISION 2)**. **Evicted for the briefing**, which loads `PARMAN` over it: the manual's text, `briefman.asm` and the chatter's effect records. Both exits reload the blitter |
+| SWRAM bank 6 | `PARSPR2` — shifts 2 and 3 px, same layout, plus Layer 9's panel/console, Layer 11f's `PnBriefing` and the 912 B `dfsSave` snapshot |
+| SWRAM bank 7 | `PARXFER` — Layer 10's transfer minigame, Layer 8b's lift screen, the console's ship, deck-plan and droid-database pages, and Layer 11's game over. The title is the `PARTITL` disc overlay, and the droid icons are main RAM's now |
 
-**RAM is the binding constraint. Measured from the build of 2026-08-24**, not remembered: the
-main-RAM code image ends at `&2FFE`, so **2 bytes** below `&3000`, and **bank 4 has 3 B** after
-Layer 15 built its endgame on the space pass's 105 and then fixed the cleared-deck re-fire — any figure elsewhere claiming 2, 8, 47 or 60 is stale. The pass deleted
-112 bytes of per-deck tables that nothing read and spent 15 back on a self-healing page pad in
-`sound.asm`; Layer 15 then spent 92 of the rest on the endgame. `DEBUG_DECK`'s 69-byte arm moved
-to bank 4 (`src/dbgdeck.asm`, layer-15 DECISION 1) the way `dbgkill.asm` did.
-**A "Main RAM went UP, 3 → 26" once stood here and was WRONG** — it contradicted the `&2FFE`
-two lines above it, and re-measured on 2026-08-25 the image still ends at `&2FFE`. **Main RAM
-has 2 bytes.** Take it from `PRINT "code"` in the build output, never from this paragraph. `docs/memory-map.md` §"Layer 15 space pass" has the detail, and the pad means a
-future bank-4 edit can move the gauge by up to 37 bytes on its own — read it, do not infer it. Both moved that day: the title's random boot deck
-gave main RAM 4 back (`docs/layer-14-visual.md` DECISION 5) and the console's icon selection gave
-bank 4 46 (`docs/layer-9-hud.md` DECISION 18). **Main RAM is by a wide margin the tightest thing in the
-project**, and the padding note below is the other reason bank 4 is not.
-Bank 4 went to 26 B when Layer 14's floor dither paid for itself, and spent it again on the text
-palettes. **Bank 4 also has alignment padding in front of `colourMap` that the fuel gauge does not count — 17 B of the original 162 are left, `consolesel.asm` and `dbgkill.asm` having spent the rest, and anything — CODE or data — assembled ANYWHERE before that `ALIGN` rides there for nothing** (`src/consolesel.asm` is the worked example). **Deleting the `ALIGN` recovers nothing**: `tiledefs.asm` aligns next and pads by the same amount — measured, 2026-08-24. Past 162 B the `ALIGN` rounds to the next page and costs 256 at a stroke. See `docs/layer-9-hud.md` DECISION 18 and `docs/layer-14-visual.md`.
-Layer 11f's front end spent bank 4's margin down again (the sixteen-row change had bought it back
-to 60 by collapsing three copies of the `t1i3` restore into one in `ReframeView` — see
-`docs/layer-9-hud.md` §6g). The build PRINTs bank 4's fuel gauge every run; the other three come
-from `&C000` minus the end addresses it also PRINTs — **bank 5 1,033 B, bank 6 4 B, bank 7 7 B**
-as of 2026-08-25. **Bank 7's tail figure ALWAYS understates it**, for the same reason bank
-4's does: `plandata.asm` carries an `ALIGN &100` for `planInk`, and the padding in front of
-it is free to anything assembled before `INCLUDE "src/data/plandata.asm"`. Quote the pair,
-never the tail alone — but the pair is now **2 B of padding and 7 B of tail, 9 B real**:
-Layer 10 DECISION 14's droid icons spent everything the glyph-pool pass found.
-**Bank 7 is FULL**, and anything further there needs its own pass first. Spending one byte
-past the padding costs 256 at a stroke, which is why `src/xfericon.asm` is included AFTER
-`plandata.asm` and its header says so, the low overlay 1 B and `lowcode2` 8 B.
+**RAM was the binding constraint until the RAM recovery pass of 2026-08-25**
+(`docs/ram-pass.md`) bought back room across every region. **Measured from that build** — and
+take live figures from `PRINT "code"` and the bank gauges in the build output, never from this
+paragraph:
 
-**The `PARBRF` overlay at `&0400` has a hard ceiling of `&0800` and 3 bytes free**, and the
-ceiling is measured, not caution: `&0800-&08FF` is the MOS's sound workspace and its IRQ writes
-there through the front end's loads. Anything of the briefing's that need not be main RAM belongs
-in `src/briefman.asm`, bank 5. Documents quoting ~1,188 B spare there measured to `&0C90` and are
-wrong by a factor of fifteen. Banks 5, 6 and 7 are all paged out during play, so none of their
-spare is reachable from the main loop. Anything new needs
-something moved first — `docs/memory-map.md`'s free-RAM section lists what is left and where it can
-come from.
+| Region | Free (2026-08-25, post-pass) |
+|---|---|
+| Main RAM code image | ends `&2D81` — **639 B** below `&3000` |
+| Bank 4 | **51 B** on the gauge, + 17 B of `colourMap` `ALIGN` pad |
+| Bank 5 | **602 B** |
+| Bank 6 | **114 B** |
+| Bank 7 | 7 B tail + **~176 B** of `planInk` `ALIGN` pad |
+| `PARBRF` (`&0400`, hard ceiling `&0800`) | **56 B** |
+| `PARDEPK` (`&3000`, ceiling `&3200`) | **144 B** |
+| `PARAFNT` block | ~49 B before `SPR_SAVE` |
+| Low overlay | `lowcode` 1 B, `lowcode2` 6 B, `lowbss` 8 B |
 
-**Every debug build except `DEBUG_INVULN` currently fails to assemble**, and that is the RAM above
-rather than the flags: `RASTER`/`DRAW`/`TIME` hit the main-RAM `GUARD`, `POS`/`VSYNC`/`ENERGY` blow
-bank 6's `spr2_end` assert, `MAPGUARD` blows bank 4's one-page assert in `sound.asm`. The three that
-ship ON — `XFERWIN`, `RESTART`, `DECK` — build, which is why the default build is fine. Accepted by
-KC 2026-08-21; they come back when space does. Do not chase one as a bug in the flag.
+Two standing rules about the `ALIGN` pads: **anything — CODE or data — assembled before bank 4's
+`colourMap` `ALIGN` or bank 7's `plandata.asm` `ALIGN` rides in that pad for nothing**
+(`src/consolesel.asm` and `src/xfericon.asm` are the worked examples, one each way), **deleting
+either `ALIGN` recovers nothing** (the next ALIGN pads by the same amount; both low bytes are
+load-bearing in pointer arithmetic), and spending one byte past a pad costs 256 at a stroke.
+Quote a bank's pad and tail as a pair, never the tail alone. `docs/ram-pass.md` records what the
+pass took, what it costed and rejected (do not re-litigate the blitter unrolls, `palPanel` or the
+ALIGNs), and what is held in reserve for the next squeeze — `sprsplit.asm` to bank 5, SCANSTEP
+tail folding, `door.asm` to bank 4, the `hsfont` dedup.
+
+**The `PARBRF` ceiling is measured, not caution**: `&0800-&08FF` is the MOS's sound workspace and
+its IRQ writes there through the front end's loads. Anything of the briefing's that need not be
+main RAM belongs in `src/briefman.asm`, bank 5. Banks 5, 6 and 7 are all paged out during play,
+so none of their spare is reachable from the main loop.
+
+**Some debug builds still fail to assemble** — before the pass every one except `DEBUG_INVULN`
+did, from the RAM squeeze rather than the flags: `RASTER`/`DRAW`/`TIME` hit the main-RAM `GUARD`,
+`POS`/`VSYNC`/`ENERGY` blew bank 6's `spr2_end` assert, `MAPGUARD` blew bank 4's one-page assert
+in `sound.asm`. The three that ship ON — `XFERWIN`, `DECK`, `KILL` — build, which is why the
+default build is fine. Accepted by KC 2026-08-21; the pass's headroom may have brought others
+back — try the flag before assuming, but do not chase a failure as a bug in the flag.
 
 **Only one bank is visible at a time.** `SprRestoreAll` and `SprDrawAll` page their own bank in and
 the data bank back out around themselves, so `SWRAM_DATA` is the resting state. This is safe
@@ -241,10 +242,13 @@ else in the IRQ must still read no bank; check that again before putting anythin
 All four bank files ship ZX0-compressed on disc (written by `tools/make_disc.py`, not by the
 SAVEs): `*LOAD` drops each stream at `DEPK_STREAM = &3200` and `UnpackBankIn` decompresses it
 straight into the bank via **`PARDEPK`, an eighth disc file** — the `ZX0_DEPACKER` macro from
-`zx0depack.asm` again, loaded once at `&3000` before the banks and dead once `PARTITL` lands on
-it. They cannot be loaded at `&8000` even uncompressed, because the MOS has the DFS ROM paged in
-there during a filing-system call. `*LOAD` must also happen **before** `InstallIrq` — taking over
-IRQ1V stops the MOS servicing the filing system. See `docs/loader-compression.md`.
+`zx0depack.asm` again, loaded at `&3000` before the banks and dead once `PARTITL` lands on it
+(the briefing exit `*LOAD`s it AGAIN before reloading `PARASPR`). Since the RAM pass the overlay
+also carries **`UnpackBankIn`, the boot's `BootBanks` loop and three of the load strings** —
+everything in it runs only while it is resident. The banks cannot be loaded at `&8000` even
+uncompressed, because the MOS has the DFS ROM paged in there during a filing-system call. `*LOAD`
+must also happen **before** `InstallIrq` — taking over IRQ1V stops the MOS servicing the filing
+system. See `docs/loader-compression.md`.
 
 **`PARALOW` is a sixth disc file and is loaded LAST, after `PARAFNT`.** It carries the low overlay,
 which lands on DFS's own workspace at `&0E00–&10FF` **and, via `lowcode2`, on the MOS's extended

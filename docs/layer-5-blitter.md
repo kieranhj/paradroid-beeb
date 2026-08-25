@@ -806,8 +806,9 @@ stationary or low-energy, since `SPR_SPIN = 0` advances a full-energy rotor ever
 > then diverge for reasons that have nothing to do with the change under test. Half an hour went
 > into a 38-byte difference that was entirely this.
 
-> **Check `code_end` against the stub address after every build.** The measurement and input
-> stubs live between `code_end` and the tile map at `&2C00`. Step 3a moved `code_end` from `&2B7B`
+> **Check `code_end` against the stub address after every build.** (Addresses here are this
+> layer's era — the tile map has long since moved to `&4600`.) The measurement and input
+> stubs lived between `code_end` and the tile map at `&2C00`. Step 3a moved `code_end` from `&2B7B`
 > to `&2BA4`, and a stub left at `&2BA0` lands on `vsyncCount` and `oldIrq1V` — which reads
 > exactly like a sprite bug that only appears when scrolling.
 
