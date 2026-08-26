@@ -135,9 +135,10 @@ home and the note is cross-referenced.
 
 - Palette change timing.
 - TV resync — the rupture-mid-frame hazard row below is the home for this.
-- Single-line scroll flicker. **The keys came off OSBYTE on 2026-08-26** — `keydown` drives the
-  matrix directly, 243 cycles down to 69 — but whether that was the cause is UNVERIFIED: the
-  flicker has not been looked at since. [`docs/raster-timing.md`](docs/raster-timing.md)
+- ~~Single-line scroll flicker — move keys off OSBYTE?~~ **DONE 2026-08-26, and the guess in the
+  note was right.** `keydown` drives the System VIA matrix directly instead of calling OSBYTE
+  `&81`: 243 cycles down to 69, ~2,175 a pass across a dozen keys. KC confirms the flicker is
+  gone. [`docs/raster-timing.md`](docs/raster-timing.md)
 - Blanking during load.
 - Show the screen only after the frame is drawn — return from console, high-score → Paradroid
   logo, between briefing pages.

@@ -467,6 +467,11 @@ on the `JSR` and its return instruction, differencing `elapsed_cycles`.
 **~2,175 cycles a pass**, then, at 12.5 tests — about 2.7% of the 79,872-cycle pass, arithmetic
 from the per-call measurement rather than measured as headroom.
 
+**And it fixed the single-line scroll flicker** (KC, 2026-08-26), which is what `PLAN.md`'s polish
+note had guessed at when it asked "move keys off OSBYTE?". Worth recording as the visible payoff:
+the saving is small as a percentage, but it came out of the foreground at the point in the pass
+where the scroll is least able to afford it.
+
 ## The mechanism, and the proof it is doing what it claims
 
 Port A is the slow bus; port B's low nibble is an addressable latch selecting who is listening
