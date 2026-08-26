@@ -62,6 +62,7 @@ need duplicates now read main RAM, or draw the real portrait from its own pool.
 | `rip_tiles_mc.py` | The `$7800` tile set as multicolour characters |
 | `rip_sideview.py` | Ship cross-section, with and without deck overlays |
 | `rip_screens.py` | Title screen (three charsets), transfer board, the 15 circuit-piece characters |
+| `rip_intro.py` | The CE loading intro (three robots + credits) and its flash effect — reads `extracted/intro_ram.bin`, **not** the listing; see §10 |
 
 ### Answering specific questions
 
@@ -463,6 +464,43 @@ lettering and sits on slot 7, which is multicolour under 8 of the 16 deck scheme
 so the single-pixel letter gaps cannot exist and the letters join. The C64 does exactly the same.
 Decided to stay faithful rather than force those characters to hires; `compare_tile.py` is how such
 questions get settled.
+
+---
+
+## 10. The loading intro (not in the listing)
+
+The CE `.prg`'s intro — the three-robots picture with the scroller and the "Paradroid /
+Competition Edition / by Andrew Braybrook" credits — is the **loader's own code, not the game's**,
+so it is nowhere in `paradroid_ce.lst`. It was ripped 2026-08-26 from a VICE RAM dump taken while
+the intro loops (it runs until SPACE, so a `trace store d019` save from the `unpack_prg.ps1`
+pattern, killed ~30 s in with no key pressed, lands on it every time). The dumps live in
+`extracted/intro_ram.bin` (+ `intro_io.bin`, the IO bank for colour RAM); `tools/rip_intro.py`
+reads them, and its docstring is the full analysis. The intro loop itself disassembles at `$E000`.
+
+**Display.** Multicolour text mode, VIC bank 3: screen `$E400`, custom 2K charset `$E800`,
+`D018=$9B`. One polled raster split at line `$B2`: above it multicolour with `D021/22/23` from the
+flash state, below it hires on black for the credits, coloured per row. Colour RAM is one colour
+per row (25-byte table, plus `$08` patches over the machine block); char `$20` in this charset is
+**solid `11` pixels**, so the "sky" is per-row colour RAM (`$0E` → colour 6, blue), not the
+background register. The scroller is all 8 sprites, X-expanded, in a row at Y=141 — ignored.
+
+**The lightning.** At rest `D021/22/23` are all **black** — the picture is silhouettes on blue
+with only the eyes lit. A flash is a 15-frame envelope (attack 4, hold 2, decay 9) through one of
+four 4-step colourway blocks, each step `[D021, D022, D023, glow]`, the glow colour painted every
+frame onto 27 fixed colour-RAM cells (the robots' torsos and the machine). The four colourways
+peak grey/white, orange/yellow, red and green; a flash fires at random, checked every 32 frames
+during a window of roughly half of every 256-frame period, and also triggers the SID thunder.
+Two always-on animations besides: the three eye-pairs cycle an 8-entry colour ring stepping every
+4th frame, and seven machine-console cells sparkle with random colours for 32 frames in every 128.
+
+`tools/output/` gets the raw rip — `intro_screen.bin` (1000 B), `intro_charset.bin` (2 K),
+`intro_colram.bin` (rest state, rebuilt the way the init code builds it and verified cell-for-cell
+against the live dump) — plus `intro_flash.txt` (every effect table, transcription-ready) and
+rendered PNGs of the rest state and all four colourway peaks. `intro_flash_2.png` reproduces
+`ref/c64-intro.png` (which turns out to be the orange/yellow colourway caught at peak).
+
+> **Status. Ripped, not ported.** For the port's own loading intro screen — no layer yet, no
+> decisions taken on what a BBC version keeps.
 
 ---
 
