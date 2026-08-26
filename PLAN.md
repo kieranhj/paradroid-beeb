@@ -62,6 +62,7 @@ or triple digits in every other region** — current figures in `CLAUDE.md`'s ta
 | Twelve title characters, four wash characters | `export_bbc.py` converts only what a TILE references, so the title ships its own 36 glyphs and `EndGame`'s wash uses substitutes. **KC 2026-08-21: extend the shared charset when space allows** — bank 4 now has the room | unblocked by the RAM pass |
 | The enemy bullet's colour flicker | `efAlt` from bank 5 plus a second per-entry field; effect sprites run the interpreted path (now in bank 5 itself, `src/sprfx.asm`) and are one colour | Layer 7, deferred |
 | 2 px world scrolling | Parked, Master-only via shadow RAM. Costs +60–80 % on all drawing — [`docs/master-extensions.md`](docs/master-extensions.md) | parked |
+| **The four Redux adoptions** — triaged with KC 2026-08-26 | (1) explosions not restarted by the disruptor/bullets; (2) the three-droid-deadlock priority randomisation, **after reproducing the deadlock here first**; (3) lift-adjacent waypoints excluded from droid starts; (4) high-score entry remembers the previous initials. Everything else on https://paradro.id/ was rejected for 1.0 — the record is in [`docs/decisions.md`](docs/decisions.md) and §12b. Damage tables stay CE's in full, laser swap included | adopted, unbuilt |
 
 ### Polish items — from Kieran's Human Notes
 
@@ -80,7 +81,7 @@ home and the note is cross-referenced.
 - Player 001 should flash on teleport-in at the start.
 - Some of the decks have the lift tile missing?
 - Lift selection does weird palette changes.
-- Separate key for transfer vs fire?
+- Separate key for transfer vs fire? (= Redux's two-button mode: second button enters transfer, first does everything else)
 - Getting into the lift just as the disruptor fires leaves the screen white.
 
 **Console**
@@ -106,7 +107,7 @@ home and the note is cross-referenced.
 
 **Niceties**
 
-- Redux bug fixes and feature additions (e.g. the droid count) — Layer 12's triage, see that row.
+- Redux bug fixes and feature additions — Layer 12's triage; the bug list is adopted as behaviour in `docs/decisions.md`. The one KC named already: **the droids-remaining count on the console** (Redux shows it per deck/ship).
 - Pause.
 - Volume — the ± volume keys row above is the home for this.
 - What's Cheese?
