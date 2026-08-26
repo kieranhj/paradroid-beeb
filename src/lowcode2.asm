@@ -194,6 +194,15 @@ ENDIF
   LDA #1
   STA infoActive
   JSR GameStart
+\ ARM THE SHIP-ENTRY WINDOW. $124E's new-game path falls into _entership
+\ exactly as the ship-cleared path does, so a new game gets the seven
+\ energy, the siren and the flash too -- it is not a between-ships
+\ effect. Only the COUNTER is set here: EntryHold applies the 7 itself
+\ on its first pass, because GameStart's DroidsInit has just written a
+\ full &40 over entry 0 and because this is the low overlay, where the
+\ data bank holding drEnergy may not be paged. entryHold is main RAM.
+  LDA #ENTRY_PASSES
+  STA entryHold
   LDA #1                        \ a new game starts on ship 1, and shipName
   STA shipName                  \ is main RAM so nothing else resets it
   STA pmShip

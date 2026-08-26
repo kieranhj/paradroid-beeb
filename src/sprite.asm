@@ -1360,15 +1360,26 @@ efSrc = psrc
 \ cycle barely flashing at all, because every colour in it is mid
 \ luminance. So it is the base colour for four fields and black for
 \ four, which is bit 2 of the same 8-field cycle the C64 counts, and
-\ reads at speed as the flash it is meant to be. fieldCount is the
-\ IRQ's own count at fire 3, one per field, so it is frameCount.
+\ reads at speed as the flash it is meant to be.
+\
+\ THE COUNTER IS gameTick, NOT fieldCount, and this was wrong until
+\ 2026-08-26 (KC: "the flash is quite fast compared with the C64
+\ version"). The note here used to say "fieldCount is the IRQ's own
+\ count at fire 3, one per field, so it is frameCount" -- and that is
+\ exactly the slip. The C64's frameCount is incremented once per
+\ GameLoop ITERATION, which is two to three frames, not once per frame;
+\ main.asm's gameTick is the port's copy of it and says so. On
+\ fieldCount the cycle was 8 fields = 0.16 s, a 6.25 Hz strobe; on
+\ gameTick it is 8 passes = 0.32 s, 3.1 Hz, against the original's
+\ ~2.5 Hz. Same counter semantics, and it looks like the original.
+\
 \ drEnergy is entry 0, the player, and it lives in bank 4 — safe to
 \ read here because SWRAM_DATA is the resting state and SprDrawAll has
 \ not paged the sprite bank in yet. combat.asm reads it the same way.
   LDA drEnergy
   CMP #8
   BCS saa_lit
-  LDA fieldCount
+  LDA gameTick
   AND #4
   BEQ saa_lit                   \ four fields the base colour, four black
   LDA #SPR_COL_BLACK

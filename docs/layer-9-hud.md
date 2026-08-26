@@ -839,3 +839,66 @@ score all come out **logical 2 and nothing else** — 71, 55 and 8 bytes with th
 **Not verified**: the droid database's own "More", which is written on its page 3. The change is
 the same `dbInk` for both its strings and its "Console" write shares the path, but page 3 was not
 reached in the emulator.
+
+## 7. The ship-entry flash — built 2026-08-26
+
+**KC: "the player sprite should flash black and white on entry to the ship when the siren sounds."**
+It should, and the port had every part of it except the thing that triggers it.
+
+**The flash is not an entry effect.** `_entership` (`$1289`) does four things in order:
+
+| | |
+|---|---|
+| `$12A5` | `droidEnergy` = **7** |
+| `$1332` | `sndFx1` = **7** — the siren |
+| `$1336-$1343` | run the game for **32 iterations** |
+| `$1345/$134A` | `droidEnergy` and `maxEnergy` = **`$40`** |
+
+The flashing is the ordinary **low-energy warning** — `AnimateDroids`' tail cycles
+`LowNrgColor_t` (`$FF,$FC,$FB,$F0,$FB,$FC,$FF,$F1` — light grey, grey, dark grey, **black**, back
+up, ending **white**) into sprite 7's colour whenever `droidEnergy < 8`. Entry triggers it by
+holding the player below the threshold for 32 iterations and by no other means. The alarm (fx 8)
+comes from the same condition, so the siren, the beeping and the flash are one window.
+
+**Both entry routes go through it**: a new game (`$126D`, after fx 6) and a cleared ship (`$1284`,
+after fx $B) both fall into `_entership`. It is not a between-ships effect.
+
+**Why the port showed nothing.** It had the flash (DECISION 5, superseded), the alarm
+(`SndAmbient`) and fx 7 at game start — but no window. A new game came up on a full `&40` from
+`DroidsInit`, so nothing was ever below 8. And the next-ship route set the 7 at `InfoHigh` while
+**nothing anywhere set it back**: the port had no equivalent of `$1345` at all, so boarding ship 2
+would have left the player on seven energy permanently, flashing and alarming until he found a
+recharge pad. That was a live bug, found by looking for this feature rather than by playing.
+
+**`EntryHold` (main.asm) owns the whole window** and both routes just arm `entryHold` with 32. It
+applies the 7 on its first pass and `&40` to energy *and* `maxEnergy` when the count expires.
+Arming rather than writing the energy directly is what lets `lowcode2` use it: that is the low
+overlay, where the bank holding `drEnergy` may not be paged, and `entryHold` is main RAM.
+
+**It runs in the play path, beside `SndAmbient`**, and that placement is the design. The port
+replaced the C64's 32-frame animation with the `IS_SCR_001` information screen, which is modal and
+ends the pass long before that point — so the window does not start until the screen is dismissed
+and the deck is up. The player flashes through the first ~1.3 s of play, which is where the C64
+spends it too.
+
+### The rate was wrong, and the comment said why
+
+**KC, same session: "the flash is quite fast compared with the C64 version."** `sprite.asm` counted
+on `fieldCount`, one per **field**, giving a half-period of 4 fields = 0.08 s — a **6.25 Hz**
+strobe. The C64 indexes on `frameCount`, which increments once per GameLoop **iteration** — two to
+three frames — so its half-period is 4 iterations ≈ 10 frames ≈ 0.2 s, about **2.5 Hz**.
+
+The old note in `sprite.asm` contained the error in plain sight: *"fieldCount is the IRQ's own
+count at fire 3, one per field, so it is frameCount."* It is not — `main.asm`'s **`gameTick`** is
+the port's copy of `frameCount` and says so at its declaration. Switched to `gameTick`: half-period
+4 passes = 0.16 s, **3.1 Hz**, against the original's 2.5. The residue is that a port pass is two
+fields where a C64 iteration is two to three frames.
+
+**The lesson worth keeping:** `fieldCount` and `gameTick` are not interchangeable, and anywhere the
+C64 counts `frameCount` the port must count `gameTick`. Two counters that both look like "the frame
+number" is exactly the trap, and this is the second time this session a rate has come out wrong
+from picking the faster one.
+
+**Verified in jsbeeb.** Mid-window: `entryHold` 7, `drEnergy` 7, the player solid white in one
+frame and solid black four fields later. After expiry: `entryHold` 0, `drEnergy` `&40`, `maxEnergy`
+`&40` — exactly `$1345`/`$134A`.

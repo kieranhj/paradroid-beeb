@@ -1017,6 +1017,7 @@ KEY_ESCAPE = &8F                \ -113, the self-destruct
 \ so the hop moved to two keys nothing else wants. &C7 being KEY_UP+1
 \ is a coincidence of the matrix and not kinship -- [ is row 3 column
 \ 8, cursor up is row 3 column 9. Do not "tidy" the pair together.
+ENTRY_PASSES = 32               \ $1343's loop: 32 iterations of _es_2
 KEY_LBRK   = &C7                \ -57
 KEY_RBRK   = &A7                \ -89
 
@@ -1749,6 +1750,11 @@ IF DEBUG_MAPGUARD
 ENDIF
   JSR CbCheckDeath              \ after the collisions that could cause it
   JSR DoAging
+  JSR EntryHold                 \ the ship-entry window: seven energy for
+                                \ 32 passes, which is what makes the player
+                                \ flash under the siren. BEFORE SndAmbient,
+                                \ so the alarm sees the seven on the same
+                                \ pass the flash does
   JSR SndAmbient                \ Layer 11e: the hum, the low-energy alarm
                                 \ and the transfer pulse — bank 4, resting
                                 \ state, play path only
@@ -2140,6 +2146,9 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
                                 \ PanelUpdate reads it to put "Pause" in the
                                 \ mode field, and bank 6 cannot see bank 4's
 .pausePrev EQUB 0               \ P's press edge, so a held key pauses once
+.entryHold EQUB 0               \ ship-entry window, passes remaining. MAIN
+                                \ RAM because both routes in arm it and one
+                                \ of them is the low overlay
 .conDbReq  EQUB 0               \ 0 idle / 1 fire on entry 1 / 2 page up.
                                 \ MAIN RAM because bank 4 sets it, bank 7
                                 \ clears it and ConsoleTick reads it with
@@ -2342,6 +2351,8 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
   \ five. KC 2026-08-25.
   LDA #7
   STA drEnergy
+  LDA #ENTRY_PASSES             \ and arm the window: the 7 above is $12A5,
+  STA entryHold                 \ this is what eventually delivers $1345
   LDX #IS_SCR_001+1
   JMP InfoCall                  \ re-entered, and safe: the JMP that got
                                 \ here left no frame of its own. IsArm
@@ -2604,6 +2615,57 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
   LDA fieldCount
   AND #3
   BEQ VolKeys
+  RTS
+
+\ ============================================================
+\ EntryHold — the 32 passes a new ship starts on seven energy
+\ ============================================================
+\ THE PORT OF $1332-$134A, and the reason the player flashes when the
+\ siren sounds. _entership does four things in order: energy to SEVEN
+\ ($12A5), post effect 7 ($1332), run the game for 32 iterations
+\ ($1336-$1343), then energy AND maxEnergy to $40 ($1345/$134A).
+\
+\ THE FLASH IS NOT AN ENTRY EFFECT. It is the ordinary low-energy
+\ warning -- AnimateDroids' tail cycles LowNrgColor_t on frameCount AND
+\ 7 whenever droidEnergy < 8, and the port has had that since layer-9
+\ DECISION 5 (superseded) put it in sprite.asm. Entry triggers it by
+\ holding the player below the threshold for 32 iterations and by no
+\ other means. The alarm (fx 8) comes from the same condition through
+\ SndAmbient, so the siren, the beeping and the flash are one window.
+\
+\ THIRTY-TWO PASSES, which is the C64's own count read across: its
+\ GameLoop iterates every 2-3 frames and ours is one pass, so 32
+\ iterations there is 32 passes here -- about 1.3 seconds.
+\
+\ WHY THE PORT SHOWED NOTHING. It had every part except the window. A
+\ new game came up on a full &40 from DroidsInit, so nothing was ever
+\ below 8; and the next-ship route set the 7 at InfoHigh but NOTHING
+\ ANYWHERE set it back -- the port had no equivalent of $1345 at all,
+\ so boarding ship 2 would have left the player on seven energy for
+\ good. Both are fixed by owning the whole window in one place.
+\
+\ IT RUNS IN THE PLAY PATH ONLY, beside SndAmbient, which is what makes
+\ it correct: the port replaced the C64's 32-frame animation with the
+\ IS_SCR_001 information screen, and that screen ends the pass long
+\ before here. So the window does not start until the screen is
+\ dismissed and the deck is actually up -- the player flashes through
+\ the first 1.3 seconds of play, which is where the C64 spends it too.
+\ The data bank is the resting state here, which is what lets it write
+\ drEnergy and maxEnergy directly.
+.EntryHold
+  LDA entryHold
+  BEQ eh_x
+  CMP #ENTRY_PASSES             \ the first pass of the window: $12A5's
+  BNE eh_count                  \ seven, applied where the flash can see it
+  LDA #7
+  STA drEnergy
+.eh_count
+  DEC entryHold
+  BNE eh_x
+  LDA #&40                      \ $1345/$134A. Spelled out, not DR_ENERGY:
+  STA drEnergy                  \ droid.asm is assembled after this point
+  STA maxEnergy                 \ and beebasm resolves constants in order
+.eh_x
   RTS
 
 \ ============================================================
