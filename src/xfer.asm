@@ -1824,9 +1824,15 @@ XF_COL_MSG   = 2                \ THE C64'S MODE-WORD FIELD, col 2 and
 XF_MSG_CELLS = 11               \ eleven cells -- the same slot panel.asm
                                 \ fills with Mobile/Weapon/Transfer, and
                                 \ the same one $698A-$6A16 are written to
-XF_COL_TIME  = 10               \ the countdown: the field's last two
+XF_COL_TIME  = 11               \ the countdown: the field's last two
                                 \ cells, as $20EF/$20F6 and $E1E4/$E1EB
-                                \ write Finish_txt+$A and +$B
+                                \ write Finish_txt+$A and +$B -- which are
+                                \ CELLS 9 AND 10 of the eleven, so cols 11
+                                \ and 12. It was 10 while the words were
+                                \ lowercase and "finish -" was eight cells
+                                \ wide; the capitals below make it nine,
+                                \ which is the original's own count and
+                                \ puts the digits where $69BE has them.
 ASSERT PN_TEXT_ADDR > 0         \ panel.asm's constants are visible here
 
 .XfGlyphAt                      \ A = glyph, xfTxtCol = column; advances
@@ -1923,34 +1929,62 @@ ASSERT PN_TEXT_ADDR > 0         \ panel.asm's constants are visible here
   RTS
 
 XF_LC = PN_LOWER_A
+XF_UC = PN_UPPER_A              \ a capital's LEFT half; the right is
+XF_UCR = PN_WIDE_OFS            \ +XF_UCR, and both bytes ride in the
+                                \ string -- see the note below
 \ THE C64'S OWN WORDS, decoded from the $69xx strings rather than
 \ invented: Captured_txt ($69CB) at entry, Color_txt ($E6DB) through
 \ select, Finish_txt ($69BE) through play, then Complete_txt ($69FD),
 \ BurntOut_txt ($69F1) and Deadlock_txt ($69A4). The first cut of this
 \ layer made up "transfer done", "transfer failed" and "short circuit";
-\ KC caught it. LOWERCASE, because the original's capitals are two cells
-\ each and XfGlyphAt is one cell a glyph -- bank 6's PnGlyph does the
-\ wide ones and is unreachable from here. The words are the original's;
-\ the casing is not.
-\
-\ "colour" and "finish -" are eight cells so the countdown's two digits
-\ land on XF_COL_TIME, the field's last pair, where the C64 puts them.
-.xfTxtCapt                      \ "captured"
-  EQUB XF_LC+2, XF_LC+0, XF_LC+15, XF_LC+19, XF_LC+20, XF_LC+17, XF_LC+4, XF_LC+3, &FF
-.xfTxtColour                    \ "colour  "
-  EQUB XF_LC+2, XF_LC+14, XF_LC+11, XF_LC+14, XF_LC+20, XF_LC+17
+\ KC caught it.
+\ AND THE CASING IS THE C64'S TOO, as of 2026-08-26 (KC). It was not:
+\ every capital in the original is SIXTEEN PIXELS, two character cells,
+\ and XfGlyphAt draws one cell a byte -- bank 6's PnWide does the wide
+\ ones and is unreachable from here -- so this table shipped in lower
+\ case and said so. The fix is the one goTxtOver already uses for its
+\ lowercase m: THE RIGHT HALF RIDES IN THE STRING as the next byte.
+\ No code changes; the tables carry two bytes where the original's
+\ carry one wide glyph, and the cell counts below are what falls out.
+\ THE COUNTS ARE THE ORIGINAL'S, cell for cell:
+\   Captured  $69CD  C-a-p-t-u-r-e-d + 2 pad    9 + 2 = 11
+\   Colour    $E6DB  C-o-l-o-u-r-?-sp           9, then the two digits
+\   Finish -  $69BE  F-i-n-i-s-h-sp--           9, then the two digits
+\   Complete  $69FF  C-o-m-p-l-e-t-e + 1 pad   10 + 1 = 11
+\   Burnt Out $69F3  B-u-r-n-t-sp-O-u-t        11, and the O is a CAPITAL
+\   Deadlock  $69A6  D-e-a-d-l-o-c-k + 2 pad    9 + 2 = 11
+\ so the two timed strings are nine cells and the countdown lands on
+\ XF_COL_TIME, the field's last pair, exactly where $69BE puts it.
+\ ONE GLYPH IS NOT PORTED. Color_txt's seventh cell is C64 code $24, a
+\ QUESTION MARK -- "Colour? NN" -- and export_font.py's glyph set has
+\ no '?': it stops at '!' ($25). A space stands in. Adding it is a
+\ tools change and a regeneration of textfont.asm, in the PARAFNT block.
+.xfTxtCapt                      \ "Captured  "
+  EQUB XF_UC+2, XF_UC+2+XF_UCR
+  EQUB XF_LC+0, XF_LC+15, XF_LC+19, XF_LC+20, XF_LC+17, XF_LC+4, XF_LC+3
   EQUB PN_SPACE, PN_SPACE, &FF
-.xfTxtFinish                    \ "finish -"
-  EQUB XF_LC+5, XF_LC+8, XF_LC+13, XF_LC+8, XF_LC+18, XF_LC+7
+.xfTxtColour                    \ "Colour  " -- the '?' is the missing glyph
+  EQUB XF_UC+2, XF_UC+2+XF_UCR
+  EQUB XF_LC+14, XF_LC+11, XF_LC+14, XF_LC+20, XF_LC+17
+  EQUB PN_SPACE, PN_SPACE, &FF
+.xfTxtFinish                    \ "Finish -"
+  EQUB XF_UC+5, XF_UC+5+XF_UCR
+  EQUB XF_LC+8, XF_LC+13, XF_LC+8, XF_LC+18, XF_LC+7
   EQUB PN_SPACE, PN_DASH, &FF
-.xfTxtDone                      \ "complete"
-  EQUB XF_LC+2, XF_LC+14, XF_LC+12, XF_LC+15, XF_LC+11, XF_LC+4, XF_LC+19, XF_LC+4, &FF
-.xfTxtFail                      \ "burnt out"
-  EQUB XF_LC+1, XF_LC+20, XF_LC+17, XF_LC+13, XF_LC+19
+.xfTxtDone                      \ "Complete " -- m is wide as well
+  EQUB XF_UC+2, XF_UC+2+XF_UCR
+  EQUB XF_LC+14, XF_LC+12, PN_M_RIGHT, XF_LC+15, XF_LC+11, XF_LC+4, XF_LC+19, XF_LC+4
+  EQUB PN_SPACE, &FF
+.xfTxtFail                      \ "Burnt Out" -- $69F3's $48 is capital O
+  EQUB XF_UC+1, XF_UC+1+XF_UCR
+  EQUB XF_LC+20, XF_LC+17, XF_LC+13, XF_LC+19
   EQUB PN_SPACE
-  EQUB XF_LC+14, XF_LC+20, XF_LC+19, &FF
-.xfTxtShort                     \ "deadlock"
-  EQUB XF_LC+3, XF_LC+4, XF_LC+0, XF_LC+3, XF_LC+11, XF_LC+14, XF_LC+2, XF_LC+10, &FF
+  EQUB XF_UC+14, XF_UC+14+XF_UCR
+  EQUB XF_LC+20, XF_LC+19, &FF
+.xfTxtShort                     \ "Deadlock  "
+  EQUB XF_UC+3, XF_UC+3+XF_UCR
+  EQUB XF_LC+4, XF_LC+0, XF_LC+3, XF_LC+11, XF_LC+14, XF_LC+2, XF_LC+10
+  EQUB PN_SPACE, PN_SPACE, &FF
 
 \ ============================================================
 \ state
@@ -2362,13 +2396,19 @@ GO_HOLD      = 88               \ $3802: xfer_plySpriteX counts 88 down
 .goWashPal
   EQUB &00,&10,&27,&37,&40,&50,&67,&77
 
-.goTxtOver                      \ "game over"
-\ LOWERCASE m IS SIXTEEN PIXELS and XfMessage draws one cell a byte
-\ with no wide expansion — so the m's right half rides IN the string,
-\ or "game" reads "gane". It did, once the entry screen started
-\ showing the panel (KC, 2026-08-22). The only wide glyph in any
-\ XfMessage string, so the printer stays simple.
-  EQUB XF_LC+6, XF_LC+0, XF_LC+12, PN_M_RIGHT, XF_LC+4
+.goTxtOver                      \ "Game over"
+\ WIDE GLYPHS RIDE IN THE STRING, both of them. XfMessage draws one
+\ cell a byte with no expansion of its own — bank 6's PnGlyph does the
+\ wide ones and is unreachable from here — so anything sixteen pixels
+\ across carries its right half as the next byte.
+\ Lowercase m was the first: without PN_M_RIGHT "game" read "gane",
+\ once the entry screen started showing the panel (KC, 2026-08-22).
+\ CAPITAL G IS THE SECOND (KC, 2026-08-26): every capital but I is two
+\ cells, left at PN_UPPER_A+n and right at +PN_WIDE_OFS, so the G is
+\ 17 then 43. Eleven cells now, which is exactly XF_MSG_CELLS — the
+\ string cannot take another letter without moving the field.
+  EQUB PN_UPPER_A+6, PN_UPPER_A+6+PN_WIDE_OFS
+  EQUB XF_LC+0, XF_LC+12, PN_M_RIGHT, XF_LC+4
   EQUB PN_SPACE
   EQUB XF_LC+14, XF_LC+21, XF_LC+4, XF_LC+17, &FF
 .goCol       EQUB 0

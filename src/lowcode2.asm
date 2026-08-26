@@ -206,5 +206,8 @@ ENDIF
   LDA #1                        \ a new game starts on ship 1, and shipName
   STA shipName                  \ is main RAM so nothing else resets it
   STA pmShip
-  LDX #IS_SCR_001+1
-  JMP InfoCall
+\ AND OUT THROUGH THE CODE IMAGE, not straight to InfoCall. GameStart2
+\ is the panel line and the screen call together — "Game on!" wants a
+\ PAGEBANK pair for bank 6 and this overlay is FULL, so the tail goes
+\ where there is room and this stays the same three bytes it was.
+  JMP GameStart2

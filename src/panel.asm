@@ -302,8 +302,13 @@ PN_TEXT_ADDR = PANEL_ADDR + PN_TEXT_ROW * ROW_BYTES
   RTS
 .pn_a_colon
   CMP #':'
-  BNE pn_a_bad
+  BNE pn_a_bang
   LDA #PN_COLON
+  RTS
+.pn_a_bang                      \ '!' is 33, below '0', so it arrives here
+  CMP #'!'                      \ the same way the dot and the dash do.
+  BNE pn_a_bad                  \ Added for "Game on!" (KC, 2026-08-26)
+  LDA #PN_BANG
   RTS
 .pn_a_bad
   LDA #PN_SPACE
@@ -661,3 +666,34 @@ PN_SCORE_BYTES = 4              \ eight BCD digits
   JMP pu_score                  \ and its RTS
 
 .pnTxtBrief   EQUS "Briefing  " : EQUB 0    \ 9 cells + 2 pad = 11
+
+\ ============================================================
+\ PnGameOn — the box's text for the game-start 001 screen
+\ ============================================================
+\ KC, 2026-08-26. The 001 screen goes up before the deck is ever drawn,
+\ so PanelInit has run — frame, bars and logo — and the two live fields
+\ are still blank, because PanelUpdate does not run while a screen owns
+\ the play area. The panel therefore sat empty for the whole 2.9 s hold.
+\ This fills it: "Game on!" in the mode-word field and the score beside
+\ the logo, which is PnBriefing's arrangement one screen later.
+\ THIS IS THE PORT'S, NOT THE C64'S. $12C7 reaches NewShipInfo through
+\ GotoHires, so the original's status rows simply survive underneath and
+\ carry whatever the last game left. Ours has no such leftover at a cold
+\ boot. The wording is KC's. [layer-11d DECISION 9]
+\ BOTH SHADOWS ARE SPOILED, not just the score's. PnBriefing needs only
+\ pnShScore because LoadDeck's PanelInit re-invalidates on the way back
+\ to a game; here PanelInit has ALREADY run, so the mode word's shadow
+\ has to be broken by hand or PanelUpdate's first pass would see index 0
+\ against a stale 0 and leave "Game on!" on the deck.
+.PnGameOn
+  LDA #LO(pnTxtGameOn) : STA pnStrLo
+  LDA #HI(pnTxtGameOn) : STA pnStrHi
+  LDA #PN_COL_MODE : STA pnCol
+  JSR PnStr
+  LDA #&FF
+  STA pnShMode
+  STA pnShScore
+  JMP pu_score                  \ and its RTS
+
+\ G is two cells and so is m; the ! is one. 10 cells + 1 pad = 11.
+.pnTxtGameOn  EQUS "Game on! " : EQUB 0

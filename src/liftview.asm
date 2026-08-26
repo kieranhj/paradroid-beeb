@@ -52,10 +52,17 @@
   JSR LvHighlight
   JSR LvRepaintAll
 
-  JSR XfTextClear               \ the panel line: "lift" and the deck
+  JSR XfTextClear               \ the panel line: "Lift" and the deck
   LDA #XF_COL_MSG
   STA xfTxtCol
-  LDA #XF_LC+11                 \ l
+\ CAPITAL L IS TWO CELLS, like every capital but I, and XfGlyphAt draws
+\ one cell a byte — so its right half is a fifth call. Capitalised with
+\ the transfer game's own words, 2026-08-26: this is the same panel
+\ field drawn by the same engine, and "lift" beside "Captured" read as
+\ an oversight. Five cells of the eleven; LvNumText has 11 and 12.
+  LDA #XF_UC+11                 \ L, left half
+  JSR XfGlyphAt
+  LDA #XF_UC+11+XF_UCR          \ and its right
   JSR XfGlyphAt
   LDA #XF_LC+8                  \ i
   JSR XfGlyphAt

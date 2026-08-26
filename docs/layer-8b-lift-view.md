@@ -57,9 +57,12 @@ loop runs one `LiftViewTick` a pass and nothing else.
    field, pen-coloured shapes) flattened the `10` pairs into the background, which erased
    the black half of every embossed edge and read as stippling; the colour belongs IN the
    artwork, one logical colour per multicolour pair. `palLift` in droid.asm.
-4. **[DECISION] The panel line shows "lift" and the deck number** (KC), two digits of
+4. **[DECISION] The panel line shows "Lift" and the deck number** (KC), two digits of
    the engine's own 0–15 — deck *names* live in bank 6's token table, unreachable from
-   bank 7; noted in PLAN.md for Layer 13's reshuffle.
+   bank 7; noted in PLAN.md for Layer 13's reshuffle. **Capitalised 2026-08-26** with the
+   transfer game's own words (layer-10 DECISION 15): same panel field, same `XfGlyphAt`,
+   and capital L is two cells so its right half is a fifth call. The deck number moved with
+   `XF_COL_TIME`, 10 → 11 — the field's real last pair.
 5. **[DECISION] Colour is baked into the glyphs at export**, one logical colour per
    multicolour pair — 00 blue, 01 white (`$D022`), 10 black (`$D023`) — and EVERY
    character converts as pairs; there is no hires path. The 11 plane's colour is per

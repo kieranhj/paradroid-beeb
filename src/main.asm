@@ -2029,6 +2029,23 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
   JSR PanelInit
   JMP PgData     \ tail: its RTS is ours
 
+\ The game-start 001 screen's panel line — bank 6, so it needs the shim.
+\ NO PnMirror: PnGameOn reads a literal string and the score, and the
+\ score is main RAM. Called from GameStartInfo, after GameStart's
+\ LoadDeck has already run PanelInit and left both fields blank.
+.PanelGameOn
+  JSR PgSpr2   
+  JSR PnGameOn
+  JMP PgData     \ tail: its RTS is ours
+
+\ GameStartInfo's tail, here because the low overlay has no room left:
+\ the panel line for the 001 screen, then the screen itself. Both halves
+\ are three bytes there instead of eighteen. KC, 2026-08-26
+.GameStart2
+  JSR PanelGameOn
+  LDX #IS_SCR_001+1
+  JMP InfoCall
+
 .ConsoleEnter
   JSR PnMirror
   JSR ConMenuInit4              \ bank 4 — FIRST, and the resting bank, so

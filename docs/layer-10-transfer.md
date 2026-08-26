@@ -97,7 +97,8 @@ is `WinningColor == LeftColor`.
    circuit" in lowercase (wide capitals need the two-cell machinery).
    **SUPERSEDED IN PART BY DECISION 15**: those three strings were invented rather than
    taken from the original, and blanking the whole panel line — logo and score with it —
-   was this port's own doing. The one-line field and the lowercase are still right.
+   was this port's own doing. The one-line field is still right; **the lowercase is not,
+   and went on 2026-08-26** — see DECISION 15's own note below.
 7. **[DECISION] The side-select droids are numbers, not sprites.** The original slides
    the two droid sprites left and right; there is no sprite engine under the board, so
    the panel line shows the human's number on the side the stick last chose. The stock
@@ -303,11 +304,21 @@ is `WinningColor == LeftColor`.
       **Complete**, **Burnt Out** and **Deadlock**. There was no `Captured` or `Colour` at
       all — `XfSelectText` put the two droid numbers there instead, DECISION 7's stand-in.
     - **What is there now.** `XF_COL_MSG` is 2 and `XF_MSG_CELLS` 11, the C64's field;
-      `XfTextClear` clears only that; `XF_COL_TIME` is 10, the field's last pair, and
-      "colour" and "finish -" are eight cells so the digits land there. The words are the
-      original's, **in lowercase**: `XfGlyphAt` is one cell a glyph and the original's
-      capitals are two cells each, which is bank 6's `PnGlyph` and unreachable from bank 7.
-      The words are the original's; the casing is not.
+      `XfTextClear` clears only that. **`XF_COL_TIME` is 11** and the two timed strings are
+      nine cells, which is `$69BE`'s own count — `Finish_txt` is `F i n i s h sp -` then the
+      two digits at its indices 8 and 9, and `Color_txt` is `C o l o u r ? sp` then the same
+      pair. It was 10 while the words were lowercase.
+    - **[DECISION] The casing is the C64's** (KC, 2026-08-26). It was not: every capital in
+      the original is sixteen pixels, two character cells, and `XfGlyphAt` draws one cell a
+      byte — `PnWide` does the wide ones and lives in bank 6, unreachable from bank 7 — so
+      the table shipped lowercase and said so. **No code was needed.** The right half rides
+      in the string as the next byte, exactly as `goTxtOver` already did for its lowercase
+      m, so the six strings became `Captured`, `Colour`, `Finish -`, `Complete`,
+      **`Burnt Out`** (`$69F3`'s `$48` is a capital O, which the lowercase version had lost)
+      and `Deadlock`. The lift view's `Lift` went with them — same field, same engine.
+      **One glyph is still missing:** `Color_txt`'s seventh cell is C64 code `$24`, a
+      QUESTION MARK, and `export_font.py`'s set stops at `'!'`. A space stands in; adding
+      it is a tools change and a regeneration of `textfont.asm`.
     - **[DECISION] `XfNum3` and `XfSelectText` are deleted.** They were DECISION 7's
       substitute for the icons; DECISION 14 draws the real ones on the board, where the
       original puts them, so the stand-in has outlived its reason. That is what paid for

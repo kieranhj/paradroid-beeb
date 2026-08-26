@@ -77,6 +77,20 @@ re-authoring.
 7. **Not deviations, but worth recording:** the transfer's page turn happens *inside* bank 7
    (`IsDone` chains straight into page 2) because that needs no paging and no main-RAM arm; and the
    screens never write the panel, so — unlike the console — there is no `PanelSetup` on the way out.
+8. **[DECISION] The 001 screen says "Game on!" on the panel line** (KC, 2026-08-26). It said
+   nothing at all: DECISION 4 puts the page up *before* the deck is drawn, so `LoadDeck`'s
+   `PanelInit` has run — box, bars and logo — but `PanelUpdate` does not, because the main loop
+   short-circuits at `infoActive`. Both live fields therefore sat blank for the whole 2.9 s hold.
+   The C64 has no equivalent: `$12C7` reaches `NewShipInfo` through `GotoHires`, so its status
+   rows simply survive underneath and carry whatever the last game left. **The wording is KC's.**
+   `PnGameOn` (bank 6, beside `PnBriefing`, which is the same arrangement one screen later) writes
+   the word and repaints the score, and it spoils **both** shadows — `PnBriefing` needs only
+   `pnShScore` because `PanelInit` re-invalidates on its way back to a game, but here `PanelInit`
+   has already run and the mode word would otherwise stay "Game on!" over the deck. The call is
+   `GameStart2` in the code image, reached from `GameStartInfo`'s tail: the low overlay is FULL,
+   so `JMP InfoCall` became `JMP GameStart2` — the same three bytes — and the panel call and the
+   `LDX` moved to where there was room. **'!' was not in `PnAscii`** and came out as a space; it
+   is four compares in and costs seven bytes.
 
 ## 3. Where it lives, and what it cost
 
@@ -84,7 +98,8 @@ re-authoring.
 |---|---|
 | `src/infoscr.asm` | bank 7, after `condb.asm` and `portrait.asm` — it is built out of their constants |
 | `InfoCall` | `lowcode.asm`, the low overlay: the paging and the three continuations |
-| `GameStartInfo` | `lowcode2.asm` |
+| `GameStartInfo` | `lowcode2.asm`; its tail is `GameStart2` in the code image |
+| `PnGameOn` | `panel.asm`, bank 6, and `PanelGameOn` is its shim in `main.asm` |
 | `infoActive`, `infoAct` | `lowbss.asm`, two bytes |
 | the `ReframeView` guard | `main.asm`, six bytes |
 
