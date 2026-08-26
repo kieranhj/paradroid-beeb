@@ -286,22 +286,36 @@ ASSERT TITLE_R7 >= TITLE_ROWS   \ VSync must fall after the last row shown
 \ title and the game comes up silent, because sndVolume lives in the
 \ resident code image and outlives every load between here and there.
 \
-\ IT IS GATED ON THIS LOOP'S OWN CARRY, ONE ITERATION IN 256, and the
-\ reason there is a gate at all is that this loop is not field-locked:
-\ its iteration count IS the timeout, and (tiLo EOR tiHi) IS the seed
-\ for the starting deck. The body is a single keydown, so polling three
-\ more keys every time round would nearly quadruple it and stretch the
-\ timeout with it. Hanging the call on the tiLo carry costs nothing to
-\ test and pays for VolKeys once per 256.
+\ IT IS GATED ON THIS LOOP'S OWN COUNTER, ONE ITERATION IN 1024, and
+\ the reason there is a gate at all is that this loop is not field-
+\ locked: its iteration count IS the timeout, and (tiLo EOR tiHi) IS
+\ the seed for the starting deck. Polling three more keys every time
+\ round would multiply the body and drag both with it.
 \
-\ MEASURED 2026-08-26, jsbeeb. Idle the loop turns 3,654 times a
-\ second, so the 16-bit wrap is a 17.9 s timeout — and note that it is
-\ ALREADY that, not that this made it so: three OSBYTEs once per 256
-\ cost it under one percent. With a key actually held the loop runs
-\ 6,720 times a second (the MOS's key test is quicker when it finds
-\ one), so the repeat lands at 26 Hz: volume 0 to 15 in 0.58 s, which
-\ is the rate that matters because it is the rate you feel. 1 in 1024
-\ was tried first and gave 3.6 Hz — four seconds end to end, unusable.
+\ THE DIVISOR HAS BEEN 1024, THEN 256, AND IS 1024 AGAIN, which is
+\ worth spelling out because it tracks the cost of keydown and nothing
+\ else. Measured in jsbeeb, idle:
+\
+\   keydown         loop rate     1-in-256    1-in-1024
+\   OSBYTE &81      3,654/s        14 Hz        3.6 Hz
+\   direct scan    11,508/s        45 Hz       11.2 Hz
+\
+\ 1024 was rejected on the OSBYTE build at 3.6 Hz — four seconds to
+\ walk the volume end to end. The direct keydown made the loop 3.15x
+\ faster (87 cycles a turn against 274), 256 became 45 Hz, and 1024
+\ now lands at 11.2 Hz — which is where the other two call sites sit
+\ and what $0CB4's every-fourth-frame comes to. Retune this if keydown
+\ ever changes cost again.
+\
+\ AND THE TIMEOUT MOVED WITH IT: 65,536 turns is 5.7 s now, where it
+\ was 17.9 s. That is NOT a regression — the C64's own timeout is 256
+\ frames, 5.1 s, and this header has always claimed the wrap was "the
+\ same order as the original's". It finally is. KC to say if the old
+\ 18 s was preferred; restoring it means counting something other than
+\ raw turns, not putting the OSBYTE back.
+  LDA tiHi
+  AND #3
+  BNE tiw_loop
   JSR VolKeys
   JMP tiw_loop
 .tiw_time

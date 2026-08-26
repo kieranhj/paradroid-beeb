@@ -309,8 +309,11 @@ DEBUG_VSYNC  = FALSE
 \ its bands are only visible where the CRTC is displaying something,
 \ so they show where work FINISHES rather than how long it took.
 \
-\ jsbeeb breakpoints have never fired in this project, so the method
-\ is a User VIA T1 bracket. T1 free-runs at 1 MHz whether or not its
+\ jsbeeb breakpoints did not fire when this was written, so the method
+\ is a User VIA T1 bracket. (They DO fire now — 2026-08-26 — so for a
+\ short routine, differencing elapsed_cycles across two breakpoints is
+\ both easier and immune to the wrap trap noted at the end of this
+\ header. The bracket is still the tool for per-pass totals.) T1 free-runs at 1 MHz whether or not its
 \ interrupt is enabled, and USR_VIA_IER is cleared at boot, so nothing
 \ else touches it. The System VIA is off limits — T1 there drives the
 \ rupture.
@@ -342,6 +345,25 @@ DEBUG_VSYNC  = FALSE
 \ Emulation is deterministic, so one sample is exact. Averaging still
 \ matters for anything a sprite touches: the rotor phase cycles every
 \ 8 passes and the per-phase spread is a few hundred cycles.
+\
+\ THE ACCUMULATOR CAN BE POISONED BY T1 RELOADING INSIDE THE BRACKET,
+\ and it is worth knowing what that looks like because it does not look
+\ like noise. T1 free-runs from its latch, so the subtraction is only
+\ modular arithmetic while the counter does not pass zero between the
+\ two reads; when it does, that pass contributes ~65,536 spurious ticks
+\ — 131,000 cycles — and the run's average is wrong by a mile rather
+\ than by a little. Because the reload point DRIFTS slowly through the
+\ pass (the period is ~1.6 passes), the bad readings come in short
+\ CONSECUTIVE runs when it lines up, not sprinkled at random.
+\
+\ Caught 2026-08-26 measuring keydown: a routine independently timed at
+\ 69 cycles read as 2,903 over 100 passes, which is exactly two wraps
+\ (147,460 ticks against 19,200 expected — the excess is 1.96 x 65,536).
+\ The check is arithmetic: if (2*dbgAcc/dbgN) exceeds what the code can
+\ possibly cost, subtract 131,072 per suspected wrap and see if the
+\ remainder is sensible. Better, for anything short, is to breakpoint
+\ the call and its return and difference elapsed_cycles — jsbeeb
+\ breakpoints DO fire now, whatever the note above this one says.
 DEBUG_TIME   = FALSE
 DBG_T_OVERHEAD = 46
 
@@ -863,6 +885,21 @@ USR_VIA_T1CH = &FE65
 SND_PORTB = &FE40
 SND_DDRA  = &FE43
 SND_ORA   = &FE4F
+
+\ ---- and the keyboard, which is the SAME THREE REGISTERS ----
+\ Not a coincidence and worth the aliases: port A is the "slow bus"
+\ and the sound chip, the keyboard and the speech chip all hang off
+\ it, with the addressable latch on port B choosing which one is
+\ listening. Sound is latch line 0, the keyboard is line 3. keydown
+\ drives them directly; see its header. The names are separate so
+\ that a search for either peripheral finds its own code.
+KBD_PORTB = &FE40               \ addressable latch: (value << 3) | line
+KBD_DDRA  = &FE43
+KBD_ORA   = &FE4F               \ port A, NO HANDSHAKE — &FE41 would
+                                \ strobe CA2 and confuse the MOS
+KBD_LATCH_OFF = &03             \ line 3 = 0: stop the free-run scan
+KBD_LATCH_ON  = &0B             \ line 3 = 1: hand it back
+KBD_DDRA_SCAN = &7F             \ PA0-PA6 out (the key number), PA7 in
 
 \ ---- scratch, above the panel and below the play buffer ----
 \ &5480-&57FF is the ~900 bytes left over between the panel's last
@@ -2380,11 +2417,64 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
 \ ============================================================
 \ keydown — is a key held?  X = negative INKEY code, Z set if down
 \ ============================================================
+\ WAS AN OSBYTE &81 AND IS A DIRECT MATRIX TEST, 2026-08-26. The MOS
+\ call cost 237 cycles, measured; this costs 55. The pass tests ten to
+\ twelve keys, so it was spending ~3,400 cycles a pass — 4% of the
+\ budget — asking the OS a question the hardware answers in one write
+\ and one read. docs/raster-timing.md records the measurements.
+\
+\ HOW IT WORKS. Port A is the slow bus and port B's low nibble is an
+\ addressable latch that decides who is listening: write (value << 3)
+\ | line. Line 3 is the keyboard's write-enable, and dropping it stops
+\ the hardware's free-running column scan so that we can drive the
+\ matrix ourselves. With DDRA = &7F the low seven bits carry the key
+\ number OUT (PA0-PA3 column, PA4-PA6 row) and PA7 reads the answer
+\ back IN. One write, one read, no iteration — this tests a key we
+\ name, it does not go looking for whatever is pressed.
+\
+\ THE KEY NUMBER IS THE INKEY BYTE EOR &FF — the internal key number,
+\ which is 0-127, so the bit 7 we write is always 0 and PA7 stays a
+\ clean input. The KEY_* constants stay in INKEY form because that is
+\ what every call site and every BBC reference uses.
+\
+\ SEI, AND IT IS THE ONE THING TO WATCH. The MOS owns the slow bus, the
+\ sound driver drives the same port A from the IRQ, and this sequence
+\ must not be interleaved by either. PHP/PLP rather than SEI/CLI so a
+\ caller that was already masked stays masked. The masked window is 26
+\ cycles, and the rupture's T1 stages are deadline-driven — so this was
+\ the risk worth measuring, not the saving. It cost them nothing: the
+\ pass rate is still exactly 25.0 Hz and the rupture holds. What the
+\ MOS masks for inside OSBYTE &81 was NOT measured; the honest claim is
+\ that 26 cycles twelve times a pass is demonstrably harmless here, not
+\ that it beats the OS.
+\
+\ DDRA IS NOT RESTORED, deliberately, and that is safe here for one
+\ reason: SndWrOpen/SndWrClose save whatever they find and put it
+\ back, so the sound driver hands us our &7F again, and the MOS sets
+\ DDRA itself in its own scan. Thrust's test_inkey does the same.
+\
+\ Contract UNCHANGED — X = INKEY byte in, Z set if the key is down —
+\ so all 49 call sites are untouched.
 .keydown
-  LDA #&81
-  LDY #&FF
-  JSR OSBYTE
-  CPY #&FF
+  TXA
+  EOR #&FF                      \ INKEY byte -> internal key number
+  LDX #KBD_LATCH_OFF
+  LDY #KBD_LATCH_ON
+  PHP
+  SEI
+  STX KBD_PORTB                 \ the free-run scan stops here...
+  LDX #KBD_DDRA_SCAN
+  STX KBD_DDRA
+  STA KBD_ORA                   \ ask about this key
+  LDA KBD_ORA                   \ PA7 is the answer
+  STY KBD_PORTB                 \ ...and starts again here
+  PLP
+  LDX #0
+  ROL A                         \ PA7 -> carry: set = pressed
+  BCC kd_up
+  LDX #&FF
+.kd_up
+  CPX #&FF                      \ Z set = pressed, as it always was
   RTS
 
 \ ============================================================

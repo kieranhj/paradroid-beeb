@@ -172,6 +172,11 @@ variable's runtime address for an emulator poke. `-do` is there only to stop the
   the 100 Hz tick: 20,000 cycles, exactly half a frame, so the sampled byte is near-constant
   and only drifts with interrupt jitter. Cost PINTRO its lightning randomness (docs/intro.md
   §7); anything wanting entropy per frame needs a stepped PRNG with the timer as seed only.
+- **The keyboard is read direct, not through `OSBYTE &81`** — `keydown` drives the System VIA
+  matrix (latch line 3 down, `DDRA = &7F`, write the internal key number to `&FE4F`, read PA7
+  back). **69 cycles against the OS's 243**, both measured; the pass tests a dozen keys. `&FE4F`
+  not `&FE41` — the no-handshake register. The 26 masked cycles cost the rupture nothing, measured.
+  `docs/raster-timing.md` has the numbers and the bit patterns.
 - **`LDA abs` is 4 cycles and `LDA zp` is 3 — but `LDA abs,X` and `LDA zp,X` are both 4.** Zero
   page is fully allocated (`&00–&8F`) and went to scalars; indexed tables gained nothing by moving.
   Worth knowing before costing a zero-page change.

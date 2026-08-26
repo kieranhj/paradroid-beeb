@@ -440,3 +440,96 @@ on the fixed build, from window A opening:
 
 So on the fixed build **magenta touching the play area is a real overrun again**, which is what the
 instrument is for. Red touching it is expected: none of that work writes the buffer.
+
+# `keydown` goes direct to the matrix — 2026-08-26
+
+## Why it was worth doing
+
+The pass tests ten to twelve keys — Z/X/K/M, ESCAPE, L, SPACE, P, R, the volume trio every other
+pass, and `[`/`]` on a `DEBUG_DECK` build. Four of those arrived in one afternoon (volume, mute,
+pause, the second transfer button), which is what made the cost visible: every one of them was an
+`OSBYTE &81`, and the OS charges a lot for a question the hardware answers in one write and one
+read.
+
+## The measurements
+
+| | cycles |
+|---|---|
+| `JSR keydown` via `OSBYTE &81` | **243** |
+| `JSR keydown` direct | **69** |
+
+Both are `JSR` to `RTS` inclusive. The OSBYTE figure was taken twice by different routes and the
+two agree: the title's `TiWait` loop turned 3,654 times a second with a body that is one `keydown`
+plus ~36 cycles of counter (→ 238 for the call itself), and a `DEBUG_TIME` bracket round `ReadKeys`
+read 1,009 cycles for four calls plus ~62 of glue (→ 237). The direct figure is a breakpoint pair
+on the `JSR` and its return instruction, differencing `elapsed_cycles`.
+
+**~2,175 cycles a pass**, then, at 12.5 tests — about 2.7% of the 79,872-cycle pass, arithmetic
+from the per-call measurement rather than measured as headroom.
+
+## The mechanism, and the proof it is doing what it claims
+
+Port A is the slow bus; port B's low nibble is an addressable latch selecting who is listening
+(`(value << 3) | line`). Line 3 is the keyboard's write-enable — drop it and the hardware's
+free-running column scan stops, so the matrix can be driven by hand. `DDRA = &7F` makes PA0-PA6
+outputs carrying the internal key number (PA0-PA3 column, PA4-PA6 row) and leaves PA7 an input
+carrying the answer. Write, read, done — this tests a key we *name*, it does not go looking for
+whatever is pressed, so there is no iteration.
+
+The emulator showed the bit pattern outright. Testing Z (INKEY `&9E`, so IKN `&61`):
+
+- key up — port A reads back `&61`: the seven bits we wrote, PA7 clear.
+- key down — port A reads back `&E1`: the same seven bits, PA7 **set**.
+
+`&FE4F` and not `&FE41` is load-bearing: the no-handshake register. `&FE41` strobes CA2.
+
+## The raster effect, which was the actual risk
+
+The sequence must not be interleaved by the MOS or by the sound driver (which drives the same port
+A from the IRQ), so it runs under `PHP`/`SEI`/`PLP` — **26 masked cycles**, twelve times a pass,
+against a rupture whose T1 stages are deadline-driven. That was the thing worth measuring, not the
+saving.
+
+It costs them nothing. The pass rate is **exactly 25.0 Hz** before and after (50 passes per
+4,000,000 cycles, counted on `gameTick`), the rupture holds, and the panel/play boundary is clean
+while scrolling. Note what is *not* claimed: what the MOS masks for inside `OSBYTE &81` was never
+measured, so "ours interrupts less than the OS did" is not a statement this file makes.
+
+`DDRA` is deliberately **not** restored, which is safe for one reason worth writing down:
+`SndWrOpen`/`SndWrClose` save whatever they find and put it back, and the MOS sets `DDRA` itself in
+its own scan. Thrust's `test_inkey` — the source this was ported from, in
+`BEEB/Repos/thrust/thrust.6502` — does the same.
+
+## The knock-on nobody would have predicted: the title screen
+
+`TiWait` is a free-running poll loop whose body *was* one OSBYTE, so making `keydown` 3.5× cheaper
+made the loop 3.15× faster — **87 cycles a turn against 274, 11,508 turns a second against 3,654**.
+Two things hang off that count:
+
+- **The volume-key gate** had to be retuned from 1-in-256 back to 1-in-1024. On the OSBYTE build
+  1024 gave 3.6 Hz and was rejected as unusable; on this build 256 gives 45 Hz and 1024 gives
+  11.2 Hz, which is where the other two call sites sit. The divisor tracks the cost of `keydown`
+  and nothing else — the table is in `title.asm`'s header.
+- **The timeout into the briefing** is 65,536 turns, so it fell from **17.9 s to 5.7 s**. That is
+  not a regression: the C64's own timeout is 256 frames — 5.1 s — and `TiWait`'s header has always
+  claimed its wrap was "the same order as the original's". It finally is. Flagged for KC; restoring
+  18 s means counting something other than raw turns, not putting the OSBYTE back.
+
+## A trap in `DEBUG_TIME` this uncovered
+
+The first attempt to measure the change with the `DEBUG_TIME` bracket reported `ReadKeys` costing
+**2,903** cycles after the conversion, against 1,009 before — three times *worse* for code that is
+demonstrably three times cheaper.
+
+The bracket is a User VIA T1 difference, and T1 free-runs from its latch: the subtraction is only
+modular arithmetic while the counter does not pass zero between the two reads. When it does, that
+pass contributes ~65,536 spurious ticks — 131,000 cycles — so the run's average is wrong by a mile
+rather than by a little. The arithmetic confirms it exactly: 147,460 ticks against 19,200 expected
+is an excess of 1.96 × 65,536, i.e. **two wraps**; the baseline run's 53,281 against 53,277
+expected had none. And because the reload point drifts slowly through the pass (the period is ~1.6
+passes) the bad readings arrive in short consecutive runs when it lines up, not sprinkled at
+random — which is why one run was clean and the next was not.
+
+**jsbeeb breakpoints fire now**, whatever `DEBUG_TIME`'s header used to say, so for anything short
+the honest tool is a breakpoint pair and an `elapsed_cycles` difference. The bracket is still right
+for per-pass totals. Both notes are now in the header itself.
