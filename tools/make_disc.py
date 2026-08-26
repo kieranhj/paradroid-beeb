@@ -45,6 +45,8 @@ COMPRESSED = ["PARADAT", "PARASPR", "PARSPR2", "PARXFER"]
 # PARBRF (the briefing driver, loaded by TiShow on every title) and
 # PARMAN (the briefing text, loaded only when the title times out) sit
 # with PARTITL: the three are all title-time loads. Layer 11f.
+# On an --intro build, PINTRO slots in after !BOOT: it is the first
+# thing !BOOT runs (docs/intro.md §4).
 LAYOUT = ["!BOOT", "PARA", "PARDEPK", "PARADAT", "PARASPR", "PARSPR2",
           "PARXFER", "PARTITL", "PARBRF", "PARMAN", "PARAFNT", "PARALOW"]
 
@@ -134,10 +136,16 @@ def build_image(files, title, cycle, opt):
 
 
 def main():
-    if len(sys.argv) < 3:
+    argv = sys.argv[1:]
+    intro_path = None
+    if "--intro" in argv:                   # docs/intro.md §4: -Intro builds
+        i = argv.index("--intro")
+        intro_path = Path(argv[i + 1])
+        del argv[i:i + 2]
+    if len(argv) < 2:
         raise SystemExit(__doc__)
-    raw_path, out_path = Path(sys.argv[1]), Path(sys.argv[2])
-    padded_path = Path(sys.argv[3]) if len(sys.argv) > 3 else None
+    raw_path, out_path = Path(argv[0]), Path(argv[1])
+    padded_path = Path(argv[2]) if len(argv) > 2 else None
 
     root = Path(__file__).parent.parent
     zx0_exe = root / "bin" / "zx0.exe"
@@ -151,6 +159,25 @@ def main():
     if missing:
         raise SystemExit(f"raw image lacks {missing} - loader and disc "
                          "would disagree")
+
+    if intro_path:
+        # Splice the intro build in: PINTRO from its own beebasm pass,
+        # laid after !BOOT, and "*RUN PINTRO" patched in front of
+        # "*RUN PARA" so it runs (and exits into) the boot sequence.
+        # The default build takes this branch never — no PINTRO on the
+        # disc and an untouched !BOOT, so the option cannot half-apply.
+        intro_files = read_catalogue(intro_path.read_bytes())
+        if "PINTRO" not in intro_files:
+            raise SystemExit(f"{intro_path} lacks PINTRO")
+        files["PINTRO"] = intro_files["PINTRO"]
+        LAYOUT.insert(1, "PINTRO")
+        boot = files["!BOOT"]["data"]
+        marker = b"*RUN PARA\r"
+        if marker not in boot:
+            raise SystemExit("!BOOT lacks '*RUN PARA' - cannot wire PINTRO")
+        files["!BOOT"]["data"] = boot.replace(
+            marker, b"*RUN PINTRO\r" + marker, 1)
+        print("make_disc: INTRO build - PINTRO wired into !BOOT")
 
     report = []
     for name in COMPRESSED:

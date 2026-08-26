@@ -3467,6 +3467,11 @@ SAVE "PARA",    start,      code_end, start
 \ a debug build says exactly what is different about it. Add a flag
 \ above and add it here; DEBUG_ANY is what keeps the line off an
 \ ordinary build.
+\
+\ ON -Intro BUILDS ONLY, make_disc.py patches "*RUN PINTRO" in ahead
+\ of the "*RUN PARA" below (the loading intro, docs/intro.md §4 —
+\ a separate beebasm pass, not part of this assembly). The literal
+\ "*RUN PARA" line is its marker; rename it and make_disc will say so.
 \ ------------------------------------------------------------------
 DEBUG_ANY1 = DEBUG_RASTER OR DEBUG_DRAW OR DEBUG_POS OR DEBUG_VSYNC
 DEBUG_ANY2 = DEBUG_TIME OR DEBUG_ENERGY OR DEBUG_MAPGUARD OR DEBUG_XFERWIN

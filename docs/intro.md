@@ -1,9 +1,11 @@
 # The C64 intro on the BBC — plan
 
-*Part of the Paradroid BBC Micro port. Start at [`../PLAN.md`](../PLAN.md). Status: **planned
-2026-08-26, not built.** The C64 side — what the intro is and how its effect works — is
-[`graphics.md`](graphics.md) §10; the rip it builds on is `tools/rip_intro.py` and the analysis in
-its docstring.*
+*Part of the Paradroid BBC Micro port. Start at [`../PLAN.md`](../PLAN.md). Status: **v1 BUILT
+2026-08-26**, same day as the plan — screen, flash, split, and the boot chain all verified in
+jsbeeb (§5's checks: depack diffed byte-for-byte, forced-peak screenshots, full boot → key →
+game). The C64 side — what the intro is and how its effect works — is [`graphics.md`](graphics.md)
+§10; the rip it builds on is `tools/rip_intro.py` and the analysis in its docstring. §7 records
+what the build changed against this plan and the traps it found.*
 
 A separate, standalone executable that reproduces the CE loading intro — the three-robots
 picture with the credits — in MODE 1, with the 'flashing lightning' effect. Scoped with KC
@@ -65,8 +67,9 @@ three.
   starting point: 1 = magenta (the logo), 2 = cyan (the blues), 3 = green (the greens, with
   yellow auditioning for the last row) — losing the gradients but keeping the elements
   distinct. Assignment is data in the exporter; tune by eye like the flash table.
-- The console-sparkle cells (dropped animation) are ordinary machine cells: their `11`-pixels
-  go to logical 0 like the rest of the machine.
+- The console-sparkle cells (dropped animation) fall out of the colour-RAM rule with no
+  special handling: their base row colour is `$0E`, so their `11`-pixels land on logical 3 —
+  the machine-top lamps read as permanently lit, close to what the C64 shows mid-sparkle.
 
 **Physical colour choices.** The BBC's 8 physicals have no grey, orange, purple or brown, so
 each C64 colour in the ramps needs a nearest-physical call. Starting table — **tune by eye in
@@ -89,10 +92,10 @@ logical colours under §1's model instead of RGB:
 - One C64 multicolour pixel = two MODE 1 pixels, 320 wide exactly; the hires credits map 1:1.
 - 25 C64 rows = 200 scanlines, centred in MODE 1's 256: 3 blank rows above, 4 below. Blank
   rows are near-free after compression.
-- Output is a **full 20K MODE 1 bitmap, ZX0-compressed** (`tools/zx0.py`, round-trip
-  verified), written to `src/data/introscr.zx0` plus a small `introscr.inf` stating the raw
-  and packed sizes. No charset, no cell model, no draw code on the BBC side — the picture is
-  data. Expected packed size ~2.5–4K given the large solid areas.
+- Output is a **full 20K MODE 1 bitmap, ZX0-compressed** (`bin/zx0.exe`, round-trip verified
+  through `tools/zx0.py` like the banks), written to `src/data/introscr.zx0`. No charset, no
+  cell model, no draw code on the BBC side — the picture is data. **Measured: 20,480 →
+  1,256 bytes**; the whole `PINTRO` file is ~2.3K.
 - The credits rows are drawn in logicals 1–3 per [DECISION 4]'s row→colour map; the picture
   region per §1's model. The exporter emits both regions into the one bitmap — the split
   changes only which palette is live, not the data.
@@ -130,18 +133,24 @@ build's GUARDs, banks or zero page. Assembled by a second, tiny beebasm pass in 
     `D022`/`D023` values, write logicals 1 and 2 to the ULA — 8 palette writes (4 entries per
     logical in MODE 1), ~100 cycles. Idle frames write nothing.
 - **The palette split:** two full 16-register ULA palette rewrites per frame (~200 cycles the
-  pair): the picture palette written in the vsync shadow, the credits palette written when the
-  raster passes the boundary. The boundary sits in the all-black C64 row 16 — MODE 1 rows
-  3–18 hold the picture, 20–27 the credits (§2's centring), so the write has a full blank
-  character row of slack and can never be seen landing. v1 timing: a calibrated busy-wait
-  after `OSBYTE 19` reaches the boundary — crude, burns idle cycles v1 has to spare, and is
-  verified against jsbeeb rather than computed; the OS keeps its interrupts, so the wait is
-  calibrated with margin inside the blank row rather than cycle-exact. It is a placeholder:
-  under the MOD player the two writes become two hook calls on the player's cycle-counted
-  schedule, which is what "budget for one split" means (§6).
-- **Exit:** any keypress (`OSBYTE &79` scan, or flush + negative INKEY) → flush the keyboard
-  buffer so the keypress does not leak into the game, restore MODE 7 text state, RTS to the
-  OS — `!BOOT`'s `EXEC` then carries on into the existing game load sequence untouched.
+  pair). **As built, BOTH are mid-frame writes** — the picture palette is NOT written in the
+  vsync shadow as first planned, because everything outside the drawn image is logical 0 and
+  the picture palette's logical 0 carries the `D021` flash: written at vsync it painted the
+  blank rows above the picture red at every flash peak. So the picture write waits for the
+  raster to reach the picture's top row (the blank rows keep the credits palette's black),
+  and the credits write lands early in the all-black C64 row 16. v1 timing is two calibrated
+  busy-waits after `OSBYTE 19` (`SPLITA_*`/`SPLITB_*` in `pintro.asm`, screenshot-calibrated
+  in jsbeeb, with OS interrupt jitter absorbed by the blank rows); under the MOD player they
+  become two hook calls on the player's cycle-counted schedule (§6). **Accepted artifact:**
+  at the 3 peak frames of a flash, up to ~3 scanlines bordering each write point show the
+  wrong palette's background — a brief red sliver above the picture and below the floor. The
+  C64 is immune (its blank areas are colour-RAM-black PIXELS, not background); the MOD
+  player's exact timing will shrink it to nothing.
+- **Exit:** any keypress, detected by `OSBYTE &7A` keyboard SCAN — **NOT by INKEY/OSRDCH,
+  which read the EXEC stream while `!BOOT` is running: the first build's INKEY ate the `*`
+  of the `*RUN PARA` line and exited with no key pressed** (§7). On a key: acknowledge any
+  ESCAPE, flush the keyboard buffer so nothing leaks into the game, restore MODE 7, RTS to
+  the OS — `!BOOT`'s `EXEC` then carries on into the existing game load sequence untouched.
   Everything the intro used is reclaimed by that load; it must simply leave the OS and DFS
   exactly as it found them, which nothing in this design disturbs (no IRQ takeover, no
   workspace writes — the hazards in `CLAUDE.md`'s loader rules never arise this early).
@@ -159,12 +168,14 @@ build:
 
 - `build.ps1` runs a second, tiny beebasm pass for `src/pintro.asm` before `make_disc.py`.
   The game pass is untouched either way.
-- `!BOOT` gains `*RUN PINTRO` as its first action, before the mode change and the loads. The
-  switch reaches the `!BOOT` text as a beebasm `-D` symbol driving a conditional `EQUS` in
-  the block that already stamps the debug flags — same pattern, and like a debug flag the
-  boot output is self-describing about which disc this is.
-- `tools/make_disc.py` lays the disc out physically in boot access order — told (by flag)
-  that `PINTRO` exists, it places it at the front as the first file touched. `PINTRO` ships
+- `!BOOT` gains `*RUN PINTRO` as its first action, before the mode change and the loads.
+  **The wiring is `make_disc.py --intro`, which patches the line in front of the literal
+  `*RUN PARA`** (and fails loudly if that marker ever changes — the note sits in `main.asm`'s
+  `!BOOT` header). The plan's first idea, a beebasm `-D` symbol driving a conditional `EQUS`,
+  was dropped during the build: beebasm has no way to default an undefined symbol, so it
+  would have broken the documented bare `beebasm -i src/main.asm` symbol-dump command.
+- `tools/make_disc.py --intro <PINTRO-raw.ssd>` also takes `PINTRO` from the second pass's
+  image and lays it into the physical boot order right after `!BOOT`. `PINTRO` ships
   uncompressed (its image stream is already ZX0 inside the file; there is no loader yet to
   depack a whole exe).
 
@@ -207,3 +218,36 @@ plan already provides for:
   expensive one, and [DECISION 2] already fakes most of it for free). Each is independent and
   each mirrors a documented C64 behaviour (`graphics.md` §10), so they can be added back one
   at a time against the measured spare cycles.
+
+## 7. As built — what changed against the plan, and the traps
+
+Built and verified the same day, `src/pintro.asm` + `tools/export_intro.py`. Deltas from the
+plan above, each folded back into the section it touches:
+
+1. **INKEY reads the EXEC stream** (§3). At boot the OS is EXECing `!BOOT`, and character
+   input comes from the file, not the keyboard: the first build's INKEY(0) consumed the `*`
+   of `*RUN PARA`, the intro exited instantly, and BASIC threw `Syntax error` on `RUN PARA`.
+   The exit test is now the `OSBYTE &7A` hardware scan. Second trap inside the fix: NAUG
+   documents the no-key return as X=0, but the MOS in jsbeeb returns &FF — the code treats
+   both as idle rather than trusting either account.
+2. **The picture palette write moved off vsync** (§3): at vsync it painted the blank rows
+   above the picture with the flashed logical-0 red. Both palette writes are now raster-
+   positioned, and the residual ~3-line peak-only slivers at the two write points are the
+   accepted artifact, pending the MOD player's exact timing.
+3. **The `!BOOT` wiring is a `make_disc.py --intro` patch, not a `-D`/`EQUS` conditional**
+   (§4): beebasm 1.11 cannot default an undefined symbol, and requiring `-D` on every pass
+   would have broken the documented bare symbol-dump invocation of `main.asm`.
+4. **Numbers**: the bitmap compresses 20,480 → 1,256 bytes; `PINTRO` is ~2.3K all in;
+   assembling it adds ~0.1 s to an `-Intro` build. The calibrated waits sit in `pintro.asm`
+   as `SPLITA_OUTER/FINE` and `SPLITB_OUTER/FINE` with the calibration recipe in the comment
+   above them.
+5. **Verified** per §5: the depacked screen diffs byte-for-byte against the exporter's
+   bitmap; rest and all four forced-peak states screenshot-checked against the expected
+   PNGs; the full chain — SHIFT+BREAK boot → intro → random flash observed → keypress →
+   game load → title — runs clean, and a default build's disc carries no trace of any of it.
+
+One deliberate deviation the plan already carried, restated for the record: the ULA palette
+write itself can glitch a few displayed pixels at the beam position on the write lines
+(visible as short dashes at flash peaks only, over black). Real-hardware behaviour, shared
+with every mid-frame palette split; invisible at rest because black-to-black writes change
+nothing on screen.
