@@ -42,13 +42,18 @@ questions below:
   absorbed; (2) randomise droid-droid collision priority to break the three-droid deadlock,
   **conditional on first reproducing the deadlock in our port**; (3) exclude lift-adjacent
   waypoints from droid starting points, so arriving by lift is safer — a per-deck exclusion at
-  `InitDeckDroids`; (4) the high-score entry seeds from the previous game's initials.
+  `InitDeckDroids`; (4) the high-score entry seeds from the previous game's initials; (5) the console menu shows
+  droids remaining on the current deck and across the ship — `pmCount` already mirrors the deck
+  count for the panel, the ship count wants the same mirror; (6) the lift's deck-selection
+  screen colours completed decks differently — Layer 15's per-deck cleared state read by the
+  side-view draw, the colour settled in Layer 14's palette pass. (5) and (6) are Redux
+  behaviours KC observed in play, 2026-08-26 — they are not on the page's own list.
 - **Damage tables stay CE's in full** — the laser 1/2 swap, the friendly-fire asymmetry and the
   explosion damage are preserved as ported behaviour (KC 2026-08-26, closing the decisions.md
   contradiction).
 - **Rejected for 1.0**: droid AI pack, radar, security doors, Redux scoring, the transfer
   pulser link, the other map/spawn changes (randomised starts, separate spawn point, deck
-  sections), disc-saved high scores, F7/F8 ship carryover, Competition Mode, F3 statistics,
+  sections), disc-saved high scores, F7/F8 ship carryover, Competition Mode, statistics (both the intro's F3 page and a console stats page),
   and a shipped cheat mode (the DEBUG_* builds stay the cheat surface).
 
 **Paradroid Redux is a different codebase** — `docs/decisions.md` has the evidence — so its fixes
