@@ -246,6 +246,17 @@ plan above, each folded back into the section it touches:
    PNGs; the full chain — SHIFT+BREAK boot → intro → random flash observed → keypress →
    game load → title — runs clean, and a default build's disc carries no trace of any of it.
 
+6. **`&FE44` is not random from a vsync-locked loop** (found when KC saw near-constant
+   lightning): System VIA T1 runs the 100 Hz tick, so its 20,000-cycle period divides the
+   40,000-cycle frame exactly and a fixed-position read returns a near-constant, slowly
+   drifting byte — whenever it drifted under the threshold, the gate passed every check.
+   The trigger now steps an 8-bit Galois LFSR every frame (timer-seeded at boot, timer
+   jitter folded in at the check). A second, separate finding from logging every trigger:
+   even with real randomness a 32-frame check grid chains minimum-spacing flashes into a
+   strobe, so the grid is 64 frames at a higher probability — the same ~2 s mean with a
+   guaranteed 1.28 s between flash starts. Measured: 19 flashes in 41 s, intervals 64/128/
+   192 frames.
+
 One deliberate deviation the plan already carried, restated for the record: the ULA palette
 write itself can glitch a few displayed pixels at the beam position on the write lines
 (visible as short dashes at flash peaks only, over black). Real-hardware behaviour, shared

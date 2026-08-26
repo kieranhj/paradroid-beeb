@@ -167,6 +167,10 @@ variable's runtime address for an emulator poke. `-do` is there only to stop the
 - `VDU 22` makes the OS clear `&3000–&7FFF` (what it still thinks is its screen). Data loaded
   above `&3000` is wiped before it can be read — hence the split `PARA` / `PARADAT` disc files,
   with `PARADAT` `*LOAD`ed after the mode change.
+- **`&FE44` read at a fixed point in a vsync-locked loop is NOT random.** System VIA T1 runs
+  the 100 Hz tick: 20,000 cycles, exactly half a frame, so the sampled byte is near-constant
+  and only drifts with interrupt jitter. Cost PINTRO its lightning randomness (docs/intro.md
+  §7); anything wanting entropy per frame needs a stepped PRNG with the timer as seed only.
 - **`LDA abs` is 4 cycles and `LDA zp` is 3 — but `LDA abs,X` and `LDA zp,X` are both 4.** Zero
   page is fully allocated (`&00–&8F`) and went to scalars; indexed tables gained nothing by moving.
   Worth knowing before costing a zero-page change.

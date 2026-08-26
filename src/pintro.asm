@@ -62,13 +62,28 @@ fxFrame    = &7B                \ free-running frame counter
 fxIdx      = &7C                \ envelope frames left, 0 = idle
 fxWay      = &7D                \ current colourway table offset
 fxTmp      = &7E
+fxSeed     = &7F                \ the PRNG state, stepped every frame
 
 \ ---- tuning ----------------------------------------------------
-\ Trigger probability per 32-frame check: &60/256 = 37.5%, roughly
-\ one flash every 1.7 s — KC-tuned 2026-08-26: the first build's &48
-\ (one per ~2.3 s, near the C64's RAM-content-dependent gate) was too
-\ sparse and &80 (one per ~1.3 s) too busy.
-TRIG_PROB   = &60
+\ Trigger probability per 64-frame check: &A0/256 = 62.5%, one flash
+\ every ~2.3 s on average with starts never closer than 1.28 s. The
+\ check GRID matters as much as the probability: on a 32-frame grid
+\ (measured with a trigger log in jsbeeb) the geometric distribution
+\ chains minimum-spacing flashes — 15 frames lit, 17 dark, four in a
+\ row — which reads as constant lightning even at a 2 s mean. The
+\ 64-frame grid buys a guaranteed dark gap instead of a longer mean.
+\ THE GATE BYTE IS AN LFSR, NOT A BARE &FE44 READ. The first builds
+\ compared System VIA T1's low byte against this threshold, and that
+\ is not random from a vsync-locked loop: T1 runs the 100 Hz tick, so
+\ its 20,000-cycle period divides the 40,000-cycle frame EXACTLY and
+\ the same T1 phase comes round at the same spot every frame. The
+\ sampled byte only drifted with interrupt jitter — whenever it
+\ drifted below the threshold the gate passed EVERY 32-frame check
+\ (KC: "almost constant"), then nothing through the droughts, and the
+\ threshold barely mattered. The Galois LFSR in IntroFxTick steps
+\ once per frame, is seeded and unsticks from the timer, and makes
+\ the probability real.
+TRIG_PROB   = &A0
 
 \ The two per-frame busy-waits, CALIBRATED IN JSBEEB, not computed.
 \ One outer loop pass is 1287 cycles; a display line is 128.
@@ -141,6 +156,9 @@ GUARD &3000
     STA fxIdx
     LDA #&30
     STA mapptr+1
+    LDA SYSVIA_T1CL             \ per-boot PRNG seed: the timer varies
+    ORA #1                      \ with load timing (0 is the LFSR's
+    STA fxSeed                  \ fixed point, hence the ORA)
     JSR Zx0Unpack
 
 \ ---- one iteration per frame --------------------------------
@@ -217,15 +235,27 @@ GUARD &3000
 \ the buffer reaches the ULA at the next frame's vsync write.
 .IntroFxTick
     INC fxFrame
+    LDA fxSeed                  \ step the 8-bit Galois LFSR every
+    LSR A                       \ frame — see the TRIG_PROB comment
+    BCC fx_s1                   \ for why &FE44 alone is NOT random
+    EOR #&B8
+.fx_s1
+    STA fxSeed
+    BNE fx_s2
+    LDA SYSVIA_T1CL             \ 0 is the fixed point: reseed
+    ORA #1
+    STA fxSeed
+.fx_s2
     LDA fxIdx
     BNE fx_active
     LDA fxFrame                 \ idle: consider a trigger every
-    AND #31                     \ 32nd frame, like the C64
-    BNE fx_done
-    LDA SYSVIA_T1CL             \ timer entropy gates it...
+    AND #63                     \ 64th frame (the C64 checks every
+    BNE fx_done                 \ 32nd; see the TRIG_PROB comment)
+    LDA fxSeed
+    EOR SYSVIA_T1CL             \ timer jitter folded on top
     CMP #TRIG_PROB
     BCS fx_done
-    AND #3                      \ ...and picks the colourway
+    AND #3                      \ the same byte picks the colourway
     TAX
     LDA cwBase,X
     STA fxWay
