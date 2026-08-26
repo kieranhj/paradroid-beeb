@@ -430,6 +430,12 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
 .bwf_w
   CMP fieldCount
   BEQ bwf_w
+\ The volume keys, on the one hook every loop in BrRun passes through —
+\ and the briefing is where a master volume was most wanted, because
+\ the chatter is the loudest thing in the game. VolKeysBrf is main RAM
+\ and touches only main RAM, so the text bank stays paged across it and
+\ the bank-5-in-bank-5-out contract below is untouched.
+  JSR VolKeysBrf
 \ fall through into the chatter, and its RTS
 
 \ ============================================================

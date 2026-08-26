@@ -26,21 +26,29 @@
 
 IF DEBUG_DECK
 \ ============================================================
-\ DbgDeck4 — UP and DOWN hop one deck, no lift
+\ DbgDeck4 — [ and ] hop one deck, no lift
 \ ============================================================
 \ Deck keys are edge triggered: one press steps one deck however long it
 \ is held. A blocking wait-for-release deadlocks if the other deck key
 \ goes down before the first is released.
 \
-\ UP and DOWN belong to the lift while it has the controls, so the
-\ liftMode test is part of the block rather than around it: nothing else
-\ in the pass wants either key, and a build without the hop should not
-\ be reading them at all. Two OSBYTEs a pass.
+\ THE KEYS WERE CURSOR UP AND DOWN until 2026-08-26, when the volume
+\ control took the cursors (VolKeys, main.asm). [ steps up the ship and
+\ ] steps down, which keeps the pair adjacent under one hand and lands
+\ on two keys nothing else in the game reads. prevUp/prevDn keep their
+\ names: they are still this arm's two latches and renaming them would
+\ churn droid.asm for nothing.
+\
+\ The liftMode test is part of the block rather than around it: a build
+\ without the hop should not be reading these keys at all. It stays
+\ although the keys no longer collide with anything — hopping decks out
+\ from under a lift that is already entering one is still nonsense.
+\ Two OSBYTEs a pass.
 .DbgDeck4
   LDA liftMode                  \ entering the lift: the debug hop keeps
   BNE dd_notDn                  \ its hands off the deck this pass
 
-  LDX #KEY_UP
+  LDX #KEY_LBRK
   JSR keydown
   BNE dd_upOff
   LDA prevUp
@@ -55,7 +63,7 @@ IF DEBUG_DECK
   LDA #0 : STA prevUp
 .dd_notUp
 
-  LDX #KEY_DOWN
+  LDX #KEY_RBRK
   JSR keydown
   BNE dd_dnOff
   LDA prevDn

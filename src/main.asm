@@ -410,8 +410,8 @@ DEBUG_XFERWIN = TRUE
 \ through the whole of the death, the wash, the 999 page and the title
 \ rather than jumping straight back to GameStart. See the loop.
 
-\ DEBUG_DECK is the third: cursor UP and DOWN hop the player straight to
-\ the deck above or below, one deck a press, without a lift. It predates
+\ DEBUG_DECK is the third: [ and ] hop the player straight to the deck
+\ above or below, one deck a press, without a lift. It predates
 \ Layer 8's lifts and 8b's deck-selection screen, and it is what made
 \ every deck reachable while they were being built.
 \ IT IS NOT A READOUT, so it belongs off in anything a player will see:
@@ -419,9 +419,11 @@ DEBUG_XFERWIN = TRUE
 \ something the C64 can do. Left ON while the decks past 1 are still
 \ being brought up, because reaching deck 11 by lift to look at one tile
 \ is several minutes a time.
-\ The keys are the LIFT'S while liftMode is non-zero, which is why the
-\ arm below tests it first: with the flag off that test goes with it,
-\ because nothing else here wants UP or DOWN.
+\ THE KEYS WERE CURSOR UP AND DOWN until 2026-08-26, when the volume
+\ control took the cursors (VolKeys, below). The arm still tests
+\ liftMode first, although the collision that test was written for is
+\ gone: hopping decks out from under a lift that is already entering
+\ one is nonsense whatever the keys are.
 DEBUG_DECK = TRUE
 
 \ DEBUG_KILL is the fourth that changes what the GAME does: C kills
@@ -958,13 +960,21 @@ KEY_Z      = &9E                \ -98
 KEY_X      = &BD                \ -67
 KEY_K      = &B9                \ -71
 KEY_M      = &9A                \ -102
-KEY_UP     = &C6                \ -58
-KEY_DOWN   = &D6                \ -42
+KEY_UP     = &C6                \ -58, volume up
+KEY_DOWN   = &D6                \ -42, volume down
 KEY_SPACE  = &9D                \ -99
 KEY_L      = &A9                \ -87, the fire button
+KEY_Q      = &EF                \ -17, the mute toggle
 KEY_W      = &DE                \ -34, DEBUG_XFERWIN only
 KEY_C      = &AD                \ -83, DEBUG_KILL only
 KEY_ESCAPE = &8F                \ -113, the self-destruct
+\ [ and ] are the deck hop's, DEBUG_DECK only. THEY USED TO BE THE
+\ CURSOR KEYS, and the volume control took those over (KC 2026-08-26),
+\ so the hop moved to two keys nothing else wants. &C7 being KEY_UP+1
+\ is a coincidence of the matrix and not kinship -- [ is row 3 column
+\ 8, cursor up is row 3 column 9. Do not "tidy" the pair together.
+KEY_LBRK   = &C7                \ -57
+KEY_RBRK   = &A7                \ -89
 
 \ ---- zero page ---------------------------------------------
 \ &70-&8F was the original allocation and is full. With BASIC not
@@ -1708,6 +1718,14 @@ ENDIF
 IF DEBUG_DRAW
   JSR DbgDeckBg                 \ the four modal arms JMP here, over every
 ENDIF                           \ other close: no band may outlive a pass
+\ The volume keys, HERE and not beside SndAmbient, because this is the
+\ point every arm of the pass converges on: the console, the transfer
+\ game, the lift view, an information screen and the game-over wash all
+\ JMP past the middle of the pass to this label, and the volume has to
+\ work under all five. Below the DEBUG_DRAW close on purpose — three
+\ OSBYTEs must not show up as a band. It writes no buffer and no bank,
+\ so it needs no window and it does not care what is paged.
+  JSR VolKeysPass
   \ The pass is not allowed to be shorter than FRAME_LOCK fields. It IS
   \ allowed to be longer: an overrun carries on from wherever it landed
   \ instead of being rounded up to the next boundary, so a heavy pass
@@ -2310,6 +2328,98 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
   RTS
 
 \ ============================================================
+\ VolKeys — the master volume, and Q for silence
+\ ============================================================
+\ The port of AdjustVolume ($0CB4), which is one of the few C64
+\ routines this port does NOT take verbatim. Four deviations, all
+\ agreed with KC 2026-08-26 and written up as layer-11e DECISIONs:
+\   1. CURSOR UP/DOWN, not F5 and SHIFT-F5. The BBC's f-keys are a
+\      different shape and the cursors were free once the debug deck
+\      hop moved to [ and ].
+\   2. IT RUNS EVERYWHERE, not on the title alone. The C64 calls
+\      AdjustVolume from TitleLoop and nowhere else, so its volume
+\      cannot be changed once a game starts. Ours is polled from the
+\      end of every pass, from the briefing's field wait and from the
+\      title's dwell loop.
+\   3. Q MUTES, which the C64 has no equivalent of at all. It is
+\      sndVolume 0 and the old level stashed, NOT sndState 0: the
+\      briefing and GoTitle both write sndState for their own reasons
+\      and a mute flag hidden in that byte would fight them. sndVolume
+\      is written by nothing else in the game, so it is ours alone.
+\   4. NO READOUT. The C64 prints "Volume: nn" on the title; the port
+\      shows nothing anywhere. Panel space is spoken for, and the
+\      effect of the key is audible.
+\ THE 0-15 RANGE, THE CLAMP AND THE REPEAT RATE ARE THE C64'S. Volume
+\ 0 is already total silence by construction — snf_voice computes
+\ 30 - levelNibble - sndVolume and every voice lands at or past
+\ attenuation 15 — which is why the mute needs no driver support and
+\ why snf_voice's clamp had to come back before this could ship.
+\ MAIN RAM, not bank 4, although the driver it steers is bank 4's:
+\ everything it touches (sndVolume, the two bytes below, keydown) is
+\ main RAM, so it carries no paging contract and every one of its
+\ three call sites can use it from whatever bank happens to be resting.
+\ UNGATED: the callers below own the cadence, because their clocks are
+\ three different things — passes, fields, and a free-running dwell.
+.VolKeys
+  LDX #KEY_UP
+  JSR keydown
+  BNE vk_notup
+  LDA sndVolume                 \ $0CC4: up to 15 and no further
+  CMP #15
+  BCS vk_notup
+  INC sndVolume
+.vk_notup
+  LDX #KEY_DOWN
+  JSR keydown
+  BNE vk_notdn
+  LDA sndVolume                 \ $0CCF: down to 0, which IS silence
+  BEQ vk_notdn
+  DEC sndVolume
+.vk_notdn
+  LDX #KEY_Q
+  JSR keydown
+  BNE vk_qup
+  LDA volQPrev                  \ edge, unlike the two above: a held Q
+  BNE vk_x                      \ toggles once, a held cursor repeats
+  INC volQPrev                  \ it is 0 — the BNE above tested it
+  LDA sndVolume
+  BEQ vk_unmute
+  STA sndVolSave                \ audible: stash the level and silence
+  LDA #0
+  STA sndVolume
+  RTS
+.vk_unmute                      \ silent: give the stashed level back.
+  LDA sndVolSave                \ 0 means Q is the first thing anyone
+  BNE vk_set                    \ has touched, or the level was walked
+  LDA #15                       \ down to 0 by hand — either way Q is a
+.vk_set                         \ request to hear something, so it goes
+  STA sndVolume                 \ back to full rather than to nothing
+.vk_x
+  RTS
+.vk_qup
+  LDA #0
+  STA volQPrev
+  RTS
+
+\ ---- the cadences ------------------------------------------
+\ $0CB4 gates on frameCount AND 3 — every fourth field, 12.5 Hz. Both
+\ of these land on the same wall-clock rate by different arithmetic,
+\ the way SndAmbient's cadences do: gameTick counts 25 Hz passes so it
+\ halves, fieldCount counts 50 Hz fields so it quarters. The gate is
+\ also what keeps the cost down — three OSBYTE keyboard scans are paid
+\ on one call in two rather than every pass.
+.VolKeysPass                    \ the main loop, from ml_passend
+  LDA gameTick
+  AND #1
+  BEQ VolKeys
+  RTS
+.VolKeysBrf                     \ the briefing, from BrWaitField
+  LDA fieldCount
+  AND #3
+  BEQ VolKeys
+  RTS
+
+\ ============================================================
 \ WaitField / WaitRest — the pass's fields, taken one at a time
 \
 \ Polling the System VIA IFR directly races the MOS: its own IRQ
@@ -2681,6 +2791,15 @@ ENDIF
 .sndFx2    EQUB 0
 .sndState  EQUB 0
 .sndVolume EQUB 15
+\ VolKeys' own two bytes, here beside the one they steer. NOT zero
+\ page (it is full) and not bank 4 (VolKeys is main RAM, and this is
+\ why it can be). Both OUTLIVE A GAME, which is the point of putting
+\ the volume control on the title screen at all: the code image is
+\ loaded once at boot and nothing reloads over it, so a level set or a
+\ mute toggled at the title is still in force in the game that follows
+\ and in every game after it.
+.sndVolSave EQUB 0              \ the level Q silenced; 0 = never muted
+.volQPrev   EQUB 0              \ Q's press edge
 .gameTick  EQUB 0               \ the C64's frameCount, once per ITERATION
 .bootPal   EQUB 1               \ TiBootPal clears it: the random front-end
                                 \ deck is picked ONCE, at a cold boot, and

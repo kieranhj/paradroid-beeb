@@ -278,7 +278,33 @@ ASSERT TITLE_R7 >= TITLE_ROWS   \ VSync must fall after the last row shown
   INC tiLo
   BNE tiw_loop
   INC tiHi
-  BNE tiw_loop
+  BEQ tiw_time                  \ the 16-bit wrap: the timeout, below
+\ THE VOLUME KEYS, and this is the awkward one of VolKeys' three call
+\ sites. There is no sound at the title — GoTitle silenced the chip and
+\ handed the IRQ back — so what is being set here is the level the
+\ GAME will start at, which is exactly what KC asked for: mute at the
+\ title and the game comes up silent, because sndVolume lives in the
+\ resident code image and outlives every load between here and there.
+\
+\ IT IS GATED ON THIS LOOP'S OWN CARRY, ONE ITERATION IN 256, and the
+\ reason there is a gate at all is that this loop is not field-locked:
+\ its iteration count IS the timeout, and (tiLo EOR tiHi) IS the seed
+\ for the starting deck. The body is a single keydown, so polling three
+\ more keys every time round would nearly quadruple it and stretch the
+\ timeout with it. Hanging the call on the tiLo carry costs nothing to
+\ test and pays for VolKeys once per 256.
+\
+\ MEASURED 2026-08-26, jsbeeb. Idle the loop turns 3,654 times a
+\ second, so the 16-bit wrap is a 17.9 s timeout — and note that it is
+\ ALREADY that, not that this made it so: three OSBYTEs once per 256
+\ cost it under one percent. With a key actually held the loop runs
+\ 6,720 times a second (the MOS's key test is quicker when it finds
+\ one), so the repeat lands at 26 Hz: volume 0 to 15 in 0.58 s, which
+\ is the rate that matters because it is the rate you feel. 1 in 1024
+\ was tried first and gave 3.6 Hz — four seconds end to end, unusable.
+  JSR VolKeys
+  JMP tiw_loop
+.tiw_time
 \ Layer 11f: the 16-bit wrap is the timeout, and the timeout is the
 \ briefing — $291B's own arrangement. BrTimeout fetches PARMAN into
 \ bank 5, arms brFlag for BrDispatch, and RTSes: the return address on

@@ -395,12 +395,22 @@ ASSERT HI(snFreqLo) == HI(snPhase+1)   \ one page: the copy walk below
   LDA #30                       \ (15 - level) + (15 - volume); the SEC
   SEC                           \ holds through both subtracts — the
   SBC snTmp                     \ first result is >= 15 so the second
-  SBC sndVolume                 \ can never borrow. NO CLAMP: sndVolume
-  STA snTmp                     \ is pinned at 15 until the volume keys
-                                \ land, so this never exceeds 15 — and
-                                \ AdjustVolume's port MUST restore the
-                                \ CMP #16 / BCC / LDA #15 clamp here
-                                \ (docs/layer-11e-sound.md §8)
+  SBC sndVolume                 \ can never borrow
+  CMP #16                       \ AND THE CLAMP IS BACK, 2026-08-26, as
+  BCC snfv_cl                   \ the volume keys' first prerequisite:
+  LDA #15                       \ the sum is 0-30 once sndVolume can be
+.snfv_cl                        \ less than 15, and an unclamped 16-30
+  STA snTmp                     \ wraps into the latch's channel bits
+                                \ and writes a period to another voice.
+                                \ Round nine deleted it precisely
+                                \ because sndVolume was pinned; the C64
+                                \ form ($0CD9's neighbourhood), 6 bytes.
+                                \ NOT the 4-byte BCS snfv_off form
+                                \ docs/layer-11e-sound.md §8 costed:
+                                \ that skips the period write too, so a
+                                \ voice quiet at a low volume freezes
+                                \ its pitch and jumps when the volume
+                                \ comes back up
   LDA snFreqLo,X
   STA snCvL
   LDA snFreqHi,X

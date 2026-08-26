@@ -50,8 +50,11 @@ voice 2 by `DoAlertAndAging` (`$3E73`) whenever that voice is idle, on a 32-tick
 entry (`$135F`), `deckBgSndVar1/2/3[deck]` (`$6E60/70/80`) are copied into `sfx23+5/6/7` —
 segment timer, reload and count — so each deck's hum has its own rhythm and length.
 
-**Volume.** `AdjustVolume` (`$0CB4`): +/− keys move `sndVolume`, applied as the SID master
-volume nibble.
+**Volume.** `AdjustVolume` (`$0CB4`): F5 and SHIFT-F5 move `sndVolume` 0–15 on every fourth
+frame, applied as the SID master volume nibble and printed as `Volume: nn`. **Called from
+`TitleLoop` and nowhere else** — the C64's volume cannot be changed once a game has started,
+and it has no mute. The port keeps the range, the clamp and the repeat rate and changes the
+rest; §9.
 
 ## 2. The effect inventory — every trigger in the original
 
@@ -111,7 +114,7 @@ port A the keyboard matrix uses, which drives §4's contention rules.
 | ADSR envelope | Software: attack step / decay step / sustain level / release step per instrument, one attenuation write per tick, derived offline from the SID ADSR nibbles and rate tables |
 | Pulse width + pulse slide | Dropped — bytes 8–11 of each record are not carried |
 | Voice 3 as RNG (`$D41B`) | The port's existing LFSRs (`DrRandom`, `XfRand`) |
-| Master volume (`$D418` nibble) | Attenuation offset added per channel; +/− keys as on the C64 |
+| Master volume (`$D418` nibble) | Attenuation offset added per channel, clamped to 15; cursor UP/DOWN and Q, §9 |
 | Frequencies | Records stay in **SID-frequency space, verbatim**; the driver converts to an SN period **at chip-write time** through a generated 128-entry normalise-and-lookup table (`N = tab[(F<<s)>>8] >> (8-s)`, ±0.5%, ~60 cycles). See below for why — a stage-1 discovery amended [DECISION 2]'s mechanism |
 
 **Why frequency-space records (stage 1 finding).** The plan first called for offline conversion
@@ -279,9 +282,9 @@ transfer-mode pulse — pass-rate masks at half the C64's frame masks, gated on 
 and, by call position, on the modal screens.
 
 **Deliberately not wired**, recorded here: fx `$E` and `$B`'s `ShowXferInfo`/ship-announce
-moments (their screens are not ported — they arrive with 11d/`PrintTokenString`); pause and
-the ± volume keys (the port has no pause feature at all — porting `DoPause` is its own small
-piece of work, listed in §8).
+moments (their screens are not ported — they arrive with 11d/`PrintTokenString`); and pause
+(the port has no pause feature at all — porting `DoPause` is its own small
+piece of work, listed in §8). The ± volume keys were on this list too and came off it: §9.
 
 **The RAM battle, round two.** The sites, `SndAmbient` and the 48-byte hum tables wanted ~185
 more bank-4 bytes against 78. Paid by: `charRemap` folded into the ZX0 char stream (read only
@@ -382,32 +385,12 @@ The port has no `sndState $11`: 11f [DECISION 11].)*
   scratch slot** (`sndFxChat`, effect 29) and the three real records live in bank 5 beside the
   briefing text. `SndTick` is unchanged — it walks to effect 29 like any other. The LFSR is
   bank 5's `brChSeed`.
-- **The ± volume keys — WANTED, KC 2026-08-22: "we'll definitely want that volume control."**
-  Promoted out of this deferred list on the strength of the chatter's loudness rounds: three of
-  them went into turning one effect down, and some of "too loud" is really "no way to turn it
-  down". It should land **before** any further eared level deviations, because a working master
-  volume may make some of them unnecessary — `FX_LEVEL`'s fx16 entry above is the first thing to
-  re-listen to once it exists.
-
-  `sndVolume` is already a main-RAM byte, already applied per voice, already pinned at 15. Two
-  things stand in the way:
-
-  1. **The attenuation clamp round nine deleted must come back.** `snf_voice` computes
-     `30 - levelNibble - sndVolume`, which is 0–30; with `sndVolume` pinned at 15 it can never
-     exceed 15, and round nine spent the clamp to pay for the periodic-bass control byte. Lower
-     the master volume without it and the nibble wraps into garbage. The obvious form is the
-     C64's `CMP #16 / BCC / LDA #15`, **6 bytes**; a **4-byte** form looks available — `CMP #16 /
-     BCS snfv_off`, routing an inaudible result into the silent path that already writes 15 and
-     already picks the right channel. Bank 4 has 4 bytes, so the cheap form is the difference
-     between this landing and another RAM hunt. **Costed, not tested**: check the branch range
-     and that `snfv_off` is right for a live noise voice before relying on it.
-  2. **The key poll needs a home — and since the RAM recovery pass (2026-08-25) it has one
-     everywhere**: main RAM 639 B, bank 4 51 B, PARBRF 56 B. (When this was written every
-     region was full — 2 / 4 / 3 B — and that was the blocker; it is gone.) It wants somewhere that runs
-     once a pass in game — `SndAmbient` is already called there, in the right bank — and once a
-     field in the briefing, where `BrWaitField` is now the established hook. See
-     `docs/memory-map.md`'s free-RAM section and `docs/layer-13-ram-pass.md` for where bytes can
-     come from.
+- ~~**The ± volume keys — WANTED, KC 2026-08-22: "we'll definitely want that volume control."**~~
+  **BUILT 2026-08-26 — see §9 below.** Promoted out of this list on the strength of the
+  chatter's loudness rounds: three of them went into turning one effect down, and some of "too
+  loud" is really "no way to turn it down". It landed **before** any further eared level
+  deviations, deliberately, because a working master volume may make some of them unnecessary —
+  `FX_LEVEL`'s fx16 entry above is the first thing to re-listen to now that it exists.
 
 - **Pause.** The port has no pause feature; `DoPause` (`$3B7C`) writes `sndState` 0/`$12` around
   itself and the driver already honours both. Still deferred (11f [DECISION 9]), and no longer
@@ -543,7 +526,8 @@ The port has no `sndState $11`: 11f [DECISION 11].)*
   byte comes from the instrument flags again (`&E7` white / `&E3` periodic), funded by the
   request-pickup sharing its exit RTS and **dropping the attenuation clamp — safe ONLY while
   `sndVolume` is pinned at 15; AdjustVolume's port must restore it** (noted at its §8
-  bullet). Verified: noise register 3, CH2 warbling N 76–109, clean release, the hum
+  bullet). *(Restored 2026-08-26, six bytes, as the volume keys' first prerequisite,
+  DECISION 15 in §9.)* Verified: noise register 3, CH2 warbling N 76–109, clean release, the hum
   untouched on CH1 throughout. Bank 4: 4 bytes free.
   **Round ten — three more from KC's playtest.** The ram-kill (fx23, 73% sub-floor) goes
   periodic via a new exporter mechanism, `FX_PERIODIC`: its instrument is shared with the
@@ -563,3 +547,89 @@ The port has no `sndState $11`: 11f [DECISION 11].)*
   one channel's volume gives crude PWM below the floor — but it steals gameplay cycles, so it
   is a costed extension for later, not part of this layer. Belongs beside
   `docs/master-extensions.md`'s entries if it is ever wanted.
+
+## 9. The volume keys and the mute — built 2026-08-26
+
+`AdjustVolume` is one of the few C64 routines this port does not take verbatim. Everything
+that could be kept was: the 0–15 range, the clamp at both ends, and the every-fourth-frame
+repeat gate, which lands on the same wall-clock rate here by different arithmetic. What
+changed, changed because KC asked for it (this conversation) or because the BBC's shape forced
+it.
+
+**[DECISION 12] The keys are cursor UP and DOWN, not F5 and SHIFT-F5.** The C64 reads its
+function-key row directly (`ReadFKeys`, `$0B23`) and folds the shift state into bit 7 of the
+same byte; nothing about that survives the move to `OSBYTE &81` on a different matrix. The
+cursors were free once the debug deck hop was moved, they are the obvious pair for "more" and
+"less", and they collide with nothing: the lift steps on the movement keys K/M, not on these.
+
+**[DECISION 13] It runs everywhere, not on the title alone.** `AdjustVolume` is called from
+`TitleLoop` and from no other site, so on the C64 the volume is fixed for the duration of a
+game. That is a limitation, not a design, and the loudness rounds above are what made it worth
+overriding. Three call sites cover every state the port has:
+
+| Site | Gate | Rate | Covers |
+|---|---|---|---|
+| `ml_passend` (main loop) | `gameTick AND 1` | 12.5 Hz | play, console, transfer, lift view, information screens, the game-over wash — every modal arm `JMP`s to this label |
+| `BrWaitField` (briefing) | `fieldCount AND 3` | 12.5 Hz | the briefing, where the chatter is |
+| `tiw_loop` (`TiWait`) | the `tiLo` carry, 1 in 256 | 26 Hz held | the title |
+
+The high-score entry (`HsGet`) is **deliberately not wired**: it is a short modal, it is silent
+(it runs from `TitleSeq`, after `GoTitle` has handed the IRQ back), and its loop has the same
+free-running hazard as `TiWait` for no benefit.
+
+**The title site is the awkward one, and it needed measuring.** `TiWait` is not field-locked:
+its iteration count *is* the timeout, and `tiLo EOR tiHi` *is* the seed for the starting deck.
+Its body is a single `keydown`, so polling three more keys every time round would nearly
+quadruple it. Hanging the call on the `tiLo` carry costs nothing to test and pays for `VolKeys`
+once per 256. Measured in jsbeeb: idle the loop turns **3,654 times a second** (so the 16-bit
+wrap is a **17.9 s** timeout — it already was, and the gate costs it under 1%), and with a key
+actually held it turns **6,720 times a second**, the MOS's key test being quicker when it finds
+one. The repeat therefore lands at **26 Hz**, or 0.58 s from 0 to 15. A first cut gated 1 in
+1024 and gave 3.6 Hz — four seconds end to end, unusable.
+
+**[DECISION 14] Q mutes, and mute is `sndVolume` 0 with the old level stashed.** The C64 has no
+mute at all. Volume 0 is already total silence by construction — `snf_voice` computes
+`30 - levelNibble - sndVolume`, so at volume 0 every voice lands at or past attenuation 15 —
+which is why this needs no driver support whatever. The alternative, `sndState` 0/`$12`, was
+rejected: the briefing and `GoTitle` both write that byte for their own reasons and a mute flag
+hidden in it would fight them. `sndVolume` is written by nothing else in the game.
+
+`sndVolSave` holds the silenced level; Q on an already-silent chip restores it, or goes to 15
+if the level was walked down to 0 by hand — either way Q is a request to hear something. Q is
+edge-latched (`volQPrev`) where the cursors repeat.
+
+**The setting outlives a game.** `sndVolume` and its two companions live in the resident code
+image, which is loaded once at boot and never reloaded over, so a level set or a mute toggled
+at the title is still in force in the game that follows and in every game after it. That is the
+whole point of wiring the title at all, given there is no sound there to hear.
+
+**[DECISION 15] The clamp round nine deleted is back, in the C64's 6-byte form.** This was the
+prerequisite, not a nicety: `snf_voice`'s `30 - levelNibble - sndVolume` is 0–30 the moment
+`sndVolume` can be less than 15, and an unclamped 16–30 wraps into the latch's channel bits.
+`CMP #16 / BCC / LDA #15`, six bytes of bank 4's 51. §8's costed 4-byte alternative
+(`CMP #16 / BCS snfv_off`) was **rejected on inspection**: it skips the period write as well as
+the attenuation, so a voice quiet at a low volume freezes its pitch and jumps when the volume
+comes back up.
+
+**[DECISION 16] No readout anywhere.** The C64 prints `Volume: nn` on the title. The port shows
+nothing: the panel's text line is already contended for by the messages and the transfer
+counter, and the effect of the key is audible. `Volume_txt`'s port stays unwritten. KC,
+2026-08-26: "Don't worry about indicating the volume change for now."
+
+**`VolKeys` is main RAM, not bank 4**, although the driver it steers is bank 4's. Everything it
+touches — `sndVolume`, `sndVolSave`, `volQPrev`, `keydown` — is main RAM, so it carries no
+paging contract at all and each of its three call sites can use it from whatever bank happens
+to be resting. That is what makes the briefing site free: bank 5 stays paged across it.
+
+**Cost.** 6 B bank 4 (51 → 45), 98 B of the code image (`&2D81` → `&2DE3`), 3 B of `PARBRF`
+(56 → 53), 11 B of `PARTITL` (855 free after). ~800 cycles every other pass in game, at
+`ml_passend`, below every draw — measured no effect on the pass rate, which stays at exactly
+25.0 Hz.
+
+**Verified in jsbeeb, 2026-08-26.** Volume steps and clamps at both ends at the title, in the
+briefing and in play; the level survives title → game; Q toggles exactly once across 13
+consecutive poll rounds with the key held; muted, all four channels read attenuation 15 and
+unmuting brings them back (CH0 6, CH3 9 under the chatter). The clamp itself was caught in the
+act: at volume 2 with `snLevel[0]` = 85 (nibble 5) the unclamped value would be 23, and
+`snChAtt` reads 15. `[` and `]` step the deck one press at a time and cursor UP no longer
+touches it.

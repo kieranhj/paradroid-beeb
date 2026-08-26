@@ -347,7 +347,7 @@ Both worked around locally; extending the shared set is the better fix and moves
   GAME does rather than what it draws**. `DEBUG_XFERWIN`: W wins the transfer minigame outright, so
   droid behaviour after a capture can be reached without playing it. `DEBUG_KILL`: **C** kills every droid on the deck, through the real `DrKillDroid` path, to
   reach the cleared-deck floor without shooting one empty (layer-14 DECISION 6).
-  `DEBUG_DECK`: cursor up/down hop the player one
+  `DEBUG_DECK`: `[` and `]` hop the player one
   deck at a time with no lift — the ship is walkable without it, but reaching deck 11 by lift to
   look at one tile costs minutes a time.
   `DEBUG_RESTART` was removed 2026-08-21: **ESCAPE** is a real game feature that ends the game

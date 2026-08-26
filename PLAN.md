@@ -32,8 +32,10 @@ than won. Per-layer detail is in the layer table at the end and its docs.
 
 **Keys:** Z/X left/right, K/M up/down, L fire — and, through the original's own `moveMode`
 machine, the lift, console and transfer trigger. **ESCAPE self-destructs and ends the game.**
-Cursor up/down is `DEBUG_DECK`'s deck hop, C is `DEBUG_KILL`'s clear-the-deck, W wins a transfer
-(`DEBUG_XFERWIN`), SPACE a forced redraw — all three flags ship ON.
+**Cursor up/down are the master volume and Q mutes**, everywhere the game has a loop: play, the
+modal screens, the briefing and the title. `[` and `]` are `DEBUG_DECK`'s deck hop, C is
+`DEBUG_KILL`'s clear-the-deck, W wins a transfer (`DEBUG_XFERWIN`), SPACE a forced redraw — all
+three flags ship ON.
 
 **The frame budget:** the eight sprite slots cost ~36,000 cycles of the 79,872 in a pass and the
 droid AI another ~17,000, so the loop keeps roughly a third spare. The RAM squeeze that shaped
@@ -52,7 +54,7 @@ or triple digits in every other region** — current figures in `CLAUDE.md`'s ta
 
 | | | |
 |---|---|---|
-| **The ± volume keys** — `AdjustVolume` (`$0CB4`) | **WANTED, KC 2026-08-22**: "we'll definitely want that volume control." `sndVolume` already exists and the driver already honours it. Two prerequisites, both costed in [`docs/layer-11e-sound.md`](docs/layer-11e-sound.md) §8: the **attenuation clamp deleted in round nine must come back** (a lower master volume without it wraps the nibble into garbage — 4 B in bank 4 via `BCS snfv_off`), and the key poll needs a home — **the RAM pass has since provided one everywhere**. Should land **before** any more eared level deviations | **next on the list** |
+| ~~**The ± volume keys**~~ — `AdjustVolume` (`$0CB4`) | **BUILT 2026-08-26** — cursor UP/DOWN move `sndVolume` 0–15 and **Q mutes**, at `ml_passend`, `BrWaitField` and `TiWait`, so the volume works in play, in every modal screen, in the briefing and at the title — and it outlives a game. The C64's own range, clamp and repeat rate; its keys, its title-only scope and its readout deliberately not. The round-nine attenuation clamp came back first, in the C64's 6-byte form (the costed 4-byte `BCS snfv_off` was rejected — it freezes a quiet voice's pitch). Five DECISIONs and the measurements in [`docs/layer-11e-sound.md`](docs/layer-11e-sound.md) §9 | **done** |
 | **Sound: the game-over set** | Layer 11e is otherwise built and tuned. KC: "needs work, leave for now." Also open: the transfer-verdict mapping (unverified guess) and fx06 with 11d | open |
 | **Briefing F6: exit-load trim** | The briefing → game reload is ~1.1 s naive; deferred from 11f. The pause-legend wording in `briefing.txt` is KC's, ongoing | later |
 | **Layer 12 — balance, fidelity and feel** | Not a feature layer: the fidelity audit against the listing, the Redux fix list triaged, playtesting against the isolated dials, graceful degradation. **Verify before tuning**, or a fidelity bug gets balanced around instead of fixed. [`docs/layer-12-balance.md`](docs/layer-12-balance.md) | TODO |
@@ -110,7 +112,7 @@ home and the note is cross-referenced.
 
 - Redux bug fixes and feature additions — triaged 2026-08-26; the bug list is adopted as behaviour in `docs/decisions.md` and the six adoptions (droid counts on the console included) are a Features row above.
 - Pause.
-- Volume — the ± volume keys row above is the home for this.
+- ~~Volume~~ — **built 2026-08-26**, [`docs/layer-11e-sound.md`](docs/layer-11e-sound.md) §9.
 - What's Cheese?
 - Redefine keys.
 
