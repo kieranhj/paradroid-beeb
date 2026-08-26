@@ -190,7 +190,7 @@ edges and never repairs the interior. Scrolling exposed it rather than caused it
 
 Triggers when `mapHX + 79` crosses 256 — **decks 2 and 14**, both centring at `mapHX` = 180.
 
-*Diagnostic worth keeping:* a debug key (SPACE) forces `RedrawAll`, so the incremental buffer can be
+*Diagnostic worth keeping:* a debug key (**R**; SPACE until 2026-08-26) forces `RedrawAll`, so the incremental buffer can be
 diffed against a full redraw at the same position. Both then matched byte-for-byte — after
 right/down/left, and after scrolling to the extremes with the buffer wrapping repeatedly — which
 proved the scroll logic correct and pointed at the load-time draw instead.
@@ -577,7 +577,7 @@ which is where these bugs actually live.
 split scanlines, and the natural reading was that the fix had not worked. It had — the **oracle**
 was being sampled mid-redraw. `RedrawAll` plus its split pass runs longer than the 400,000 cycles
 being allowed to settle, so the dump caught display row 0 rewritten by the main loop but not yet
-repaired by the split pass. Allow 1,500,000 cycles after releasing SPACE. Confirmed by breakpointing
+repaired by the split pass. Allow 1,500,000 cycles after releasing the redraw key (**R** now; this was written when it was SPACE). Confirmed by breakpointing
 `ra_nosplit` and reading the buffer there: correct at the end of the routine, wrong in the middle.
 
 Vertical scrolling no longer redraws whole rows, so `DrawRow`, `FetchChar` and `SetTilePtr` have

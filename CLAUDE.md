@@ -60,7 +60,8 @@ emulator` comments and a half-finished derivation in the middle of it. It surviv
 months looking like working code.
 
 **Verify against the buffer, not the screenshot.** Screenshots have repeatedly said "fine" when it
-was not. Diff the play buffer against `RedrawAll` at the same position (SPACE) byte for byte, over
+was not. Diff the play buffer against `RedrawAll` at the same position (**R** — it was SPACE
+until 2026-08-26, when the second transfer button took that key) byte for byte, over
 **odd and even** `mapHX`, **non-zero `line`** and **diagonals** — every scrolling bug so far has
 hidden in one of those. Let the view settle ~1,500,000 cycles first, and poke **all three** draw
 call sites to NOPs — the `JSR SprDrawAll` **and both `JSR SprDrawTr`s** near the top of the main
@@ -321,7 +322,7 @@ Both worked around locally; extending the shared set is the better fix and moves
 - `docs/graphics.md` — where the C64's graphics data lives, what format it is in, and which tool
   reads it. Each section says what has actually been ported and what has not
 - `BUGS.md` — open defects, with the evidence and what has been ruled out. It used to warn that the
-  SPACE debug redraw was wrong on the split row when `line != 0`; the split row no longer exists,
+  forced debug redraw was wrong on the split row when `line != 0`; the split row no longer exists,
   so `RedrawAll` is a valid oracle at any scroll position — but read the entry's own caveat
 - `ANNOTATION.md` — analysis of the C64 original: memory map, subroutines, hardware, data tables
 - `C:\Users\khcon\OneDrive\BEEB\Projects\llm-beeb-wiki` — BBC hardware knowledge base; consult for

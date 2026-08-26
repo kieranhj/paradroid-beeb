@@ -931,3 +931,58 @@ its clamped colour and the comparison would otherwise skip the rebuild.
 | The rotation | characters 76–79 move one step every second pass, and each takes the previous one's sixteen bytes exactly |
 | The repaint | a pad poked into the tile map painted, animated, and matched `RedrawAll` cell for cell on the eight animated cells |
 | The lamp | `&00`/`&40`/`&80` in `alertLvl` rebuilt character `&16` at logicals 1, 2 and 3, and repainted both cells of a sign poked into view |
+
+## A second transfer button — 2026-08-26
+
+**[DECISION 12] SPACE enters transfer mode directly, alongside holding fire.** KC's request, and
+it is an addition the C64 has no equivalent of at all.
+
+**Why the original needs a settle state and we do not.** `DoMoveMode` (`$31B9`) has one button to
+divide three ways, so it disambiguates by direction and by time: fire **with** a direction draws
+the weapon, fire with **none** goes to the settle state and eight passes later to Transfer. On a
+joystick that reads as intent. On a keyboard it is a chore — you must come to a stop, hold L, and
+wait a third of a second before touching a droid means anything, and the droid you were chasing
+has usually moved.
+
+A dedicated button has nothing to disambiguate, so the settle is **skipped rather than
+reproduced**: SPACE puts `moveMode` at Transfer on the very next pass and holds it there while the
+key is down. The fire route is untouched and still works exactly as it did — this is a second door
+into the same room, not a change to the first.
+
+**It forces the state and the button together, and both halves are needed.** `mm_transfer` holds
+`moveMode` at 0 only while `fireDown` is set and drops to Mobile the moment it is not, so setting
+the mode alone would last exactly one pass. Setting `fireDown` is safe: `DoMoveMode` is its only
+reader (`combat.asm` 333/339/349), and with the mode already 0 the arm it lands in never calls
+`DoFire` — so holding SPACE cannot shoot, which was checked rather than assumed.
+
+**Where it sits is forced.** Below the L block, because L writes `fireDown` from scratch every pass
+and anything adding to it must come after; above `DoMoveMode`, because that is what consumes it;
+and inside the `overPhase` guard with the rest of the fire machinery, because a corpse does not
+transfer either. The movement is untouched — `ReadKeys`/`CalcSpeed`/`ApplyMove` have already run by
+that point in the pass, so ignoring the direction costs the player nothing: he keeps walking and
+simply enters transfer mode while doing it.
+
+**The debug redraw moved to R.** SPACE was the forced-`RedrawAll` key, which is the buffer-diff
+oracle every scrolling investigation in `docs/layer-3-scroll.md` and CLAUDE.md's verification
+recipe is written around, so it could not simply be dropped. R has been free since `DEBUG_RESTART`
+was removed on 2026-08-21. CLAUDE.md, `PLAN.md` and the two live procedure notes in
+`docs/layer-3-scroll.md` say R now; the historical session records that mention SPACE have been
+left as they were, because they describe what was done at the time.
+
+**Verified in jsbeeb, 2026-08-26.**
+
+| | |
+|---|---|
+| SPACE from Mobile | `moveMode` &80 → 0 in one pass, `fireDown` 1, panel reads "Transfer" |
+| SPACE released | → &80, `fireDown` 0 |
+| SPACE **while walking** (X held) | → 0, and `sprActive[7]` stays 0 — transfer mode entered mid-stride, no bullet |
+| The fire route, unchanged | L with no direction: &80 → 2, `mmDelay` counting 8 → 6 over three passes → 0; release → &80 |
+| R | breaks on `RedrawAll` |
+| SPACE | ten passes, `RedrawAll` never called |
+
+*A note for the next person reading `moveMode` in the emulator:* it freezes wherever it stood
+whenever a modal screen owns the machine — the console, transfer game, lift view, an information
+screen or the game over all end the pass **above** the fire block, so `DoMoveMode` does not run and
+`moveMode`/`fireDown` keep their last values. That looks exactly like a stuck key. Check
+`infoActive`, `conActive`, `xferActive` and `liftMode` before believing it; an unnoticed opening
+001 screen cost half an hour here.

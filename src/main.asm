@@ -962,7 +962,13 @@ KEY_K      = &B9                \ -71
 KEY_M      = &9A                \ -102
 KEY_UP     = &C6                \ -58, volume up
 KEY_DOWN   = &D6                \ -42, volume down
-KEY_SPACE  = &9D                \ -99
+KEY_SPACE  = &9D                \ -99, the second transfer button
+KEY_R      = &CC                \ -52, DEBUG: the forced redraw. IT WAS
+                                \ SPACE until 2026-08-26, when the transfer
+                                \ button took that; every diff recipe in
+                                \ CLAUDE.md and docs/layer-3-scroll.md that
+                                \ says SPACE means this now. R has been free
+                                \ since DEBUG_RESTART was removed
 KEY_L      = &A9                \ -87, the fire button
 KEY_Q      = &EF                \ -17, the mute toggle
 KEY_P      = &C8                \ -56, pause and unpause
@@ -1435,6 +1441,48 @@ ENDIF
 
   LDA overPhase
   BNE ml_nofire
+
+\ ============================================================
+\ SPACE — the second way into transfer mode
+\ ============================================================
+\ THE C64 HAS ONE BUTTON and DoMoveMode ($31B9) has to divide it three
+\ ways, which is what the settle state is for: press fire WITH a
+\ direction and you draw the weapon, press it with NONE and eight
+\ passes later you are in transfer mode. That works on a joystick and
+\ it is a nuisance on a keyboard — you must stop dead, hold L, and wait
+\ a third of a second before touching a droid means anything.
+\
+\ So a second button, KC 2026-08-26: SPACE goes STRAIGHT to transfer
+\ mode and holds it, direction or no direction. The settle delay exists
+\ only to disambiguate a single button and a dedicated one has nothing
+\ to disambiguate, so it is skipped rather than reproduced — see
+\ docs/layer-7-combat.md [DECISION 12].
+\
+\ IT FORCES THE STATE AND THE BUTTON TOGETHER, and both halves are
+\ needed: DoMoveMode's mm_transfer arm holds moveMode at 0 only while
+\ fireDown is set and drops to Mobile the moment it is not, so setting
+\ the mode alone would last exactly one pass. Setting fireDown is safe
+\ — DoMoveMode is its only reader, and with the mode already 0 the arm
+\ it lands in never calls DoFire, so holding SPACE cannot shoot.
+\
+\ ABOVE DoMoveMode and BELOW the L block, which is the only place it
+\ can go: L writes fireDown from scratch every pass, so anything that
+\ wants to add to it must come after, and DoMoveMode must see the
+\ result. INSIDE the overPhase guard with the rest of the fire
+\ machinery — a corpse does not transfer either.
+\
+\ The movement is untouched. ReadKeys/CalcSpeed/ApplyMove have already
+\ run by here, so ignoring the direction costs the player nothing this
+\ pass; he keeps walking and simply enters transfer mode while doing it.
+  LDX #KEY_SPACE
+  JSR keydown
+  BNE ml_noxfb
+  LDA #0                        \ MM_TRANSFER, spelled out: combat.asm's
+  STA moveMode                  \ constants are assembled after this point
+  LDA #1                        \ and beebasm resolves them in file order
+  STA fireDown
+.ml_noxfb
+
   JSR DoMoveMode                \ and DoFire, when it decides to
   JSR MovePlyFire
 .ml_nofire
@@ -1522,9 +1570,9 @@ IF DEBUG_DRAW
   JSR DbgDeckBg                 \ back to the deck's real background
 ENDIF
 
-  LDX #KEY_SPACE                \ DEBUG: force a full redraw, to compare
+  LDX #KEY_R                    \ DEBUG: force a full redraw, to compare
   JSR keydown                   \ the incremental edge draws against it
-  BNE ml_notSpc
+  BNE ml_notSpc                 \ (SPACE until 2026-08-26 — see KEY_R)
   JSR RedrawAll
 .ml_notSpc
 
