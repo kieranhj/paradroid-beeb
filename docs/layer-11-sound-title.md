@@ -227,14 +227,22 @@ frame lock is a floor.
 
 **[DECISION 7] — three departures, all recorded in `xfer.asm`.**
 
-1. **The four wash characters are ours, and not by choice.** `$379F` picks `(rnd AND 3) + $7A` out
-   of the deck charset, and **`$7A`-`$7D` are not in the ported set**: `export_bbc.py` converts only
-   the characters some tile references, and those four are used by `EndGame` and nothing else, so
-   `CHAR_PTR_LO/HI` clamp all four to entry 0 and the first build of the wash came out blank. Four
-   16-byte patterns in bank 7 stand in — solid, half, quarter and sparse **black**, because `$37A6`
-   writes colour `$F0`, low nibble 0, so the C64's wash is a dissolve into darkness rather than
-   white noise, and logical 1 is black under the port's fixed slot roles. **TODO: export the real
-   four.**
+1. **The four wash characters, and the black and white — SETTLED 2026-08-26.** `$379F` picks
+   `(rnd AND 3) + $7A` out of the deck charset, and **`$7A`-`$7D` are not in the ported set**:
+   `export_bbc.py` converts only the characters some tile references, and those four are used by
+   `EndGame` and nothing else, so `CHAR_PTR_LO/HI` clamp all four to entry 0 and the first build of
+   the wash came out blank. Four invented 16-byte densities stood in until KC asked for the real
+   thing. **They are now the C64's own four**, converted in place in `goWashPat` — not through the
+   shared charset, which cannot grow (`&0400-&0C90` is exactly `137 * 16` with `lowbss` above it),
+   but as finished MODE 1 cells in the same 64 bytes the densities cost. `CHARCOLOR` is `$00` for
+   all four: bit 3 clear, so they are **hires** C64 characters, 8 px wide, and a MODE 1 cell is 8 px
+   wide too — `left = row >> 4`, `right = row AND $0F`, and nothing is chosen.
+   **And the colours are the C64's.** `$378B` writes `Irq1bgColor = $F1` (white, `$D021` via
+   `$6F59`) and `$37A6` writes colour RAM `$F0` (black) for every cell: the wash is **monochrome**
+   and the deck's scheme is gone. `GoWashStart` writes the eight `palPlay` entries for logicals 0
+   and 1 — white and black — and leaves 2 and 3 alone, because `goWashPat` never draws in them.
+   Nothing restores it: the 999 page follows and `SetTextPal` rebuilds `palPlay` from scratch.
+   This closes the "open and cosmetic" note below.
 2. **No charset animation.** `AnimAllInsideFont` (`$38C4`) is the same self-modifying machinery as
    `AnimateIntoFont`, which Layer 10 already declined; this follows it. The wash boils by being
    repainted one row a pass instead, so the screen churns every sixteen.
@@ -256,10 +264,10 @@ the deck redrawn and `overPhase` back to 0.
 `DEBUG_INVULN` landed with it: energy pinned at full at the top of `CbCheckDeath`, in `DEBUG_ANY`
 and in `!BOOT`'s stamp. **[DECISION 5]**
 
-> **Open and cosmetic:** the wash draws in logical 1 and renders **blue** on the deck tested, so it
-> reads as blue static rather than the C64's dissolve into darkness (`$37A6` writes colour `$F0`,
-> low nibble 0, black). Layer 14's, with the caveat that it may mean logical 1 is not black on
-> every deck.
+> **CLOSED 2026-08-26.** The wash used to draw in logical 1 on the deck's own palette and came out
+> **blue** on the deck tested. It now sets its own black-on-white, which is the C64's, and the deck
+> palette cannot reach it — see [DECISION 7].1 above. Verified in jsbeeb: `overPhase` 2,
+> `palPlay+0..7` = `00 10 27 37 40 50 67 77`, and the play area is black-and-white static.
 
 ### 11c — The title screen — DONE 2026-08-18; the loop back DONE 2026-08-20
 

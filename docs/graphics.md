@@ -373,9 +373,12 @@ and "BRAYBROOK" in the text font; and the Hewson Consultants branding.
 > thirty-six characters — `$52` `$53` `$DF` `$E0`-`$E7` `$FF` — are not in `chardata.asm` at all,
 > because `export_bbc.py` converts only the characters some TILE DEFINITION references and those
 > twelve are used by the title and nothing else. The title therefore carries its own 36 glyphs
-> (576 B) beside its RLE map (564 B). Extending the shared charset instead would be more faithful
-> and would also give `EndGame`'s wash its four missing characters back, but it moves `NUM_CHARS`
-> and the code→index remap every deck depends on. See `layer-11-sound-title.md` [DECISION 8].
+> (576 B) beside its RLE map (564 B). Extending the shared charset instead would be more faithful,
+> but it moves `NUM_CHARS` and the code→index remap every deck depends on — and there is nowhere to
+> move it to: `&0400-&0C90` is exactly `137 * 16` bytes with `lowbss` immediately above. See
+> `layer-11-sound-title.md` [DECISION 8]. **`EndGame`'s wash took the other route on 2026-08-26**
+> and carries its own four `$7A`-`$7D` as converted cells in `goWashPat`, which is what the title
+> already does with its thirty-six.
 >
 > Colour is logical 3 on logical 0 — white on black under MODE 1's default palette, against the
 > C64's two-tone outlines and purple panel text. Layer 14's.

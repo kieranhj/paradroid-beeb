@@ -2178,6 +2178,11 @@ GO_TICK_END = &F0               \ $14CA
 \    portrait the C64 draws behind those two strings.
 \ 3. The whole 640-cell paint runs in one pass at entry, as
 \    XfRepaintAll's does at the transfer's; the frame lock is a floor.
+\ 4. THE FOUR CHARACTERS AND THE BLACK-AND-WHITE ARE THE C64'S, as of
+\    2026-08-26. They used to be four invented densities of black on
+\    the deck's own floor, because $7A-$7D are not in the ported
+\    charset; they now ride as converted cells in goWashPat, and
+\    GoWashStart writes the white background $378B sets. KC asked.
 \
 \ THE VIEW IS FLATTENED FIRST, exactly as XferEnter4 does before the
 \ board: scrollS and line to zero and the CRTC re-parked, so the buffer
@@ -2206,6 +2211,21 @@ GO_HOLD      = 88               \ $3802: xfer_plySpriteX counts 88 down
   STA bandDo
   STA colCount
   JSR SetCRTCStart
+
+\ ---- black and white, for the wash only --------------------
+\ EndGame drops the deck's colour scheme entirely: $378B sets the
+\ background WHITE and every cell it paints takes colour RAM $F0,
+\ BLACK. Only logicals 0 and 1 are touched, because only those two
+\ appear in goWashPat, and the rupture's next fire 1 makes it live.
+\ Nothing restores this: the 999 page follows and calls SetTextPal,
+\ which rebuilds palPlay from scratch.
+  LDX #7
+.gw_pal
+  LDA goWashPal,X
+  STA palPlay,X
+  DEX
+  BPL gw_pal
+
 
 \ AND THE SIXTEENTH ROW, which this screen has always painted and never
 \ shown: GoWashRow runs X = 0-15 because the C64's wash fills all sixteen
@@ -2280,22 +2300,7 @@ GO_HOLD      = 88               \ $3802: xfer_plySpriteX counts 88 down
   RTS
 
 \ X = row 0-15. Forty cells of static, straight into the flat buffer.
-\
-\ THE FOUR CHARACTERS ARE OURS, NOT THE C64'S — and not by choice.
-\ $379F picks `(rnd AND 3) + $7A` out of the deck charset, and $7A-$7D
-\ ARE NOT IN THE PORTED SET: export_bbc.py converts only the characters
-\ some tile references, and those four are used by EndGame and nothing
-\ else, so CHAR_PTR_LO/HI clamp all four to entry 0 and the wash came out
-\ blank. Exporting them is a tools change and a data regeneration, so it
-\ is a TODO rather than something done here.
-\
-\ What replaces them keeps the part that matters. $37A6 writes colour
-\ $F0 — low nibble 0, BLACK — so the C64's wash is four black shapes
-\ dissolving the deck into darkness, not white noise. Logical 1 is black
-\ under the port's fixed slot roles, so these are four densities of it:
-\ solid, half, quarter and sparse. A cell picks one at random and the
-\ boil re-picks a row a pass, so it shimmers the way the animated font
-\ does. [DECISION 7]
+\ The characters are the C64's own $7A-$7D; see goWashPat below.
 .GoWashRow
   LDA xfRowAdrLo,X : STA xgd
   LDA xfRowAdrHi,X : STA xgd+1
@@ -2323,18 +2328,39 @@ GO_HOLD      = 88               \ $3802: xfer_plySpriteX counts 88 down
   BNE gwr_cell
   RTS
 
-\ Four 16-byte MODE 1 cells: left half's eight scanlines then the right
-\ half's, as CLAUDE.md's layout note has it. &0F is four pixels of
-\ logical 1 and &00 is four of the deck's background.
+\ THE C64'S OWN FOUR CHARACTERS, $7A-$7D, converted here.
+\ They are not in the shared charset and cannot be: export_bbc.py ships
+\ only the 137 codes a TILE references, and &0400-&0C90 holds exactly
+\ 137 * 16 bytes with lowbss immediately above it, so growing NUM_CHARS
+\ has nowhere to grow into. These four are used by EndGame and nothing
+\ else, so they ride here as the finished MODE 1 cells instead - the
+\ same 64 bytes the four invented densities used to cost.
+\ $7A-$7D have CHARCOLOR $00: bit 3 clear, so they are HIRES C64
+\ characters, 8 pixels wide, and a MODE 1 cell is 8 pixels wide too -
+\ the conversion is 1:1 with no choices in it. A character is 16 bytes,
+\ the left half's eight scanlines then the right half's, and logical 1
+\ is one bit per pixel in the LOW nibble, so a C64 row byte becomes
+\   left  = row >> 4      right = row AND &0F
+\ and that is the whole of it.
+\ Set pixels are logical 1, clear pixels logical 0, and GoWashStart
+\ makes those BLACK and WHITE - see its palette note.
 .goWashPat
-  EQUB &0F,&0F,&0F,&0F,&0F,&0F,&0F,&0F   \ solid
-  EQUB &0F,&0F,&0F,&0F,&0F,&0F,&0F,&0F
-  EQUB &0F,&00,&0F,&00,&0F,&00,&0F,&00   \ half
-  EQUB &00,&0F,&00,&0F,&00,&0F,&00,&0F
-  EQUB &0F,&00,&00,&00,&0F,&00,&00,&00   \ quarter
-  EQUB &00,&00,&0F,&00,&00,&00,&0F,&00
-  EQUB &00,&00,&00,&0F,&00,&00,&00,&00   \ sparse
-  EQUB &00,&0F,&00,&00,&00,&00,&00,&00
+  EQUB &00,&00,&07,&0F,&0F,&0C,&00,&00   \ $7A
+  EQUB &00,&08,&0D,&0F,&0F,&0F,&04,&00
+  EQUB &00,&00,&08,&0F,&0F,&03,&00,&00   \ $7B
+  EQUB &00,&03,&0F,&0F,&0F,&01,&00,&00
+  EQUB &03,&0F,&0F,&0F,&0F,&0F,&06,&00   \ $7C
+  EQUB &08,&0E,&0F,&0F,&0F,&09,&00,&00
+  EQUB &00,&02,&07,&0F,&0F,&09,&00,&00   \ $7D
+  EQUB &00,&06,&0F,&0F,&0F,&0C,&00,&00
+
+\ Logical 0 and 1 only - the wash draws nothing in 2 or 3, so the other
+\ eight ULA entries are left as the deck built them. EndGame's $378B
+\ writes Irq1bgColor = $F1, WHITE, and $37A6 writes colour RAM $F0,
+\ BLACK, for every cell: the static is monochrome and the deck's
+\ colours are gone. (n * 16) OR (phys EOR 7), rupture.asm's PALENT.
+.goWashPal
+  EQUB &00,&10,&27,&37,&40,&50,&67,&77
 
 .goTxtOver                      \ "game over"
 \ LOWERCASE m IS SIXTEEN PIXELS and XfMessage draws one cell a byte
