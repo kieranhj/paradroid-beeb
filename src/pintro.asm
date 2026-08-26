@@ -64,10 +64,11 @@ fxWay      = &7D                \ current colourway table offset
 fxTmp      = &7E
 
 \ ---- tuning ----------------------------------------------------
-\ Trigger probability per 32-frame check: &48/256 = 28%, roughly one
-\ flash every 2.3 s — the C64's gate is RAM-content-dependent and
-\ lands in the same range.
-TRIG_PROB   = &48
+\ Trigger probability per 32-frame check: &80/256 = 50%, roughly one
+\ flash every 1.3 s. (First build used &48 = 28%, one per ~2.3 s —
+\ the C64's RAM-content-dependent gate lands near that — but KC asked
+\ for more frequent, 2026-08-26.)
+TRIG_PROB   = &80
 
 \ The two per-frame busy-waits, CALIBRATED IN JSBEEB, not computed.
 \ One outer loop pass is 1287 cycles; a display line is 128.
@@ -94,7 +95,7 @@ TRIG_PROB   = &48
 \ Each wait is OUTER passes of 1287 cycles plus FINE passes of 5 —
 \ the fine term steers by single scanlines (26 ≈ one line).
 SPLITA_OUTER = 4
-SPLITA_FINE  = 140
+SPLITA_FINE  = 88
 SPLITB_OUTER = 12
 SPLITB_FINE  = 170
 

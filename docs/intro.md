@@ -142,8 +142,8 @@ build's GUARDs, banks or zero page. Assembled by a second, tiny beebasm pass in 
   busy-waits after `OSBYTE 19` (`SPLITA_*`/`SPLITB_*` in `pintro.asm`, screenshot-calibrated
   in jsbeeb, with OS interrupt jitter absorbed by the blank rows); under the MOD player they
   become two hook calls on the player's cycle-counted schedule (§6). **Accepted artifact:**
-  at the 3 peak frames of a flash, up to ~3 scanlines bordering each write point show the
-  wrong palette's background — a brief red sliver above the picture and below the floor. The
+  at the 3 peak frames of a flash, a scanline or so bordering each write point shows the
+  wrong palette's background (retuned to a hairline at KC's request, same day). The
   C64 is immune (its blank areas are colour-RAM-black PIXELS, not background); the MOD
   player's exact timing will shrink it to nothing.
 - **Exit:** any keypress, detected by `OSBYTE &7A` keyboard SCAN — **NOT by INKEY/OSRDCH,
