@@ -392,9 +392,10 @@ The port has no `sndState $11`: 11f [DECISION 11].)*
   deviations, deliberately, because a working master volume may make some of them unnecessary —
   `FX_LEVEL`'s fx16 entry above is the first thing to re-listen to now that it exists.
 
-- **Pause.** The port has no pause feature; `DoPause` (`$3B7C`) writes `sndState` 0/`$12` around
-  itself and the driver already honours both. Still deferred (11f [DECISION 9]), and no longer
-  bundled with the volume keys, which are wanted sooner.
+- ~~**Pause.**~~ **BUILT 2026-08-26 — §10 below.** `DoPause` (`$3B7C`) writes `sndState` 0/`$12`
+  around itself and the driver already honoured both, which is most of why it was cheap. It was
+  deferred through 11f and unbundled from the volume keys, which were wanted sooner; it followed
+  them by an hour in the end.
 - **Sub-122 Hz effects** — stage 1's review list: fx04 disruptor (100% of its ticks below the
   floor), fx26 (100%), fx23 (73%), fx16 (48%), fx17 (41%), fx06 (40%). **All but fx06 are now
   treated; the list the exporter prints is down to fx06 and fx17** (fx17 is muted rather than
@@ -633,3 +634,91 @@ unmuting brings them back (CH0 6, CH3 9 under the chatter). The clamp itself was
 act: at volume 2 with `snLevel[0]` = 85 (nibble 5) the unclamped value would be 23, and
 `snChAtt` reads 15. `[` and `]` step the deck one press at a time and cursor UP no longer
 touches it.
+
+## 10. Pause — built 2026-08-26
+
+KC asked for "pause/unpause button on P" the hour after the volume keys landed, and it shares
+their call site and their key-poll machinery, which is why it is written up here rather than in
+a layer doc of its own.
+
+**What the C64 does.** `DoPause` (`$3B7C`), called from `GameLoop` at `$13E6` — **above** the
+`consoleState` test at `$1427`, so the console, the transfer game and the lift are all pausable.
+RUN/STOP enters. Inside, it draws `Pause_txt` (`$0BCF`) at the mode word's own `prntX`, writes
+`sndState` 0, waits for the release, and spins. The manual (which the port's briefing reproduces
+verbatim, `src/data/briefing.txt`) states the exits: *"fire - restarts, run-stop - restarts,
+clr-home - quits game"*. On the way out it repaints, calls `InitColors`, restores `frameCount`
+from `$55` and writes `sndState` `$12`.
+
+**[DECISION 17] A blocking loop, not a flag the pass tests.** This is the one structural choice
+and it went the C64's way after the alternative was costed. A `paused` flag checked in the main
+loop looks tempting — the pass would keep drawing, so the picture would stay alive for free —
+but the pass has five modal arms (console, transfer, lift view, information screen, game over)
+that each end it at their own point, so the flag would need honouring in six places and the
+console would still be answering its own keys while "paused". A loop freezes all six by standing
+in front of them. That is why the original is written this way, and porting the decision means
+porting the shape.
+
+**The port's differences, all deliberate:**
+
+| | C64 | Port |
+|---|---|---|
+| Enter | RUN/STOP | **P** |
+| Leave | RUN/STOP or fire | **P only** |
+| Quit from pause | CLR-HOME | not ported — ESCAPE is always available and ends a game properly |
+| Message | `DrawString` of `Pause_txt` | the panel's own mode field |
+| On exit | repaint, `InitColors` | repaint; no `InitColors` — nothing recolours it, the port has no `DoBlkWhte` |
+| `frameCount` | saved and restored | nothing to do; see below |
+
+Resuming on **fire** was dropped on purpose: it would fire the weapon on the way out, which is
+exactly what the C64's wait-for-release dance at `$3BEB` exists to prevent, and one key meaning
+one thing beats two that need choreography.
+
+**The message costs almost nothing, because the panel was already built for it.** `PanelUpdate`
+picks a mode word by index and repaints only when a shadow byte says the index moved — so
+"Pause" is a fifth entry in `pnTxtTab`, chosen ahead of all four others when `paused` is set,
+and *both* the paint and the repaint fall out of the existing compare. `paused` is main RAM for
+`conActive`'s reason exactly: bank 6's `PanelUpdate` reads it and cannot see bank 4's. The five
+trailing spaces in `"Pause     "` are the C64's own count — `Pause_txt` is five glyphs then five
+`$30`s, and a capital is two cells there as it is here.
+
+**`frameCount` needs no save/restore here.** The C64 increments it inside its pause loop and so
+must put it back; `gameTick` counts passes and the pause happens inside one, so it does not move
+at all. The C64's pair is a no-op in the port rather than an omission — worth stating, because
+"the original does two things we don't" usually means something was missed.
+
+**[DECISION 18] The picture freezes solid, and the C64's does not.** Its pause loop goes on
+calling `AnimateDroids` (`$3CFB`) and the font animation, so the player's rotor keeps spinning
+and the animated deck tiles keep cycling behind a frozen game. Reproducing that means running
+the erase/animate/draw triple and the tile paint inside the pause loop, which means reproducing
+the sprite pool's window and tranche handling outside the main loop. That is real work and not
+to be done blind, so it is **recorded as wanted, not built**.
+
+**The volume and the mute stay live while paused** — a small liberty, and an obvious one: pause
+is when you reach for the volume. `VolKeysBrf` is reused unchanged, its `fieldCount` gate suiting
+the pause loop's one-field cadence exactly.
+
+**The bug the first build had, and the invariant behind it.** `WaitNextPass` waits for
+`passF0 + FRAME_LOCK`, a target stamped at the top of the pass — and `DoPause` is called from
+`ml_passend`, just above it. `WaitUntilField`'s distance is signed and good for 127 fields
+either way; its own header said *"which is 2.5 seconds, and nothing here waits that long"*, which
+was true until this routine existed. Hold the game longer and `fieldCount` laps the target into
+the negative half, so the wait sits out up to 128 more fields. **Measured: after a seven-second
+pause the game came back and then did not move for two seconds.** The fix is two instructions —
+re-date `passF0` from `fieldCount` on the way out — and the invariant is now stated at
+`WaitUntilField` itself, where the next person to block the pass will read it.
+
+**No pause during a death.** `overPhase` gates the whole routine. The C64 never reaches `DoPause`
+during its game over either (`EndGame` runs its own loop), and without the guard a pause taken
+under the wash would write `sndState` `$12` on the way out and restart the sound mid-death.
+
+**Cost.** 93 B of the code image, 22 B of bank 6, two main-RAM state bytes. One OSBYTE a pass
+while unpaused.
+
+**Verified in jsbeeb, 2026-08-26.** "Pause" appears in the mode field in red where "Mobile" was;
+`gameTick` frozen across a seven-second hold; `sndState` 0 and all four channels at attenuation
+15 while held; the volume keys still stepping (15 → 12) with the game frozen; P again restores
+the word, `sndState` 2 and the sound, and the loop resumes at exactly 25.0 Hz within 0.2 s (50
+passes in the next 4,000,000 cycles). P held for two seconds during a death does not pause, and
+the death, the game over and the high-score entry run through untouched. **Not exercised: pause
+with the console, the transfer game or the lift view up** — the call site is common to all of
+them by construction, but it has not been driven there.

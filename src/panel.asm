@@ -523,6 +523,16 @@ PN_SCORE_BYTES = 4              \ eight BCD digits
 \ The dispatch reduces to an INDEX first and compares second, which is
 \ deliberate: the arm this replaced tested moveMode after a CMP and after
 \ an LDY, and both clobber N. Both bugs read as "the mode never changes".
+\ PAUSE IS THE FIFTH and takes the field ahead of all four, which is
+\ how the C64 says it too: DoPause draws Pause_txt ($0BCF) at the mode
+\ word's own prntX and its exit redraws whatever was there. Ours needs
+\ no redraw call at all — the shadow byte below sees the index change
+\ both ways and repaints itself. docs/layer-11e-sound.md §10.
+  LDA paused
+  BEQ pu_m_nopause
+  LDA #4
+  BNE pu_m_have                 \ always
+.pu_m_nopause
   LDA conActive
   BEQ pu_m_play
   LDA #3                        \ Console
@@ -615,11 +625,16 @@ PN_SCORE_BYTES = 4              \ eight BCD digits
   EQUW pnTxtWeapon              \ 1
   EQUW pnTxtXfer                \ 2
   EQUW pnTxtConsole             \ 3
+  EQUW pnTxtPause               \ 4
 
 .pnTxtMobile  EQUS "Mobile    " : EQUB 0    \ 7 cells + 4 pad = 11
 .pnTxtWeapon  EQUS "Weapon    " : EQUB 0    \ 7 cells + 4 pad = 11
 .pnTxtXfer    EQUS "Transfer  " : EQUB 0    \ 9 cells + 2 pad = 11
 .pnTxtConsole EQUS "Console   " : EQUB 0    \ 8 cells + 3 pad = 11
+\ FIVE TRAILING SPACES, and they are the C64's own count: Pause_txt is
+\ five glyphs then five $30s, and a capital is two cells there as it is
+\ here — so "Pause" is 6 cells and the pad is 5. Verbatim.
+.pnTxtPause   EQUS "Pause     " : EQUB 0    \ 6 cells + 5 pad = 11
 
 .pnShMode   EQUB &FF
 .pnShScore  EQUB &FF

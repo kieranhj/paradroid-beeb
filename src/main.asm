@@ -965,6 +965,7 @@ KEY_DOWN   = &D6                \ -42, volume down
 KEY_SPACE  = &9D                \ -99
 KEY_L      = &A9                \ -87, the fire button
 KEY_Q      = &EF                \ -17, the mute toggle
+KEY_P      = &C8                \ -56, pause and unpause
 KEY_W      = &DE                \ -34, DEBUG_XFERWIN only
 KEY_C      = &AD                \ -83, DEBUG_KILL only
 KEY_ESCAPE = &8F                \ -113, the self-destruct
@@ -1726,6 +1727,12 @@ ENDIF                           \ other close: no band may outlive a pass
 \ OSBYTEs must not show up as a band. It writes no buffer and no bank,
 \ so it needs no window and it does not care what is paged.
   JSR VolKeysPass
+\ P, beside the volume keys and for the same reason: this is the point
+\ every arm of the pass converges on, and the C64 calls DoPause from
+\ GameLoop ($13E6) ABOVE its consoleState test, so the console, the
+\ transfer game and the lift are all pausable there too. Ungated, unlike
+\ the volume: a pause key that answers every other pass feels stuck.
+  JSR DoPause
   \ The pass is not allowed to be shorter than FRAME_LOCK fields. It IS
   \ allowed to be longer: an overrun carries on from wherever it landed
   \ instead of being rounded up to the next boundary, so a heavy pass
@@ -2043,6 +2050,11 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
                                 \ same one. KC 2026-08-25: cycle them.
                                 \ Layer-15 DECISION 5, revised
 .conActive EQUB 0               \ main RAM: the loop and the bridge both read it
+.paused    EQUB 0               \ DoPause: set while the game is held. MAIN RAM
+                                \ for conActive's reason exactly — bank 6's
+                                \ PanelUpdate reads it to put "Pause" in the
+                                \ mode field, and bank 6 cannot see bank 4's
+.pausePrev EQUB 0               \ P's press edge, so a held key pauses once
 .conDbReq  EQUB 0               \ 0 idle / 1 fire on entry 1 / 2 page up.
                                 \ MAIN RAM because bank 4 sets it, bank 7
                                 \ clears it and ConsoleTick reads it with
@@ -2420,6 +2432,109 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
   RTS
 
 \ ============================================================
+\ DoPause — P holds the game, P lets it go
+\ ============================================================
+\ The port of DoPause ($3B7C), and its SHAPE is the C64's: a blocking
+\ loop, not a flag the pass tests. That is worth saying because a flag
+\ was the obvious alternative and it is the wrong one — the pass has
+\ five modal arms (console, transfer, lift view, information screen,
+\ game over) that each end the pass at their own point, so a flag would
+\ have to be honoured in six places and would still leave the console
+\ answering its keys while "paused". A loop freezes all six by standing
+\ in front of them, which is exactly why the original is written this
+\ way. KC 2026-08-26, and DECISION 17 in docs/layer-11e-sound.md §10.
+\
+\ WHAT THE C64 DOES AND WE DO NOT, and it is the one deviation of
+\ substance: its pause loop keeps calling AnimateDroids ($3CFB) and the
+\ font animation, so the player's rotor goes on spinning and the
+\ animated deck tiles go on cycling behind a frozen game. Ours freezes
+\ the picture solid. Reproducing it means running the erase / animate /
+\ draw triple and the tile paint inside this loop, which means
+\ reproducing the sprite pool's window and tranche handling outside the
+\ main loop — real work, and not to be done blind. Recorded as wanted,
+\ not built: DECISION 18.
+\
+\ THE KEY IS P BOTH WAYS (KC's request). The C64's manual says
+\ "run-stop - restarts, fire - restarts" and the port takes only the
+\ first of those: resuming on fire would fire the weapon on the way
+\ out, which is what the C64's own wait-for-release dance at $3BEB is
+\ there to prevent, and one key that means one thing is better than two
+\ that need a dance. clr-home's quit-the-game has no port either — the
+\ port has ESCAPE, which is always available and does it properly.
+\
+\ THE SOUND IS SILENCED AND RESTORED exactly as $3B8F/$3C0F do it:
+\ sndState 0 going in, $12 coming out, both of which the driver already
+\ honours. NOTHING SAVES gameTick, which $3B9F/$3C0B do have to do —
+\ their frameCount is incremented inside the pause loop and ours is
+\ not, so the C64's save/restore pair is a no-op here rather than an
+\ omission.
+.DoPause
+  LDA overPhase                 \ no pause over a death: the C64's game
+  BNE pau_x                      \ over runs its own loop and never calls
+                                \ DoPause either
+  LDX #KEY_P
+  JSR keydown
+  BNE pau_up
+  LDA pausePrev
+  BNE pau_x
+  INC pausePrev                 \ it is 0 — the BNE above tested it
+
+  LDA #1                        \ $3B8C: the message, through the panel's
+  STA paused                    \ own mode field rather than a DrawString
+  JSR PanelTick                 \ of our own
+  LDA #0                        \ $3B8F
+  STA sndState
+
+.pau_rel1                        \ $3B93: wait for the release, or the
+  LDX #KEY_P                    \ press that paused would unpause us on
+  JSR keydown                   \ the next time round
+  BEQ pau_rel1
+
+.pau_wait                        \ $3BA3: the held loop
+  LDA fieldCount                \ one field a round, so this idles on the
+.pau_w2                          \ IRQ instead of hammering OSBYTE —
+  CMP fieldCount                \ DelayScore's job at $3BB7
+  BEQ pau_w2
+  JSR VolKeysBrf                \ THE VOLUME AND THE MUTE STAY LIVE, which
+                                \ is a small liberty and an obvious one:
+                                \ pause is when you reach for the volume.
+                                \ Its fieldCount gate is right here too
+  LDX #KEY_P
+  JSR keydown
+  BNE pau_wait
+
+.pau_rel2                        \ $3BEB: and the release again, or the
+  LDX #KEY_P                    \ pass below reads the same press and
+  JSR keydown                   \ pauses straight back
+  BEQ pau_rel2
+
+  LDA #0                        \ $3C08's repaint: clearing the flag is
+  STA paused                    \ all it takes — PanelUpdate's shadow
+  JSR PanelTick                 \ byte sees the index move back
+  LDA #&12                      \ $3C0F
+  STA sndState
+
+\ AND THE PASS STARTS AGAIN FROM HERE. This is not bookkeeping, it is
+\ the fix for a hang the first build had: WaitNextPass is still to come
+\ below and it waits for passF0 + FRAME_LOCK, a target stamped at the
+\ top of the pass we froze in. WaitUntilField's distance is SIGNED and
+\ good for 127 fields either way — its own header says "2.5 seconds,
+\ and nothing here waits that long", which was true until this routine
+\ existed. Hold the game for longer and fieldCount laps the target into
+\ the negative half, so the wait sits out up to 128 more fields before
+\ letting go. Measured: the game came back but did not move for two
+\ seconds. Re-dating the pass costs two instructions and puts the
+\ invariant back.
+  LDA fieldCount
+  STA passF0
+  RTS
+.pau_up
+  LDA #0
+  STA pausePrev
+.pau_x
+  RTS
+
+\ ============================================================
 \ WaitField / WaitRest — the pass's fields, taken one at a time
 \
 \ Polling the System VIA IFR directly races the MOS: its own IRQ
@@ -2459,7 +2574,10 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
 \ work rather than sit out a field it has already spent.
 \ The subtract makes the comparison a SIGNED distance, so it is right
 \ across the counter's 8-bit wrap for anything within 127 fields of
-\ the target — which is 2.5 seconds, and nothing here waits that long.
+\ the target — which is 2.5 seconds. NOTHING MAY BLOCK THE PASS FOR
+\ LONGER without re-dating passF0 on the way out, or the target ends up
+\ in the negative half and this spins for up to 128 fields more.
+\ DoPause is the one thing that can, and it re-dates; see its tail.
 .WaitUntilField
   STA wufTarget
 .wuf_spin

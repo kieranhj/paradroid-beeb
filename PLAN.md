@@ -32,8 +32,8 @@ than won. Per-layer detail is in the layer table at the end and its docs.
 
 **Keys:** Z/X left/right, K/M up/down, L fire — and, through the original's own `moveMode`
 machine, the lift, console and transfer trigger. **ESCAPE self-destructs and ends the game.**
-**Cursor up/down are the master volume and Q mutes**, everywhere the game has a loop: play, the
-modal screens, the briefing and the title. `[` and `]` are `DEBUG_DECK`'s deck hop, C is
+**Cursor up/down are the master volume, Q mutes and P pauses**, everywhere the game has a loop:
+play, the modal screens, the briefing and the title (P in play and the modal screens). `[` and `]` are `DEBUG_DECK`'s deck hop, C is
 `DEBUG_KILL`'s clear-the-deck, W wins a transfer (`DEBUG_XFERWIN`), SPACE a forced redraw — all
 three flags ship ON.
 
@@ -111,7 +111,7 @@ home and the note is cross-referenced.
 **Niceties**
 
 - Redux bug fixes and feature additions — triaged 2026-08-26; the bug list is adopted as behaviour in `docs/decisions.md` and the six adoptions (droid counts on the console included) are a Features row above.
-- Pause.
+- ~~Pause~~ — **built 2026-08-26**, P both ways, [`docs/layer-11e-sound.md`](docs/layer-11e-sound.md) §10.
 - ~~Volume~~ — **built 2026-08-26**, [`docs/layer-11e-sound.md`](docs/layer-11e-sound.md) §9.
 - What's Cheese?
 - Redefine keys.
