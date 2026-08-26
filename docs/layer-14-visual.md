@@ -440,3 +440,57 @@ by reading the build's include order, not by the build.
    `deckClear` 0. This is the case that was broken;
 3. hop back to the cleared deck — blue again, `drCount` 1 and `deckClear` 1. The kills persisted on
    the ship roster, `DroidsInit` placed nothing, and the compaction fired the hook.
+
+### [DECISION 10] The lift tile on decks 0, 5 and 9 — the price of [DECISION 2], paid down
+
+**KC, 2026-08-26: "decks 0, 5 and 9 have no details in the lift tile — it's just empty."** Exactly
+the three decks whose logical 0 and logical 3 are both physical 7, which is [DECISION 2]'s
+deliberate collision. It was not a coincidence, and it was not the collision either.
+
+**The lift is TILE 3.** Not tiles 23-27, which `docs/graphics.md`'s tile table calls "lift shaft"
+elements — deck 0's map does not contain a single one of them. The lift is placed from
+`liftTileCol`/`liftTileRow` (`src/data/levels.asm`), and the tile at that position is tile 3 on
+deck 0 and on deck 1 alike. Half an hour went into the wrong tiles because the table's naming was
+taken at face value; the map is the authority, at `tilemap + row * MAP_COLS + col`.
+
+**Tile 3 has three colour groups, and on these decks two of them are white:**
+
+| cells | role | decks 0 / 9 | deck 5 | deck 1 (for contrast) |
+|---|---|---|---|---|
+| 6 | structure | dk grey → blue | dk grey → black | red → black |
+| 6 | highlight | white → **white** | white → **white** | white → white |
+| 4 | detail | grey → **white** | yellow → **white** | purple → black |
+
+10 of 16 cells land on the floor's own physical colour; on every other deck the count is **zero**.
+The 6 highlight cells are [DECISION 2] working as intended — solid white on a 50% floor, and KC
+confirms they read correctly. **The 4 detail cells are the defect**: C64 grey (decks 0/9) and C64
+yellow (deck 5) merge onto **logical 0, which IS the floor**, so those cells are not low-contrast,
+they are literally the floor colour.
+
+**Fix — three bytes of `deck_palettes.json`:**
+
+- decks 0, 9: C64 grey → logical 1 (black); the structure is already blue, so black separates from both
+- deck 5: C64 yellow → logical 2 (red); the structure is already black there
+
+**Blast radius measured before applying: 4 cells, all in tile 3, on those three decks only.**
+Nothing else in the 32-tile set uses those colours on those schemes, and the floor is C64 light
+grey (15), which is untouched. White is untouched too.
+
+**A rejected fix worth recording, because it looked obvious and was wrong twice over.** The first
+attempt re-pointed C64 **white** off logical 3 on those decks. It repainted **200 cells** — every
+piece of white linework on the deck, since white is the main linework colour there — and it fixed
+only 6 of the 10 dead cells, because the other 4 come through grey/yellow and never touched white
+at all. KC: *"the white highlights were correct before, now they are red on deck 5 and the lift
+details are still not visible."* Both halves of that are the lesson: **measure which colours the
+failing cells actually use before moving any of them**, and the count of cells a `colourMap` edit
+moves is not the count of cells it fixes.
+
+**[DECISION 2]'s premise stands but is narrower than it read.** "The sprites stay legible because
+they are solid white against a 50% white floor" is true of a solid sprite and of these highlights.
+It says nothing about a colour that merges onto logical 0 itself — that one is not dithered
+*against* the floor, it *is* the floor. `verify_bbc.py`'s "four distinct tones" check passes all
+three decks and always will; it tests the palette, not what the artwork does with it.
+
+**Still open:** deck 5 is scheme 6, not scheme 0, so [DECISION 2] — which is written about scheme
+0's light-grey floor — never mentions it, yet it carries the same collision. Either intended and
+undocumented, or it slipped in. Worth deciding.

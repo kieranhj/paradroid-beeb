@@ -259,6 +259,13 @@ listing (the empty sprite at `$4000`); the game sets them dynamically.
 
 Tiles 3–9, 21 and 22 appear in every deck and form the minimum required set.
 
+> **The walkable LIFT is tile 3, not tiles 23-27.** Those five are shaft decoration; deck 0's
+> map contains none of them. The lift is placed from `liftTileCol`/`liftTileRow`
+> (`src/data/levels.asm`) and the tile at that position is 3 — checked on decks 0 and 1.
+> This table's names cost half an hour in 2026-08-26's palette hunt; when you need to know
+> what is drawn somewhere, read the tile map at `tilemap + row * MAP_COLS + col`, not this
+> table. See `docs/layer-14-visual.md` [DECISION 10].
+
 > **Status.** Ported byte-identical — only the character graphics needed converting, exactly as
 > predicted. `tiledefs.asm`, 512 bytes.
 
