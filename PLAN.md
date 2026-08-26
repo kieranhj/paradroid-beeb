@@ -83,10 +83,20 @@ home and the note is cross-referenced.
 **Gameplay**
 
 - Sprite flicker (still).
-- Player 001 should flash on teleport-in at the start.
-- Some of the decks have the lift tile missing?
+- ~~Player 001 should flash on teleport-in at the start.~~ **DONE 2026-08-26.** It is not an entry
+  effect: `_entership` holds him on SEVEN energy for 32 iterations, and the flash is the ordinary
+  low-energy warning the port already had. `EntryHold` supplies the window; the same fix closed a
+  live bug where the next-ship route set the 7 and nothing ever set it back.
+  [`docs/layer-9-hud.md`](docs/layer-9-hud.md) §7
+- ~~Some of the decks have the lift tile missing?~~ **DONE 2026-08-26.** Decks 0, 5 and 9, and the
+  tile was there — 4 of its 16 cells were drawn in a C64 colour that merged onto logical 0, which
+  IS the floor on those three decks. The lift is **tile 3**, not tiles 23-27 as `graphics.md`'s
+  table implies. [`docs/layer-14-visual.md`](docs/layer-14-visual.md) [DECISION 10]
 - Lift selection does weird palette changes.
-- Separate key for transfer vs fire? (= Redux's two-button mode: second button enters transfer, first does everything else)
+- ~~Separate key for transfer vs fire?~~ **DONE 2026-08-26.** SPACE goes straight to transfer mode
+  and holds it, direction or no direction — the settle delay exists only to disambiguate a single
+  button, so a dedicated one skips it. The fire route is untouched.
+  [`docs/layer-7-combat.md`](docs/layer-7-combat.md) [DECISION 12]
 - Getting into the lift just as the disruptor fires leaves the screen white.
 
 **Console**
@@ -107,8 +117,11 @@ home and the note is cross-referenced.
 - Why does it need to load after the Paradroid logo?
 - The briefing scroll speed is 2× the C64's.
 - The copyright symbol is missing.
-- After exiting the game back to the front end there's a quiet sequence of tones that rise in
-  pitch?!
+- ~~After exiting the game back to the front end there's a quiet sequence of tones that rise in
+  pitch?!~~ **DONE 2026-08-26.** The MOS was playing the charset. `&0800-&08FF` — its sound
+  workspace, channel queues and envelopes — sits inside the charset at `&0400-&0C90`, and
+  `UninstallIrq` handed the machine back with the queues full of character bitmaps. `GoTitle`
+  flushes the buffers first now. [`docs/layer-11e-sound.md`](docs/layer-11e-sound.md) §11
 
 **Niceties**
 
@@ -122,7 +135,9 @@ home and the note is cross-referenced.
 
 - Palette change timing.
 - TV resync — the rupture-mid-frame hazard row below is the home for this.
-- Single-line scroll flicker — move keys off OSBYTE? (The `keydown` row below.)
+- Single-line scroll flicker. **The keys came off OSBYTE on 2026-08-26** — `keydown` drives the
+  matrix directly, 243 cycles down to 69 — but whether that was the cause is UNVERIFIED: the
+  flicker has not been looked at since. [`docs/raster-timing.md`](docs/raster-timing.md)
 - Blanking during load.
 - Show the screen only after the frame is drawn — return from console, high-score → Paradroid
   logo, between briefing pages.
@@ -143,7 +158,7 @@ home and the note is cross-referenced.
 | **The rupture goes up mid-frame, and the TV loses lock** | `SetupRupture` switches the CRTC shape wherever the CPU happens to be; a television needs several fields to pull sync back — a roll or tear into a game and after a game over. Candidates: switch on a field boundary, order the writes so the frame stays legal at every step, blank across the change. Mind the R5/R6/R7 write-window rules in `CLAUDE.md`; nothing here is measured yet | 
 | **The picture's height was set in an emulator** | `FRAME_DROP_ROWS` = 3 was chosen against jsbeeb and b-em; a real television crops differently. One constant in `main.asm`, and the title follows it. **Re-check on hardware** |
 | 8 decks draw ALERT in multicolour | Confirmed faithful to the C64, not a bug. Worth a look on real hardware |
-| `keydown` uses OSBYTE `&81` | The last OS call in the main loop |
+| ~~`keydown` uses OSBYTE `&81`~~ | **Resolved 2026-08-26.** It reads the System VIA matrix directly — 243 cycles to 69, ~2,175 a pass at a dozen keys. 26 masked cycles, measured to cost the rupture nothing. [`docs/raster-timing.md`](docs/raster-timing.md) |
 | Transfer presentation differs | Status text on the panel line rather than above the board, numbers standing in for the side-select sprites. Decisions 6–8 in [`docs/layer-10-transfer.md`](docs/layer-10-transfer.md) |
 | Zero-page initial values in the annotation are equates only | Read them from `paradroid_ce.lst`; `tools/verify_annotation.py` is the standing check after any `annotate.py` change (BUGS.md #19 history) |
 
