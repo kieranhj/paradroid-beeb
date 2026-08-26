@@ -2355,6 +2355,43 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
   JSR SndSilence                \ NOW — SWRAM_DATA is paged (GoTick7), and
                                 \ masked so no tick interleaves the port A
                                 \ save/restore. UninstallIrq CLIs at its end
+\ ============================================================
+\ AND FLUSH THE MOS'S BUFFERS BEFORE GIVING IT THE IRQ BACK
+\ ============================================================
+\ THE CHARSET IS SITTING ON THE MOS'S SOUND WORKSPACE. &0400-&0C90 is
+\ the MODE 1 charset (reclaimed OS workspace, and the whole point of
+\ putting it there) and &0800-&08FF inside it is the MOS's: &800-&83F
+\ its sound workspace, &840-&87F the four channel queues, &8C0-&8FF the
+\ envelope definitions. While we own IRQ1V nothing reads any of it and
+\ the overlap is free. The moment UninstallIrq hands the machine back,
+\ the MOS's 100 Hz sound driver wakes up, finds queue pointers and
+\ buffers full of character bitmaps, and plays them: a quiet endless
+\ sweep of rising notes under the game over, the high-score entry and
+\ the title, until the next real effect takes the chip back.
+\
+\ KC HEARD IT 2026-08-26. It is not new — nothing about the charset's
+\ address or this seam has changed in months — but the Q mute is what
+\ made it obvious, because muting is exactly when you notice a sound
+\ that Q cannot touch. It cannot: Q sets sndVolume, and sndVolume only
+\ gates OUR driver's writes. This one is the OS's.
+\
+\ OSBYTE &0F, X=0 flushes every buffer, which is the OS's own answer to
+\ "the queue is nonsense": it resets the pointers, so the IRQ never
+\ reads the glyph data at all. It costs a handful of charset bytes,
+\ which do not matter — BuildCharset repaints the whole set at the next
+\ deck load, and nothing between here and there reads it (the title has
+\ its own glyphs, the high-score screen has hsfont, PARAFNT reloads).
+\
+\ BEFORE UninstallIrq, NOT AFTER, and that ordering is the fix being
+\ airtight rather than nearly: our IRQ is still installed here, so the
+\ MOS's sound IRQ is definitively not running and cannot be halfway
+\ through draining a note while we reset the pointers under it. Do it
+\ after and there is a window between UninstallIrq's CLI and this call
+\ where one garbage note can start.
+  LDA #&0F
+  LDX #0
+  JSR OSBYTE
+
   JSR UninstallIrq
   JSR SetupPlain                \ NOT SetupMode: its VDU 22 would clear
                                 \ &3000-&7FFF and take the 999 page and

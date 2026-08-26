@@ -189,7 +189,7 @@ addresses from the `beebasm` output rather than from any document.** In outline:
 | Region | Contents |
 |---|---|
 | ZP `&00–&8F` | All used. The map is in `main.asm`. `&90` up belongs to the OS |
-| `&0400–&0C90` | MODE 1 charset, built at deck load — reclaimed OS workspace |
+| `&0400–&0C90` | MODE 1 charset, built at deck load — reclaimed OS workspace. **`&0800–&08FF` inside it is the MOS's sound workspace, channel queues and envelopes**: safe only while we own IRQ1V, so ANY path that hands the machine back must flush the buffers first (`OSBYTE &0F, X=0`) or the MOS plays the charset as notes. `GoTitle` does; `docs/layer-11e-sound.md` §11 |
 | `&0C90–&10FF` | **The low overlay** (`PARALOW`) — resident code and state in reclaimed DFS/OS workspace. `&0D00–&0D5F` (NMI) and `&0DF0–&0DFF` (ROM private workspace) are **excluded**. Nothing may be *loaded* here; it is staged and copied, and that copy **must be the last filing-system call** |
 | `&1100–…` | Code (`PARA`), starting below DFS's `PAGE`. Also carries the one copy of the droid icon data (`droidicon.asm`), read from banks 6 and 7 |
 | `&3000–&3DFF` | The `PARAFNT` block: text font, panel frame, the shared string table, `FontCell`/`DoScore` and the `PN_TABS` mirrors (48 B) |

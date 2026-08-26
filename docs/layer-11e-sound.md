@@ -722,3 +722,54 @@ passes in the next 4,000,000 cycles). P held for two seconds during a death does
 the death, the game over and the high-score entry run through untouched. **Not exercised: pause
 with the console, the transfer game or the lift view up** — the call site is common to all of
 them by construction, but it has not been driven there.
+
+## 11. The MOS plays the charset — found and fixed 2026-08-26
+
+**Symptom (KC).** After the game ends, a sequence of rising notes plays very quietly — *even with
+the sound muted on Q*. It pauses during the high-score name entry, continues after it, and stops
+only when some real effect is played, in game or in the briefing.
+
+**Cause.** `&0400-&0C90` is the MODE 1 charset, built at deck load into reclaimed OS workspace,
+which is the whole point of putting it there. Inside that range the MOS owns `&0800-&08FF`:
+`&800-&83F` its sound workspace, `&840-&87F` the four sound-channel queues, `&8C0-&8FF` the
+envelope definitions. While the game owns IRQ1V nothing reads any of it and the overlap is free —
+that is why this has never mattered. `GoTitle` then calls `UninstallIrq`, the MOS's 100 Hz sound
+driver wakes up, finds its queue pointers and buffers full of character bitmaps, and plays them.
+The pitch sweeps because it is chewing steadily through glyph data; it is quiet because the
+attenuations it happens to find are 13-14.
+
+**Why Q cannot touch it.** Q sets `sndVolume`, and `sndVolume` only gates *our* driver's writes
+(§9). This is the OS writing the chip, not us. That mismatch is the clue that identifies it: any
+sound the mute cannot silence is not ours.
+
+**Measured, in jsbeeb.** After a game over with the game muted, `SndSilence` had left all four
+channels at attenuation 15 — yet the chip read CH0 att 14, CH1 att 13, CH3 att 14, with the tone
+periods falling steadily across samples (CH1 401 → 146 → 95, i.e. pitch rising). Writing zeros over
+`&0800-&087F` stopped it instantly and put all four channels back to 15, which is what pinned the
+cause. **Sound suppression (`OSBYTE &D2`, the flag at `&0262`) did *not* stop it** — suppression
+gates new `SOUND` commands, not a queue already draining, so it is the wrong tool here.
+
+**Fix.** `OSBYTE &0F, X=0` — flush every buffer — in `GoTitle`, **before** `JSR UninstallIrq`. The
+OS's own answer to "the queue is nonsense": it resets the pointers, so the IRQ never reads the
+glyph data at all.
+
+Two details are deliberate. **Before, not after** the uninstall: our IRQ is still installed at that
+point, so the MOS's sound IRQ is definitively not running and cannot be halfway through draining a
+note while the pointers are reset under it — do it after and there is a window between
+`UninstallIrq`'s `CLI` and the flush in which one garbage note can start. And **it costs a handful
+of charset bytes**, which do not matter: `BuildCharset` repaints the whole set at the next deck
+load, and nothing between the seam and there reads it (the title has its own glyphs, the high-score
+screen has `hsfont`, `PARAFNT` reloads).
+
+**Not caused by this day's work**, though the Q mute is what exposed it — muting is exactly when
+you notice a sound that the mute cannot reach. Nothing in the volume, pause, transfer-button or
+`keydown` changes touches `&0800`, the charset's address, the `GoTitle` seam or the MOS sound path.
+Not bisected against an older build, so that is reasoning rather than measurement.
+
+**Verified.** Same reproduction after the fix: all four channels at attenuation 15 through the
+death, the game over and the high-score entry, and the briefing beyond it plays its own chatter
+normally (CH0 att 3, CH3 att 6) — the driver takes the chip back cleanly.
+
+**The standing lesson.** The charset/`&0800` overlap is safe *only* while we own the IRQ. Any
+future path that hands the machine back to the MOS has to flush first. There is exactly one such
+seam today (`GoTitle`); `UninstallIrq` has one call site, and that is worth keeping true.
