@@ -63,6 +63,70 @@ or triple digits in every other region** — current figures in `CLAUDE.md`'s ta
 | The enemy bullet's colour flicker | `efAlt` from bank 5 plus a second per-entry field; effect sprites run the interpreted path (now in bank 5 itself, `src/sprfx.asm`) and are one colour | Layer 7, deferred |
 | 2 px world scrolling | Parked, Master-only via shadow RAM. Costs +60–80 % on all drawing — [`docs/master-extensions.md`](docs/master-extensions.md) | parked |
 
+### Polish items — from Kieran's Human Notes
+
+Everything in [`docs/Kieran's Human Notes.txt`](docs/Kieran's%20Human%20Notes.txt) not marked
+DONE or NO, added 2026-08-26. Where a note overlaps a row elsewhere in this file, the row is the
+home and the note is cross-referenced.
+
+**Transfer**
+
+- The score should go up **inside** the transfer game, before returning to the main game. Was
+  marked NEEDS RAM — the RAM pass has since provided it.
+
+**Gameplay**
+
+- Sprite flicker (still).
+- Player 001 should flash on teleport-in at the start.
+- Some of the decks have the lift tile missing?
+- Lift selection does weird palette changes.
+- Separate key for transfer vs fire?
+- Getting into the lift just as the disruptor fires leaves the screen white.
+
+**Console**
+
+- Continually redrawing the top line when on the droid info page? Also the panel word?
+- The droid info screens are always on a white background with blue header and red text —
+  should follow the deck?
+
+**Game over**
+
+- Improve the static — just B&W, and use the original's characters.
+- "Game over" has a small g, and should be in red.
+
+**Front end**
+
+- Update the scroll text wording.
+- Add a Beeb page.
+- Why does it need to load after the Paradroid logo?
+- The briefing scroll speed is 2× the C64's.
+- The copyright symbol is missing.
+- After exiting the game back to the front end there's a quiet sequence of tones that rise in
+  pitch?!
+
+**Niceties**
+
+- Redux bug fixes and feature additions (e.g. the droid count) — Layer 12's triage, see that row.
+- Pause.
+- Volume — the ± volume keys row above is the home for this.
+- What's Cheese?
+- Redefine keys.
+
+**Attention to detail**
+
+- Palette change timing.
+- TV resync — the rupture-mid-frame hazard row below is the home for this.
+- Single-line scroll flicker — move keys off OSBYTE? (The `keydown` row below.)
+- Blanking during load.
+- Show the screen only after the frame is drawn — return from console, high-score → Paradroid
+  logo, between briefing pages.
+
+**Loader**
+
+- SWRAM detection — Layer 13b above is the home for this.
+- MODE 7 splash to hide loading?
+- Robot intro with Chris's music — music in progress.
+
 ### Open hazards and things undecided
 
 | | |
