@@ -206,19 +206,26 @@ XF_PLY_STEP = 184               \ 256 / 1.391 passes; see above
 \ ITERATIONS, NOT PASSES, and that distinction only started to matter
 \ when XF_PLY_STEP made an iteration 55.65 ms instead of 40. These are
 \ counted in XfGetMove, which runs inside XfPlayTick.
-\ DELAY 2 puts the second row 3 iterations (167 ms) after the first,
-\ RATE 1 puts every row after that 2 iterations (111 ms) apart —
-\ 9 rows/s held, against the original's level-triggered 18.
+\ DELAY 2 puts the second row 3 iterations (167 ms) after the first;
+\ RATE 0 puts every row after that ONE iteration (55.65 ms) apart,
+\ which is 18 rows/s — THE ORIGINAL'S OWN RATE, since xfer_DoMove is
+\ level-triggered and moves one row an iteration.
 \ DELAY WENT 3 -> 2 WITH THE THROTTLE, and that is preserving KC's
 \ decision rather than changing it: what he chose was the 160 ms
 \ guarantee — a tap shorter than that is exactly one row — and he had
 \ already rejected 240 ms as too long. At 40 ms a pass that was 4
 \ passes; at 55.65 it is 3 iterations, and DELAY 3 would have drifted
-\ back to 223 ms. RATE is left alone: 12.5 rows/s became 9, which is
-\ slower than KC tuned and closer to it than the 18 that RATE 0 would
-\ give. Both are worth re-playing now the clock has moved.
+\ back to 223 ms.
+\ RATE WENT 1 -> 0 ON KC'S WORD (2026-08-27), and it is the whole of
+\ what the filter now does that the original does not: a held key is
+\ the original's exactly, and only the hold-off after a fresh press
+\ remains. That hold-off is the part a keyboard needs — a tap has no
+\ self-centring spring to end it — and the throttle did most of the
+\ rest of the job by itself. The 12.5 rows/s KC tuned at 40 ms
+\ iterations was a number for a clock that no longer exists; RATE 1
+\ would now give 9, RATE 0 gives the 18 the C64 has. KC to play it.
 XF_RPT_DELAY = 2
-XF_RPT_RATE  = 1
+XF_RPT_RATE  = 0
 
 XF_PH_RELEASE = 0
 XF_PH_SELECT  = 1
@@ -1004,19 +1011,23 @@ XF_REPLAY_PASSES = 50
 \ ---- the keyboard's repeat filter — NOT in the C64 -----------
 \ Layer 10 DECISION 13. The original is level-triggered: xfer_DoMove
 \ moves one row for any non-zero joyYDir, so a held stick walks the
-\ cursor one row per iteration — 25 rows/s, the whole 12-wire bus in
-\ under half a second. That is fine on a self-centring microswitch
-\ stick, where a flick fits inside one 40 ms iteration, and it is not
-\ fine on a keyboard, where the shortest honest tap is two or three
-\ rows. So the human's axis — and ONLY the human's; the CPU arm above
-\ returns before this — is edge-triggered with a hold-off:
-\   a new direction  moves at once, then waits XF_RPT_DELAY+1 passes
-\   held after that  moves every XF_RPT_RATE+1 passes
+\ cursor one row per iteration — 18 rows/s at doSubGame's 55.5 ms, the
+\ whole 12-wire bus in two thirds of a second. That is fine on a
+\ self-centring microswitch stick, where a flick fits inside one
+\ iteration, and it is not fine on a keyboard, where the shortest
+\ honest tap is two or three rows. So the human's axis — and ONLY the
+\ human's; the CPU arm above returns before this — is edge-triggered
+\ with a hold-off:
+\   a new direction  moves at once, then waits XF_RPT_DELAY+1 iterations
+\   held after that  moves every XF_RPT_RATE+1 iterations
 \   released         re-arms the edge
-\ A tap of any length under 240 ms is therefore exactly one row, and a
-\ hold still crosses the bus. Nothing else changes: the iteration rate,
-\ the countdown and the CPU's own every-other-frame throttle are all
-\ still the original's.
+\ A tap of any length under 167 ms is therefore exactly one row, and a
+\ hold walks at the original's own rate — RATE is 0, so xgm_repeat
+\ re-arms with the counter already expired and every iteration moves.
+\ ITERATIONS, NOT PASSES: they were the same thing until XF_PLY_STEP,
+\ and the figures above are the current ones. Nothing else changes:
+\ the iteration rate, the countdown and the CPU's own every-other-frame
+\ throttle are all still the original's.
   LDA joyYDir
   BEQ xgm_release               \ nothing held: arm the next edge
   CMP xfRptDir
@@ -2109,7 +2120,7 @@ XF_UCR = PN_WIDE_OFS            \ +XF_UCR, and both bytes ride in the
 .xfCurIdx    EQUB 0
 .xfSprCol    EQUB 0             \ Colorize4 parks the colour here
 .xfRptDir    EQUB 0             \ the repeat filter's held direction...
-.xfRptCtr    EQUB 0             \ ...and passes still to wait
+.xfRptCtr    EQUB 0             \ ...and ITERATIONS still to wait
 .xfWval      EQUB 0             \ write-helper saves
 .xfWsx       EQUB 0
 .xfWsy       EQUB 0

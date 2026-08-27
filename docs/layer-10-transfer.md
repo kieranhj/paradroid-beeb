@@ -223,9 +223,12 @@ is `WinningColor == LeftColor`.
     - **The repeat filter is counted in ITERATIONS**, which only started to matter when the
       iteration stopped being a pass. `XF_RPT_DELAY` went 3 → 2 to hold the 160 ms guarantee
       (3 × 55.65 = 167 ms; leaving it at 3 would have drifted to 223 ms, which KC had already
-      rejected as too long). `XF_RPT_RATE` is left alone and its held rate went 12.5 → 9
-      rows/s — slower than KC tuned, and nearer it than the 18 that `RATE` 0 would give,
-      which is the original's own level-triggered rate. Both are worth re-playing.
+      rejected as too long). **`XF_RPT_RATE` went 1 → 0 on KC's word** — a held key now walks
+      at 18 rows/s, one row an iteration, which is `xfer_DoMove`'s own level-triggered rate.
+      So the filter is down to the one thing a keyboard needs that a stick does not: a
+      hold-off after a fresh press, because a tap has no self-centring spring to end it. The
+      12.5 rows/s of the first tuning was a figure for a 40 ms iteration that no longer
+      exists; the throttle did most of that job by itself. KC to play it.
     - **A fractional accumulator, not this document's earlier suggestion of a mod-3.**
       111 ms is not a whole number of 40 ms passes — it is 2.78 of them — and a mod-3 would
       have overshot to 11.88 s. `XF_SEL_STEP` = 92 is added to `xfSelAcc` each pass and the
