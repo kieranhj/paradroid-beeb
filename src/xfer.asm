@@ -416,6 +416,19 @@ ENDIF
   LDA #LO(xfTxtFail) : LDY #HI(xfTxtFail)
   JSR XfMessage
 .xpl_endphase
+\ THE VERDICT IS APPLIED NOW, not when the hold expires. $22FE calls
+\ FinishTransfer1 the moment doSubGame returns, and FinishTransfer2's
+\ sweep — the hold below — comes after it, running DelayScore and so
+\ DoScore on every iteration. So the score is BANKED here and CLIMBS
+\ over the next two seconds, on screen, inside the subgame. KC asked
+\ for that, 2026-08-27; the port used to bank it at the far end of the
+\ hold, by which time the board was gone.
+\ A FLAG AND NOT A CALL, because the work is bank 4's — the droid
+\ table, AddScore, XferInitDroid — and bank 7 cannot page bank 4 in
+\ from under itself. XferTick reads this on the way out of XfTick,
+\ with the data bank already back. Main RAM, beside xfmDone.
+  LDA #1
+  STA xfmDecided
   LDA #XF_END_PASSES            \ FinishTransfer2's sweep, as a hold
   STA xfEndCtr
   LDA #XF_PH_END

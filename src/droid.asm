@@ -2741,11 +2741,21 @@ ENDIF
   STA xferActive
   RTS
 
-\ ---- XferExit4 — FinishTransfer1 ($21CF) and 2 ($2260) ------
+\ ---- XferExit4a — FinishTransfer1 ($21CF) ------------------
+\ THE TWO HALVES ARE SPLIT AGAIN, as the original has them, 2026-08-27.
+\ They were fused, and running both at the end of the hold meant the
+\ score was not banked until the transfer screen was already gone: KC
+\ asked for it to climb INSIDE the subgame, which is what the C64 does.
+\ $22FE calls FinishTransfer1 — this half: the score, the type, the
+\ energy and the new droid's stats — and FinishTransfer1 then calls
+\ FinishTransfer2, whose 40-iteration sweep runs DelayScore, and
+\ DelayScore ends in DoScore ($0B68). So the points are banked at the
+\ VERDICT and drain over the hold that follows.
 \ Three arms, the original's: take the droid, drop back to a 001 with
-\ the bump fine, or — already a 001 — burn out entirely. The caller
-\ finishes with PanelSetup, which cannot be reached from this bank.
-.XferExit4
+\ the bump fine, or — already a 001 — burn out entirely.
+\ CALLED FROM XferTick, once, on the pass bank 7 sets xfmDecided —
+\ which is the pass that enters XF_PH_END, not the one that leaves it.
+.XferExit4a
   LDA xfmResult
   CMP #1
   BNE xx4_lost
@@ -2760,8 +2770,7 @@ ENDIF
   LDX drCent,Y
   LDA drShootScore,X
   JSR AddScore
-  JSR XferInitDroid
-  JMP xx4_consume
+  JMP XferInitDroid             \ and its RTS
 
 .xx4_lost
   LDA xfmPlyType
@@ -2773,17 +2782,20 @@ ENDIF
   LDA #0
   STA drType
   STA sprType+PLY_SLOT
-  JSR XferInitDroid
-  JMP xx4_consume
+  JMP XferInitDroid             \ and its RTS
 
 .xx4_burnt
   LDA #0                        \ a 001 that loses is finished —
-  STA drEnergy                  \ CbCheckDeath takes it from here
+  STA drEnergy                  \ CbCheckDeath takes it from here, and
+  RTS                           \ not until the subgame has let go
 
-\ FinishTransfer2: the target droid is consumed in EVERY outcome. Energy
-\ 0 makes the compaction drop its table entry; the slot goes back to the
-\ pool; DrRemoveShip takes it off the ship's roster for good.
-.xx4_consume
+\ ---- XferExit4b — FinishTransfer2 ($2260) ------------------
+\ The half that runs when the hold expires. The target droid is consumed
+\ in EVERY outcome. Energy 0 makes the compaction drop its table entry;
+\ the slot goes back to the pool; DrRemoveShip takes it off the ship's
+\ roster for good. The caller finishes with PanelSetup, which cannot be
+\ reached from this bank.
+.XferExit4b
   LDX xferDroid
   LDA #0
   STA drEnergy,X

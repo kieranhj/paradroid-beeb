@@ -352,6 +352,30 @@ is `WinningColor == LeftColor`.
       glyph 103 now — one line in the exporter's `GLYPHS` list, 16 bytes of `PARAFNT`, a
       fifth compare in `PnAscii`, and `FONT_GLYPHS` 103 → 104. The panel reads **`Colour?`**,
       which is what `$E6DB` says. Nothing in these strings is a stand-in any more.
+    - **[DECISION] The score climbs INSIDE the subgame** (KC, 2026-08-27), and getting it
+      there meant splitting `XferExit4` back into the two halves the original has.
+      `FinishTransfer1` (`$21CF`) does the score, the type, the energy and the new droid's
+      stats; it then calls `FinishTransfer2` (`$2260`), whose 40-iteration sweep runs
+      `DelayScore` — **and `DelayScore` ends in `DoScore`** (`$0B68`). So the C64 banks the
+      points at the VERDICT and drains them over the hold that follows, on screen, before
+      the board is gone. The port fused the two and ran both when the hold expired, so
+      nothing moved until the deck was back.
+      - `xpl_endphase` (bank 7) sets **`xfmDecided`**, a main-RAM flag beside `xfmDone` — a
+        flag and not a call, because the work is bank 4's and bank 7 cannot page bank 4 in
+        under itself. `XferTick` reads it on the way out of `XfTick`, data bank already
+        back, and calls `XferExit4a`; `XferExit4b` still runs on `xfmDone`.
+      - The transfer arm of the main loop calls `DoScore` and a new `PanelScore` shim
+        (bank 6, `pu_score` alone). It has to call `DoScore` itself: **the four modal arms
+        `JMP ml_passend`, which is BELOW `ml_afterdraw`**, so none of them reaches it — the
+        header there claimed the opposite and is corrected. The score field is not the
+        subgame's to own (cols 30-37 stand through it, as they do on the deck), and on the
+        C64 it is `DoScore`'s own digit draw at `$0AD9` that repaints them.
+      - **Verified in jsbeeb**: a win against a 296 put 16 on the panel twenty frames after
+        "Complete" and 26 twenty frames later — one point a pass, DoScore's own rate — and
+        the deck came back at the full 50 with no second award.
+      - **Left open:** the console, the information screens, the lift view and the game-over
+        wash still skip `DoScore`. Turning them on means turning `CbDisruptor` on with them,
+        which wants play-testing rather than a one-line change.
     - **[DECISION] "Captured" goes up BEFORE the information screens** (KC, 2026-08-27).
       `$229D` is `SaveVicState`, `$22A0` is `DrawString Captured_txt`, `$22A7` is
       `ShowXferInfo` — in that order, so on the C64 the word is on the status line for the

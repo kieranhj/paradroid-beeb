@@ -1294,14 +1294,21 @@ ENDIF
 \ window is 24,576 cycles and the drawing needs every one of them, so
 \ they run below the draw now, at ml_afterdraw.
 \
-\ THEY STILL RUN IN EVERY STATE, which is what put them at the top of
+\ THEY SHOULD RUN IN EVERY STATE, which is what put them at the top of
 \ the pass in the first place. GameLoop calls DoScore at $13E3 BEFORE it
 \ tests consoleState at $1427, so it runs whether the console is up or
 \ not; and a disruptor burst frozen by a modal state would leave our
-\ flash on the screen. So ml_afterdraw sits immediately above ml_passend
-\ — the one point EVERY arm of the pass converges on, the four modal
-\ ones included — rather than beside the droid AI, which the modal arms
-\ jump over.
+\ flash on the screen.
+\ AND THEY DO NOT. This paragraph used to claim ml_passend was "the one
+\ point EVERY arm of the pass converges on, the four modal ones
+\ included"; it is not, because ml_afterdraw sits ABOVE it and every
+\ modal arm JMPs straight to ml_passend, over both calls. So the score
+\ stops moving under the console, the information screens, the lift view
+\ and the game-over wash. THE TRANSFER ARM CALLS DoScore FOR ITSELF
+\ (KC, 2026-08-27, who wanted the win to count up on the board), and the
+\ other four are left as they are pending a decision — turning them all
+\ on means turning CbDisruptor on with them, and that wants play-testing
+\ rather than a one-line change here.
 \ ============================================================
 \ ...or the game is over
 \ ============================================================
@@ -1357,6 +1364,18 @@ ENDIF
   LDA xferActive
   BEQ ml_noxfer
   JSR XferTick
+\ DoScore RUNS HERE, and it is the original's own arrangement rather
+\ than an addition: DelayScore ($0B62) ends in DoScore, and the subgame
+\ calls DelayScore from xferDoCounter ($20DA), from Capture's tie hold
+\ and from FinishTransfer2's sweep — so the C64 drains banked points
+\ throughout the transfer. The port's modal arms jump past ml_afterdraw,
+\ so this one calls it for itself; PanelScore then puts the digits on
+\ the panel, which is what $0AD9 does on the other side of DoScore.
+\ ONLY THIS ARM. The other four modal states skip DoScore too and that
+\ is a separate question — the header at ml_afterdraw claims all of them
+\ reach it and none of them do. Not widened here.
+  JSR DoScore
+  JSR PanelScore
   JMP ml_passend
 .ml_noxfer
 
@@ -2189,6 +2208,9 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
 .xfmTgtType EQUB 0              \ and the target's
 .xfmResult  EQUB 0              \ 1 = took the droid, 2 = lost
 .xfmDone    EQUB 0              \ set by XfEndTick when the hold expires
+.xfmDecided EQUB 0              \ and by xpl_endphase when the verdict
+                                \ lands, one pass earlier — XferTick
+                                \ splits FinishTransfer1 from 2 on it
 
 .XferEnter
   JSR XferEnter4                \ bank 4: gather, flatten, palette, t1i3
@@ -2471,13 +2493,33 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
   JSR PgXfer   
   JSR XfTick
   JSR PgData   
+  LDA xfmDecided                \ the verdict landed this pass: apply it
+  BEQ xt_notdec                 \ NOW, so the score has the whole of
+  LDA #0                        \ XF_END_PASSES to climb in. $22FE's own
+  STA xfmDecided                \ order — FinishTransfer1, then 2
+  JSR XferExit4a                \ bank 4, and the data bank is back
+.xt_notdec
   LDA xfmDone
   BEQ xt_x
-  JSR XferExit4                 \ bank 4: the outcome, and ReframeView
+  JSR XferExit4b                \ bank 4: FinishTransfer2 and ReframeView
   JMP PanelSetup                \ the bank-6 trampoline — NOT callable
                                 \ from inside bank 4, hence here
 .xt_x
   RTS
+
+\ ---- the score, while the subgame owns the screen -----------
+\ PanelUpdate's score half alone, through the bank-6 shim. The transfer
+\ arm cannot call PanelTick — the game owns the panel's text field for
+\ its counter and its verdicts — but the SCORE field is not the game's:
+\ cols 30-37 stand through the whole subgame, in red, exactly as they do
+\ on the deck, and on the C64 they are repainted by DoScore's own digit
+\ draw at $0AD9 every time DelayScore calls it. pu_score self-gates on
+\ pnShScore, so a pass that banked nothing costs the paging and two
+\ compares.
+.PanelScore
+  JSR PgSpr2   
+  JSR pu_score
+  JMP PgData     \ tail: its RTS is ours
 
 \ ============================================================
 \ keydown — is a key held?  X = negative INKEY code, Z set if down
