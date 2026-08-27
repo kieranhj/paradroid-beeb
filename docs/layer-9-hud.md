@@ -137,7 +137,7 @@ which owns the same panel row; turning that one on suppresses the HUD rather tha
 
 ## 4. The glyph set, and how strings are written
 
-102 glyphs, indexed:
+104 glyphs, indexed (102 until 2026-08-26, when `'!'` and `'?'` joined them):
 
 ```
     0        space
@@ -151,7 +151,16 @@ which owns the same panel row; turning that one on suppresses the HUD rather tha
     98       dash                     ($2E)
     99       colon                    ($2A)
     100-101  the RIGHT halves of m and w
+    102      bang                     ($25)   the $C000 string table's
+    103      question mark            ($24)   Color_txt's, and nothing else's
 ```
+
+**Two constants have to agree with that count** and neither is derived from the other:
+`FONT_GLYPHS` in `main.asm` (beebasm resolves constants in file order, so it cannot come from
+the generated file — the `ASSERT`s beside the `INCLUDE` catch a mismatch) and `PN_GLYPHS` in
+`tools/make_briefing.py`, which numbers the briefing's extra glyphs **from** it. A stale
+`PN_GLYPHS` does not fail the build: it aliases the first extra onto a real glyph and the
+briefing silently draws the wrong character.
 
 ### WIDE is not the same as CAPITAL
 

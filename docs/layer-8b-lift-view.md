@@ -57,12 +57,16 @@ loop runs one `LiftViewTick` a pass and nothing else.
    field, pen-coloured shapes) flattened the `10` pairs into the background, which erased
    the black half of every embossed edge and read as stippling; the colour belongs IN the
    artwork, one logical colour per multicolour pair. `palLift` in droid.asm.
-4. **[DECISION] The panel line shows "Lift" and the deck number** (KC), two digits of
-   the engine's own 0–15 — deck *names* live in bank 6's token table, unreachable from
-   bank 7; noted in PLAN.md for Layer 13's reshuffle. **Capitalised 2026-08-26** with the
-   transfer game's own words (layer-10 DECISION 15): same panel field, same `XfGlyphAt`,
-   and capital L is two cells so its right half is a fifth call. The deck number moved with
-   `XF_COL_TIME`, 10 → 11 — the field's real last pair.
+4. **[DECISION] The panel line shows "Lift" — and, since 2026-08-27, NOTHING ELSE.**
+   It used to carry the deck number beside it, two digits of the engine's own 0–15,
+   repainted by `LvTick7` on every step of the light. **KC: the C64 prints nothing there**
+   — `DrawSideview` writes the view and leaves the status rows alone — so the number was
+   this port's own addition and `LvNumText` is deleted with it. (The old note about deck
+   *names* living in bank 6's token table, unreachable from bank 7, is moot: there is no
+   number to name.) The word itself was **capitalised 2026-08-26** with the transfer game's
+   own words (layer-10 DECISION 15): same panel field, same `XfGlyphAt`, and capital L is
+   two cells so its right half is a fifth call. Five cells of the eleven; `XfTextClear`
+   blanks the rest.
 5. **[DECISION] Colour is baked into the glyphs at export**, one logical colour per
    multicolour pair — 00 blue, 01 white (`$D022`), 10 black (`$D023`) — and EVERY
    character converts as pairs; there is no hires path. The 11 plane's colour is per

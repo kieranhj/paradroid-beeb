@@ -13,7 +13,9 @@
 #                            bottom. Do not remove these.
 #
 # Rules make_briefing.py enforces:
-#   characters: a-z A-Z 0-9 space . , : ; ' - !
+#   characters: a-z A-Z 0-9 space . , : ; ' - ! ?
+#                @ is the COPYRIGHT SIGN, C64 code $20 - it is not an
+#                at-sign. briefing.txt is ASCII, so it needs a stand-in.
 #   capitals (except I) and m and w are 16 px wide, everything else 8,
 #   and a line must fit its page: start column + width <= 40.
 #   A text line occupies TWO canvas rows, so records on consecutive
@@ -28,7 +30,7 @@ page 1
  4 14 |presents
  7 13 |Paradroid
 10  7 |Competition Edition
-13  7 |w Graftgold Ltd. 1986.
+13  7 |@ Graftgold Ltd. 1986.
 18  2 |Plug your joystick into port 2
 21  8 |Press fire to play
 24  1 |Clear  the freighter  of robots by
@@ -159,4 +161,5 @@ label loscore
 glyph , 00000000000000000000707030600000
 glyph ' 00007070306000000000000000000000
 glyph ; 00000000707000000000707030600000
+glyph @ 0000003C429DA1A19D423C0000000000
 

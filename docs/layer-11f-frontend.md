@@ -339,6 +339,14 @@ indexed by **canvas row**, and a record occupies the row it names AND the one be
 cells of its 8 × 16 glyphs, then the bottom ones, which is what `UpTextChar`'s `dest+$100` does.
 So painting row *r* is: that row's list drawn top-half, then row *r−1*'s drawn bottom-half.
 
+> **THE COPYRIGHT SIGN WAS A THIRD, and it was not missing — it was mis-decoded.** KC, 2026-08-27:
+> the briefing's first page read "w Graftgold Ltd. 1986." The C64 byte there is **`$20`**, and `$20`
+> is a `(C)` — a circle with a C in it. `ToUpper`'s arithmetic would put lowercase w at `$20`;
+> w is at `$54` instead, and the vacated slot holds the symbol. `export_briefing.py`'s `to_text`
+> special-cases `$16`/`$42`/`$54` for exactly this reason and had no case for `$20`, so the plain
+> `$0A-$23` range check decoded it as 'w'. It is a **fourth extra glyph** now, written `@` in
+> `briefing.txt` because that file is ASCII, and 16 more bytes of bank 5.
+
 **The two missing glyphs are carried in the data.** The shared font has 103 glyphs and neither a
 comma nor an apostrophe, because `export_bbc.py` converts only what a TILE references. Rather
 than extend `NUM_CHARS` — which moves the code→index remap every deck depends on — the briefing

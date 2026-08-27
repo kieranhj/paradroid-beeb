@@ -57,7 +57,13 @@ MARGIN = 2
 # panel.asm's PN_* constants.
 PN_SPACE, PN_DIGIT0, PN_UPPER_A, PN_LOWER_A = 0, 1, 11, 63
 PN_DOT, PN_DASH, PN_COLON, PN_BANG = 89, 98, 99, 102
-PN_GLYPHS = 103                 # what the shared font actually has
+PN_QUERY = 103                  # $24, added 2026-08-27 for "Colour?"
+PN_GLYPHS = 104                 # what the shared font actually has. KEEP
+                                # THIS IN STEP WITH export_font.py: the
+                                # extras below are numbered from it, so a
+                                # stale value aliases the first extra onto
+                                # a real glyph and the briefing silently
+                                # draws the wrong character.
 PN_CAP_RIGHT = 26               # a capital's right half is left + 26
 PN_M_RIGHT, PN_W_RIGHT = 100, 101
 
@@ -73,13 +79,14 @@ def to_glyph(ch, extras):
         return PN_UPPER_A + ord(ch) - 65
     if 'a' <= ch <= 'z':
         return PN_LOWER_A + ord(ch) - 97
-    fixed = {'.': PN_DOT, '-': PN_DASH, ':': PN_COLON, '!': PN_BANG}
+    fixed = {'.': PN_DOT, '-': PN_DASH, ':': PN_COLON, '!': PN_BANG,
+             '?': PN_QUERY}
     if ch in fixed:
         return fixed[ch]
     if ch in extras:
         return extras[ch][0]
     raise SystemExit("briefing.txt: no glyph for %r - allowed: a-z A-Z 0-9 "
-                     "space . , : ; ' - ! (and any `glyph` line's character)"
+                     "space . , : ; ' - ! ? (and any `glyph` line's character)"
                      % ch)
 
 

@@ -69,6 +69,7 @@ PN_BOXBAR   = 97                \ $7C, the box's vertical bar
 PN_DASH     = 98                \ $2E — the console's separator
 PN_COLON    = 99                \ $2A
 PN_BANG     = 102               \ $25 — the string table's, and $E733's
+PN_QUERY    = 103               \ $24 — Color_txt's, and nothing else's
 
 \ ---- WIDE IS NOT THE SAME AS CAPITAL -----------------------
 \ ToUpper ($2E3D) is where the original says so: it special-cases $54,
@@ -307,8 +308,13 @@ PN_TEXT_ADDR = PANEL_ADDR + PN_TEXT_ROW * ROW_BYTES
   RTS
 .pn_a_bang                      \ '!' is 33, below '0', so it arrives here
   CMP #'!'                      \ the same way the dot and the dash do.
-  BNE pn_a_bad                  \ Added for "Game on!" (KC, 2026-08-26)
+  BNE pn_a_query                \ Added for "Game on!" (KC, 2026-08-26)
   LDA #PN_BANG
+  RTS
+.pn_a_query                     \ '?' is 63, above '9', so it comes the
+  CMP #'?'                      \ other way in — see the note above
+  BNE pn_a_bad                  \ pn_a_digit. Added for "Colour?"
+  LDA #PN_QUERY                 \ (KC, 2026-08-27)
   RTS
 .pn_a_bad
   LDA #PN_SPACE

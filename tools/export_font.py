@@ -162,6 +162,7 @@ GLYPHS.append(("':'", 0x2A))            # "Ship  :" at $6E12
 GLYPHS.append(("'m' right", 0x62))
 GLYPHS.append(("'w' right", 0x74))
 GLYPHS.append(("'!'", 0x25))            # appears in the $C000 string table
+GLYPHS.append(("'?'", 0x24))            # Color_txt ($E6DB): "Colour? NN"
 
 # The order $6917 draws the logo in, as indices into the seven glyphs above.
 LOGO_SEQ = [0, 1, 2, 1, 3, 2, 4, 5, 6]

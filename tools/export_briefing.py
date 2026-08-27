@@ -70,11 +70,15 @@ PAGE_COL0 = 2
 LABELS = {'    6809 - AEB': 'hiscore', '    6502 - BAD': 'loscore'}
 
 # Characters the shared font has not got, whose bitmaps therefore ride in
-# briefing.txt as `glyph` lines: comma, apostrophe, semicolon. export_bbc
-# converts only what a TILE references and no deck uses any of the three.
-# Semicolon is included although the C64 text happens not to use it, so a
-# hand edit may - the glyphs cost 16 bytes each in a bank with 12K spare.
-EXTRA_GLYPHS = [(',', 0x29), ("'", 0x2D), (';', 0x2B)]
+# briefing.txt as `glyph` lines: comma, apostrophe, semicolon and the
+# COPYRIGHT SIGN. export_bbc converts only what a TILE references and no
+# deck uses any of the four. Semicolon is included although the C64 text
+# happens not to use it, so a hand edit may - the glyphs cost 16 bytes
+# each in a bank with 12K spare.
+#
+# '@' STANDS FOR (C) in briefing.txt, because that file is ASCII and the
+# character has to be typeable. Its bitmap is C64 code $20 - see to_text.
+EXTRA_GLYPHS = [(',', 0x29), ("'", 0x2D), (';', 0x2B), ('@', 0x20)]
 
 
 def to_text(code):
@@ -84,9 +88,17 @@ def to_text(code):
     # export_font.py's header has the story. Written the other way round,
     # this decodes "In addition" as "mn addition" -- which is exactly what
     # the round-trip caught.
+    #
+    # $20 IS THE COPYRIGHT SIGN, and it is the other half of the same
+    # trap. ToUpper's arithmetic would put lowercase w at $20; w is at
+    # $54 instead, and the vacated slot holds (C). The range check below
+    # decodes $20 as 'w' quite happily, which is how "(C) Graftgold Ltd.
+    # 1986." shipped reading "w Graftgold Ltd. 1986." -- KC spotted it on
+    # the briefing's first page, 2026-08-27. Render $20 and it is
+    # unmistakable: a circle with a C in it.
     out = {0x30: ' ', 0x28: '.', 0x29: ',', 0x2A: ':', 0x2B: ';',
            0x2D: "'", 0x2E: '-', 0x25: '!', 0x16: 'I', 0x42: 'm',
-           0x54: 'w'}.get(code)
+           0x54: 'w', 0x20: '@'}.get(code)
     if out is not None:
         return out
     if code <= 9:

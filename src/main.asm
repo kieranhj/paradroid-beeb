@@ -611,7 +611,7 @@ FONT_ADDR = &3000
 \ assert needs the size before src/data/textfont.asm is reached. The
 \ generated file checks itself against both — see the ASSERTs by its
 \ INCLUDE. This is the same arrangement SPR_W and SPR_H have.
-FONT_GLYPHS = 103               \ 26 capitals are two glyphs each
+FONT_GLYPHS = 104               \ 26 capitals are two glyphs each
 FONT_BYTES  = FONT_GLYPHS * 16  \ 16, not 32: the font ships 1bpp — see
                                 \ FontCell below and export_font.py
 

@@ -171,6 +171,23 @@ IS_BLANK = &FF                  \ IsEntry's third door, and not a screen
   LDA isSndFor,X
   STA sndFx1
 
+\ ---- "Captured", and it belongs HERE ------------------------
+\ $229D-$22A7 in order: SaveVicState, DrawString Captured_txt, THEN
+\ ShowXferInfo. So the word goes up before the two information screens
+\ and is still there when the board arrives — $E1F2's Color_txt is the
+\ next thing to write that field. XfStart used to draw it, which put it
+\ AFTER both screens and left it up for a single pass; KC never saw it
+\ (2026-08-27). Only the FIRST of the two pages posts it: IsDone chains
+\ page 2 inside this bank and a second write would be a redraw the C64
+\ does not do.
+  LDA isScr
+  CMP #IS_SCR_XFER1
+  BNE is_st_nocapt
+  JSR XfTextClear
+  LDA #LO(xfTxtCapt) : LDY #HI(xfTxtCapt)
+  JSR XfMessage
+.is_st_nocapt
+
 \ ---- flatten the strip, ConsoleOpen's own -------------------
 \ The page addresses the buffer as a plain 16 x 640 array through
 \ dbLineLo/Hi, so the scroll has to be parked first — exactly what

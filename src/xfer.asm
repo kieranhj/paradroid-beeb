@@ -82,9 +82,15 @@ ASSERT PLAY_VIS_ROWS + 1 == 16  \ the board needs all 16 rows
   JSR XfRepaintAll              \ and once onto the screen
   JSR XfIcons                   \ DECISION 14, ABOVE the repaint: the
                                 \ icons are not in the shadows
-  JSR XfTextClear
-  LDA #LO(xfTxtCapt) : LDY #HI(xfTxtCapt)
-  JSR XfMessage                 \ $22A0: "Captured", the moment it starts
+\ "Captured" IS NOT DRAWN HERE ANY MORE (KC, 2026-08-27). $22A0 draws
+\ it BEFORE $22A7's ShowXferInfo, so on the C64 it is on the status line
+\ for the whole of both information screens and stays there until
+\ $E1F2's Color_txt replaces it. Drawn from here it landed AFTER those
+\ screens and lasted one pass — XF_PH_RELEASE ends on the first pass
+\ with the button already up — so it was invisible. IsStart posts it
+\ now, on IS_SCR_XFER1, which is exactly $22A0's position; see the note
+\ there. The XfTextClear went with it: nothing is meant to blank the
+\ field between the two, and the C64 blanks nothing either.
   LDA #9                        \ Capture's entry pair: $22C1 on voice 2
   STA sndFx2                    \ and $22C8 on voice 1
   LDA #&1B
@@ -122,6 +128,8 @@ ASSERT PLAY_VIS_ROWS + 1 == 16  \ the board needs all 16 rows
   STA xfTime
   LDA #XF_PH_SELECT
   STA xfPhase
+  LDA #0                        \ the select clock starts here — see
+  STA xfSelAcc                  \ XF_SEL_STEP at xsl_18
   JSR XfTextClear
   LDA #LO(xfTxtColour) : LDY #HI(xfTxtColour)
   JSR XfMessage                 \ $E1F2's Color_txt, countdown and all
@@ -202,11 +210,34 @@ XF_PH_REPLAY  = 4
   LDA #1                        \ fire pressed: confirm now
   STA xfTime
   BNE xsl_tick
+\ ---- the select clock, and it is NOT the play clock ---------
+\ KC wall-timed the C64 at ~11 s for the 99 and the port at ~8 s
+\ (2026-08-27). This is the one real timing deviation layer-10
+\ DECISION 13 found and left alone, and this is the call being made.
+\ THE TWO COUNTDOWNS ARE PACED BY DIFFERENT THINGS and only this one
+\ was wrong. doSubGame ($2166) gates each half-turn on irqToggle, so
+\ the PLAY counter's `xfFrame AND 1` at $20DA is one tick per two
+\ frames and the port's one-iteration-a-pass reproduces it exactly —
+\ that half is untouched. SubGameSelectSide's `_14` loop has no such
+\ gate: it is paced by DelayScore(80), ~103,000 cycles, which is
+\ ~105 ms before badline steal and ~111 ms with it. 99 x 111 ms = 11.0
+\ s, which is what KC measured. The port's `AND #1` gave 80 ms and
+\ 7.92 s, 30% fast.
+\ A FRACTIONAL ACCUMULATOR, because 111 ms is not a whole number of
+\ 40 ms passes — it is 2.78 of them, and DECISION 13's suggested mod-3
+\ would have overshot to 11.88 s. Adding XF_SEL_STEP to a byte and
+\ ticking on the carry gives one tick per 256/92 = 2.783 passes =
+\ 111.1 ms, and 99 of them is 11.00 s. Three bytes more than the AND.
+\ xfFrame IS NO LONGER TOUCHED HERE. Nothing else in the select phase
+\ read it — the CPU throttle at XfGetMove and $20DA's own test are both
+\ play-phase — and XfSelectDone zeroes it before the game starts.
+XF_SEL_STEP = 92                \ 256 / 2.783 passes; see above
 .xsl_18
-  INC xfFrame                   \ half the original's iteration rate
-  LDA xfFrame
-  AND #1
-  BNE xsl_x
+  LDA xfSelAcc
+  CLC
+  ADC #XF_SEL_STEP
+  STA xfSelAcc
+  BCC xsl_x
 .xsl_tick
   SED
   SEC
@@ -1955,18 +1986,20 @@ XF_UCR = PN_WIDE_OFS            \ +XF_UCR, and both bytes ride in the
 \   Deadlock  $69A6  D-e-a-d-l-o-c-k + 2 pad    9 + 2 = 11
 \ so the two timed strings are nine cells and the countdown lands on
 \ XF_COL_TIME, the field's last pair, exactly where $69BE puts it.
-\ ONE GLYPH IS NOT PORTED. Color_txt's seventh cell is C64 code $24, a
-\ QUESTION MARK -- "Colour? NN" -- and export_font.py's glyph set has
-\ no '?': it stops at '!' ($25). A space stands in. Adding it is a
-\ tools change and a regeneration of textfont.asm, in the PARAFNT block.
+\ AND THE QUESTION MARK IS THERE NOW (KC, 2026-08-27). Color_txt's
+\ seventh cell is C64 code $24 -- "Colour? NN" -- and export_font.py's
+\ set used to stop at '!' ($25), so a space stood in. It is glyph 103
+\ now, PN_QUERY: one entry in the exporter's GLYPHS list, 16 bytes in
+\ the PARAFNT block, and a fifth compare in PnAscii for the panel's
+\ own strings. NOTHING here is synthesised any more.
 .xfTxtCapt                      \ "Captured  "
   EQUB XF_UC+2, XF_UC+2+XF_UCR
   EQUB XF_LC+0, XF_LC+15, XF_LC+19, XF_LC+20, XF_LC+17, XF_LC+4, XF_LC+3
   EQUB PN_SPACE, PN_SPACE, &FF
-.xfTxtColour                    \ "Colour  " -- the '?' is the missing glyph
+.xfTxtColour                    \ "Colour? " -- $E6DB's own seventh cell
   EQUB XF_UC+2, XF_UC+2+XF_UCR
   EQUB XF_LC+14, XF_LC+11, XF_LC+14, XF_LC+20, XF_LC+17
-  EQUB PN_SPACE, PN_SPACE, &FF
+  EQUB PN_QUERY, PN_SPACE, &FF
 .xfTxtFinish                    \ "Finish -"
   EQUB XF_UC+5, XF_UC+5+XF_UCR
   EQUB XF_LC+8, XF_LC+13, XF_LC+8, XF_LC+18, XF_LC+7
@@ -2013,6 +2046,7 @@ XF_UCR = PN_WIDE_OFS            \ +XF_UCR, and both bytes ride in the
 .xfCpuLevel  EQUB 0
 .xfFire      EQUB 0             \ C64 joyFire: 0 = PRESSED
 .xfFrame     EQUB 0
+.xfSelAcc    EQUB 0             \ the select countdown's fraction
 .xfSeed      EQUB &A5
 .xfPhase     EQUB 0
 .xfEndCtr    EQUB 0

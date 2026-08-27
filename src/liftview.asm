@@ -59,7 +59,8 @@
 \ one cell a byte — so its right half is a fifth call. Capitalised with
 \ the transfer game's own words, 2026-08-26: this is the same panel
 \ field drawn by the same engine, and "lift" beside "Captured" read as
-\ an oversight. Five cells of the eleven; LvNumText has 11 and 12.
+\ an oversight. Five cells of the eleven, and the other six stay
+\ blank: the deck number that used to sit at 11 and 12 is gone.
   LDA #XF_UC+11                 \ L, left half
   JSR XfGlyphAt
   LDA #XF_UC+11+XF_UCR          \ and its right
@@ -70,7 +71,14 @@
   JSR XfGlyphAt
   LDA #XF_LC+19                 \ t
   JSR XfGlyphAt
-  JMP LvNumText                 \ and its RTS
+  RTS
+
+\ NO DECK NUMBER. It used to print two digits of lvSelDeck at the field's
+\ last pair, and be repainted by LvTick7 on every step of the light.
+\ THE C64 PRINTS NOTHING THERE (KC, 2026-08-27): DrawSideview writes the
+\ view and leaves the status rows alone, so the number was this port's
+\ own addition and is gone with LvNumText. The word alone is five cells
+\ of the eleven; XfTextClear blanks the rest.
 
 \ ============================================================
 \ LvShip7 — the CONSOLE's ship page (from ConsoleTick)
@@ -109,8 +117,8 @@
   STA lvShown
   JSR LvHighlight               \ on
   LDY lvShown
-  JSR LvPaintRect
-  JMP LvNumText                 \ and its RTS
+  JMP LvPaintRect               \ and its RTS — the deck number used to
+                                \ follow; see the note in LvStart7
 .lvt7_x
   RTS
 
@@ -510,27 +518,6 @@
   DEX
   BPL lvb_fill
   RTS
-
-\ ---- the panel line's deck number ---------------------------
-\ Two decimal digits of lvSelDeck, 0-15 as the engine counts decks —
-\ the same value the debug bookmark and the console page show.
-.LvNumText
-  LDA #XF_COL_TIME
-  STA xfTxtCol
-  LDA lvSelDeck
-  LDX #PN_DIGIT0                \ the tens digit
-  CMP #10
-  BCC lvn_units
-  SBC #10                       \ carry set
-  INX
-.lvn_units
-  PHA
-  TXA
-  JSR XfGlyphAt
-  PLA
-  CLC
-  ADC #PN_DIGIT0
-  JMP XfGlyphAt
 
 \ ---- state --------------------------------------------------
 .lvShown  EQUB 0                \ the deck currently lit on the view

@@ -199,12 +199,21 @@ is `WinningColor == LeftColor`.
       took 54 of the 340 that were there before it. The correction matters because the
       256 figure was used to argue that DECISION 14's droid icons could not be afforded;
       on the true numbers they very nearly can.
-    - **Not changed, deliberately**: the select countdown, which is the one real timing
-      deviation found. `SubGameSelectSide`'s `_14` loop is paced by `DelayScore(80)` —
-      ~103,000 cycles, ~105 ms a tick before badline steal — so the original takes ~11 s
-      over 99 ticks where the port's every-other-pass tick takes 7.92 s, ~30-40% fast.
-      Fire confirms immediately either way, so it only shows if the player dithers. Fixing
-      it needs a mod-3 counter rather than the present `AND #1`. KC's call, left alone.
+    - **The select countdown was the one real timing deviation found, and it is FIXED**
+      (KC, 2026-08-27 — he wall-timed the C64 at ~11 s for the 99 and the port at ~8 s).
+      `SubGameSelectSide`'s `_14` loop has no `irqToggle` gate: it is paced by
+      `DelayScore(80)` — ~103,000 cycles, ~105 ms a tick before badline steal and ~111 ms
+      with it — so the original takes ~11.0 s over 99 ticks where the port's
+      every-other-pass tick took 7.92 s, 30% fast. **The play counter is untouched** and
+      still verbatim: `doSubGame` DOES gate on `irqToggle`, `$20DA`'s `xfFrame AND 1` is one
+      tick per two frames, and one iteration a pass reproduces it exactly.
+    - **A fractional accumulator, not this document's earlier suggestion of a mod-3.**
+      111 ms is not a whole number of 40 ms passes — it is 2.78 of them — and a mod-3 would
+      have overshot to 11.88 s. `XF_SEL_STEP` = 92 is added to `xfSelAcc` each pass and the
+      tick is the carry out: 256/92 = 2.783 passes = 111.1 ms, and 99 of them is **11.00 s**.
+      Three bytes more than the `AND`. `xfFrame` is no longer touched in the select phase —
+      nothing else there read it, and `XfSelectDone` zeroes it before the game starts.
+      **Measured in jsbeeb**: 93 → 48 over exactly 250 frames, i.e. 45 ticks in 5.00 s.
 
 14. **[DECISION] The droid number icons are back, on the board** (KC, 2026-08-25).
     KC played the transfer game and said the icons were missing. They were: DECISION 7
@@ -316,9 +325,21 @@ is `WinningColor == LeftColor`.
       m, so the six strings became `Captured`, `Colour`, `Finish -`, `Complete`,
       **`Burnt Out`** (`$69F3`'s `$48` is a capital O, which the lowercase version had lost)
       and `Deadlock`. The lift view's `Lift` went with them — same field, same engine.
-      **One glyph is still missing:** `Color_txt`'s seventh cell is C64 code `$24`, a
-      QUESTION MARK, and `export_font.py`'s set stops at `'!'`. A space stands in; adding
-      it is a tools change and a regeneration of `textfont.asm`.
+      **And the question mark landed the next day** (KC, 2026-08-27): `Color_txt`'s seventh
+      cell is C64 code `$24`, a `?`, and `export_font.py`'s set used to stop at `'!'`. It is
+      glyph 103 now — one line in the exporter's `GLYPHS` list, 16 bytes of `PARAFNT`, a
+      fifth compare in `PnAscii`, and `FONT_GLYPHS` 103 → 104. The panel reads **`Colour?`**,
+      which is what `$E6DB` says. Nothing in these strings is a stand-in any more.
+    - **[DECISION] "Captured" goes up BEFORE the information screens** (KC, 2026-08-27).
+      `$229D` is `SaveVicState`, `$22A0` is `DrawString Captured_txt`, `$22A7` is
+      `ShowXferInfo` — in that order, so on the C64 the word is on the status line for the
+      whole of both pages and stays there until `$E1F2`'s `Color_txt` replaces it. The port
+      drew it from `XfStart`, which runs **after** both screens, and `XF_PH_RELEASE` ends on
+      the first pass with the button already up — so it was up for 40 ms and KC had never
+      seen it. `IsStart` posts it now, on `IS_SCR_XFER1` only (`IsDone` chains page 2 inside
+      bank 7, and a second write would be a redraw the C64 does not do). `XfStart`'s
+      `XfTextClear` went with it: nothing is meant to blank that field in between, and the
+      C64 blanks nothing either.
     - **[DECISION] `XfNum3` and `XfSelectText` are deleted.** They were DECISION 7's
       substitute for the icons; DECISION 14 draws the real ones on the board, where the
       original puts them, so the stand-in has outlived its reason. That is what paid for
