@@ -157,7 +157,45 @@ ASSERT PLAY_VIS_ROWS + 1 == 16  \ the board needs all 16 rows
 
 .xtk_select
   JMP XfSelectTick
+\ ---- the play clock: doSubGame's iteration, not ours --------
+\ KC WALL-TIMED THE C64 AT ~11 s FOR THE PLAY 99 (2026-08-27), and the
+\ counter is driven by the iteration, so that is a measurement of
+\ doSubGame's ITERATION RATE and not of the counter. $20DA ticks every
+\ other iteration, so 99 ticks in 11.0 s is 111 ms a tick and 55.5 ms —
+\ 2.78 PAL frames — an iteration. The port ran one a pass, 40 ms, so
+\ the whole subgame was 39% fast: the pulsers, the CPU opponent, the
+\ cursor and the grace period as much as the clock.
+\ THIS SUPERSEDES layer-10 DECISION 13's estimate, which is the only
+\ place in that write-up that was not measured. It argued from the
+\ listing that a half-turn costs ~21,000 cycles, exceeds one PAL frame
+\ and therefore takes its own — 2 frames an iteration, the same 25 Hz
+\ the port runs at — and flagged itself as an estimate. It was low: the
+\ real figure is 2.78, so a half-turn misses its irqToggle edge often
+\ enough to average 1.39 frames rather than 1. KC's stopwatch is the
+\ authority here and the constant below comes from it, not from a cycle
+\ count.
+\ THROTTLING THE WHOLE TICK, not the counter. Slowing $20DA alone would
+\ have made the clock read right while the game stayed frantic — and it
+\ would have left the grace period wrong too: xfGrace is 85 iterations,
+\ 3.4 s at 40 ms and 4.73 s at 55.65, against the C64's own 85 x 55.5 =
+\ 4.72 s. That the grace comes right for free is the check that the
+\ iteration is the thing that was wrong.
+\ One accumulator per pass, iterate on the carry, exactly as the select
+\ clock does — 55.5 ms is 1.39 passes and no whole number will do it.
+\ 256/184 = 1.391 passes = 55.65 ms, so the counter lands on 111.3 ms
+\ and the 99 on 11.02 s. XfPlayTick's own INC xfFrame and $20DA's
+\ `AND #1` are untouched: they are verbatim and now sit on the right
+\ clock.
+XF_PLY_STEP = 184               \ 256 / 1.391 passes; see above
 .xtk_play
+  LDA xfPlayAcc
+  CLC
+  ADC #XF_PLY_STEP
+  STA xfPlayAcc
+  BCS xtk_playgo
+  LDA #0                        \ between iterations: nothing moves and
+  RTS                           \ nothing draws, as on the C64 between
+.xtk_playgo                     \ one irqToggle edge and the next
   JMP XfPlayTick
 .xtk_end
   JMP XfEndTick
@@ -165,12 +203,21 @@ ASSERT PLAY_VIS_ROWS + 1 == 16  \ the board needs all 16 rows
   JMP XfReplayTick
 
 \ ---- the keyboard's repeat filter (Layer 10 DECISION 13) -----
-\ Passes, at FRAME_LOCK's 25 Hz. DELAY 3 puts the second row 4 passes
-\ (160 ms) after the first, RATE 1 puts every row after that 2 passes
-\ (80 ms) apart — 12.5 rows/s held, against the original's 25.
-\ 160 ms is the guarantee: a tap shorter than that is exactly one row.
-\ It was 5 (240 ms) on the first cut and KC asked for less hold-off.
-XF_RPT_DELAY = 3
+\ ITERATIONS, NOT PASSES, and that distinction only started to matter
+\ when XF_PLY_STEP made an iteration 55.65 ms instead of 40. These are
+\ counted in XfGetMove, which runs inside XfPlayTick.
+\ DELAY 2 puts the second row 3 iterations (167 ms) after the first,
+\ RATE 1 puts every row after that 2 iterations (111 ms) apart —
+\ 9 rows/s held, against the original's level-triggered 18.
+\ DELAY WENT 3 -> 2 WITH THE THROTTLE, and that is preserving KC's
+\ decision rather than changing it: what he chose was the 160 ms
+\ guarantee — a tap shorter than that is exactly one row — and he had
+\ already rejected 240 ms as too long. At 40 ms a pass that was 4
+\ passes; at 55.65 it is 3 iterations, and DELAY 3 would have drifted
+\ back to 223 ms. RATE is left alone: 12.5 rows/s became 9, which is
+\ slower than KC tuned and closer to it than the 18 that RATE 0 would
+\ give. Both are worth re-playing now the clock has moved.
+XF_RPT_DELAY = 2
 XF_RPT_RATE  = 1
 
 XF_PH_RELEASE = 0
@@ -214,15 +261,16 @@ XF_PH_REPLAY  = 4
 \ KC wall-timed the C64 at ~11 s for the 99 and the port at ~8 s
 \ (2026-08-27). This is the one real timing deviation layer-10
 \ DECISION 13 found and left alone, and this is the call being made.
-\ THE TWO COUNTDOWNS ARE PACED BY DIFFERENT THINGS and only this one
-\ was wrong. doSubGame ($2166) gates each half-turn on irqToggle, so
-\ the PLAY counter's `xfFrame AND 1` at $20DA is one tick per two
-\ frames and the port's one-iteration-a-pass reproduces it exactly —
-\ that half is untouched. SubGameSelectSide's `_14` loop has no such
-\ gate: it is paced by DelayScore(80), ~103,000 cycles, which is
-\ ~105 ms before badline steal and ~111 ms with it. 99 x 111 ms = 11.0
-\ s, which is what KC measured. The port's `AND #1` gave 80 ms and
-\ 7.92 s, 30% fast.
+\ THE TWO COUNTDOWNS ARE PACED BY DIFFERENT THINGS and BOTH were fast.
+\ This one is SubGameSelectSide's `_14` loop, which has no irqToggle
+\ gate at all: it is paced by DelayScore(80), ~103,000 cycles, which is
+\ ~105 ms before badline steal and ~111 ms with it, and it ticks once
+\ an iteration. 99 x 111 ms = 11.0 s. The port's `AND #1` gave 80 ms
+\ and 7.92 s, 30% fast.
+\ The play counter is fixed at its own end — see XF_PLY_STEP at
+\ xtk_play, where the whole iteration is throttled and $20DA's
+\ `AND #1` is left verbatim. The two arrive at the same 111 ms a tick
+\ by different routes, which is the check that neither is invented.
 \ A FRACTIONAL ACCUMULATOR, because 111 ms is not a whole number of
 \ 40 ms passes — it is 2.78 of them, and DECISION 13's suggested mod-3
 \ would have overshot to 11.88 s. Adding XF_SEL_STEP to a byte and
@@ -252,6 +300,8 @@ XF_SEL_STEP = 92                \ 256 / 2.783 passes; see above
   STA xfTime
   LDA #XF_PH_PLAY
   STA xfPhase
+  LDA #0                        \ and the play clock starts here — see
+  STA xfPlayAcc                 \ XF_PLY_STEP at xtk_play
   JSR XfTextClear
   LDA #LO(xfTxtFinish) : LDY #HI(xfTxtFinish)
   JSR XfMessage                 \ $20F9's Finish_txt for the rest of the game
@@ -263,8 +313,10 @@ XF_SEL_STEP = 92                \ 256 / 2.783 passes; see above
 \ ============================================================
 \ XfPlayTick — one iteration of doSubGame ($2166)
 \ ============================================================
-\ The original spends one 50 Hz frame on each half-turn; a pass here is
-\ two fields, so one full iteration a pass is the same rate. The
+\ ONE ITERATION OF doSubGame, and XfTick decides when it runs: the
+\ original's is 55.5 ms and a pass is 40, so xtk_play gates this on an
+\ accumulator rather than calling it every pass. See XF_PLY_STEP there;
+\ this used to claim one-a-pass "is the same rate" and it was not. The
 \ AnimateIntoFont calls are the C64's background charset animation and
 \ are not ported.
 .XfPlayTick
@@ -2047,6 +2099,7 @@ XF_UCR = PN_WIDE_OFS            \ +XF_UCR, and both bytes ride in the
 .xfFire      EQUB 0             \ C64 joyFire: 0 = PRESSED
 .xfFrame     EQUB 0
 .xfSelAcc    EQUB 0             \ the select countdown's fraction
+.xfPlayAcc   EQUB 0             \ and doSubGame's iteration's
 .xfSeed      EQUB &A5
 .xfPhase     EQUB 0
 .xfEndCtr    EQUB 0

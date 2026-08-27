@@ -31,7 +31,10 @@ memory image, then extracts a region. Output goes to `tools/output/`.
 
 ### Producing the port's data
 
-These emit BeebASM sources into `src/data/` (gitignored — converted game artwork).
+These emit BeebASM sources into `src/data/`, which is **tracked** as of 2026-08-27 (KC).
+It used to be gitignored as converted game artwork; it is committed anyway, so the tree
+assembles without a local `paradroid_ce.lst` and so an exporter change shows up as a diff.
+Regenerate it with the tool rather than editing it.
 
 | Tool | Emits | Contents |
 |---|---|---|

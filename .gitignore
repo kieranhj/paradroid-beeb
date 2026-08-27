@@ -37,15 +37,15 @@ ref/
 paradroid_ce_annotated.asm
 # tools/output/ is produced by the rip_*.py scripts
 tools/output/
-# src/data/ is produced by tools/export_bbc.py — converted game artwork and
-# level data, so copyright as above. Regenerate it; do not commit it.
-# THE ONE EXCEPTION is briefing.txt: it is the hand-editable source of the
-# briefing text (KC edits it, make_briefing.py converts it every build), so
-# KC's edits must be KEPT — tracked, not regenerated. The `*` form is what
-# lets the negation work: git cannot re-include a file whose parent
-# DIRECTORY is excluded.
-src/data/*
-!src/data/briefing.txt
+# src/data/ IS TRACKED, as of 2026-08-27 (KC), and it used to be ignored.
+# It is produced by the exporters in tools/ — converted game artwork, level
+# data and text, so the same copyright position as the section above — but
+# it is committed anyway, so the tree assembles without a local copy of
+# paradroid_ce.lst and so a diff shows when an exporter change moves the
+# data. Regenerate it with the tool rather than editing it by hand; the
+# exception is briefing.txt, which is the hand-editable SOURCE of the
+# briefing text (KC edits it, make_briefing.py converts it every build) and
+# must never be overwritten by export_briefing.py without --force.
 
 # ---- Python ----
 __pycache__/

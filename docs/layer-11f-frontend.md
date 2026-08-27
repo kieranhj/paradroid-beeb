@@ -424,9 +424,10 @@ text ONCE into `src/data/briefing.txt` — hand-editable, verbatim, the pause-ke
 `--force` required to overwrite — and `make_briefing.py` converts it every build (build.ps1 runs
 it), validating the character set and page widths and round-tripping the emitted indices back
 against the input. This supersedes [DECISION 9]'s override table: the wording is edited in the
-text file directly. **`briefing.txt` is gitignored with the rest of `src/data/`** (it is the
-original's copyrighted text), so hand edits live outside git — worth a decision if that ever
-chafes.
+text file directly. **`briefing.txt` is tracked**, and always was — it is the one file in
+`src/data/` the build does not regenerate, so KC's edits had to survive. Since 2026-08-27 the
+rest of `src/data/` is tracked with it, so the "hand edits live outside git" caveat this
+paragraph used to carry is gone.
 
 ## 4e. F5 as built — the scroll, 2026-08-22
 

@@ -199,14 +199,33 @@ is `WinningColor == LeftColor`.
       took 54 of the 340 that were there before it. The correction matters because the
       256 figure was used to argue that DECISION 14's droid icons could not be afforded;
       on the true numbers they very nearly can.
-    - **The select countdown was the one real timing deviation found, and it is FIXED**
-      (KC, 2026-08-27 — he wall-timed the C64 at ~11 s for the 99 and the port at ~8 s).
+    - **BOTH countdowns were fast, and both are FIXED** (KC, 2026-08-27 — he wall-timed the
+      C64 at ~11 s for the 99 and the port at ~8 s, and confirmed it was the PLAY countdown
+      he timed). They are paced by different things, so they took different fixes.
       `SubGameSelectSide`'s `_14` loop has no `irqToggle` gate: it is paced by
       `DelayScore(80)` — ~103,000 cycles, ~105 ms a tick before badline steal and ~111 ms
       with it — so the original takes ~11.0 s over 99 ticks where the port's
-      every-other-pass tick took 7.92 s, 30% fast. **The play counter is untouched** and
-      still verbatim: `doSubGame` DOES gate on `irqToggle`, `$20DA`'s `xfFrame AND 1` is one
-      tick per two frames, and one iteration a pass reproduces it exactly.
+      every-other-pass tick took 7.92 s, 30% fast.
+    - **AND THE PARAGRAPH BELOW ABOUT `doSubGame` RUNNING AT 25 Hz IS WRONG.** It is the one
+      claim in this write-up that was an estimate rather than a measurement, and it says so
+      itself. The play counter is driven by the ITERATION — `$20DA` ticks every other one —
+      so 99 ticks in 11.0 s is 111 ms a tick and **55.5 ms, 2.78 PAL frames, an iteration**,
+      not the 2 the cycle count predicted. A half-turn misses its `irqToggle` edge often
+      enough to average 1.39 frames rather than 1. The port ran one iteration a pass, 40 ms,
+      so **the whole subgame was 39% fast** — the pulsers, the CPU opponent, the cursor and
+      the grace period as much as the clock.
+    - **So `XfTick` throttles the whole iteration, not the counter.** Slowing `$20DA` alone
+      would have made the clock read right while the game stayed frantic, and it would have
+      left the grace period wrong: `xfGrace` is 85 iterations, 3.4 s at 40 ms and **4.73 s at
+      55.65**, against the C64's own 85 × 55.5 = 4.72 s. That the grace comes right for free
+      is the check that the iteration was the thing that was wrong. `XfPlayTick`'s `INC
+      xfFrame` and `$20DA`'s `AND #1` are untouched — verbatim, and now on the right clock.
+    - **The repeat filter is counted in ITERATIONS**, which only started to matter when the
+      iteration stopped being a pass. `XF_RPT_DELAY` went 3 → 2 to hold the 160 ms guarantee
+      (3 × 55.65 = 167 ms; leaving it at 3 would have drifted to 223 ms, which KC had already
+      rejected as too long). `XF_RPT_RATE` is left alone and its held rate went 12.5 → 9
+      rows/s — slower than KC tuned, and nearer it than the 18 that `RATE` 0 would give,
+      which is the original's own level-triggered rate. Both are worth re-playing.
     - **A fractional accumulator, not this document's earlier suggestion of a mod-3.**
       111 ms is not a whole number of 40 ms passes — it is 2.78 of them — and a mod-3 would
       have overshot to 11.88 s. `XF_SEL_STEP` = 92 is added to `xfSelAcc` each pass and the
@@ -418,8 +437,9 @@ colour shadow (`xsScr`/`xsCram` at `SPR_SAVE = &3E00`, *not* `&3000`), and rebui
 through `xfPenOf`. **All 10,240 bytes matched.** The exporter also asserts by construction
 that `pool[slot[set][code]]` is the exact byte string the flat table held, for all 51 pairs.
 
-`src/data/` is gitignored and `build.ps1` does not run the exporters, so a clean checkout
-needs `python tools/export_xfer.py` before it will build.
+`build.ps1` does not run the exporters, so an exporter change means running the tool by hand.
+**`src/data/` is committed since 2026-08-27**, so a clean checkout builds without one — which
+it could not before, since it needed a local `paradroid_ce.lst` to regenerate from.
 
 ## 4. The interfaces, for whoever touches this next
 

@@ -2,7 +2,8 @@
 
 *Part of the Paradroid BBC Micro port. Start at [`../PLAN.md`](../PLAN.md).*
 
-`tools/export_bbc.py` emits BeebASM sources into `src/data/` (gitignored — converted game
+`tools/export_bbc.py` emits BeebASM sources into `src/data/` (TRACKED since 2026-08-27 —
+it was gitignored as converted game
 artwork). `tools/verify_bbc.py` round-trips them back and diffs against the listing.
 `src/main.asm` renders all 32 tile definitions as an 8×4 sheet.
 
