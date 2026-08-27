@@ -847,6 +847,31 @@ four cycles a fire when no burst is running.
 `$D021` on the way in and out. `CbDisruptor` therefore runs *above* the three modal arms in the
 main loop and ends itself when one of them has the machine.
 
+> **AND THEN IT DID NOT, AND KC FOUND IT — 2026-08-27.** Fire the disruptor, step onto a lift or a
+> console within the next three passes, and the screen stays white for the whole of that page.
+>
+> The sentence above stopped being true when `DoScore` and `CbDisruptor` moved out of the raster
+> window: they went to **`ml_afterdraw`, which sits BELOW the modal arms**, and every one of those
+> arms `JMP`s to `ml_passend` over the top of it. So `CbDisruptor`'s own
+> `conActive`/`xferActive`/`liftMode` test — the code that implements this paragraph — became
+> unreachable, and a burst caught by a modal screen was **frozen, not ended**. The override then
+> did exactly what an override does: `SetPalPlay` kept re-applying it, on top of a palette that
+> knew nothing about it, for as long as the page was up. Note that this is the failure mode
+> DECISION 10 was *written to avoid* — it just arrived by a different route than the saved-palette
+> one it rejected.
+>
+> **The fix is `ml_modalend`** (`main.asm`), a three-instruction stub the eight modal `JMP`s now
+> target: `disruptorCnt = 0`, `disrFlash = 0`, then on to `ml_passend`. The same two stores
+> `cbd_end` does, at the point that is actually reached. `CbDisruptor`'s own arm is left in place —
+> it is the original's shape and it comes back to life the day the modal arms converge on
+> `ml_afterdraw`, which is the separate `DoScore`-in-modal-states question.
+>
+> **Measured in jsbeeb**: one pass of ordinary play takes `disruptorCnt` 3 → 2 with `disrFlash`
+> still 1; one pass with `liftMode` = 2 takes it 3 → **0** with the flag cleared. The two cases
+> distinguish `ml_modalend` from the burst's own countdown, which a longer run would not have.
+> The game-over seam — ESCAPE → wash → 999 page → title → high-score entry — was re-run clean
+> afterwards, since its arm is one of the eight.
+
 ## Measured in jsbeeb, 2026-08-20
 
 | | |

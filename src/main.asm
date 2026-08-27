@@ -1322,6 +1322,37 @@ ENDIF
   CMP #2
   BNE ml_noover
   JSR GoTick7
+  JMP ml_modalend
+\ ============================================================
+\ ml_modalend — every modal arm's way out of the pass
+\ ============================================================
+\ IT ENDS A DISRUPTOR BURST, and that is the whole of it. KC found the
+\ bug, 2026-08-27: fire the disruptor and step onto a lift or a console
+\ within the next three passes and the SCREEN STAYS WHITE for the whole
+\ of that page.
+\ disrFlash is an OVERRIDE, not saved state — SetPalPlay re-applies it
+\ after the palette table on every fire 1, which is exactly why
+\ CbDisruptor's header chose an override (a saved-and-restored palPlay
+\ would have had the transfer game and the lift view store the flash as
+\ the deck's colour). Nothing clears it but cbd_state1, at the end of
+\ the burst's own countdown — and the countdown runs in CbDisruptor,
+\ which is at ml_afterdraw, which every modal arm JMPs over. So the
+\ burst is not ended by a modal screen, it is FROZEN, and the override
+\ keeps firing under a palette that knows nothing about it.
+\ CbDisruptor ALREADY HAS THIS TEST — conActive / xferActive / liftMode
+\ at cbd_run, and its header says "a modal screen ends the burst" — but
+\ it can never be reached from a call the modal arms jump past. That
+\ arm is left where it is: it is the original's shape ($1435 sitting
+\ past the console test at $1427) and it comes back to life the day the
+\ modal arms converge on ml_afterdraw, which is a separate question.
+\ This is the same two stores, at the point that IS reached.
+\ THE COUNT GOES WITH THE FLAG. Clearing disrFlash alone would leave
+\ disruptorCnt frozen, and the burst would flash again on the way out.
+\ cbd_end clears both; so does this.
+.ml_modalend
+  LDA #0
+  STA disruptorCnt
+  STA disrFlash
   JMP ml_passend
 .ml_noover
 
@@ -1338,7 +1369,7 @@ ENDIF
   BEQ ml_noconsole
   JSR ConsoleTick
   JSR PanelTick
-  JMP ml_passend
+  JMP ml_modalend
 .ml_noconsole
 
 \ ============================================================
@@ -1351,7 +1382,7 @@ ENDIF
   BEQ ml_noinfo
   LDX #0                        \ IsEntry's "tick" door — X, because
   JSR InfoCall                  \ PAGEBANK is LDA #bank and eats A
-  JMP ml_passend
+  JMP ml_modalend
 .ml_noinfo
 
 \ ============================================================
@@ -1376,7 +1407,7 @@ ENDIF
 \ reach it and none of them do. Not widened here.
   JSR DoScore
   JSR PanelScore
-  JMP ml_passend
+  JMP ml_modalend
 .ml_noxfer
 
 \ ============================================================
@@ -1390,7 +1421,7 @@ ENDIF
   CMP #2
   BNE ml_nolview
   JSR LiftViewTick
-  JMP ml_passend
+  JMP ml_modalend
 .ml_nolview
 
 \ ============================================================
@@ -1722,7 +1753,7 @@ ENDIF                           \ 2026-08-20 it did not: the tint set before
   STA xfmTgtType
   LDX #IS_SCR_XFER1+1
   JSR InfoCall
-  JMP ml_passend
+  JMP ml_modalend
 .ml_noxstart
 
 \ ---- or has the whole SHIP just been cleared? ---------------
@@ -1748,7 +1779,7 @@ ENDIF                           \ 2026-08-20 it did not: the tint set before
                                 \ the BEQ above has just tested it
   LDX #IS_SCR_CLEAR+1
   JSR InfoCall
-  JMP ml_passend
+  JMP ml_modalend
 .ml_noshipclr
 
 \ ---- or did fire on a lift platform stage the side view? ----
@@ -1759,7 +1790,7 @@ ENDIF                           \ 2026-08-20 it did not: the tint set before
   CMP #1
   BNE ml_nolstart
   JSR LiftViewEnter
-  JMP ml_passend
+  JMP ml_modalend
 .ml_nolstart
 
   \ Alongside the AI and for the same reason: it writes no buffer. The
