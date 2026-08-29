@@ -1223,10 +1223,10 @@ ORG &1100
 \ step earlier. bufcore.asm's header has the measurement.
   JSR SetupMode
 
-  LDX #LO(loaddepk)             \ must follow the mode change: VDU 22
-  LDY #HI(loaddepk)             \ clears what the OS thinks is its screen.
-  JSR OSCLI                     \ The boot depacker, loaded once at
-                                \ DEPK_ADDR and reused for all four banks
+\ NO DEPACKER LOAD ANY MORE. PARDEPK was an eighth disc file whose only
+\ job was to carry a second copy of a decompressor the code image now
+\ holds outright; BootBanks and Zx0Unpack are both resident. KC,
+\ 2026-08-29 — docs/loader-compression.md has the ledger.
 
   JSR BootBanks                 \ load-and-unpack all four banks. The loop
                                 \ rides in the PARDEPK overlay itself (RAM
@@ -1884,11 +1884,8 @@ ENDIF                           \ other close: no band may outlive a pass
   JSR WaitNextPass
   JMP mainloop
 
-.loaddepk                       \ loaddepk and loadspr stay HERE: the
-  EQUS "LOAD PARDEPK"           \ briefing exit OSCLIs both with the
-  EQUB 13                       \ overlay not yet / just loaded. The other
-.loadspr                        \ three bank strings ride in PARDEPK
-  EQUS "LOAD PARASPR"           \ beside BootBanks (RAM pass 3)
+.loadspr                        \ shared: BootBanks' bank-5 load and the
+  EQUS "LOAD PARASPR"           \ briefing exit's reload of the same file
   EQUB 13
 .loadfnt
   EQUS "LOAD PARAFNT"
@@ -3286,6 +3283,87 @@ ENDIF
 .oldSysT1L EQUB 0
 .oldSysT1H EQUB 0
 
+\ ============================================================
+\ Zx0Unpack / UnpackBankIn / BootBanks — the ONE depacker
+\ ============================================================
+\ KC, 2026-08-29: "find a way to get a single resident depacker and
+\ compress the additional files." This is that way, and what makes it
+\ affordable is that the depacker was already in memory TWICE — bank 4
+\ instantiated the macro for BuildLevel and the PARDEPK overlay carried
+\ a second copy for the loader. Bank code may call main RAM freely, so
+\ ONE copy here serves both: BuildLevel's `JSR Zx0Unpack` now resolves
+\ across the boundary, and PARDEPK is deleted outright.
+\ IT HAS TO BE MAIN RAM AND IT HAS TO BE RESIDENT. Main RAM because a
+\ depacker in a bank cannot fill another bank — only one is visible.
+\ Resident because BootBanks below runs before any bank exists, so
+\ there is nowhere else for it to have come from.
+\ THE LEDGER: +257 B of macro here against -257 B in bank 4, which is
+\ the whole trick — the code image pays and bank 4 is repaid. See
+\ docs/loader-compression.md for what it buys and what it cost.
+INCLUDE "src/zx0depack.asm"
+
+\ ---- UnpackBankIn — fill a sideways RAM bank from its stream ----
+\ The bank files ship ZX0-compressed and *LOAD at DEPK_STREAM (a
+\ catalogue address tools/make_disc.py writes). They cannot be loaded
+\ straight into the bank even uncompressed: while the filing system is
+\ working the MOS has the DFS ROM paged in at &8000, so the bytes would
+\ land in the ROM socket and be discarded. A selects the bank.
+\ The data bank stays selected from boot on. Every character drawn reads
+\ `tiledefs` through it, so it cannot be paged out during play. That
+\ displaces BASIC, which we never return to, and not DFS, which lives in
+\ its own socket and which the MOS pages in and back out around each of
+\ its own calls.
+.UnpackBankIn
+  STA ROMSHAD                   \ both, always — PAGEBANK's rule
+  STA ROMSEL
+  LDA #LO(DEPK_STREAM) : STA src
+  LDA #HI(DEPK_STREAM) : STA src+1
+  LDA #LO(SWRAM_BASE)  : STA mapptr
+  LDA #HI(SWRAM_BASE)  : STA mapptr+1
+  JMP Zx0Unpack                 \ its RTS returns to our caller
+
+
+\ ---- BootBanks — .start's load-and-unpack loop, all four banks ----
+\ PARADAT's stream lands at DEPK_STREAM and is unpacked straight into
+\ SWRAM; the staging area is free again for the next. The filing
+\ system pages DFS in and out around each call and restores from
+\ ROMSHAD, which UnpackBankIn has kept honest, so each load is no
+\ different from the first.
+\ IN THE CODE IMAGE SINCE 2026-08-29, with the depacker it drives: it
+\ runs before any bank exists, so there is nowhere else it could live
+\ once PARDEPK is gone. loadspr is shared with the briefing exit; the
+\ other three strings are nobody else's and sit here.
+.BootBanks
+  LDX #LO(d_loadcmd)
+  LDY #HI(d_loadcmd)
+  JSR OSCLI
+  LDA #SWRAM_DATA
+  JSR UnpackBankIn
+  LDX #LO(loadspr)
+  LDY #HI(loadspr)
+  JSR OSCLI
+  LDA #SWRAM_SPR
+  JSR UnpackBankIn
+  LDX #LO(d_loadspr2)
+  LDY #HI(d_loadspr2)
+  JSR OSCLI
+  LDA #SWRAM_SPR2
+  JSR UnpackBankIn
+  LDX #LO(d_loadxfer)
+  LDY #HI(d_loadxfer)
+  JSR OSCLI
+  LDA #SWRAM_XFER
+  JMP UnpackBankIn              \ tail call; its RTS is BootBanks' own
+.d_loadcmd
+  EQUS "LOAD PARADAT"
+  EQUB 13
+.d_loadspr2
+  EQUS "LOAD PARSPR2"
+  EQUB 13
+.d_loadxfer
+  EQUS "LOAD PARXFER"
+  EQUB 13
+
 .code_end
 
 \ ---- MODE 1 charset, built at deck-load time ----------------
@@ -3427,7 +3505,8 @@ INCLUDE "src/data/sounddata.asm"
 INCLUDE "src/screen.asm"
 INCLUDE "src/scroll.asm"
 INCLUDE "src/level.asm"
-INCLUDE "src/zx0depack.asm"    \ Layer 13d: BuildLevel's decompressor
+\ zx0depack.asm is NOT here any more -- it is the code image's, one copy
+\ for BuildLevel and the loader both. See .Zx0Unpack above code_end.
 INCLUDE "src/droid.asm"
 .snd_code_start
 INCLUDE "src/sound.asm"        \ Layer 11e: the SN76489 driver — IRQ-called
@@ -3787,89 +3866,6 @@ ASSERT titl_end <= TI_BASE
 ASSERT titl_end <= FONTCODE_ADDR
 SAVE "PARTITL", titl_start, titl_end, TITLE_ADDR, TITLE_ADDR
 
-\ ============================================================
-\ The boot depacker — the PARDEPK disc file
-\ ============================================================
-\ The eighth disc file: the ZX0 decompressor macro from zx0depack.asm
-\ again (bank 4 has the other copy, for BuildLevel), behind a stub that
-\ aims it at DEPK_STREAM -> SWRAM_BASE. Loaded once at boot, before the
-\ four compressed bank files; UnpackBankIn pages the target bank in and
-\ JMPs here with the stream already loaded. It shares PARAFNT and
-\ PARTITL's ground and must fit below DEPK_STREAM, where the streams
-\ land. The ZP it borrows (the level draw's scratch, via zx0depack.asm's
-\ aliases) is idle at boot.
-CLEAR DEPK_ADDR, DEPK_STREAM
-ORG DEPK_ADDR
-.depk_start
-  LDA #LO(DEPK_STREAM) : STA src
-  LDA #HI(DEPK_STREAM) : STA src+1
-  LDA #LO(SWRAM_BASE)  : STA mapptr
-  LDA #HI(SWRAM_BASE)  : STA mapptr+1
-  ZX0_DEPACKER
-
-\ ---- UnpackBankIn — fill a sideways RAM bank from its stream ----
-\ The four bank files ship ZX0-compressed and *LOAD at DEPK_STREAM
-\ (a catalogue address tools/make_disc.py writes). They cannot be
-\ loaded straight into the bank even uncompressed: while the filing
-\ system is working, the MOS has the DFS ROM paged in at &8000, so
-\ the bytes would land in the ROM socket and be discarded. A selects
-\ the bank; the depacker above unpacks DEPK_STREAM -> &8000.
-\
-\ IN THIS OVERLAY, not the code image (RAM pass 3): every caller runs
-\ with it resident — BootBanks below, and the briefing exit, which
-\ OSCLIs loaddepk again before its PARASPR reload. Before InstallIrq
-\ on both paths: the MOS IRQ touches no bank.
-\
-\ The data bank stays selected from boot on. Every character drawn
-\ reads `tiledefs` through it, so it cannot be paged out during play.
-\ That displaces BASIC, which we never return to, and not DFS, which
-\ lives in its own socket and which the MOS pages in and back out
-\ around each of its own calls.
-.UnpackBankIn
-  STA ROMSHAD                   \ both, always — PAGEBANK's rule
-  STA ROMSEL
-  JMP DEPK_ADDR                 \ its RTS returns to our caller
-
-\ ---- BootBanks — .start's load-and-unpack loop, all four banks ----
-\ PARADAT's stream lands at DEPK_STREAM and is unpacked straight into
-\ SWRAM; the staging area is free again for the next. The filing
-\ system pages DFS in and out around each call and restores from
-\ ROMSHAD, which UnpackBankIn has kept honest, so each load is no
-\ different from the first. loadspr is main RAM's (the briefing exit
-\ shares it); the other two strings are nobody else's and sit here.
-.BootBanks
-  LDX #LO(d_loadcmd)
-  LDY #HI(d_loadcmd)
-  JSR OSCLI
-  LDA #SWRAM_DATA
-  JSR UnpackBankIn
-  LDX #LO(loadspr)
-  LDY #HI(loadspr)
-  JSR OSCLI
-  LDA #SWRAM_SPR
-  JSR UnpackBankIn
-  LDX #LO(d_loadspr2)
-  LDY #HI(d_loadspr2)
-  JSR OSCLI
-  LDA #SWRAM_SPR2
-  JSR UnpackBankIn
-  LDX #LO(d_loadxfer)
-  LDY #HI(d_loadxfer)
-  JSR OSCLI
-  LDA #SWRAM_XFER
-  JMP UnpackBankIn              \ tail call; its RTS is BootBanks' own
-.d_loadcmd
-  EQUS "LOAD PARADAT"
-  EQUB 13
-.d_loadspr2
-  EQUS "LOAD PARSPR2"
-  EQUB 13
-.d_loadxfer
-  EQUS "LOAD PARXFER"
-  EQUB 13
-.depk_end
-ASSERT depk_end <= DEPK_STREAM
-SAVE "PARDEPK", depk_start, depk_end, DEPK_ADDR, DEPK_ADDR
 
 \ ============================================================
 \ The briefing text — the PARMAN disc file, bank 5's overlay

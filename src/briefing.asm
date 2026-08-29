@@ -57,13 +57,13 @@ BR_EXIT_OFF   = 1               \ off the end of the last page: the title
   LDX #LO(brLoadMan)
   LDY #HI(brLoadMan)
   JSR OSCLI
-  JSR PgSpr   
-  LDA #LO(DEPK_STREAM) : STA swSrc
-  LDA #HI(DEPK_STREAM) : STA swSrc+1
-  LDA #LO(SWRAM_BASE)  : STA swDst
-  LDA #HI(SWRAM_BASE)  : STA swDst+1
-  LDX #PARMAN_PAGES
-  JSR PageCopyAt
+\ PARMAN SHIPS ZX0 NOW, 2026-08-29. It used to be the one uncompressed
+\ overlay and BrTimeout copied it up page by page; with the depacker
+\ resident it unpacks like any bank file, 20 sectors down to 11 and
+\ ~0.6 s off this seam. UnpackBankIn does its own paging, so the PgSpr
+\ that used to stand here is gone with the copy.
+  LDA #SWRAM_SPR
+  JSR UnpackBankIn
   JSR BrPatchScores
   JMP PgData     \ tail: its RTS is ours
 
@@ -141,9 +141,10 @@ BR_EXIT_OFF   = 1               \ off the end of the last page: the title
                                 \ (title) gives the display back
   JSR RestoreDfsWs
 
-  LDX #LO(loaddepk)             \ the depacker at &3000, over the font —
-  LDY #HI(loaddepk)             \ ts_loads reloads the font either way
-  JSR OSCLI
+\ NO PARDEPK RELOAD. It used to come back here purely to put a
+\ decompressor at &3000; the code image carries the only copy now, and
+\ with nothing landing on &3000 the font survives too — which is what
+\ lets ts_loads stop reloading PARAFNT. 2026-08-29
   LDX #LO(loadspr)              \ PARASPR's stream at DEPK_STREAM
   LDY #HI(loadspr)
   JSR OSCLI

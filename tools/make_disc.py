@@ -37,17 +37,18 @@ sys.path.insert(0, str(Path(__file__).parent))
 import zx0
 
 DEPK_STREAM = 0x3200            # must match main.asm
-COMPRESSED = ["PARADAT", "PARASPR", "PARSPR2", "PARXFER"]
+COMPRESSED = ["PARADAT", "PARASPR", "PARSPR2", "PARXFER", "PARMAN"]
 
 # Physical layout, first file at sector 2. Boot access order: !BOOT,
-# PARA, then PARDEPK and the four banks, then the title, then (after
+# PARA, then the four banks (PARDEPK is gone -- the depacker is resident
+# in the code image since 2026-08-29), then the title, then (after
 # the title is dismissed) the font and the low overlay.
 # PARBRF (the briefing driver, loaded by TiShow on every title) and
 # PARMAN (the briefing text, loaded only when the title times out) sit
 # with PARTITL: the three are all title-time loads. Layer 11f.
 # On an --intro build, PINTRO slots in after !BOOT: it is the first
 # thing !BOOT runs (docs/intro.md §4).
-LAYOUT = ["!BOOT", "PARA", "PARDEPK", "PARADAT", "PARASPR", "PARSPR2",
+LAYOUT = ["!BOOT", "PARA", "PARADAT", "PARASPR", "PARSPR2",
           "PARXFER", "PARTITL", "PARBRF", "PARMAN", "PARAFNT", "PARALOW"]
 
 SECTOR = 256

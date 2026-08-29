@@ -203,13 +203,20 @@ the four are avoidable:
 > sectors and `*LOAD`s in **1.942 s**, with `PageCopyAt` + `BrPatchScores` adding 0.044 s. So the
 > briefing round trip is **5.69 s of loading and unpacking**, not the ~1.1 s this section implies.
 >
-> **The per-file overhead is the story, not the byte count.** `PARDEPK` is 368 bytes and takes
-> 0.902 s — longer than `PARASPR`'s 3,098. Across the five loads the marginal rate is roughly
-> 0.1 s a sector (five times the 20 ms a contiguous sector would cost at 300 rpm, so DFS is losing
-> revolutions) on top of a per-file overhead of a few hundred ms that varies with head position.
-> **Eliminating a file pays even when the file is tiny**, which is exactly what the three
-> eliminations below do — they are worth **2.248 s**, leaving `PARASPR`'s 0.699 s plus the
-> unavoidable 0.755 s depack: **1.454 s against today's 3.702 s.**
+> **CORRECTED the same day — the first reading of this table was wrong.** It said the per-file
+> overhead was the story, on the strength of `PARDEPK` costing 0.902 s for 368 bytes. Measuring
+> the *same file* at boot settles it: **0.181 s**, five times cheaper, same two sectors. The
+> difference is not `PARDEPK` — it is **the first disc access after the drive has been idle**
+> (~0.7 s, consistent with motor spin-up), paid once per path by whatever goes first. `PARMAN`'s
+> 1.942 s has the same component in it.
+>
+> The model is **~0.07 s a sector plus ~0.7 s once per path**; every non-first load measures
+> 0.046–0.091 s/sector with **no measurable per-file overhead**. So *merging* files buys nothing,
+> and removing one saves only its sectors — the wake-up just moves to the next file along.
+> The three eliminations below are therefore worth **~1.53 s**, not 2.248 s: they leave the
+> wake-up plus `PARASPR` plus the depack, **≈ 2.17 s against today's 3.702 s**. The bulk of that
+> is `PARAFNT`'s 1.067 s. The full options list, with the read rate itself as the biggest lever,
+> is in [`loader-compression.md`](loader-compression.md).
 
 The 2026-08-21 table, kept for its reasoning — take the numbers from the box above:
 

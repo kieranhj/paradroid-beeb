@@ -148,6 +148,41 @@
 \ the entries past it, and only on paths that already run once every
 \ four rows or once a tile. Alignment would cost more bytes than the
 \ cycles are worth.
+\ ============================================================
+\ DoorCopyDef — door.asm's, rehoused here 2026-08-29
+\ ============================================================
+\ IT IS HERE FOR THE RAM, NOT FOR THE TIDINESS: the code image had to
+\ find 51 bytes for the resident ZX0 depacker (main.asm's .Zx0Unpack,
+\ which replaced both the bank-4 copy and the PARDEPK one), and this
+\ routine is exactly 51. It is beside tdpLo/tdpHi deliberately — those
+\ are what it reads, they are bank 4's, and so it could never have run
+\ with another bank paged anyway. Its one caller is door.asm's dp_new,
+\ main-RAM play-path code with SWRAM_DATA resting. door.asm keeps the
+\ header explaining where it went.
+.DoorCopyDef
+  STX dpSlot
+  LDY dpRow
+  LDA mapRowLo,Y : STA maprow
+  LDA mapRowHi,Y : STA maprow+1
+  LDY dpCol
+  LDA (maprow),Y                \ tile number
+  TAY
+  LDA tdpLo,Y : STA tdp
+  LDA tdpHi,Y : STA tdp+1
+
+  LDA doorMul16,X
+  CLC
+  ADC #15
+  TAX                           \ destination index, walking down
+  LDY #15
+.dcd_loop
+  LDA (tdp),Y
+  STA doorDef,X
+  DEX
+  DEY
+  BPL dcd_loop
+  RTS
+
 .tdpLo
   FOR t, 0, 31
     EQUB LO(tiledefs + t * 16)

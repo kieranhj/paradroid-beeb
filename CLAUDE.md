@@ -108,10 +108,10 @@ lives only in `build.ps1`.
 DFS filenames are max 7 characters — the executable on disc is `PARA`.
 
 **The build is two stages: beebasm, then `tools/make_disc.py`.** The tool ZX0-compresses the four
-bank files with `bin/zx0.exe` (sources and build line in `tools/zx0src/`; round-trip-verified
+bank files **and `PARMAN`** with `bin/zx0.exe` (sources and build line in `tools/zx0src/`; round-trip-verified
 through `tools/zx0.py` every build), moves their catalogue load address to `DEPK_STREAM`, and lays
-the disc out physically in boot access order. The loader (`UnpackBankIn` + the `PARDEPK` overlay)
-only understands that layout, so **`PARADROID-raw.ssd` hangs at the first bank load** — never hand
+the disc out physically in boot access order. The loader (`UnpackBankIn`, resident in the code
+image) only understands that layout, so **`PARADROID-raw.ssd` hangs at the first bank load** — never hand
 it to an emulator. Boot measured 14.4 s → 10.4 s; `docs/loader-compression.md` has the numbers.
 
 **jsbeeb will not boot an unpadded SSD.** It hangs in the DFS FDC poll, because an image that ends
@@ -127,8 +127,7 @@ code. Redirecting **stdout** alone is safe, which is how `build.ps1` captures th
 
 **beebasm's `SAVE` writes a loose host file whenever it has no disc image to put it in**, so any
 run without a working `-do` drops `PARA`, `PARADAT`, `PARASPR`, `PARSPR2`, `PARXFER`, `PARAFNT`,
-`PARALOW`, `PARTITL` and `PARDEPK`
-in the project root. They are gitignored. Two things follow: a `-do` path that cannot be written leaves a
+`PARALOW`, `PARTITL`, `PARBRF` and `PARMAN` in the project root. They are gitignored. Two things follow: a `-do` path that cannot be written leaves a
 build that *looks* like it worked, and the symbol dump below litters unless you give it one.
 
 Symbol addresses come from
@@ -210,13 +209,12 @@ paragraph:
 
 | Region | Free (2026-08-25, post-pass) |
 |---|---|
-| Main RAM code image | ends `&2D81` — **639 B** below `&3000` |
-| Bank 4 | **51 B** on the gauge, + 17 B of `colourMap` `ALIGN` pad |
+| Main RAM code image | **0 B** — `code_end` is exactly `&3000` since the resident depacker (2026-08-29). Anything new needs a move to bank 4 first |
+| Bank 4 | **231 B** on the gauge (2026-08-29: +206 from losing its depacker copy), + `colourMap` `ALIGN` pad |
 | Bank 5 | **602 B** |
 | Bank 6 | **114 B** |
 | Bank 7 | 7 B tail + **~176 B** of `planInk` `ALIGN` pad |
 | `PARBRF` (`&0400`, hard ceiling `&0800`) | **56 B** |
-| `PARDEPK` (`&3000`, ceiling `&3200`) | **144 B** |
 | `PARAFNT` block | ~49 B before `SPR_SAVE` |
 | Low overlay | `lowcode` 1 B, `lowcode2` 6 B, `lowbss` 8 B |
 
@@ -249,13 +247,19 @@ IRQ does with banks is Layer 11e's sound tick**, which saves `ROMSHAD`, pages `S
 `SndTick` and restores what it found — legal because `PAGEBANK` writes the shadow first. Anything
 else in the IRQ must still read no bank; check that again before putting anything else in one.
 
-All four bank files ship ZX0-compressed on disc (written by `tools/make_disc.py`, not by the
-SAVEs): `*LOAD` drops each stream at `DEPK_STREAM = &3200` and `UnpackBankIn` decompresses it
-straight into the bank via **`PARDEPK`, an eighth disc file** — the `ZX0_DEPACKER` macro from
-`zx0depack.asm` again, loaded at `&3000` before the banks and dead once `PARTITL` lands on it
-(the briefing exit `*LOAD`s it AGAIN before reloading `PARASPR`). Since the RAM pass the overlay
-also carries **`UnpackBankIn`, the boot's `BootBanks` loop and three of the load strings** —
-everything in it runs only while it is resident. The banks cannot be loaded at `&8000` even
+The four bank files **and `PARMAN`** ship ZX0-compressed on disc (written by
+`tools/make_disc.py`, not by the SAVEs): `*LOAD` drops each stream at `DEPK_STREAM = &3200` and
+`UnpackBankIn` decompresses it straight into the bank.
+
+**THERE IS ONE DEPACKER AND IT IS RESIDENT** (KC, 2026-08-29). It used to be in memory twice —
+`zx0depack.asm`'s macro instantiated in bank 4 for `BuildLevel`, and a second copy in a
+`PARDEPK` disc overlay for the loader — and `PARDEPK` was therefore *loaded twice per session*,
+at boot and again on the briefing exit. Bank code may call main RAM freely, so **one copy in the
+code image** (`.Zx0Unpack`, with `UnpackBankIn` and `BootBanks` beside it) serves both, and
+`PARDEPK` is gone: one fewer disc file everywhere, and nothing lands on `&3000` at the briefing
+exit any more. It cost the code image its last bytes — **`code_end` is now exactly `&3000`** —
+paid for by moving `DoorCopyDef` into bank 4, which the same change had just enriched by 257 B.
+`docs/loader-compression.md` has the ledger and the measurements. The banks cannot be loaded at `&8000` even
 uncompressed, because the MOS has the DFS ROM paged in there during a filing-system call. `*LOAD`
 must also happen **before** `InstallIrq` — taking over IRQ1V stops the MOS servicing the filing
 system. See `docs/loader-compression.md`.

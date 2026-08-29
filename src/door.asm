@@ -192,35 +192,16 @@ DOOR_SLOTS = 7                  \ the C64's cap, and it compacts on close
   RTS
 
 \ ============================================================
-\ DoorCopyDef — private copy of the tile definition at (dpCol, dpRow)
+\ DoorCopyDef LIVES IN BANK 4 NOW — see screen.asm
 \ ============================================================
-\ X = slot on entry, and is clobbered: the copy needs one index for the
-\ source and one for the destination, so the slot is parked in dpSlot
-\ and the caller reloads it.
-.DoorCopyDef
-  STX dpSlot
-  LDY dpRow
-  LDA mapRowLo,Y : STA maprow
-  LDA mapRowHi,Y : STA maprow+1
-  LDY dpCol
-  LDA (maprow),Y                \ tile number
-  TAY
-  LDA tdpLo,Y : STA tdp
-  LDA tdpHi,Y : STA tdp+1
-
-  LDA doorMul16,X
-  CLC
-  ADC #15
-  TAX                           \ destination index, walking down
-  LDY #15
-.dcd_loop
-  LDA (tdp),Y
-  STA doorDef,X
-  DEX
-  DEY
-  BPL dcd_loop
-  RTS
-
+\ Moved 2026-08-29 to pay for the resident depacker (main.asm's
+\ .Zx0Unpack): the code image needed 51 bytes and this routine is
+\ exactly 51. It was the safest thing in this file to move, because it
+\ ALREADY could not run without SWRAM_DATA paged — it reads tdpLo/tdpHi
+\ and the tile definition through them, and those are screen.asm's, in
+\ bank 4. So being in bank 4 adds no precondition it did not already
+\ have, and its one caller (dp_new above) is main-RAM play-path code
+\ where SWRAM_DATA is the resting state.
 \ ============================================================
 \ DoorTdp — point tdp at this tile's patched copy, if it has one
 \ ============================================================
