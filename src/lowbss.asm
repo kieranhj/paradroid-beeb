@@ -15,11 +15,24 @@
 \ RUPTURE IRQ READS IS NOT, because the IRQ is live through the title,
 \ the high-score entry and the briefing — a game away from GameStart's
 \ resets. disrFlash was exactly that and gave KC a white briefing
-\ scroller on cold boots (2026-08-28); ts_loads now zeroes it just
-\ before InstallIrq, and main.asm's comment there has the full story.
+\ scroller on cold boots (2026-08-28); ts_loads zeroes it just before
+\ InstallIrq, and main.asm's comment there has the full story.
+\ IT CAME BACK ON 2026-08-30, as a white-on-white TITLE, because that
+\ clear is too late for the first title of a cold boot: TiShow paints it
+\ before ts_loads runs, and TiBootPal's SetTextPal ends in SetPalPlay,
+\ which reads this byte. TitleSeq clears it at its top as well now.
 \ disrFlash is the ONLY byte here the IRQ reads today. Add a second and
 \ it needs the same treatment — jsbeeb will not catch it for you, since
 \ it powers up with RAM zeroed.
+\ AND IT IS NOT ONLY THE IRQ: SetPalPlay reads it from ordinary code, on
+\ every SetPalette and SetTextPal. The test for "does this byte need
+\ initialising" is READ BEFORE WRITTEN OUTSIDE A GAME, not "read by the
+\ interrupt" — that is what the 2026-08-30 one turned on.
+\ AND THE INTRO MAKES THE LEFTOVERS REAL: pdloader unpacks its advance
+\ tables over &0400-&1BFF, so on any boot through it this block holds
+\ sample-table junk rather than the OS's. That is the configuration to
+\ test an lowbss change against; it is the one jsbeeb's zeroed RAM
+\ cannot fake.
 \
 \ It is NOT contiguous with the code, and it must not become so: page
 \ &0D between them is the NMI handler, its workspace, the extended

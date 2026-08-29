@@ -2343,6 +2343,20 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
 \ which also rebuilds the tile map and the charset, so the deck's own
 \ ground needs nothing from us.
 .TitleSeq
+\ THE lowbss BYTE AGAIN, AND EARLIER THAN ts_loads THIS TIME. The clear
+\ down at ts_loads is too late for the FIRST title of a cold boot: TiShow
+\ below paints it, TiBootPal ends in SetTextPal, and SetTextPal ends in
+\ SetPalPlay, which reads disrFlash and forces logical 0 white when it is
+\ non-zero -- all of that before ts_loads runs. lowbss is SKIPped, so at
+\ boot it holds whatever was in the soft-character area, and jsbeeb hides
+\ it by powering up with RAM zeroed (lowbss.asm's header says so).
+\ SCARYBEASTS' INTRO IS WHAT FOUND IT (KC, 2026-08-30): it writes over
+\ &0400-&21FF, disrFlash is inside that, and the title came up white on
+\ white on every boot that went through it. The ts_loads clear stays --
+\ it is the one that covers a game handing back to the front end.
+  LDA #0
+  STA disrFlash
+
   LDX #LO(loadtitl)
   LDY #HI(loadtitl)
   JSR OSCLI

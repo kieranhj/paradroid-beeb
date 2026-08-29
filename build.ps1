@@ -67,6 +67,13 @@ if ($LASTEXITCODE -ne 0) { throw "beebasm failed ($LASTEXITCODE)" }
 # nothing, leaving a disc with PINTRO on it and none of its samples.
 $introRaw = $null
 if ($Intro) {
+    # The intro's data is generated: one ZX0 stream for the whole 16K sideways
+    # image and one for the 20K screen, 33,912 bytes of loose files down to
+    # 5,451. Unlike the other exporters this one IS run here - its input is
+    # pdloader's own checked-in binaries, not the C64 listing.
+    python (Join-Path $root 'tools\make_intro_data.py')
+    if ($LASTEXITCODE -ne 0) { throw "make_intro_data failed ($LASTEXITCODE)" }
+
     $introRaw = Join-Path $build 'PINTRO-raw.ssd'
     Push-Location (Join-Path $root 'pdloader')
     try {

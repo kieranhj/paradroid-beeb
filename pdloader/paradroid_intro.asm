@@ -4,7 +4,7 @@
 \ ==========================================================================
 \ This file is HIS, kept in his style and his layout so that the next drop
 \ from him is a clean diff. Everything below this header is as delivered
-\ except for the four changes listed here, each marked `\ PORT:` at the
+\ except for the six changes listed here, each marked `\ PORT:` at the
 \ site. Do not tidy it, do not restyle it, and add nothing that could
 \ instead live in the game.
 \\
@@ -24,6 +24,10 @@
 \   the five bytes are copied into port_hand at entry and written back in
 \   do_exit. Without this the game falls back to banks 4-7 and only works on
 \   a machine whose sideways RAM happens to be there.
+\ PORT 5 -- its data is two ZX0 streams instead of eleven loose files, and
+\   the bank image depacks straight into the bank. tools/make_intro_data.py
+\   builds them; ../src/zx0depack.asm is INCLUDEd rather than copied.
+\ PORT 6 -- it puts the VIAs back; see PortSaveVia at the end of the file.
 \ PORT 3 -- it closes the *EXEC file first. !BOOT is still open as an exec
 \   file when this runs, and *TAPE below unloads the filing system out from
 \   under it; closing it first means the boot cannot resume into a half-
@@ -50,6 +54,16 @@ addr_sample_ends = &130
 addr_sample_wraps = &140
 addr_sample_wraps_fine = &150
 addr_sample_starts_fine = &160
+\ PORT 5: the depacker's zero page, under the game's names for it. It is
+\ &20-&3F here, which is free: the player's variables end at &1F and its
+\ loop starts at &40.
+src = &20
+mapptr = &22
+sDelta = &24
+subRowOfs = &26
+colTileCol = &28
+rptTile = &29
+
 addr_zero_page_backup = &2200
 addr_D_page_backup = &2300
 addr_lookup_channel = addr_lookup_tables
@@ -722,38 +736,17 @@ CLEAR P%, &8000
   LDA &00
   JMP main_loop
 
-.oscli_load_data_1
-  EQUS "LOAD BDRUM 4000"
+\ PORT 5: three loads, not eleven. tools/make_intro_data.py builds the whole
+\ 16K bank image and ZX0s it, and packs the 20K screen; 33,912 bytes became
+\ 5,451, which is about 5 s of DFS off every boot.
+.oscli_load_bank
+  EQUS "LOAD PINTDAT 4000"
   EQUB &0D
-.oscli_load_data_2
-  EQUS "LOAD SDRUM 4B00"
-  EQUB &0D
-.oscli_load_data_3
-  EQUS "LOAD SHAKER 5600"
-  EQUB &0D
-.oscli_load_data_4
-  EQUS "LOAD BASS 5A00"
-  EQUB &0D
-.oscli_load_data_5
-  EQUS "LOAD BRIGHT 5C00"
-  EQUB &0D
-.oscli_load_data_6
-  EQUS "LOAD TRI32 6800"
-  EQUB &0D
-.oscli_load_data_7
-  EQUS "LOAD GUITAR 6A00"
-  EQUB &0D
-.oscli_load_data_8
-  EQUS "LOAD LOOKTAB 7E00"
-  EQUB &0D
-.oscli_load_data_9
-  EQUS "LOAD SONG 7B00"
-  EQUB &0D
-.oscli_load_data_10
+.oscli_load_advtab
   EQUS "LOAD ADVTAB 1C00"
   EQUB &0D
 .oscli_load_screen
-  EQUS "LOAD SCREEN 3000"
+  EQUS "LOAD PINTSCR 1100"
   EQUB &0D
 
 .init_metadata
@@ -826,74 +819,52 @@ CLEAR P%, &8000
   RTS
 
 .load_data
-  LDX #LO(oscli_load_data_1)
-  LDY #HI(oscli_load_data_1)
-  JSR OSCLI
-  LDX #LO(oscli_load_data_2)
-  LDY #HI(oscli_load_data_2)
-  JSR OSCLI
-  LDX #LO(oscli_load_data_3)
-  LDY #HI(oscli_load_data_3)
-  JSR OSCLI
-  LDX #LO(oscli_load_data_4)
-  LDY #HI(oscli_load_data_4)
-  JSR OSCLI
-  LDX #LO(oscli_load_data_5)
-  LDY #HI(oscli_load_data_5)
-  JSR OSCLI
-  LDX #LO(oscli_load_data_6)
-  LDY #HI(oscli_load_data_6)
-  JSR OSCLI
-  LDX #LO(oscli_load_data_7)
-  LDY #HI(oscli_load_data_7)
-  JSR OSCLI
-  LDX #LO(oscli_load_data_8)
-  LDY #HI(oscli_load_data_8)
-  JSR OSCLI
-  LDX #LO(oscli_load_data_9)
-  LDY #HI(oscli_load_data_9)
-  JSR OSCLI
-  LDX #LO(oscli_load_data_10)
-  LDY #HI(oscli_load_data_10)
+\ PORT 5: the bank image depacks STRAIGHT INTO THE BANK -- the stream lands
+\ at &4000 because a filing-system call has the DFS ROM paged in at &8000,
+\ so the bytes could not go there directly even uncompressed. His 16K copy
+\ loop goes with it: the depacker is the copy now.
+  LDX #LO(oscli_load_bank)
+  LDY #HI(oscli_load_bank)
   JSR OSCLI
 
-  \\ Copy $4000 - $7FFF to bank 4, $8000.
   SEI
-  \ PORT: the bank PARSWR found, not 4. See the header.
-  LDA port_hand + 1
+  LDA port_hand + 1             \ the bank PARSWR found -- see the header
   STA &FE30
-
-  LDA #0
-  STA addr_tmp1
-  STA addr_tmp3
-  LDA #&40
-  STA addr_tmp2
-  LDA #&80
-  STA addr_tmp4
-
-  LDY #0
-  .swram_loop
-  LDA (addr_tmp1),Y
-  STA (addr_tmp3),Y
-  INY
-  BNE swram_loop
-  INC addr_tmp2
-  INC addr_tmp4
-  LDA addr_tmp2
-  CMP #&80
-  BNE swram_loop
-
-  LDA &F4
-  STA &FE30
+  LDA #&40                      \ stream at &4000
+  LDX #&80                      \ into the bank at &8000
+  JSR PortUnpack
+  LDA &F4                       \ the MOS's ROM back, before the next OSCLI:
+  STA &FE30                     \ the filing system needs its own
   CLI
 
+  LDX #LO(oscli_load_advtab)    \ still raw: 1,536 bytes that are already a
+  LDY #HI(oscli_load_advtab)    \ two-bits-per-byte packing, and it belongs
+  JSR OSCLI                     \ in main RAM rather than the bank
+
+\ THE SCREEN STREAM GOES AT &1100, and BOTH HALVES OF THAT MATTER.
+\ Not inside &3000-&7FFF, because ZX0 decodes forwards and a stream in the
+\ picture would be overtaken by its own output long before it was read: at
+\ 16:1 the writer is 19K ahead by the end.
+\ AND NOT AT &0400 EITHER, which is where this first went and which is wrong
+\ in a way that only shows up two thirds of the way down the picture. 1,256
+\ bytes from &0400 reach &08E7, and &0800-&08FF is the MOS's SOUND
+\ WORKSPACE: its 100 Hz interrupt still owns the machine here, it services
+\ the channel queues in there, and one byte written into the stream mid-
+\ decode sends the depacker off a wrong offset -- a band of garbage across
+\ the credits, with correct picture either side of it.
+\ &1100 is DFS's random-access buffer space, which a simple *LOAD does not
+\ touch (the same fact that lets the game's code start there), it is clear of
+\ every MOS buffer, and it is gone before init_player wants &0400-&1BFF.
   LDX #LO(oscli_load_screen)
   LDY #HI(oscli_load_screen)
   JSR OSCLI
+  LDA #&11
+  LDX #&30
+  JSR PortUnpack
 
   RTS
 
-\\ The entry point.
+\ The entry point.
 .binary_exec
   SEI
 
@@ -915,6 +886,9 @@ CLEAR P%, &8000
   LDA #4                        \ nobody probed: the assembled default
   STA port_hand + 1
   .port_have_bank
+
+  \ PORT 6: the VIAs as the MOS left them, to be put back in restore_os.
+  JSR PortSaveVia
 
   \\ Interlace off.
   LDA #144
@@ -1276,6 +1250,9 @@ CLEAR P%, &8000
   LDA &F4
   STA &FE30
 
+  \ PORT 6: and the VIAs, or the game's cold-boot palette comes out white.
+  JSR PortRestVia
+
   RTS
 
 .do_exit
@@ -1323,22 +1300,111 @@ ALIGN &10
 .port_hand
   SKIP 5
 
+\ ============================================================
+\ PORT 6 -- give the VIAs back the way we found them
+\ ============================================================
+\ init_hardware retunes both VIAs and nothing put them back, which is a
+\ problem for exactly one thing and it is not an obvious one: the game's
+\ TiBootPal picks the front end's cold-boot palette (and the LFSR seed)
+\ from USER VIA T1C-L, on the assumption that it is the free-running
+\ 1 MHz counter the MOS leaves behind. We hand it over in CONTINUOUS mode
+\ with a &00FF latch, so it only spans 0-255 and reloads every 257us --
+\ phase-locked to a deterministic boot instead of free-running. It landed
+\ on the same value every time, `AND #15` made that deck 0, and deck 0's
+\ palette is WHITE: a white-on-white title screen, every boot, and only
+\ through the intro. Reported by KC 2026-08-30.
+\ THE SAME SAVE COVERS A SECOND ONE that had not bitten yet: the game's
+\ InstallIrq captures the System VIA's ACR and T1 latches to give back at
+\ UninstallIrq, so without this it would hand the MOS OUR timer setup at
+\ the game-over seam rather than the MOS's own.
+\ Every register here is in page &FE, so one byte of address each.
+.port_via_reg
+  EQUB &4B                      \ System VIA ACR
+  EQUB &43                      \ System VIA DDRA -- init_hardware makes it
+                                \ all output and the MOS wants PA7 in
+  EQUB &46                      \ System VIA T1 latch low  (reading the
+  EQUB &47                      \ System VIA T1 latch high  LATCHES leaves
+  EQUB &6B                      \ User VIA ACR              the counter be)
+  EQUB &66                      \ User VIA T1 latch low
+  EQUB &67                      \ User VIA T1 latch high
+PORT_VIA_N = 7
+.port_via_val
+  SKIP PORT_VIA_N
+.port_via_ier
+  SKIP 2                        \ the two IERs, enables only
+
+.PortSaveVia
+  LDY #PORT_VIA_N - 1
+  .psv_loop
+  LDX port_via_reg,Y
+  LDA &FE00,X
+  STA port_via_val,Y
+  DEY
+  BPL psv_loop
+  LDA &FE4E                     \ IER reads back with bit 7 set; keep the
+  AND #&7F                      \ enables and put bit 7 back on the write
+  STA port_via_ier + 0
+  LDA &FE6E
+  AND #&7F
+  STA port_via_ier + 1
+  RTS
+
+.PortRestVia
+  LDA #&7F                      \ silence both before touching anything
+  STA &FE4E
+  STA &FE6E
+  LDY #PORT_VIA_N - 1
+  .prv_loop
+  LDX port_via_reg,Y
+  LDA port_via_val,Y
+  STA &FE00,X
+  DEY
+  BPL prv_loop
+  LDA #&7F                      \ nothing of ours left pending
+  STA &FE4D
+  STA &FE6D
+  LDA port_via_ier + 0
+  ORA #&80
+  STA &FE4E
+  LDA port_via_ier + 1
+  ORA #&80
+  STA &FE6E
+  RTS
+
 .table_palette_lists
   EQUB &00,&10,&10,&10,&10,&20,&20,&20,&20,&30,&30,&30,&20,&10,&00
+
+\ PORT 5: the ZX0 depacker for the two streams above. ../src/zx0depack.asm
+\ is the GAME's decoder, INCLUDEd rather than copied so that there is one of
+\ them: it defines the macro and instantiates it as Zx0Unpack. It wants six
+\ zero-page pointers under the game's names for the scratch it borrows
+\ there; &20-&3F is free here, between the player's variables and its loop,
+\ and none of this runs while the player does.
+\ NO ORG: the block above runs on from &2A00 unbounded (his CLEAR with no ORG
+\ after it), so it is already past &2B00 by here. Carry on from P% and guard
+\ against &3000, which is where the picture lands.
+CLEAR P%, &8000
+GUARD &3000
+
+.PortUnpack                     \ A = HI(stream), X = HI(destination);
+  STA src + 1                   \ both page-aligned
+  STX mapptr + 1
+  LDA #0
+  STA src
+  STA mapptr
+  JMP Zx0Unpack                 \ its RTS returns to our caller
+
+INCLUDE "../src/zx0depack.asm"
 
 .binary_end
 
 COPYBLOCK zero_page_play_start, zero_page_play_end, zero_page_play_copy
 
+PRINT "PINTRO   ", ~binary_start, "-", ~binary_end
 SAVE "PINTRO", binary_start, binary_end, binary_exec
-PUTFILE "lookup_tables.out", "LOOKTAB", 0
-PUTFILE "adv_tables.out", "ADVTAB", 0
-PUTFILE "conv.out", "SONG", 0
-PUTFILE "sample.bdrum", "BDRUM", 0
-PUTFILE "sample.sdrum", "SDRUM", 0
-PUTFILE "sample.shaker", "SHAKER", 0
-PUTFILE "sample.bass128", "BASS", 0
-PUTFILE "sample.bright", "BRIGHT", 0
-PUTFILE "sample.tri32", "TRI32", 0
-PUTFILE "sample.guitar", "GUITAR", 0
-PUTFILE "screen", "SCREEN", 0
+\ PORT 5: two generated streams and one raw file, where eleven loose ones
+\ used to be. build/ is where tools/make_intro_data.py writes them, and
+\ build.ps1 runs it before this pass.
+PUTFILE "adv_tables.out", "ADVTAB", &1C00
+PUTFILE "../build/PINTDAT", "PINTDAT", &4000
+PUTFILE "../build/PINTSCR", "PINTSCR", &1100

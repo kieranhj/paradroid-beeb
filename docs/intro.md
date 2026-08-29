@@ -293,7 +293,7 @@ whole reason generated data is committed (KC, 2026-08-27). A picture change star
 | Screen | 1,256 B ZX0, depacked in place | 20,480 B raw — see §8's open items |
 | RAM | `&1900`, ~4K | `&2700-&2AFF`, all of zero page, `&0100-&016F`, `&0400-&09FF`, and a sideways bank |
 
-### The four port changes
+### The six port changes
 
 His file is vendored **verbatim** (KC, 2026-08-29) so his next drop is a clean diff; ours are
 marked `\ PORT:` at the site and listed in its header and in `pdloader/README.md`:
@@ -349,12 +349,64 @@ plays (938 sound writes in 40,000 cycles, one every ~43 cycles), a keypress chai
 own sound driver is healthy afterwards — 88 writes over 30 frames of shooting — so the intro's
 takeover of the chip and the System VIA leaves nothing behind. 24 files on the disc, of 31.
 
+### The data is compressed — PORT 5, 2026-08-30
+
+`tools/make_intro_data.py` (run by `build.ps1 -Intro`) turns the eleven loose data files into
+two ZX0 streams: **`PINTDAT`**, the whole 16K sideways image — samples, song and lookup tables
+at the offsets `init_metadata`'s page constants expect — **16,384 → 4,195**, and **`PINTSCR`**,
+the picture, **20,480 → 1,256**. **33,912 bytes became 5,451**, eleven catalogue entries became
+two, and the disc image went from 85,760 to 56,064 — about **5 s off every boot** at this
+project's measured DFS rate. `src/zx0depack.asm` is INCLUDEd rather than copied, so there is
+still one decoder; the bank stream depacks STRAIGHT INTO THE BANK and his 16K copy loop is gone.
+
+**Where a stream may land is the whole difficulty**, and the second constraint is not obvious:
+
+- Not inside `&3000-&7FFF` for the screen — ZX0 decodes forwards and at 16:1 the writer is 19K
+  ahead of the reader by the end, so the stream would be overtaken by its own output.
+- **Not at `&0400` either**, which is where it went first. 1,256 bytes from there reach `&08E7`,
+  through **`&0800-&08FF`, the MOS's sound workspace** — whose 100 Hz interrupt still owns the
+  machine at load time and services the channel queues in there. One byte written into the
+  stream mid-decode sends the depacker off a wrong offset: a band of garbage across the credits
+  with correct picture either side of it, 542 wrong bytes between `&6A50` and `&754C`. **Found
+  by diffing the depacked screen against `pdloader/screen`, not by looking at it** — the
+  screenshot said "credits are wrong somehow" and the diff said where and how much.
+  `&1100` is the home: DFS's random-access buffer space, untouched by a simple `*LOAD`.
+
+Verified 2026-08-30: the depacked screen is **byte-identical** to `pdloader/screen`, the player
+runs at full rate out of the depacked bank (937 SN76489 writes in 40,000 cycles against 938
+before), and the whole chain boots to the briefing on banks 4-7 **and** on 0,1,2,3.
+
+### PORT 6, and the game bug under it — 2026-08-30
+
+KC: *"the main game title screen always seems to be white when running through the new intro."*
+Two faults, one on top of the other.
+
+**The intro's**: `init_hardware` retunes both VIAs and nothing put them back. `TiBootPal` takes
+the cold-boot palette and the LFSR seed from **User VIA T1C-L**, expecting the free-running
+1 MHz counter the MOS leaves; we handed it over in continuous mode with a `&00FF` latch, so it
+spans 0-255 and reloads every 257 µs — phase-locked to a deterministic boot instead of
+free-running, landing on the same value every time. `PortSaveVia`/`PortRestVia` now save the
+seven registers we change and both IERs, and `restore_os` puts them back. That also closes a
+latent one: `InstallIrq` captures the System VIA's ACR and T1 latches to give back at
+`UninstallIrq`, so the game-over seam would otherwise have handed the MOS **our** timer setup.
+
+**The game's**, which the first was hiding: `SetPalPlay` reads `disrFlash` and forces logical 0
+white when it is non-zero, and `disrFlash` is in `lowbss` — uninitialised OS leftovers at boot.
+`ts_loads` cleared it, but **`TiShow` paints the first title before `ts_loads` runs**, and
+`TiBootPal` ends in `SetTextPal` which ends in `SetPalPlay`. `TitleSeq` clears it at its top now.
+
+**This is the 2026-08-28 white-briefing bug again**, in a second place, and it is the third time
+in two days that jsbeeb's zeroed RAM hid something: `src/lowbss.asm`'s own header says it will.
+The intro is what made the leftovers real — it writes over `&0400-&21FF`, `disrFlash` included —
+so **it is now the configuration to test an lowbss change against**.
+
+The measurement that settled it: `deck` (&8B) read 15, whose text palette is `01 00 02 07` —
+logical 0 RED. The screen showed white. One entry wrong, and only logical 0, which is
+`SetPalPlay`'s disruptor override exactly.
+
 ### Open items
 
-- **`SCREEN` ships raw at 20,480 B** where we already hold it packed at 1,256. With the game's
-  257-byte depacker macro that is **~3.4 s off every boot** at this project's measured DFS rate.
-- **Ten data files could be one 16K image**, laid out by page where `init_metadata` expects it:
-  one catalogue entry and one seek instead of ten.
+
 - **The gap is silent.** The music stops at the keypress and the game then loads for 10.4 s with
   nothing playing. Nothing can be done about it with this player — it owns the CPU with
   interrupts off, so no disc access can happen underneath it. Accepted by KC, 2026-08-29.
