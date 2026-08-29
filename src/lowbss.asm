@@ -10,6 +10,16 @@
 \ Everything below is written before it is read — AnimTick clears the
 \ counters at the top of every pass and LoadDeck's AnimReset seeds
 \ lampHave — so it is SKIPped rather than shipped.
+\ WHICH MEANS THIS BLOCK IS OS LEFTOVERS UNTIL A GAME STARTS, and the
+\ claim above is only true of code that runs inside one. ANYTHING THE
+\ RUPTURE IRQ READS IS NOT, because the IRQ is live through the title,
+\ the high-score entry and the briefing — a game away from GameStart's
+\ resets. disrFlash was exactly that and gave KC a white briefing
+\ scroller on cold boots (2026-08-28); ts_loads now zeroes it just
+\ before InstallIrq, and main.asm's comment there has the full story.
+\ disrFlash is the ONLY byte here the IRQ reads today. Add a second and
+\ it needs the same treatment — jsbeeb will not catch it for you, since
+\ it powers up with RAM zeroed.
 \
 \ It is NOT contiguous with the code, and it must not become so: page
 \ &0D between them is the NMI handler, its workspace, the extended

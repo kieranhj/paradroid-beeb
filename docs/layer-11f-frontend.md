@@ -603,6 +603,48 @@ identical bytes — 6 B of bank 4, whose tail is now 44 B; the `colourMap` pad i
 **Costs**: bank 4 15 → **4 B**, PARBRF 81 → **3 B**, PARMAN ~120 B of eleven K, **main RAM zero**
 (`code_end` unmoved at `&2FFE`). Roughly 30 cycles a field in the briefing and nothing in-game.
 
+## 4g. The white briefing, 2026-08-28 — a cold-boot only defect
+
+**KC: "sometimes the frontend picks a level with a white background palette and the text is
+not visible in the briefing scroller."** The palette was right and the deck pick was innocent;
+`disrFlash` was the culprit.
+
+**What the scroller is made of.** `FontCell` paints paper in **logical 0** and ink in
+**logical 3**, and logical 3 is physical 7 — white — for every deck in the table. So the
+scroller is legible exactly as long as logical 0 is not white.
+
+**The deck pick was already safe, and this was measured, not assumed.** `TiBootPal` applies
+**`SetTextPal`, not `SetPalette`** (§title.asm), and `deckTextPal`'s logical 0 is only ever
+physical 1, 4 or 5 across all sixteen decks — the white floors (decks 0, 5, 9) live in
+`deckPalette`, which the front end never reads. Forcing the boot deck to 0 gives a **red**
+scroller; playing through to a game over and back round gives a **magenta** one. Masking decks
+out of the pick would have fixed nothing.
+
+**The real cause.** `SetPalPlay` (rupture.asm) reads **`disrFlash`** on every fire 1 and, when
+it is non-zero, overrides logical 0's four ULA entries to white — the disruptor flash, an
+override rather than saved state, for the reason `CbDisruptor`'s header gives. `disrFlash`
+lives in **`lowbss`, which is `SKIP`ped and never shipped or zeroed**, so at a cold boot it
+holds whatever the OS left in the soft-character area at `&0C90-&0CFF`. `GameStart` clears it
+($10DB) — but that is a whole game away: the title, the high-score entry and the entire
+briefing run under the IRQ first. Non-zero garbage means a white briefing, once, on the first
+boot of a session, and never again.
+
+**Why nothing caught it.** jsbeeb powers up with RAM zeroed, so `disrFlash` is 0 on every
+emulated boot. Reproduced by poking `&0CF5` and, decisively, by seeding it before a SHIFT+BREAK
+autoboot — **the byte survives BREAK**, which is exactly the real-hardware case.
+
+**The fix**: `ts_loads` stores 0 to `disrFlash` immediately before `InstallIrq`. There rather
+than in the boot path alone because `ts_loads` is every route to the front end and none of them
+can be inside a burst — `GoTitle` and `BrDispatch` have torn the game down before they arrive.
+The other three disruptor bytes need nothing: only `CbDisruptor` reads them and `GameStart`
+clears them first. Two bytes of main RAM. **The standing rule is now in `lowbss.asm`'s header:
+anything the rupture IRQ reads out of `lowbss` must be initialised before `InstallIrq`, because
+the IRQ is live through the whole front end. `disrFlash` is the only such byte today.**
+
+**Verified**: seeded `&FF` + SHIFT+BREAK reproduces the white block on the old build and comes
+up legible on the new one; and the disruptor itself still runs — fired in play, `disruptorCnt`
+2 / `disrFlash` 1 during the burst, both back to 0 after it.
+
 ## 5. Staging
 
 Each step ends with something visible, and the order is chosen so nothing waits on the big one.

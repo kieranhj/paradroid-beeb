@@ -2343,6 +2343,27 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
                                 \ copy finished — it reaches past &5500
   JSR SprBuildMask              \ the title's framebuffer sat on the mask
                                 \ table too
+
+\ THE ONE lowbss BYTE THE IRQ READS, AND IT IS ABOUT TO START READING IT.
+\ KC, 2026-08-28: on a COLD boot the briefing scroller sometimes came up
+\ a blank white block, white text on white paper, and never again in the
+\ same session. lowbss is SKIPped, not shipped (see its header), so at
+\ boot &0C90-&0CFF holds whatever the OS left in the soft-character area
+\ it reclaims -- and SetPalPlay reads disrFlash on EVERY fire 1 from the
+\ first one InstallIrq lets through, forcing logical 0's four ULA entries
+\ to white when it is non-zero. GameStart clears it ($10DB, with the
+\ other three disruptor bytes) but that is a game away: the title, the
+\ high-score entry and the whole briefing run first. Reproduced by poking
+\ &0CF5 at the briefing under jsbeeb, which powers up with zeroed RAM and
+\ so never showed it.
+\ HERE rather than in the boot path alone because ts_loads is every route
+\ to the front end and none of them can be inside a burst -- GoTitle and
+\ BrDispatch have torn the game down before they arrive. The other three
+\ disruptor bytes need nothing: only CbDisruptor reads them, and
+\ GameStart clears them before it can run.
+  LDA #0
+  STA disrFlash
+
   JMP InstallIrq                \ take the IRQ back, and its RTS
 
 \ ============================================================
