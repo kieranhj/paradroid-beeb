@@ -4,7 +4,7 @@
 \ Source: paradroid_ce.lst ($C610 effects, $EAA0 instruments)
 \ 28 in-game effects x 11 bytes (SID-frequency space,
 \ verbatim minus pulse and the never-used chain) plus the
-\ chatter's scratch slot, 13 instruments x 6 bytes, and
+\ chatter's scratch slot, 14 instruments x 6 bytes, and
 \ the 32-entry frequency->period table. Formats and conversion:
 \ the exporter's header, docs/layer-11e-sound.md.
 \ Effect n's record is sndFxTab + (n-1)*11; offsets +5/+6/+7
@@ -52,7 +52,7 @@ SND_NOISE_SHIFT = 4
 \ the effect number; the driver walks to it like any other. Ships
 \ holding blip A, so it is valid even if nothing ever writes it.
 .sndFxChat
-  EQUB &07,&00,&20,&00,&E8,&7D,&00,&01,&00,&00,&00  \ 29: scratch (blip A as shipped)
+  EQUB &0D,&00,&20,&00,&E8,&7D,&00,&01,&00,&00,&00  \ 29: scratch (blip A as shipped)
 
 \ effect 24's per-deck patch values, indexed by deck 0-15:
 \ segment timer / reload / count -> sndFxTab + 23*11 + 5/6/7.
@@ -78,6 +78,7 @@ SND_NOISE_SHIFT = 4
   EQUB &00,&33,&FF,&FF,&FF,&30  \ 10: triangle, AD=80 SR=F0 hold=48
   EQUB &83,&FF,&FF,&FF,&07,&02  \ 11: pulse, AD=00 SR=F9 hold=2
   EQUB &83,&FF,&40,&FF,&02,&10  \ 12: triangle, AD=33 SR=FC hold=16
+  EQUB &00,&55,&20,&99,&01,&80  \ 13: triangle, AD=55 SR=CD hold=128
 
 \ N = sndFreq[(F<<s)>>8 - 128] >> (8-s), s = shifts to normalise
 \ F into [$8000,$FFFF]; noise voices shift SND_NOISE_SHIFT more.

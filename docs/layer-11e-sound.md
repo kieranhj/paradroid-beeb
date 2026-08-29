@@ -466,6 +466,29 @@ The port has no `sndState $11`: 11f [DECISION 11].)*
   periodic noise clocked by tone 2 is the preferred cure** — it reaches ~15× below the tone
   floor and is an iconic BBC sound. Tuned by ear in stage 4, effect by effect, minding that it
   shares the one noise channel with the explosions.
+
+  **Round twelve, 2026-08-28 — the chatter itself comes down 6 dB, and `FX_LEVEL` grows a
+  second cloning route.** KC: reduce the volume of the briefing chirps, leave the underlying
+  hum alone — the chirps being the voice-1 zipper, the bed being fx16 on voice 2, which round
+  eleven had just settled and which is therefore untouched. The chatter sustained at **nibble
+  12, attenuation 3**, continuously across the whole briefing; `briefing.asm`'s volume-key
+  comment calls it the loudest thing in the game and it was. It is now **nibble 9, attenuation
+  6** — the same level as fx16, so the zipper sits *with* the bass bed rather than 6 dB over
+  it. Its attack ramp is untouched, so the one full-level tick per blip survives (§8's
+  "look at the transient, not the body" still applies if it ever reads loud again).
+
+  **The mechanism is new because 11f's closing warning was right**: instruments 6, 7 and 8 are
+  the chatter's *and* fx5/6/7/11/12/13/14/20's, so no blip's instrument can be edited in place
+  and `FX_LEVEL`'s assert catches the attempt. `FX_PERIODIC` could not be borrowed either — it
+  would make the blips noise voices, which the chatter export asserts against. So the exporter
+  gained **`FX_LEVEL_CLONE`**: the same free-slot-then-extend allocation, no flag change,
+  keyed on **the six bytes an instrument emits** rather than on its index. The three blips name
+  three *byte-identical* instruments, so they share one clone — **6 bytes of bank 4, not 18**.
+  No free slots were left (rounds ten and eleven took both), so instrument 13 extends the table;
+  bank 4's tail goes **50 → 44 B**.
+
+  Verified in the registers, briefing running: **CH0 attenuation 6** across samples, with CH3
+  (fx16) at 6 when it fires. Ear pass still owed to KC.
   **The hum's story, 2026-08-21, two rounds.** KC's first play found its opening segment
   clamped into a loud flat 122 Hz drone over the throb (F starts at 256 = 15 Hz). Round one
   rendered the whole hum as periodic noise — **reverted by KC**: the tone hum was right, only

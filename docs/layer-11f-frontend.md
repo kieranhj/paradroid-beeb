@@ -593,7 +593,12 @@ The full account, including the in-game lift consequence still to be heard, is
 2 dB a step.
 
 Anything further must go through `FX_PERIODIC`'s cloning too — instruments 6, 7 and 8 are shared
-with in-game effects, so no blip's instrument can be edited in place.
+with in-game effects, so no blip's instrument can be edited in place. **Round twelve, 2026-08-28,
+did exactly that**: KC asked for the chirps quieter with the bed left alone, so the chatter's own
+sustain came down 6 dB (nibble 12 → 9, level with fx16) on a shared clone allocated by the
+exporter's new `FX_LEVEL_CLONE`. One clone covers all three blips because their instruments emit
+identical bytes — 6 B of bank 4, whose tail is now 44 B; the `colourMap` pad is untouched,
+`sounddata.asm` assembling behind it. 11e §8, round twelve.
 
 **Costs**: bank 4 15 → **4 B**, PARBRF 81 → **3 B**, PARMAN ~120 B of eleven K, **main RAM zero**
 (`code_end` unmoved at `&2FFE`). Roughly 30 cycles a field in the briefing and nothing in-game.

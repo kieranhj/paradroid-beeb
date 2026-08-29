@@ -18,9 +18,9 @@
 BR_CHAT_PRE = 5
 
 .brChatTab
-  EQUB &07,&00,&20,&00,&E8  \ 29: briefing chatter blip A (triangle)
+  EQUB &0D,&00,&20,&00,&E8  \ 29: briefing chatter blip A (triangle)
      \ F 0..63488, 12 wraps, sub-floor 6%
-  EQUB &06,&00,&10,&00,&C7  \ 30: briefing chatter blip B (sawtooth)
+  EQUB &0D,&00,&10,&00,&C7  \ 30: briefing chatter blip B (sawtooth)
      \ F 768..62208, 28 wraps, sub-floor 4%
-  EQUB &08,&00,&0C,&00,&CD  \ 31: briefing chatter blip C (pulse)
+  EQUB &0D,&00,&0C,&00,&CD  \ 31: briefing chatter blip C (pulse)
      \ F 3328..61696, 25 wraps, sub-floor 0%

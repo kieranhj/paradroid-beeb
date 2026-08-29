@@ -181,6 +181,20 @@ FX_OVERRIDES = {24: {'f0': 1836}}
 # right as a tone - hence the clone rather than PERIODIC_BASS.
 FX_PERIODIC = {16, 23}
 
+# Effects given their OWN COPY of their instrument for no reason but to
+# carry an FX_LEVEL entry, when the C64's instrument is shared with
+# siblings that must not move. Same slot machinery as FX_PERIODIC, no
+# flag change; effects whose instrument emits the SAME six bytes share
+# one clone between them.
+#
+# The briefing chatter, 2026-08-28, KC: "reduce the volume of the
+# briefing chirps, leave the underlying hum alone" - the chirps being
+# the voice-1 zipper and the bed being fx16 on voice 2. Its blips name
+# instruments 7/6/8, which the C64 ships byte for byte identical and
+# which fx5/6/7/11/12/13/14/20 also play in game, so one clone covers
+# all three blips and costs bank 4 six bytes.
+FX_LEVEL_CLONE = {29, 30, 31}
+
 # Tone instruments whose sub-floor content MUTES instead of clamping.
 # The wiki's sn76489 page: N=1 is a 125 kHz square - out of audible
 # range, effectively silent, and the LM324N strips the carrier - so the
@@ -222,7 +236,15 @@ MUTE_SUBFLOOR = {2, 3}
 # NIBBLE 6 (attenuation 9, another 6 dB down) WAS TRIED AND REVERTED by
 # KC the same evening: 12 dB below the chatter was too far. Nibble 9 is
 # the eared value; do not "improve" it downwards again without asking.
-FX_LEVEL = {16: 9}
+#
+# fx29/30/31, 2026-08-28, KC. The chatter sustained at nibble 12 -
+# attenuation 3, and it plays essentially continuously across the whole
+# briefing, which is what made briefing.asm call it the loudest thing in
+# the game. Nibble 9 is 6 dB down and lands it exactly on fx16's level,
+# so the zipper now sits WITH the bass bed instead of 6 dB over it.
+# Its attack ramp is untouched. The three blips share one clone, so one
+# entry each keeps the assert below happy.
+FX_LEVEL = {16: 9, 29: 9, 30: 9, 31: 9}
 
 # SID envelope rate tables, ms for the full 0->peak / peak->0 ramp
 ATTACK_MS = [2, 8, 16, 24, 38, 56, 68, 80, 100, 250, 500, 800,
@@ -417,6 +439,26 @@ def main():
                 instruments.append(c)
             clones[src_i] = c['idx']
         fx_raw[n - 1] = bytes([clones[src_i]]) + fx_raw[n - 1][1:]
+
+    # FX_LEVEL_CLONE: the same slot allocation, keyed on the SIX BYTES
+    # the instrument emits rather than on its index, so the chatter's
+    # three identical instruments cost one slot and not three. The
+    # wave-name comment differs between them; the bytes do not.
+    lclones = {}
+    for n in sorted(FX_LEVEL_CLONE):
+        src = instruments[fx_raw[n - 1][0]]
+        key = (src['flags'], src['atk'], src['dec'],
+               src['sus'], src['rel'], src['dur'])
+        if key not in lclones:
+            c = dict(src)
+            if free_slots:
+                c['idx'] = free_slots.pop(0)
+                instruments[c['idx']] = c
+            else:
+                c['idx'] = len(instruments)
+                instruments.append(c)
+            lclones[key] = c['idx']
+        fx_raw[n - 1] = bytes([lclones[key]]) + fx_raw[n - 1][1:]
     n_inst = len(instruments)
 
     # FX_LEVEL, resolved now that every record names its final
