@@ -445,6 +445,55 @@ The ship clear was reached by poking `shipNumDroids` to the deck's own droid cou
 
 ---
 
+## 6a. The wash's length was the wrong loop's — fixed 2026-08-29
+
+**KC:** "the game over static screen goes on for way too long. the C64 version is only a second
+or so, if that." It was `GO_HOLD = 88` passes at 25 Hz — **3.5 s**.
+
+**88 was EndGame's OTHER counter.** `$3802 LDA #$58` seeds `xfer_plySpriteX` for the `_5` loop at
+`$3806`, which is the hold on the **GAME OVER / 999 page**, *after* the wash has burnt out — and
+the port already has that one, as `infoscr.asm`'s `IS_HOLD`. The wash is `_3`, `$37C1`–`$37D9`,
+and it counts in `frameCount`: `$37BB` seeds it with the paint loop's leftover `dest+1` = `$4C`
+= 76 and the loop runs `INC`/`BMI` until bit 7 sets at 128, so the body runs **128 − 76 = 52
+iterations**, always. The port had been giving the wash the page's counter.
+
+**The conversion is [DECISION 3]'s, unchanged.** That note costs the 999 page's iteration —
+`DelayScore(32)`, two nested busy loops — at about 41,000 cycles ≈ 0.04 s, which is why 72 of
+them port to 72 passes at 25 Hz. The wash's `DelayScore` takes `Y = $10`, **exactly half**, so one
+wash iteration is ~20,500 cycles ≈ 0.02 s — half a port pass. **52 half-passes = 26 passes =
+1.04 s**, against the C64's 52 × 0.0208 = 1.08 s. Same route, same arithmetic, and it lands where
+KC's ear put it.
+
+**And then the boil rate went up with it, same day.** At one row a pass, 26 passes is only a
+screen and a half of churn — KC: "increase the row-per-pass rate". `GO_ROWS` is that dial, now
+**4**: the screen turns over every four passes, six and a half times across the wash, which is as
+near the C64's every-cell-every-iteration as repainting gets.
+
+**The frame lock is the ceiling, and it binds here in a way it does not elsewhere** — `overTick`
+counts *passes*, so a pass that overruns two fields would stretch the 1.04 s straight back out.
+The budget is a two-field pass at 2 MHz = **80,000 cycles**. `GoWashRow` is 40 cells, each an
+`XfRand` and a 16-byte copy loop at ~19 cycles a byte — ~340 a cell, ~13,600 a row. Four rows
+≈ 54,000, which fits alongside the rupture and the modal tail; eight would be ~109,000 and would
+not. `GoWashStart`'s own 16-row paint is exempt: one-off at entry, and the lock is a floor there.
+
+**That arithmetic was wrong twice before the emulator settled it** — first a per-row figure too
+low, then a per-pass budget of 40,000 cycles instead of 80,000 (a 50 Hz field at 2 MHz is 40,000
+cycles, and a pass is two of them). The measurement is the authority: on a real ESCAPE game over
+`overTick` falls **11 → 1 across exactly 20 frames** — ten passes, two fields each, no overrun,
+and the wash still 52 fields wall-clock. Signed off by KC's eye: "much better".
+
+**And the roar's re-post went with it.** `GoWashTick` re-posted fx `$F` every time the boil
+wrapped, justified in a comment as "near the C64's every-76-frames refire" — but there is no
+refire: `$37BD`/`$37BF` posts it **once**, before `_3`, and the loop never touches `sndFx1` again.
+It was audible twice over, because `goBoil` leaves `GoWashStart` at `$FF` and the first tick
+wrapped it to 0, restarting the roar one pass after `GoWashStart` had just posted it. One post
+covers the wash regardless: effect 15 is a single 192-tick segment, 3.8 s at the 50 Hz sound tick.
+Seven bytes of bank 7, absorbed by `plandata.asm`'s `ALIGN` pad — `PARXFER` is the same size.
+
+**Verified in jsbeeb** on a real ESCAPE game over: `overTick` decrements exactly once per **2
+fields** (8 → 1 across 14 frames), so 26 passes is **52 fields = 1.04 s**, and `overPhase` drops
+to 0 with the 999 page drawing behind it.
+
 ## 7. Open
 
 - ~~**The high-score entry overlaps the congratulations screen's name line.**~~ **Moot since DECISION 5 was revised**: clearing a ship no longer goes anywhere near the high-score entry, so it cannot be reached. Kept because the underlying fact still holds for anything else put in front of that screen — `HsRun` does not clear;

@@ -2332,7 +2332,55 @@ GO_TICK_END = &F0               \ $14CA
 \ THE VIEW IS FLATTENED FIRST, exactly as XferEnter4 does before the
 \ board: scrollS and line to zero and the CRTC re-parked, so the buffer
 \ addresses as a plain 16 x 640 array and xfRowAdrLo/Hi apply.
-GO_HOLD      = 88               \ $3802: xfer_plySpriteX counts 88 down
+\ ---- how long the wash lasts -------------------------------
+\ KC, 2026-08-29: "the game over static screen goes on for way too
+\ long. the C64 version is only a second or so, if that." It was 88
+\ passes, 3.5 s.
+\ 88 WAS THE WRONG LOOP. `$3802 LDA #$58` is EndGame's SECOND counter --
+\ the hold on the GAME OVER / 999 page at `_5`, after the wash has burnt
+\ out -- and the port already has that one as infoscr.asm's IS_HOLD. The
+\ wash is `_3`, `$37C1-$37D9`, and it counts in frameCount: `$37BB`
+\ seeds it with the paint loop's leftover `dest+1` = $4C = 76 and the
+\ loop runs INC/BMI until bit 7 sets at 128, so the body runs
+\ 128 - 76 = **52 iterations**, always.
+\ THE ARITHMETIC IS IS_HOLD's, [DECISION 3] in infoscr.asm. That note
+\ costs the 999 page's iteration -- DelayScore(32), two nested busy
+\ loops -- at about 41,000 cycles, 0.04 s, which is why 72 of them port
+\ to 72 passes at 25 Hz. THIS loop's DelayScore takes Y = $10, exactly
+\ half, so one wash iteration is ~20,500 cycles ~ 0.02 s: HALF a port
+\ pass. 52 half-passes = **26 passes = 1.04 s**, against the C64's
+\ 52 x 0.0208 = 1.08 s. The same conversion by the same route, and it
+\ lands where KC's ear put it.
+\ The boil still churns: the whole screen is painted at entry and one
+\ row a pass after that, so 26 passes is a screen and a half of churn
+\ under the message rather than five and a half.
+GO_HOLD      = 26               \ $37BB-$37D9: 52 C64 iterations, half a
+                                \ port pass each
+
+\ ---- how fast it boils -------------------------------------
+\ The C64 boils by ANIMATING THE CHARSET, so every cell on the screen
+\ changes on every iteration -- twice a port pass, at the rate above.
+\ The port repaints instead [DECISION 7], and repainting is not free, so
+\ the churn rate is a dial rather than a given.
+\ ONE ROW A PASS WAS TOO SLOW once the wash came down to 26 passes: a
+\ screen and a half of churn across the whole effect (KC, 2026-08-29).
+\ At four the screen turns over every four passes -- six and a half
+\ times across the wash -- which is as near the C64's every-cell-every-
+\ iteration as repainting gets.
+\ THE CEILING IS THE FRAME LOCK, and it binds here in a way it does not
+\ elsewhere: overTick counts PASSES, so a pass that overruns two fields
+\ stretches the 1.04 s §6a just bought. The budget is a two-field pass
+\ at 2 MHz = 80,000 cycles. GoWashRow is 40 cells, each an XfRand and a
+\ 16-byte copy loop at ~19 cycles a byte, so ~340 a cell and ~13,600 a
+\ row: four rows ~54,000, which fits with the rupture and the modal
+\ tail; eight would be ~109,000 and would not.
+\ MEASURED, NOT REASONED -- the arithmetic above was wrong twice before
+\ the emulator settled it. On a real ESCAPE game over overTick falls
+\ 11 -> 1 across exactly 20 frames: ten passes, two fields each, no
+\ overrun and the wash still 52 fields wall-clock.
+\ GoWashStart's own 16-row paint is exempt; it is a one-off at entry
+\ and the lock is a floor there.
+GO_ROWS      = 4                \ rows repainted per pass
 
 .GoWashStart
   LDA overRnd0                  \ XfRand's seed is XfStart's to set and the
@@ -2423,6 +2471,9 @@ GO_HOLD      = 88               \ $3802: xfer_plySpriteX counts 88 down
   BEQ gwt_noseed
   STA xfSeed
 .gwt_noseed
+  LDA #GO_ROWS                  \ the stir above is once a PASS; the rows
+  STA goRows                    \ below are GO_ROWS of them
+.gwt_next
   INC goBoil
   LDA goBoil
   CMP #16
@@ -2431,11 +2482,17 @@ GO_HOLD      = 88               \ $3802: xfer_plySpriteX counts 88 down
   STA goBoil
 .gwt_row
   TAX
-  BNE gwt_paint                 \ $37BF: the wash's roar, re-posted each
-  LDA #&F                       \ time the boil wraps — every 16 passes,
-  STA sndFx1                    \ near the C64's every-76-frames refire
-.gwt_paint
+\ NO RE-POST OF THE ROAR. There used to be one here, every time the boil
+\ wrapped, justified as "near the C64's every-76-frames refire" -- but
+\ there is no refire: `$37BD/$37BF` posts fx $F ONCE, before `_3`, and
+\ the loop never touches sndFx1 again. It was audible twice over: goBoil
+\ leaves GoWashStart at $FF, so the first tick wrapped it to 0 and
+\ restarted the roar one pass after GoWashStart had just posted it. One
+\ post covers the whole wash anyway -- effect 15 is a single 192-tick
+\ segment, 3.8 s at the 50 Hz sound tick, against a 1.04 s wash.
   JSR GoWashRow
+  DEC goRows
+  BNE gwt_next
 
   DEC overTick
   BNE gwt_x
@@ -2524,3 +2581,4 @@ GO_HOLD      = 88               \ $3802: xfer_plySpriteX counts 88 down
   EQUB XF_LC+14, XF_LC+21, XF_LC+4, XF_LC+17, &FF
 .goCol       EQUB 0
 .goBoil      EQUB 0             \ which row the boil repaints next
+.goRows      EQUB 0             \ GoWashTick's per-pass row counter
