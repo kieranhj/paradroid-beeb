@@ -182,16 +182,43 @@ needed, are no longer wanted for space; if they are ever wanted for another reas
 change to the exporter alone.) **[DECISION 5]**
 
 **What it costs is a load on the way back**, and KC wants that minimised (2026-08-21). The naive
-exit reloads four files — `PARDEPK`, the `PARASPR` stream, `PARAFNT` and `PARALOW`, 7,512 B and
-about 1.1 s — but three of the four are avoidable, and what is left is **one load of 2,833 B,
-≈ 0.4 s**:
+exit reloads four files — `PARDEPK`, the `PARASPR` stream, `PARAFNT` and `PARALOW` — but three of
+the four are avoidable:
+
+> **RE-MEASURED 2026-08-29, and the 2026-08-21 estimates below were about three times optimistic.**
+> Timed in jsbeeb with execute breakpoints on the four `JSR &FFF7` sites and `read_registers`'
+> `elapsed_cycles` (the harness in `paradroid-cycle-timing-harness`; `cycles_run` is the *requested*
+> count when a breakpoint fires and must not be used as a delta). Sizes are from the SSD catalogue.
+>
+> | | bytes | sectors | measured |
+> |---|---|---|---|
+> | `PARDEPK` `*LOAD` | 368 | 2 | **0.902 s** |
+> | `PARASPR` `*LOAD` | 3,098 | 13 | **0.699 s** |
+> | `UnpackBankIn` (bank 5) | — | — | **0.755 s** |
+> | `PARAFNT` `*LOAD` | 3,503 | 14 | **1.067 s** |
+> | `PARALOW` `*LOAD` | 927 | 4 | **0.279 s** |
+> | **exit seam, total** | **7,896** | **33** | **3.702 s** (2.947 s of it disc) |
+>
+> And the **inbound** seam, which the estimates never costed at all: `PARMAN` is 5,016 B / 20
+> sectors and `*LOAD`s in **1.942 s**, with `PageCopyAt` + `BrPatchScores` adding 0.044 s. So the
+> briefing round trip is **5.69 s of loading and unpacking**, not the ~1.1 s this section implies.
+>
+> **The per-file overhead is the story, not the byte count.** `PARDEPK` is 368 bytes and takes
+> 0.902 s — longer than `PARASPR`'s 3,098. Across the five loads the marginal rate is roughly
+> 0.1 s a sector (five times the 20 ms a contiguous sector would cost at 300 rpm, so DFS is losing
+> revolutions) on top of a per-file overhead of a few hundred ms that varies with head position.
+> **Eliminating a file pays even when the file is tiny**, which is exactly what the three
+> eliminations below do — they are worth **2.248 s**, leaving `PARASPR`'s 0.699 s plus the
+> unavoidable 0.755 s depack: **1.454 s against today's 3.702 s.**
+
+The 2026-08-21 table, kept for its reasoning — take the numbers from the box above:
 
 | | | |
 |---|---|---|
 | `PARDEPK` | **not loaded** | The unpack needs a depacker in *main RAM* (only one bank is visible, so bank 4's copy cannot write bank 5). The briefing carries the `ZX0_DEPACKER` macro in its own 12 K of spare and **copies ~273 B of it into the strip** before it pages itself out. A third copy of a macro that already exists twice. **HAZARD since RAM pass 3a**: `UnpackBankIn` itself now lives in PARDEPK, so this plan must also copy or replace that entry — the current exit path *depends* on reloading PARDEPK |
 | `PARAFNT` | **not reloaded** | It only ever came back because `PARDEPK` lands at `&3000`, on the font. With no `PARDEPK` the font is never disturbed, and the stream can land in the strip too — 10 K, holding nothing but the briefing's last page, which `LoadDeck` is about to redraw |
 | `PARALOW` | **not reloaded** | The low overlay is lost to the load only because DFS wants `&0E00`–`&10FF` back. Snapshot it into the strip and copy it home afterwards — the mirror image of what `SaveDfsWs`/`RestoreDfsWs` already do for DFS's side, same two spans (`&0D60`–`&0DEF`, `&0E00`–`&10FF`, 912 B) |
-| `PARASPR` | **2,833 B, ≈ 0.4 s** | Irreducible: it is the thing that was evicted |
+| `PARASPR` | 2,833 B, ≈ 0.4 s — **measures 3,098 B, 0.699 s** | Irreducible: it is the thing that was evicted |
 
 The load still cannot happen with the rupture up — `R7` stops VSync and a filing-system call
 hangs in the 8271 poll — so the exit is still a teardown and rebuild: `SetupMode`,
@@ -206,6 +233,16 @@ the three builders are `&5400`–`&57FF`), but `IS_BLANK` does, so it moves afte
 it can use `PARDEPK` and `DEPK_STREAM` exactly as boot does, because at that moment `PARTITL` is
 dead on `&3000` and `PARAFNT` has not been loaded yet — so the inbound half costs one 2.5 K
 stream and nothing else changes.
+
+> **AS BUILT, `PARMAN` IS NOT COMPRESSED** (checked 2026-08-29), and DECISION 5 below says it is.
+> `make_disc.py` ZX0s the four BANK files only; `PARMAN` ships raw at 5,016 B and `BrTimeout`
+> copies it up with `PageCopyAt`, not `UnpackBankIn`. The paragraph above is why it cannot simply
+> be switched on: `PARDEPK` is dead by then — `PARTITL` was loaded over it — so compressing
+> `PARMAN` buys a load and pays for a load. The numbers: ZX0 takes it to **2,730 B / 11 sectors**
+> (54%), worth perhaps 0.9 s of its 1.942 s, against `PARDEPK`'s measured 0.902 s to get a
+> depacker back. Net ≈ zero. **It only becomes a win if a depacker is resident**, and then it wins
+> at both seams at once — 0.9 s inbound and `PARDEPK`'s 0.902 s outbound, for 368 B of somewhere
+> permanent. That is the shape of the real fix, and it is not what F6 currently describes.
 
 **The alternative is zero load, and it is available.** Compressing the text — which KC has
 asked for anyway — makes the briefing fit *without* eviction: five per-page ZX0 streams
