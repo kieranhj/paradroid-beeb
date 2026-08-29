@@ -436,8 +436,24 @@ ENDIF
                                 \ too; 11d moved it, because the 001 screen
                                 \ now stands between GameStart and the deck
                                 \ and the alert has to land when the DECK
-                                \ does, not before the screen. IsDone posts
-                                \ it. fx $B is the screen's own
+                                \ does, not before the screen. IsDone posts it
+
+\ ---- $126B: and the new-game sweep, restored 2026-08-29 ----
+\ THE ONE THE 001 SCREEN IS HEARD OVER. $126B posts it as the last thing
+\ StartGame does before JMP _entership, and NewShipInfo -- the C64's 001
+\ screen -- POSTS NO SOUND OF ITS OWN: it draws and waits for fire, so
+\ effect 6 runs under the whole of it, 7 segments of 32 ticks, ~4.5 s.
+\ $1332's fx 7 follows when the screen is dismissed and the deck
+\ materialises, which is IsDone's.
+\ IT WAS PARKED, NOT DROPPED. 11e round ten cut it to kill the game-start
+\ smear (6 and 7 sounding together, where the C64 spreads them across
+\ screens the port did not have yet) and both §5 and §8 promised it back
+\ "with the 001 screen (11d)". 11d brought back $B and forgot this; KC
+\ found it 2026-08-29. The $B that stood in for it on the 001 is gone
+\ again with it -- see isSndFor's comment, infoscr.asm.
+  LDA #6
+  STA sndFx1
+
   JMP LoadDeck                  \ and its RTS
 
 .NewShipDroids

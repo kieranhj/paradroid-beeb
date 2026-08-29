@@ -179,7 +179,18 @@ FX_OVERRIDES = {24: {'f0': 1836}}
 # monotonous... perhaps try periodic bass instead". Its instrument 10 is
 # shared with fx21, the console beep, which is well above the floor and
 # right as a tone - hence the clone rather than PERIODIC_BASS.
-FX_PERIODIC = {16, 23}
+#
+# fx06, the new-game sweep, 2026-08-29. It came back with the 001 screen
+# (11d) still untreated: it opens at F=1024, 60 Hz, and 40% of its ticks
+# measure on the chip as the flat 1023 clamp - the same flat-buzz
+# complaint KC made of fx16 and the hum. Its instrument 8 is shared with
+# fx14 (transfer failed) and fx20 (energiser tick), both well above the
+# floor and right as tones, so it clones like fx16's rather than joining
+# PERIODIC_BASS. A/B'd against the clamped tone version on two discs;
+# KC: "the periodic version has more character", so it stays. As
+# periodic bass it plays its whole 64.8-210.5 Hz sweep, N 120 down to
+# 37, 0% sub-floor - the bottom 40% was a flat 122 Hz clamp before.
+FX_PERIODIC = {6, 16, 23}
 
 # Effects given their OWN COPY of their instrument for no reason but to
 # carry an FX_LEVEL entry, when the C64's instrument is shared with

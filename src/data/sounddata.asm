@@ -4,7 +4,7 @@
 \ Source: paradroid_ce.lst ($C610 effects, $EAA0 instruments)
 \ 28 in-game effects x 11 bytes (SID-frequency space,
 \ verbatim minus pulse and the never-used chain) plus the
-\ chatter's scratch slot, 14 instruments x 6 bytes, and
+\ chatter's scratch slot, 15 instruments x 6 bytes, and
 \ the 32-entry frequency->period table. Formats and conversion:
 \ the exporter's header, docs/layer-11e-sound.md.
 \ Effect n's record is sndFxTab + (n-1)*11; offsets +5/+6/+7
@@ -22,7 +22,7 @@ SND_NOISE_SHIFT = 4
   EQUB &05,&00,&12,&80,&FF,&09,&24,&02,&01,&00,&12  \  3: fire, weapon class 2
   EQUB &0B,&00,&04,&50,&00,&09,&06,&07,&00,&00,&00  \  4: fire, weapon class 3 / the disruptor ($84 = uninterruptible)
   EQUB &07,&00,&40,&00,&1C,&1D,&1D,&0D,&01,&00,&40  \  5: game over message
-  EQUB &08,&00,&04,&50,&00,&20,&20,&07,&01,&00,&04  \  6: new game start
+  EQUB &01,&00,&04,&50,&00,&20,&20,&07,&01,&00,&04  \  6: new game start
   EQUB &06,&00,&14,&60,&FF,&10,&10,&05,&01,&00,&14  \  7: deck materialise / game entry
   EQUB &00,&00,&20,&40,&00,&08,&08,&08,&01,&00,&20  \  8: low-energy alarm (voice 2, 32-tick phase)
   EQUB &09,&00,&2D,&00,&E0,&E0,&00,&01,&00,&00,&00  \  9: transfer game entry (voice 2)
@@ -32,14 +32,14 @@ SND_NOISE_SHIFT = 4
   EQUB &06,&00,&10,&00,&C7,&60,&00,&01,&00,&00,&00  \ 13: transfer result 3
   EQUB &08,&00,&0C,&00,&CD,&20,&20,&04,&00,&00,&00  \ 14: transfer failed
   EQUB &04,&00,&80,&00,&00,&C0,&00,&01,&00,&00,&00  \ 15: endgame dissolve wash
-  EQUB &01,&00,&0C,&90,&FF,&0B,&04,&05,&00,&00,&00  \ 16: lift: one blip per deck passed (both voices)
+  EQUB &0C,&00,&0C,&90,&FF,&0B,&04,&05,&00,&00,&00  \ 16: lift: one blip per deck passed (both voices)
   EQUB &02,&00,&08,&C0,&00,&04,&08,&02,&00,&00,&00  \ 17: bullet hits droid, no kill (voice 2)
   EQUB &05,&00,&02,&FA,&FF,&28,&00,&01,&00,&00,&00  \ 18: droid explosion
   EQUB &05,&80,&02,&FC,&FF,&40,&00,&01,&00,&00,&00  \ 19: player death explosion
   EQUB &08,&00,&20,&00,&CD,&60,&00,&01,&00,&00,&00  \ 20: energiser recharge tick
   EQUB &0A,&00,&10,&E0,&00,&08,&00,&01,&00,&00,&00  \ 21: console beep / page flip
   EQUB &00,&00,&10,&B0,&FF,&04,&04,&04,&00,&00,&00  \ 22: mode-change chord (console, lift entry, game-over seam)
-  EQUB &0C,&00,&0B,&D0,&FF,&38,&00,&01,&00,&00,&00  \ 23: droid destroyed by ramming
+  EQUB &0D,&00,&0B,&D0,&FF,&38,&00,&01,&00,&00,&00  \ 23: droid destroyed by ramming
   EQUB &03,&2C,&07,&F5,&00,&13,&08,&0A,&01,&00,&08  \ 24: per-deck background hum (deckBgSndVar patches +5/+6/+7)
   EQUB &02,&00,&04,&03,&07,&03,&04,&04,&01,&00,&04  \ 25: player collision damage
   EQUB &0B,&00,&06,&20,&00,&07,&04,&04,&01,&00,&06  \ 26: collision bump
@@ -52,7 +52,7 @@ SND_NOISE_SHIFT = 4
 \ the effect number; the driver walks to it like any other. Ships
 \ holding blip A, so it is valid even if nothing ever writes it.
 .sndFxChat
-  EQUB &0D,&00,&20,&00,&E8,&7D,&00,&01,&00,&00,&00  \ 29: scratch (blip A as shipped)
+  EQUB &0E,&00,&20,&00,&E8,&7D,&00,&01,&00,&00,&00  \ 29: scratch (blip A as shipped)
 
 \ effect 24's per-deck patch values, indexed by deck 0-15:
 \ segment timer / reload / count -> sndFxTab + 23*11 + 5/6/7.
@@ -66,7 +66,7 @@ SND_NOISE_SHIFT = 4
 
 .sndInstTab
   EQUB &00,&55,&20,&FF,&11,&10  \ 0: triangle, AD=55 SR=F8 hold=16
-  EQUB &83,&33,&FF,&99,&FF,&30  \ 1: triangle, AD=80 SR=F0 hold=48
+  EQUB &83,&55,&20,&CC,&01,&80  \ 1: pulse, AD=55 SR=CD hold=128
   EQUB &40,&55,&20,&FF,&11,&10  \ 2: pulse, AD=55 SR=F8 hold=16
   EQUB &40,&FF,&FF,&55,&1A,&80  \ 3: triangle, AD=00 SR=56 hold=128
   EQUB &87,&FF,&FF,&CC,&01,&FF  \ 4: NOISE, AD=00 SR=CF hold=255
@@ -77,8 +77,9 @@ SND_NOISE_SHIFT = 4
   EQUB &00,&FF,&40,&FF,&02,&10  \ 9: triangle, AD=33 SR=FC hold=16
   EQUB &00,&33,&FF,&FF,&FF,&30  \ 10: triangle, AD=80 SR=F0 hold=48
   EQUB &83,&FF,&FF,&FF,&07,&02  \ 11: pulse, AD=00 SR=F9 hold=2
-  EQUB &83,&FF,&40,&FF,&02,&10  \ 12: triangle, AD=33 SR=FC hold=16
-  EQUB &00,&55,&20,&99,&01,&80  \ 13: triangle, AD=55 SR=CD hold=128
+  EQUB &83,&33,&FF,&99,&FF,&30  \ 12: triangle, AD=80 SR=F0 hold=48
+  EQUB &83,&FF,&40,&FF,&02,&10  \ 13: triangle, AD=33 SR=FC hold=16
+  EQUB &00,&55,&20,&99,&01,&80  \ 14: triangle, AD=55 SR=CD hold=128
 
 \ N = sndFreq[(F<<s)>>8 - 128] >> (8-s), s = shifts to normalise
 \ F into [$8000,$FFFF]; noise voices shift SND_NOISE_SHIFT more.

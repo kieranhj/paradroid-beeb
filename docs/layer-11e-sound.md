@@ -319,8 +319,10 @@ bullet-hit, the lift sounds, and the game start.
 - The noise scale factor (`NOISE_SHIFT`) and the periodic ≈ pitch/15 approximation have
   passed the ear test in practice; a VICE A/B remains available if anything ever sounds
   transposed.
-- fx06 (new game) was called pedestrian before it was parked with the start-smear fix; it
-  returns — and gets its treatment — with the 001 screen (11d).
+- ~~fx06 (new game) was called pedestrian before it was parked with the start-smear fix; it
+  returns — and gets its treatment — with the 001 screen (11d).~~ **DONE 2026-08-29**: posted
+  again at `$126B`'s place in `GameStart` with the `$B` that stood in for it withdrawn (11d §7),
+  and treated as periodic bass in the same session — round thirteen below.
 
 ## 6. Where the RAM comes from
 
@@ -397,9 +399,28 @@ The port has no `sndState $11`: 11f [DECISION 11].)*
   deferred through 11f and unbundled from the volume keys, which were wanted sooner; it followed
   them by an hour in the end.
 - **Sub-122 Hz effects** — stage 1's review list: fx04 disruptor (100% of its ticks below the
-  floor), fx26 (100%), fx23 (73%), fx16 (48%), fx17 (41%), fx06 (40%). **All but fx06 are now
-  treated; the list the exporter prints is down to fx06 and fx17** (fx17 is muted rather than
-  clamped, which was its cure).
+  floor), fx26 (100%), fx23 (73%), fx16 (48%), fx17 (41%), fx06 (40%). **They are all treated
+  now; the list the exporter prints is down to fx17 alone** — and fx17 is on it only because
+  the list is computed from sub-floor share, not from whether a cure was applied: it is muted
+  rather than clamped, which was its cure. fx06 was the last, 2026-08-29 — round thirteen.
+
+  **Round thirteen — fx06 goes periodic, and the review list closes.** KC asked whether the
+  001 screen's sounds matched the C64 (2026-08-29); they did not, and restoring `$126B`'s effect
+  6 put the last untreated sub-floor effect back on the chip — 40% of its ticks measured as the
+  flat 1023 clamp, the same flat buzz its siblings were cured of. Its instrument 8 is shared
+  with fx14 (transfer failed) and fx20 (energiser tick), both well above the floor and right as
+  tones, so it takes `FX_PERIODIC`'s clone rather than `PERIODIC_BASS`. As periodic bass it
+  plays the **whole** 64.8–210.5 Hz sweep: verified on the chip as `noise=3 vol=3` on CH3 with
+  its own tone channel silenced and the pitch on CH2 sweeping **N 84 → 55 → reset to 120**, the
+  full 37–120 span, 0% sub-floor. Built both ways onto two discs and A/B'd; **KC: "the periodic
+  version has more character"**. It is a timbre change and not only a floor fix — the rising
+  tone becomes a pulse rasp, as fx16's and fx23's did.
+
+  **The clone slots moved, and that is the mechanism working.** fx06's clone took the free slot
+  1, pushing fx16's to 12, fx23's to 13 and the chatter's `FX_LEVEL_CLONE` to 14; the exporter
+  retargeted every record. This is exactly the case `FX_LEVEL`'s key-by-effect rule exists for —
+  an index-keyed override table would have silently followed the wrong instrument here.
+  Bank 4: 39 → **33 B**.
 
   **Round eleven — fx16 goes periodic, and the chatter is what found it** (KC, 2026-08-22:
   the briefing's "background two tones are too loud and too monotonous... perhaps try periodic
@@ -561,7 +582,10 @@ The port has no `sndState $11`: 11f [DECISION 11].)*
   the chirp crisp (its sibling, the collision-damage riser, gains hum-style one-tick gaps at
   its resets). And the game-start smear — fx6 and fx7 played simultaneously where the C64
   spreads fx6/$B/7 across seconds of countdown and screens we lack — is cut to **fx7 alone**;
-  6 and $B return with the 001 screen (11d). Verified: fx23 on noise register 3, CH2 climbing
+  6 and $B return with the 001 screen (11d). *(11d returned $B in 2026-08-21 and lost track of
+  6 — KC caught it 2026-08-29 by asking whether the 001's sounds matched. They did not, both
+  ways: `NewShipInfo` posts nothing, so the C64's 001 is heard over `$126B`'s fx 6, and $B is
+  `$1282`'s alone. Fx 6 is posted again and the 001's $B is withdrawn; 11d §7.)* Verified: fx23 on noise register 3, CH2 climbing
   through the dive. Bank 4: 3 free (the 13th instrument cost 6).
   **The same session found a real driver bug**: `SndConv` counted its shifts in X, and the
   flush picks the channel from X after converting — every in-range voice-1 tone was landing

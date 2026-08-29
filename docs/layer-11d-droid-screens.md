@@ -194,7 +194,7 @@ original does — `isSndFor`, posted before the draw:
 
 | screen | fx | the C64 |
 |---|---|---|
-| 001 | `$B` | `$1282`'s announce (posted for `ShowShipClear`; KC asked for it here too) |
+| 001 | **none** | `NewShipInfo` posts nothing; `$126B`'s fx 6 is still running under it *(was `$B` until 2026-08-29 — see below)* |
 | transfer 1 | `$B` | `$374A` |
 | transfer 2 | `$C` | `$376B` |
 | game over | `5` | `$37FE`, **with the 999 and not before it** |
@@ -203,6 +203,31 @@ original does — `isSndFor`, posted before the draw:
 `GameStart` and the deck, posting it there put the alert *before* the screen. `IsDone` posts it
 instead, so it lands when the deck does — KC's "the robot sound on the 001 screen before the ship
 alert on gameplay start".
+
+**The 001's `$B` is gone again, 2026-08-29, and fx 6 is back.** KC asked whether the 001 screen's
+sounds matched the C64. They did not, in both directions: `NewShipInfo` posts **no sound of its
+own** — it draws and waits for fire — and `$B` belongs to `$1282` alone, the `_shipclean` path
+before `ShowShipClear`. What the C64 plays over the 001 is **`$126B`'s effect 6**, the new-game
+sweep, posted as the last thing `StartGame` does before `JMP _entership` and still running when
+the screen goes up. The port had never posted effect 6 at all: 11e §8 round ten parked it to kill
+the game-start smear and promised it back "with the 001 screen (11d)", and 11d brought back `$B`
+and forgot it — so the record shipped in bank 4 playing nothing while a stand-in announced the
+screen. `GameStart` posts 6 now, at `$126B`'s place, and `isSndFor`'s 001 entry is `IS_FX_NONE`
+(a zero request; `stk_req` drops it, so no branch is needed). The two could not both stay: `$B`
+lands a fraction of a second after 6 on the same voice and would cut it off. Five bytes of bank 4,
+tail 44 → 39 B.
+
+**Verified from the chip**: on the 001 screen CH0 sweeps 178 → 234 Hz and resets, and reads
+**1023 (122.2 Hz)** through the clamped stretch — effect 6's shape exactly. Dismissing it hands
+over to fx 7 at 234.5 Hz, inside its 150–291 Hz range and above 6's 210 Hz ceiling.
+
+**And fx 6 got its treatment the same day.** It opens at 60 Hz and **40% of its ticks were below
+the SN's ~122 Hz tone floor**, measured as the flat 1023 clamp — the buzz KC complained of in fx16
+and the hum, and the other half of what 11e §5 promised alongside its return. It is periodic bass
+now, on `FX_PERIODIC`'s clone (instrument 8 is shared with fx14 and fx20, so it could not move in
+place), playing the whole 64.8–210.5 Hz sweep with no clamp at all. Built both ways and A/B'd;
+**KC: "the periodic version has more character"**. 11e §8 round thirteen has the register
+readings and what the clone cost.
 
 **`EndGame` posts exactly two effects, and `GoWashStart` was posting the wrong two.** fx 5 is the
 999 page's, and as a triangle held for 128 ticks it sat on the voice so the wash's static never

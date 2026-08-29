@@ -163,10 +163,18 @@ IS_BLANK = &FF                  \ IsEntry's third door, and not a screen
 
 \ ---- the screen's own voice ---------------------------------
 \ $374A and $376B post $B and $C as ShowXferInfo's two pages go up, and
-\ $37FE posts 5 with the 999. The 001 screen's $B is the one the C64
-\ posts at $1282 for ShowShipClear rather than for NewShipInfo — KC
-\ asked for it here, and it is the same announce, on the same shape of
-\ screen. [DECISION 6]
+\ $37FE posts 5 with the 999. A ZERO IS A NO-OP -- SndTick's stk_req
+\ drops a zero request -- so the table can say "this screen is silent"
+\ without a branch here, and the 001 does.
+\ THE 001 IS SILENT BECAUSE NewShipInfo IS. The C64's 001 screen draws
+\ and waits for fire and posts nothing; what you hear over it is $126B's
+\ effect 6, started before _entership and still running. $B belongs to
+\ $1282 alone -- the _shipclean path, immediately before ShowShipClear,
+\ which is entry 4 below. It stood in for the missing 6 here from 11d
+\ (DECISION 6, "the same announce, on the same shape of screen") until
+\ KC asked 2026-08-29 whether these matched the C64 and they did not:
+\ one effect absent, one added. Effect 6 is back at GameStart, so the
+\ stand-in goes -- it would have cut 6 off within a few ticks anyway.
   LDX isScr
   LDA isSndFor,X
   STA sndFx1
@@ -424,15 +432,17 @@ IS_BLANK = &FF                  \ IsEntry's third door, and not a screen
 .isActFor
   EQUB IS_ACT_GAME, IS_ACT_GAME, IS_ACT_BOARD, IS_ACT_TITLE, IS_ACT_NEWSHIP
 
-\ The effect each screen announces itself with: $374A, $376B, $37FE, and
-\ $1282's announce for the 001.
+\ The effect each screen announces itself with: $374A, $376B, $37FE and
+\ $1282. The 001 announces itself with NOTHING, as NewShipInfo does --
+\ GameStart's effect 6 is sounding all the way through it.
+IS_FX_NONE     = 0              \ stk_req drops a zero request
 IS_FX_ANNOUNCE = &0B
 IS_FX_ANNOUNCE2 = &0C
 IS_FX_OVER     = &05
 IS_FX_DECK     = &07            \ $1334, and it is IsDone's now
 
 .isSndFor
-  EQUB IS_FX_ANNOUNCE, IS_FX_ANNOUNCE, IS_FX_ANNOUNCE2, IS_FX_OVER, IS_FX_ANNOUNCE
+  EQUB IS_FX_NONE, IS_FX_ANNOUNCE, IS_FX_ANNOUNCE2, IS_FX_OVER, IS_FX_ANNOUNCE
 
 \ "This is the unit that you currently control. Prepare to board
 \  Robo-<ship> influence to eliminate all rogue robots."
