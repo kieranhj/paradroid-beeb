@@ -397,6 +397,41 @@ is `WinningColor == LeftColor`.
     - **Verified in jsbeeb 2026-08-25**: "colour 93", then "finish -49", then "burnt out",
       all red at column 2, with the logo and the score standing in red throughout.
 
+**[DECISION 14, second half] The target's icon goes when the verdict is called — 2026-08-29.**
+KC asked for it as polish ("the enemy droid icon should disappear, leaving only the player droid
+icon, once the verdict has been called to either win or lose, not draw"), and it is the
+original's own behaviour, sitting one instruction into a routine that is easy to read past.
+`FinishTransfer2`'s second instruction is `LDA #$80 : STA $D015` — annotated in the listing as
+`byte_0_D014+1`, but `$D015` is the **VIC's sprite-enable register**. `$80` leaves sprite 7 on
+and everything else off, and sprite 7 is the *player's* icon (`$E12B`); the target's is
+`droidSprNum+$48`. So every decided transfer ends with the loser's icon gone.
+
+**And only a decided one.** `FinishTransfer2` is reached from all three arms of
+`FinishTransfer1` — won, lost, burnt out — but a tie never gets there: `WinningColor` `$F8` is a
+short circuit and `Capture`'s `_1` loop replays the subgame without calling `FinishTransfer1` at
+all. The port's shape matches, so the erase goes at `xpl_endphase`, the join of the won and lost
+arms; the tie arm returns above it and `XfReplayTick` redraws both icons with the new board.
+
+**It cost no drawing code.** `XfIconPix` ANDs every byte with `xiMask`, so calling `XfIcon` with
+a pen of **0** paints the icon in logical 0 — which is the board's own background in those spans,
+and the reason `xfericon.asm`'s header can say the blank rows "stay blank". X is `xiCol`, the
+column that icon was last drawn at: `XfIcons` draws the player first and the target second, so
+the leftover is the target's, and following it rather than recomputing means a change to the
+side-swap rule cannot desynchronise the erase from the draw. Recomputing was the first cut and
+does not work anyway — `XI_LCOL`/`XI_RCOL` are assigned in `xfericon.asm`, which assembles
+*after* `xfer.asm`, and beebasm resolves constants in file order. Ten bytes, in front of
+`plandata.asm`'s `ALIGN`, so `PARXFER` is the same size.
+
+**Verified in jsbeeb**, forcing a transfer by poking `xferDroid` (the same byte `dc_notransfer`
+writes) and winning it with `DEBUG_XFERWIN`: board up with yellow **001** left and black **298**
+right, then on "Complete" the 001 is still there and the 298 is gone. The lost arm falls into the
+same label and the tie returns above it, so both are code-evident rather than separately shown.
+
+**Not done, and noticed on the way past:** on a loss the C64's `xferInitDroid` calls
+`BuildDroidSprite` with `SpriteNum` 7, which rebuilds the *player's* icon for its new type — so
+the original's surviving icon becomes a 001 during the hold. The port leaves `xfmPlyType` alone
+and keeps showing the old one. Outside what KC asked for; recorded here rather than done.
+
 **Open item from 13 — CLOSED, and it was never worth doing.** Moving the repeat filter
 behind `plandata.asm`'s `ALIGN` would have restored the *tail* figure while costing its 46
 bytes 1:1 out of the tail, leaving real free space unchanged at 286 B and putting the routine

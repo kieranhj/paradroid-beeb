@@ -416,6 +416,33 @@ ENDIF
   LDA #LO(xfTxtFail) : LDY #HI(xfTxtFail)
   JSR XfMessage
 .xpl_endphase
+\ ---- the target's icon goes, $2264 -------------------------
+\ FinishTransfer2's second instruction is `LDA #$80 : STA $D015` -- the
+\ VIC's SPRITE ENABLE register, which the annotation labels
+\ byte_0_D014+1 and which is easy to read past. $80 leaves sprite 7 on
+\ and everything else off, and sprite 7 is the PLAYER's icon ($E12B);
+\ the target's is droidSprNum+$48. So the original ends every decided
+\ transfer with the loser's icon gone and the player's still there.
+\ HERE AND NOT IN THE TIE ARM, because that is where FinishTransfer2
+\ sits: Capture's _1 loop replays a short circuit without ever reaching
+\ FinishTransfer1, so a tie keeps both icons and XfReplayTick redraws
+\ them with the new board. KC asked for exactly this, 2026-08-29.
+\ NO NEW DRAWING CODE. XfIconPix ANDs every byte with xiMask, so a pen
+\ of 0 paints the whole icon in logical 0 -- which is the board's own
+\ background in these spans, and the reason xfericon.asm's header can
+\ say the blank rows "stay blank". X IS xiCol, the column that icon was
+\ last drawn at: XfIcons draws the player first and the target second,
+\ so the leftover is the target's, and following it rather than
+\ recomputing means a change to the side-swap rule cannot desynchronise
+\ the erase from the draw. (Recomputing was the first cut and does not
+\ work anyway: XI_LCOL/XI_RCOL are assigned in xfericon.asm, which
+\ assembles AFTER this file, and beebasm resolves constants in file
+\ order.)
+  LDA xfmTgtType
+  LDX xiCol
+  LDY #0
+  JSR XfIcon
+
 \ THE VERDICT IS APPLIED NOW, not when the hold expires. $22FE calls
 \ FinishTransfer1 the moment doSubGame returns, and FinishTransfer2's
 \ sweep — the hold below — comes after it, running DelayScore and so
