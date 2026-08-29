@@ -38,17 +38,23 @@ floor actually is - a colour MODE 1 does not have and this port could not previo
 static text screens do not dither; they take a solid background of their own, chosen per deck,
 because a floor that looks right underfoot is often far too bright to read white text on.
 
-**What is left** is the rest of the visual pass, the balance pass, a volume control, and trimming
-the front end's disc loads. RAM is the binding constraint now rather than any of them: main RAM
-and the data bank are down to single-figure bytes each, so the next feature of any size has to buy
-its room from somewhere first. See [`PLAN.md`](PLAN.md) for the layered build plan, the memory map, decisions taken
+And it now boots with a **loading intro**: Chris Evans' (scarybeasts) three-robots screen with the
+lightning, over a three-channel sample player at ~15.6 kHz a channel, its music living in one
+sideways bank until a keypress hands over to the game. `build.ps1 -Release` is the build that
+carries it with every debug flag off. The four sideways banks are **probed at boot** rather than
+assumed to be 4-7, so the port runs on a board jumpered anywhere.
+
+**What is left** is the rest of the visual pass, the balance pass, the game-over sound set, and
+testing on the machines people actually have. RAM is the binding constraint rather than any of
+them: main RAM is down to single-figure bytes, so the next feature of any size has to buy its room
+from somewhere first. See [`PLAN.md`](PLAN.md) for the layered build plan, the memory map, decisions taken
 and current status.
 
 ## Target
 
 | | |
 |---|---|
-| Machine | BBC Model B / B+ with 4 × 16K sideways RAM banks (banks 4–7, the Master's own numbering) |
+| Machine | BBC Model B / B+ with 4 × 16K sideways RAM banks, **probed at boot** — any four, highest first; 4–7 on a Master and on most boards |
 | CPU | Plain 6502 (`CPU 0` — no 65C12 opcodes) |
 | Display | MODE 1, 4 colours. A 4-row static panel at `&4A00` above a 320 × 120 play area, driven by a three-cycle vertical rupture. The panel has its own palette, swapped at the cycle boundary |
 | Play area | 10K circular strip at `&5800` with a 10K hardware wrap, scrolled by the CRTC — 4 px horizontally, 1 scanline vertically |
@@ -67,9 +73,11 @@ converts mechanically from the ripped data with nothing redrawn.
 | Z / X | left / right |
 | K / M | up / down — and, on the lift screen, move along the shaft. On the high-score entry they walk the alphabet; on the intro manual K pauses the scroll and M doubles it and skips the dwells |
 | L | fire; on a lift platform it opens the ship's deck-selection screen, and fire again commits. It commits an initial on the entry, and starts the game from anywhere in the manual |
-| Cursor up/down | debug deck hop |
+| SPACE | a second transfer button — hold it and the transfer triggers without needing a direction |
+| Cursor up/down | master volume; **Q** mutes, **P** pauses. All three work in play, in the modal screens, in the manual and at the title |
+| `[` `]` | debug deck hop |
 | ESCAPE | self-destruct — ends the game. The port's own; the C64 has no abort |
-| SPACE | force a full redraw (also the verification oracle) |
+| R | force a full redraw (also the verification oracle) |
 
 Some keys are debug builds only and are listed by `!BOOT` when they are compiled in — see the
 `DEBUG_*` flags at the top of `src/main.asm`.
@@ -93,17 +101,23 @@ emulator before the next begins:
 11. **Title, game over, sound and the droid screens** — ✅ done: the title, the death and game-over
     sequence, the SN76489 sound driver, the four information screens, and the front end — the
     high-score entry and the scrolling intro manual, which burbles to itself as it scrolls just
-    as the original's does. The ± volume keys and a faster reload out of the manual are the
-    pieces outstanding
+    as the original's does. The ± volume keys, mute and pause. The game-over sound set is the
+    piece outstanding
 12. Balance, fidelity and feel
-13. **Memory and machine compatibility** — the RAM pass ✅ done; sideways-RAM detection and
-    testing on real machines outstanding
+13. **Memory and machine compatibility** — the RAM pass ✅ done; sideways-RAM detection ✅ done
+    (`PARSWR` probes all sixteen banks before the game loads, takes the top four and refuses a
+    machine it cannot drive); testing on real machines outstanding
 14. **Visual pass** — the deck dither and the per-deck text-screen backgrounds ✅ done; the
     remaining palettes and the characters that fight MODE 1 outstanding
 15. **The endgame** — ✅ done: the deck and ship payouts, the congratulations screen, and the
     ship progression. Before this the port had no win condition at all — `shipNumDroids` was
     maintained and never read, and the C64's two entry points were fused into one routine so
     the second could not be reached
+
+Outside the layer numbering: **the loading intro** ✅ done — Chris Evans' (scarybeasts)
+picture-and-sample-player executable, vendored in `pdloader/` and chained from `!BOOT` on `-Intro`
+and `-Release` builds, its data ZX0-compressed to a seventh of what it was
+([`docs/intro.md`](docs/intro.md)).
 
 Each completed layer keeps its working notes in [`docs/`](docs/) — the measurements, the dead ends
 and the hardware facts bought the hard way, including several options that were costed and
@@ -114,25 +128,32 @@ deliberately rejected.
 Put `beebasm.exe` in `bin/`, then:
 
 ```powershell
-.\build.ps1          # assemble into build/
-.\build.ps1 -Run     # assemble and launch in b-em
+.\build.ps1           # assemble into build/
+.\build.ps1 -Run      # assemble and launch in b-em
+.\build.ps1 -Intro    # + the loading intro
+.\build.ps1 -Release  # the build for other people: -Intro, every debug flag off
 ```
 
 Everything it produces goes in `build/`: `PARADROID.SSD`, a 200K-padded copy for emulators, and
 beebasm's assembly listing. `make.bat` and `make.sh` are thin wrappers over the same script
 (`make run` works), for cmd and sh respectively.
 
-**The build is three stages and all of them matter**: `tools/make_briefing.py` converts the
+**The build is several stages and all of them matter**: `tools/make_briefing.py` converts the
 hand-editable intro-manual text (`src/data/briefing.txt` — edit it freely and rebuild), beebasm
-assembles a *raw* image, and `tools/make_disc.py` ZX0-compresses the sideways-RAM bank files and
-lays the disc out for the loader. **beebasm's direct output is not bootable** — the loader expects
+assembles a *raw* image, `tools/make_intro_data.py` builds the intro's two compressed streams on an
+intro build, and `tools/make_disc.py` ZX0-compresses the sideways-RAM bank files and lays the disc
+out for the loader. **beebasm's direct output is not bootable** — the loader expects
 the compressed layout and hangs at the first bank load — so there is no meaningful way to build
 with beebasm alone; use the scripts.
 
 `main.asm` assembles its own `!BOOT`, carrying the build stamp and the list of debug flags that
-are on, so nothing may pass `-boot`. The rest of `src/data/` is converted game artwork and so is
-not in the repository — generate it with the `tools/export_*.py` scripts (see below) before
-assembling.
+are on, so nothing may pass `-boot`. It also passes `RELEASE` to beebasm on every build, because
+beebasm has no `IFDEF` and refuses a symbol defined twice — so a bare `beebasm` invocation has to
+pass `-D RELEASE=0` as well.
+
+`src/data/` **is** in the repository (since 2026-08-27), so the tree assembles without a local copy
+of the C64 listing. It is still generated by the `tools/export_*.py` scripts — regenerate it with
+the tool rather than editing it by hand, and commit what the tool produces.
 
 The result is a bootable DFS disc image. Note that DFS filenames are limited to 7 characters, so
 the executable on disc is `PARA`.
@@ -144,8 +165,10 @@ the executable on disc is `PARA`.
 ## Repository layout
 
 ```
-src/            BBC Micro 6502 source (BeebASM); src/data/ is generated and gitignored,
-                except briefing.txt — the hand-editable intro-manual text, which is tracked
+src/            BBC Micro 6502 source (BeebASM); src/data/ is generated but tracked, and
+                briefing.txt inside it is the hand-editable intro-manual text
+pdloader/       The loading intro, by Chris Evans (scarybeasts) — a vendored drop, kept
+                verbatim; its README lists the six changes this port makes to it
 tools/          Python data-extraction and conversion tools (see below)
 annotate.py     Generates the annotated C64 disassembly
 docs/           Per-layer working notes, plus graphics.md — the C64 data reference
@@ -199,6 +222,8 @@ python tools/export_droidinfo.py  # the droid database's stats and descriptions 
 python tools/export_title.py      # the title screen's own glyphs and RLE -> src/data/
 python tools/export_portraits.py  # the 48 x 84 droid portrait pool -> src/data/
 python tools/export_sound.py      # the effect and instrument tables -> src/data/
+python tools/export_hsfont.py     # the high-score entry's font -> src/data/
+python tools/export_intro.py      # the loading intro's picture and colourways -> src/data/
 ```
 
 `tools/export_briefing.py` is not in that list because it is one-shot: it decodes the C64's intro

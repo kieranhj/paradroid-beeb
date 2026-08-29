@@ -22,8 +22,8 @@ Regenerate it after any change that moves a region:
 | `&0090–&00FF` | 112 B | OS zero page |
 | `&0100–&01FF` | 256 B | Stack |
 | `&0200–&03FF` | 512 B | OS vectors and workspace. We own `IRQ1V` at `&0204` outright |
-| `&0400–&0C8F` | 2,192 B | MODE 1 charset, rebuilt at every deck load — reclaimed OS workspace |
-| `&0C90–&0CF8` | 105 B | `lowbss` — the low overlay's state. `SKIP`ped, not shipped: everything in it is written before it is read |
+| `&0400–&0C8F` | 2,192 B | MODE 1 charset, rebuilt at every deck load — reclaimed OS workspace. **Two boot-time tenants get here first:** `PARSWR` leaves the four sideways-bank numbers at `&0A00` (magic `&A5`, then DATA/SPR/SPR2/XFER) for `.start` to copy into `swBank`, and on an intro build `PINTRO` unpacks its advance tables over `&0400–&1BFF`. Both are finished long before the charset is built |
+| `&0C90–&0CF8` | 105 B | `lowbss` — the low overlay's state. `SKIP`ped, not shipped. **"Everything in it is written before it is read" is only true INSIDE a game**: `disrFlash` is read by `SetPalPlay` from the first title onwards and cost two white-screen bugs (2026-08-28, 2026-08-30). Read `src/lowbss.asm`'s header before adding a byte |
 | `&0CF9–&0CFF` | **7 B free** | |
 | `&0D00–&0D5F` | 96 B | **NMI handler and its workspace. NOT OURS** — one spurious NMI through a page of somebody else's 6502 would be unrecoverable |
 | `&0D60–&0DE9` | 138 B | `lowcode2` — the low overlay's second chunk, in Econet/mouse workspace and the extended vector table. The disruptor's helpers, the collision matrix's two damage arms, `DrCollMode` |

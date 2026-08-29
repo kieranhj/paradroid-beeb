@@ -216,16 +216,17 @@ addresses from the `beebasm` output rather than from any document.** In outline:
 take live figures from `PRINT "code"` and the bank gauges in the build output, never from this
 paragraph:
 
-| Region | Free (2026-08-25, post-pass) |
+| Region | Free (measured 2026-08-30) |
 |---|---|
-| Main RAM code image | **11 B** — `code_end` `&2FF5` (2026-08-29: Layer 13b's `swBank` reads and handover copy took 37 B of the 48). It hit exactly `&3000` when the depacker moved in; `DoorTdp` to bank 4 bought this back (2026-08-29) |
+| Main RAM code image | **6 B** — `code_end` `&2FFA`. It was 48 B after the RAM pass; Layer 13b's `swBank` reads and handover copy took 37, and `TitleSeq`'s early `disrFlash` clear 5. **This is the binding constraint again** |
 | Bank 4 | **175 B** on the gauge (2026-08-29: +206 from losing its depacker copy, −56 taking `DoorTdp` in), + `colourMap` `ALIGN` pad |
 | Bank 5 | **602 B** |
-| Bank 6 | **114 B** |
+| Bank 6 | **39 B** (the 114 B in this table before 2026-08-30 was stale) |
 | Bank 7 | 7 B tail + **~176 B** of `planInk` `ALIGN` pad |
 | `PARBRF` (`&0400`, hard ceiling `&0800`) | **56 B** |
 | `PARAFNT` block | ~49 B before `SPR_SAVE` |
-| Low overlay | `lowcode` 1 B, `lowcode2` 6 B, `lowbss` 8 B |
+| Low overlay | `lowcode` **9 B** (its two raw `PAGEBANK`s became `JSR Pg*`), `lowcode2` 3 B, `lowbss` 8 B |
+| `PINTRO` (`pdloader/`, `-Intro` builds) | **0 B** — it fills to `&3000` exactly, where the picture lands. It starts at `&2700` and `&2500–&26FF` is free below it, so it can move down if it needs to grow |
 
 Two standing rules about the `ALIGN` pads: **anything — CODE or data — assembled before bank 4's
 `colourMap` `ALIGN` or bank 7's `plandata.asm` `ALIGN` rides in that pad for nothing**

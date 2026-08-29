@@ -21,7 +21,7 @@ them.
 
 ## Where we are
 
-**Layers 0–11, 13a/13d and 15 are built; 12, 13b/c and the rest of 14 are the roadmap.** The port
+**Layers 0–11, 13a/13b/13d and 15 are built; 12, 13c and the rest of 14 are the roadmap.** The port
 boots to a playable game with the whole loop closed: the C64's status box above a 320 × 120 play
 area scrolling eight ways at 25 Hz, sixteen traversable decks of patrolling, fighting droids, the
 console with all four pages, the transfer minigame with all three outcomes, the lift screen, the
@@ -29,6 +29,14 @@ droid information screens, sound throughout, the title / high-score / five-page 
 end, and — since Layer 15 — the endgame: decks clear for 500, ships clear for 2,000 and hand over
 to the next, names cycling under a difficulty that caps at ship 8, so the game is survived rather
 than won. Per-layer detail is in the layer table at the end and its docs.
+
+**The boot chain is `!BOOT` → `PARSWR` → (`PINTRO`) → `PARA`** since 2026-08-29/30. `PARSWR`
+probes all sixteen sideways banks and hands the top four over at `&0A00`, so **the bank numbers are
+a run-time answer and 4–7 is no longer special** — `SWRAM_DATA` and friends are indices into
+`swBank`. `PINTRO` is scarybeasts' loading intro and its three-channel sample player, on `-Intro`
+and `-Release` builds only. **`build.ps1 -Release` is the build for other people**: the intro, and
+every `DEBUG_` flag forced off through the command-line `RELEASE` symbol that every build now
+passes.
 
 **Keys:** Z/X left/right, K/M up/down, L fire — and, through the original's own `moveMode`
 machine, the lift, console and transfer trigger. **ESCAPE self-destructs and ends the game.**
@@ -145,15 +153,24 @@ home and the note is cross-referenced.
 
 **Loader**
 
-- SWRAM detection — Layer 13b above is the home for this.
-- MODE 7 splash to hide loading?
-- Robot intro with Chris's music — music in progress.
+- ~~SWRAM detection~~ — **built 2026-08-29** as Layer 13b: `PARSWR` probes all sixteen banks
+  before the game loads, takes the top four, and refuses a machine it cannot drive.
+  [`docs/layer-13-compatibility.md`](docs/layer-13-compatibility.md).
+- ~~MODE 7 splash to hide loading?~~ — overtaken by the intro below, which is what the boot now
+  shows.
+- ~~Robot intro with Chris's music~~ — **built 2026-08-30**. `pdloader/`, vendored verbatim: our
+  picture and colourways over his three-channel sample player, ~15.6 kHz a channel, samples in one
+  sideways bank. Its data is two ZX0 streams — 33,912 bytes down to 5,451, about 5 s off every
+  boot. Six port changes and the two bugs it found are in [`docs/intro.md`](docs/intro.md) §8.
+- **Still open:** the silent gap. The music stops at the keypress and the game then loads for
+  10.4 s with nothing playing — unavoidable with a player that owns the CPU with interrupts off.
+  Accepted by KC 2026-08-29.
 
 ### Open hazards and things undecided
 
 | | |
 |---|---|
-| **RAM** | **The squeeze is over but the discipline stays.** Post-recovery figures (2026-08-25): main RAM **639 B**, bank 4 **51 B** (+17 B pad), bank 5 **602 B**, bank 6 **114 B**, bank 7 7 B + **~176 B pad**, `PARBRF` **56 B** — live numbers from the build output, spending rules and reserves in [`docs/ram-pass.md`](docs/ram-pass.md) and `CLAUDE.md` |
+| **RAM** | **The squeeze is over but the discipline stays — and main RAM is tight again.** Measured 2026-08-30: main RAM **6 B** (`code_end` `&2FFA`), bank 4 **175 B**, bank 5 **602 B**, bank 6 **39 B**, bank 7 **7 B** + ~176 B pad, `PARBRF` 56 B, `PINTRO` **0 B** (it fills to `&3000` exactly; it starts at `&2700` and `&2500-&26FF` is free below it). The RAM pass left 639 B of main RAM; Layer 13b's `swBank` reads, the handover copy and the early `disrFlash` clear have spent most of it. Take live numbers from the build output; spending rules and reserves in [`docs/ram-pass.md`](docs/ram-pass.md) and `CLAUDE.md` |
 | **Some debug builds may still fail to assemble** | Pre-pass, every flag except `DEBUG_INVULN` broke the build on space (`GUARD` / `spr2_end` / `sound.asm` asserts). KC 2026-08-21: accepted. The pass's headroom may have brought some back — try the flag before assuming. `BUGS.md` #17 |
 | Droid worst case unmeasured | 8 slots (~36,000) + droids (17,000) + full-diagonal level draw (19,172) is ~72,000 of 79,872 before the rest of the loop. It never arose by chance; it wants a rig on a deck with a long open corridor. `docs/raster-timing.md` Step 3 is the planned relief |
 | **The rupture goes up mid-frame, and the TV loses lock** | `SetupRupture` switches the CRTC shape wherever the CPU happens to be; a television needs several fields to pull sync back — a roll or tear into a game and after a game over. Candidates: switch on a field boundary, order the writes so the frame stays legal at every step, blank across the change. Mind the R5/R6/R7 write-window rules in `CLAUDE.md`; nothing here is measured yet | 
@@ -237,7 +254,8 @@ The one-line summaries below are an index; the layer docs hold everything else.
 | 10 | The transfer minigame, all three outcomes | **DONE** [`docs/layer-10-transfer.md`](docs/layer-10-transfer.md) |
 | 11 | Title, game over, boot split, droid screens (11d), sound (11e), front end (11f) | **DONE** except the open sound items above [`docs/layer-11-sound-title.md`](docs/layer-11-sound-title.md), [`docs/layer-11d-droid-screens.md`](docs/layer-11d-droid-screens.md), [`docs/layer-11e-sound.md`](docs/layer-11e-sound.md), [`docs/layer-11f-frontend.md`](docs/layer-11f-frontend.md) |
 | 12 | **Balance, fidelity and feel** — verify before tuning | **TODO** [`docs/layer-12-balance.md`](docs/layer-12-balance.md) |
-| 13 | Memory and compatibility. 13a (+6,085 B) and 13d (title overlay, portrait, ZX0 maps) done; **13b sideways-RAM detection and 13c real machines are open** | **PART** [`docs/layer-13-ram-pass.md`](docs/layer-13-ram-pass.md), [`docs/layer-13d-space.md`](docs/layer-13d-space.md), [`docs/layer-13-compatibility.md`](docs/layer-13-compatibility.md) |
+| 13 | Memory and compatibility. 13a (+6,085 B), 13b (**sideways-RAM detection, 2026-08-29**) and 13d (title overlay, portrait, ZX0 maps) done; **13c real machines is open** | **PART** [`docs/layer-13-ram-pass.md`](docs/layer-13-ram-pass.md), [`docs/layer-13d-space.md`](docs/layer-13d-space.md), [`docs/layer-13-compatibility.md`](docs/layer-13-compatibility.md) |
 | 14 | **The visual pass** — floors and cleared-deck done; screens' palettes, the MODE-1-fighting characters and the ALERT blink open | **in progress** [`docs/layer-14-visual.md`](docs/layer-14-visual.md) |
 | 15 | **The endgame** — deck clear, ship clear, the next ship, names cycling at the cap | **DONE** [`docs/layer-15-endgame.md`](docs/layer-15-endgame.md) |
 | — | **The RAM recovery pass** — every region bought back room for the final features | **DONE** [`docs/ram-pass.md`](docs/ram-pass.md) |
+| — | **The loading intro** — scarybeasts' executable and sample player, chained behind `PARSWR` on `-Intro`/`-Release` builds | **DONE** [`docs/intro.md`](docs/intro.md) |
