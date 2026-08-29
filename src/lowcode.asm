@@ -553,9 +553,9 @@ LAMP_OFF = 1                    \ logical 1 is black on every deck
 \ deck's palette. Layer 14 DECISION 4.
   JSR SetTextPal
 
-  PAGEBANK SWRAM_XFER
+  JSR PgXfer
   JSR IsEntry
-  PAGEBANK SWRAM_DATA
+  JSR PgData
 
   LDX infoAct                   \ $FF while the screen is still up
   BMI ic_x

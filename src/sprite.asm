@@ -211,7 +211,7 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
 \ PAGESPRBANK — page in the bank that owns shift A, and remember it
 \ ============================================================
 \ A COMPILED SHIFT IS CODE, so the four shifts do not fit in one 16K
-\ bank: shifts 0 and 1 are in SWRAM_SPR, 2 and 3 in SWRAM_SPR+1, and
+\ bank: shifts 0 and 1 are in the SPR bank, 2 and 3 in the SPR2 bank, and
 \ which one a sprite needs is a property of the sprite. So the pool
 \ pages per SLOT rather than once around the loop — ~16 cycles a slot
 \ against a pass with ~39,000 spare.
@@ -224,9 +224,11 @@ ASSERT SPR_MASKTAB + 256 <= BUF_BASE
 \ and has to put THIS slot's bank back, not a fixed one.
 MACRO PAGESPRBANK
   LSR A                         \ shift >> 1 picks the bank
-  CLC                           \ LSR left carry = the shift's bit 0
-  ADC #SWRAM_SPR
-  STA sprBank
+  TAY                           \ NOT `ADC #SWRAM_SPR`: the two banks are
+  LDA swBank+SWRAM_SPR,Y        \ adjacent in the TABLE, and PARSWR gives
+  STA sprBank                   \ no promise about the hardware. Y, not X:
+                                \ both callers hold sprSlot in X. Same
+                                \ five bytes, two cycles more
   STA ROMSHAD
   STA ROMSEL
 ENDMACRO
@@ -303,7 +305,7 @@ ENDMACRO
   LDA sprKind,X
   STA sprKindS,X                \ the restore runs a frame later and the slot
   BEQ sss_droid                 \ may have been reused by then
-  LDA #SWRAM_SPR                \ not PAGESPRBANK — see the note above; paged
+  LDA swBank+SWRAM_SPR                \ not PAGESPRBANK — see the note above; paged
   STA sprBank                   \ HERE, from main RAM, because SprEfSetup now
   STA ROMSHAD                   \ lives in the bank it is paging in
   STA ROMSEL
@@ -1189,7 +1191,7 @@ efSrc = psrc
 \ background, and it has to go back the way it came.
   LDA sprKindS,X
   BEQ sr_droid
-  LDA #SWRAM_SPR                \ where the boxes live — see SprEfSetup
+  LDA swBank+SWRAM_SPR                \ where the boxes live — see SprEfSetup
   STA sprBank
   STA ROMSHAD
   STA ROMSEL
@@ -1483,7 +1485,7 @@ SPR_SPIN = 0                    \ frames between phases; full energy = 0
 .efWid1     EQUB 0              \ efWid + 1: the shift's spill column
 .efCount    EQUB 0
 .efYofs     EQUB 0
-.sprBank    EQUB SWRAM_SPR      \ the bank the slot in hand lives in, so
+.sprBank    EQUB 0              \ the bank the slot in hand lives in, so
                                 \ SprFetchRow can put it back after paging
                                 \ SWRAM_DATA in over the top
 

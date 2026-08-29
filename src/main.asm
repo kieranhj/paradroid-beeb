@@ -42,22 +42,38 @@ IRQ1V         = &0204
 \
 \ Measured in jsbeeb (B-DFS1.2): banks 0-7 are RAM, 8-15 ROM.
 \
-\ We use 4 and 5 rather than 0 and 1 because a Master 128's own
-\ sideways RAM is banks 4-7, so the same numbers work on both
-\ machines and the port stays Master-compatible for free. A Model B
-\ SWRAM board is jumpered to whichever banks you like, so nothing is
-\ lost by picking these.
-\
-\ Eventually this wants probing at boot rather than hard-coding —
-\ write a byte, read it back, take the first bank that holds it —
-\ but a fixed pair is fine while the machine is a known quantity.
+\ THE BANKS ARE PROBED NOW, not assumed — Layer 13b, 2026-08-29. A Model
+\ B board is jumpered to whichever banks its owner liked, so 4-7 was only
+\ ever a guess, right on this desk and on a Master (whose own sideways
+\ RAM is 4-7) and nowhere else in particular. src/swram.asm does the
+\ probing before the game loads; the answer arrives in swBank below.
 ROMSEL     = &FE30
 ROMSHAD    = &F4
-SWRAM_DATA = 4                  \ tiles, levels, palettes, droid game data
-SWRAM_SPR  = 5                  \ the blitter, shifts 0 and 1 px
-SWRAM_SPR2 = 6                  \ the same again for shifts 2 and 3 px
-SWRAM_XFER = 7                  \ Layer 10: the transfer minigame
 SWRAM_BASE = &8000
+
+\ ---- WHICH four banks is a RUN-TIME answer ------------------
+\ These are INDICES into swBank, not bank numbers. PARSWR (src/swram.asm)
+\ probes the machine before the game loads and leaves the four it found
+\ at SWR_HAND; .start copies them over the defaults below. A board is
+\ jumpered to whichever banks its owner liked, so 4-7 was only ever a
+\ guess that happened to be right on this desk.
+\ THE DEFAULTS ARE THE FALLBACK. *RUN PARA with no detector in front of
+\ it — which is every debugging session — finds no magic byte at
+\ SWR_HAND, leaves swBank alone, and behaves exactly as the port did
+\ before this existed.
+SWRAM_DATA = 0                  \ tiles, levels, palettes, droid game data
+SWRAM_SPR  = 1                  \ the blitter, shifts 0 and 1 px
+SWRAM_SPR2 = 2                  \ the same again for shifts 2 and 3 px
+SWRAM_XFER = 3                  \ Layer 10: the transfer minigame
+
+SWR_ADDR   = &1900              \ where PARSWR itself runs; its header
+                                \ says why not &1100
+SWR_HAND   = &0A00              \ the handover: magic, then four bank
+SWR_MAGIC  = &A5                \ numbers. The printer buffer — nothing
+                                \ here prints, MODE 1's clear starts at
+                                \ &3000, and the charset that eventually
+                                \ covers it is built at deck load, long
+                                \ after .start has read this
 
 \ ---- two banks, swapped twice a pass ------------------------
 \ The blitter outgrew what was left of one bank once every rotor row
@@ -79,8 +95,11 @@ SWRAM_BASE = &8000
 \ found — legal precisely BECAUSE every PAGEBANK writes the shadow
 \ first, so the shadow always names the bank the interrupted code
 \ intends, even between the pair's two stores.
+\ THE OPERAND IS A TABLE READ NOW, not an immediate: the bank numbers
+\ are PARSWR's answer, not the assembler's. One byte and one cycle a
+\ site, and most sites are `JSR PgData` and pay neither.
 MACRO PAGEBANK bank
-  LDA #bank
+  LDA swBank+bank
   STA ROMSHAD                   \ both, always — see the note above:
   STA ROMSEL                    \ the IRQ restores from the SHADOW
 ENDMACRO
@@ -1240,6 +1259,21 @@ ORG &1100
 \ holds outright; BootBanks and Zx0Unpack are both resident. KC,
 \ 2026-08-29 — docs/loader-compression.md has the ledger.
 
+\ ---- which four banks PARSWR found ---------------------------
+\ FIRST, because BootBanks is the first thing that pages one. No magic
+\ byte means nobody probed — a bare *RUN PARA — and swBank keeps its
+\ assembled 4,5,6,7. src/swram.asm has the rest of it.
+  LDA SWR_HAND
+  CMP #SWR_MAGIC
+  BNE st_nobanks
+  LDX #3
+.st_bank
+  LDA SWR_HAND+1,X
+  STA swBank,X
+  DEX
+  BPL st_bank
+.st_nobanks
+
   JSR BootBanks                 \ load-and-unpack all four banks. The loop
                                 \ rides in the PARDEPK overlay itself (RAM
                                 \ pass 3) — it only runs while the overlay
@@ -1927,6 +1961,12 @@ ENDIF                           \ other close: no band may outlive a pass
 \ inside SprFetchRow (~64 calls a pass in the saturated blit window),
 \ and not in the low overlay or the IRQ. Everything converted is
 \ transition code or a once-per-pass tick: ~45 cycles a pass all told.
+\ swBank IS THE TABLE every one of them reads, in DATA/SPR/SPR2/XFER
+\ order, and these four bytes are the whole of what PARSWR changes. The
+\ values here are the fallback for a direct *RUN PARA — see SWR_HAND.
+.swBank
+  EQUB 4, 5, 6, 7
+
 .PgData
   PAGEBANK SWRAM_DATA
   RTS
@@ -3004,7 +3044,7 @@ ASSERT FRAME_LOCK >= 2
 \ so the stage cadence is immune to however long this takes.
   LDA ROMSHAD
   PHA
-  LDA #SWRAM_DATA
+  LDA swBank+SWRAM_DATA
   STA ROMSHAD
   STA ROMSEL
   JSR SndTick
@@ -3365,22 +3405,22 @@ INCLUDE "src/zx0depack.asm"
   LDX #LO(d_loadcmd)
   LDY #HI(d_loadcmd)
   JSR OSCLI
-  LDA #SWRAM_DATA
+  LDA swBank+SWRAM_DATA
   JSR UnpackBankIn
   LDX #LO(loadspr)
   LDY #HI(loadspr)
   JSR OSCLI
-  LDA #SWRAM_SPR
+  LDA swBank+SWRAM_SPR
   JSR UnpackBankIn
   LDX #LO(d_loadspr2)
   LDY #HI(d_loadspr2)
   JSR OSCLI
-  LDA #SWRAM_SPR2
+  LDA swBank+SWRAM_SPR2
   JSR UnpackBankIn
   LDX #LO(d_loadxfer)
   LDY #HI(d_loadxfer)
   JSR OSCLI
-  LDA #SWRAM_XFER
+  LDA swBank+SWRAM_XFER
   JMP UnpackBankIn              \ tail call; its RTS is BootBanks' own
 .d_loadcmd
   EQUS "LOAD PARADAT"
@@ -4053,13 +4093,23 @@ ASSERT deckTextPal == deckPalette + 64
 PRINT "code    ", ~start, "-", ~code_end
 PRINT "tilemap ", ~tilemap, "-", ~tilemap_end
 PRINT "charset ", ~charset, "-", ~charset_end
-PRINT "data    ", ~data_start, "-", ~data_end, " (SWRAM bank", SWRAM_DATA, ",", DATA_PAGES, "pages )"
-PRINT "sprite  ", ~spr_start, "-", ~spr_end, " (SWRAM bank", SWRAM_SPR, ",", SPR_PAGES, "pages )"
-PRINT "sprite2 ", ~spr2_start, "-", ~spr2_end, " (SWRAM bank", SWRAM_SPR2, ",", SPR2_PAGES, "pages )"
-PRINT "xfer    ", ~xfer_start, "-", ~xfer_end, " (SWRAM bank", SWRAM_XFER, ",", XFER_PAGES, "pages )"
+PRINT "data    ", ~data_start, "-", ~data_end, " (SWRAM slot", SWRAM_DATA, ",", DATA_PAGES, "pages )"
+PRINT "sprite  ", ~spr_start, "-", ~spr_end, " (SWRAM slot", SWRAM_SPR, ",", SPR_PAGES, "pages )"
+PRINT "sprite2 ", ~spr2_start, "-", ~spr2_end, " (SWRAM slot", SWRAM_SPR2, ",", SPR2_PAGES, "pages )"
+PRINT "xfer    ", ~xfer_start, "-", ~xfer_end, " (SWRAM slot", SWRAM_XFER, ",", XFER_PAGES, "pages )"
 
 SAVE "PARA",    start,      code_end, start
 \ PARADAT and PARASPR are saved where they are assembled, above.
+
+\ ------------------------------------------------------------------
+\ PARSWR — the sideways RAM detector, AFTER the SAVE above
+\ ------------------------------------------------------------------
+\ It runs at &1900, which is inside the code image, so its bytes land
+\ on PARA's in beebasm's 64K image. Assembling it here — after PARA is
+\ written out and before !BOOT, which does the same thing at &7E00 —
+\ is what makes that harmless. Move it above the SAVE and PARA ships
+\ with the detector stamped through its middle.
+INCLUDE "src/swram.asm"
 
 \ ------------------------------------------------------------------
 \ !BOOT — EXECed at boot (disc option 3, set by build.ps1's -opt 3),
@@ -4131,6 +4181,10 @@ EQUS " KILL"
 ENDIF
 EQUB 13
 ENDIF
+EQUS "*RUN PARSWR", 13          \ the bank detector; it RTSes back to
+                                \ BASIC and this file feeds the next
+                                \ line, unless it found too few banks
+                                \ and closed the EXEC behind itself
 EQUS "*RUN PARA", 13
 .boot_end
 SAVE "!BOOT", boot_start, boot_end

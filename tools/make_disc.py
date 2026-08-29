@@ -120,7 +120,8 @@ def in_place_delta(packed, raw):
     return worst + 1
 
 # Physical layout, first file at sector 2. Boot access order: !BOOT,
-# PARA, then the four banks (PARDEPK is gone -- the depacker is resident
+# PARSWR (the sideways RAM detector, src/swram.asm -- !BOOT runs it
+# before the game), PARA, then the four banks (PARDEPK is gone -- the depacker is resident
 # in the code image since 2026-08-29), then the title, then (after
 # the title is dismissed) the font and the low overlay.
 # PARBRF (the briefing driver, loaded by TiShow on every title) and
@@ -128,7 +129,7 @@ def in_place_delta(packed, raw):
 # with PARTITL: the three are all title-time loads. Layer 11f.
 # On an --intro build, PINTRO slots in after !BOOT: it is the first
 # thing !BOOT runs (docs/intro.md §4).
-LAYOUT = ["!BOOT", "PARA", "PARADAT", "PARASPR", "PARSPR2",
+LAYOUT = ["!BOOT", "PARSWR", "PARA", "PARADAT", "PARASPR", "PARSPR2",
           "PARXFER", "PARTITL", "PARBRF", "PARMAN", "PARAFNT", "PARALOW"]
 
 SECTOR = 256

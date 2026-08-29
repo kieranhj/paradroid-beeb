@@ -647,12 +647,12 @@ CB_FIRE_CY = 10
 \ the same table directly, and can, because it is already in main RAM.
 .CbBulletFrame
   TAY
-  LDA #SWRAM_SPR
+  LDA swBank+SWRAM_SPR
   STA ROMSHAD
   STA ROMSEL
   LDA efBullet,Y
   TAY
-  LDA #SWRAM_DATA               \ the resting state the caller expects
+  LDA swBank+SWRAM_DATA               \ the resting state the caller expects
   STA ROMSHAD
   STA ROMSEL
   TYA

@@ -79,7 +79,7 @@ proves no instruction was added, removed or reordered.
 
 | | |
 |---|---|
-| Machine | BBC Model B / B+ with **4 × 16K sideways RAM banks** (4 = data + level draw + droid AI + combat + the SN76489 sound driver, 5 and 6 = the blitter's four compiled shifts plus Layer 9's panel/console in 6, 7 = the transfer minigame, lift screen and console pages) |
+| Machine | BBC Model B / B+ with **4 × 16K sideways RAM banks**, **probed at boot by `PARSWR` and no longer assumed to be 4-7** (Layer 13b — the four are taken highest-first, and the slots below are what the code calls them: slot 0 = data + level draw + droid AI + combat + the SN76489 sound driver, slots 1 and 2 = the blitter's four compiled shifts plus Layer 9's panel/console in slot 2, slot 3 = the transfer minigame, lift screen and console pages) |
 | CPU | Plain 6502 — `CPU 0` in BeebASM, no 65C12 opcodes |
 | Display | MODE 1, 4 colours. **Not a plain frame:** a 4-row static panel at `&4A00` above a 320 × 120 scrolled play area, driven by a three-cycle vertical rupture |
 | Play area | 10K circular strip at `&5800`, **10K hardware wrap**, scrolled by the CRTC — 4 px horizontally, 1 scanline vertically |
@@ -209,7 +209,7 @@ paragraph:
 
 | Region | Free (2026-08-25, post-pass) |
 |---|---|
-| Main RAM code image | **48 B** — `code_end` `&2FCF`. It hit exactly `&3000` when the depacker moved in; `DoorTdp` to bank 4 bought this back (2026-08-29) |
+| Main RAM code image | **11 B** — `code_end` `&2FF5` (2026-08-29: Layer 13b's `swBank` reads and handover copy took 37 B of the 48). It hit exactly `&3000` when the depacker moved in; `DoorTdp` to bank 4 bought this back (2026-08-29) |
 | Bank 4 | **175 B** on the gauge (2026-08-29: +206 from losing its depacker copy, −56 taking `DoorTdp` in), + `colourMap` `ALIGN` pad |
 | Bank 5 | **602 B** |
 | Bank 6 | **114 B** |
@@ -279,6 +279,16 @@ and it crashes through the trampled vectors. The game-over → title seam does e
 why `SaveDfsWs` snapshots `&0D60–&0DEF` and `&0E00–&10FF` into bank 6 (`dfsSave`, 912 B) right
 before `PageLowIn` and `GoTitle` restores them before its loads. `PARALOW` stages on the panel rather than at `&3000`,
 because `PARAFNT` owns `&3000` and has to load first.
+
+**`PARSWR` is an eighth disc file and the FIRST thing `!BOOT` runs** — the sideways RAM
+detector (`src/swram.asm`, Layer 13b). It probes all sixteen banks, takes the highest four, and
+leaves them at `SWR_HAND = &0A00` for `.start` to copy into `swBank`; on a machine it will not
+drive it says so and closes the exec file, so `*RUN PARA` never happens. **The bank numbers are a
+run-time table now**: `SWRAM_DATA`/`SPR`/`SPR2`/`XFER` are indices 0-3, `PAGEBANK` reads `swBank`,
+and nothing may assume the four are contiguous — `PAGESPRBANK` indexes the table for exactly that
+reason. A bare `*RUN PARA` finds no magic byte and falls back to 4,5,6,7, so debugging is
+unchanged. It is assembled AFTER `SAVE "PARA"` because it runs at `&1900`, inside the code image.
+`docs/layer-13-compatibility.md`.
 
 **`PARTITL` is a seventh disc file — the title screen**, assembled at `&3000` over `PARAFNT`'s
 ground and loaded by `TitleSeq` when the title is wanted: at boot, and again on the way back from a

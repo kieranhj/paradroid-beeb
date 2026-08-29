@@ -62,7 +62,7 @@ BR_EXIT_OFF   = 1               \ off the end of the last page: the title
 \ resident it unpacks like any bank file, 20 sectors down to 11 and
 \ ~0.6 s off this seam. UnpackBankIn does its own paging, so the PgSpr
 \ that used to stand here is gone with the copy.
-  LDA #SWRAM_SPR
+  LDA swBank+SWRAM_SPR
   JSR UnpackBankIn
   JSR BrPatchScores
   JMP PgData     \ tail: its RTS is ours
@@ -148,7 +148,7 @@ BR_EXIT_OFF   = 1               \ off the end of the last page: the title
   LDX #LO(loadspr)              \ PARASPR's stream at DEPK_STREAM
   LDY #HI(loadspr)
   JSR OSCLI
-  LDA #SWRAM_SPR
+  LDA swBank+SWRAM_SPR
   JSR UnpackBankIn              \ the blitter is home again
 
   PLA
