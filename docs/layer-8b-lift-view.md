@@ -98,6 +98,45 @@ fire returned without a load, droids resuming.
 arm) by eye, and shafts near the view's edges — wanted from play-testing across more of
 the ship.
 
+## 4a. The exit shows the deck you are going TO, 2026-08-29
+
+**KC:** "when changing deck in the lift selection screen, the palette changes to the previous
+deck briefly on exiting the lift, before then changing to the new deck palette and drawing the
+screen. It should just change to the new deck."
+
+`LvEnter4` saves `palPlay` into `xfPalSave` on the way in and installs `palLift`; `LvExit4` put
+the save back. That save is **the deck being left**, and on a changed selection the new deck's
+colours did not arrive until `RedrawAll`'s `SetPalette` at the far end of `LoadDeck` — a
+charset build, a level decode and a full redraw later, with the rupture applying the wrong
+table three times a field throughout. So the wrong-deck flash was the whole load, not a frame.
+
+**The changed arm no longer restores anything.** It sets `deck`, `liftPlace` and `lvLoad` and
+tail-calls `SetPalette` (same bank), so the new deck's palette is live before `LoadDeck` starts.
+The save slot is simply abandoned — it is a slot, not live state, and the transfer game fills it
+afresh. The unchanged arm still restores, and must: that palette **is** this deck's, cleared-floor
+override and all.
+
+**`deckClear` has to be cleared with it**, and that is not a detail: it still holds the *previous*
+deck's answer until `DroidsInit` runs inside the load, and clearing a deck and taking the lift
+onward is the ordinary way to play — so without it the new deck would come up **blue** for the
+whole load (level.asm's cleared-floor arm) and we would have swapped one wrong palette for
+another. A deck is presumed not cleared until `DroidsInit` says otherwise, which it does either
+way, later in the same load.
+
+**This is not layer-11d DECISION 4's `SetPalette` creeping back into `LoadDeck`.** That one had
+to leave because an information screen is up across `LoadDeck` at `GameStart` and the deck's
+colours overrode the text background `InfoCall` had just chosen. No screen is ever up on this
+route — the lift is the only thing that had the machine — so the call belongs to the lift, not
+to `LoadDeck`.
+
+**Verified in jsbeeb**, riding a real lift (the player placed on lift 13, tile 8/7 of deck 6, by
+`LiftPlace`'s own arithmetic — `plyX = col*32`, `posY = row*32-48`, `posX = plyX-148` — so
+`CheckWalls` derived the reference cell 33/29 naturally and fire entered the lift for real).
+Deck 6's floor is yellow and deck 5's is white, so `palPlay[0]` tells the whole story:
+**`&03` (lift blue) → `&00` (deck 5 white) on the commit frame**, held through the load, with
+deck 6's `&04` never appearing. The unchanged-selection exit still restores `&00`. 8 bytes of
+bank 4, tail 33 → **25 B**.
+
 ## 5. For whoever touches this next
 
 The console's ship page (`con_ShipInfo`, `$3062`) was built on this drawer the same day:

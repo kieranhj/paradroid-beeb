@@ -3177,12 +3177,6 @@ XF_PHYS_NEUT = 0                \ black   — logical 3, structure/unclaimed
 \ this is: a changed selection loads the chosen deck with liftPlace
 \ set, an unchanged one just reframes what was always there.
 .LvExit4
-  LDX #15
-.lvx_pal
-  LDA xfPalSave,X
-  STA palPlay,X
-  DEX
-  BPL lvx_pal
   LDA #0                        \ t1i3 is NOT put back here: both endings
   STA liftMode                  \ reach ReframeView — the same-deck arm
                                 \ directly, the loading one through
@@ -3195,12 +3189,47 @@ XF_PHYS_NEUT = 0                \ black   — logical 3, structure/unclaimed
   LDX liftPos
   CPX lvEntryPos
   BEQ lvx_stay
+
+\ ---- a different deck: its colours NOW, not after the load ---
+\ KC, 2026-08-29: riding to another deck showed the PREVIOUS deck's
+\ palette for the length of the load, then snapped to the new one as
+\ the deck was drawn. The saved palette is the one LvEnter4 took on the
+\ way in, so restoring it here restores the deck being LEFT, and the
+\ new deck's colours do not arrive until RedrawAll's SetPalette at the
+\ far end of LoadDeck — which is most of a second of charset build,
+\ level decode and redraw with the rupture showing the wrong table
+\ three times a field. So the changed arm never restores: it sets deck
+\ and builds the new palette straight away, and the save slot is simply
+\ abandoned (it is a slot, not live state, and the transfer game fills
+\ it afresh).
+\ THIS IS NOT DECISION 4's `SetPalette` COMING BACK TO LoadDeck. That
+\ one had to go because an information screen is up across LoadDeck at
+\ GameStart and the deck's colours overrode the text background. No
+\ screen is ever up on this route -- the lift is the only thing that
+\ had the machine -- so the call belongs to the lift, not to LoadDeck.
   LDA liftDeck,X
   STA deck
   LDA #1
   STA liftPlace
   STA lvLoad
+
+\ deckClear IS THE PREVIOUS DECK'S until DroidsInit runs, and clearing
+\ a deck and taking the lift onward is the ordinary way to play -- so
+\ without this the new deck would come up BLUE for the whole load
+\ (level.asm's cleared-floor arm) and we would have swapped one wrong
+\ palette for another. A deck is presumed not cleared until DroidsInit
+\ says otherwise, which it does either way, later in this same load.
+  LDA #0
+  STA deckClear
+  JMP SetPalette                \ bank 4's, and its RTS
+
 .lvx_stay
+  LDX #15                       \ same deck: the palette LvEnter4 saved
+.lvx_pal                        \ IS this deck's, cleared-floor override
+  LDA xfPalSave,X               \ and all, so put it back as it was
+  STA palPlay,X
+  DEX
+  BPL lvx_pal
   RTS
 
 \ The lift screen's palette: KC's choice — blue field, the emboss in
