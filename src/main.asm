@@ -602,6 +602,18 @@ TITLE_ADDR = &3000
 \ It shares PARAFNT/PARTITL's ground and dies when PARTITL loads; by
 \ then all four banks are up and nothing wants it again — the game-over
 \ seam reloads no bank.
+\ WHERE PARAFNT'S STREAM LANDS, and it is not DEPK_STREAM. PARAFNT
+\ unpacks to FONT_ADDR = &3000, and a stream at &3200 would be overtaken
+\ by its own output after ~1,148 of 3,503 bytes. ZX0's in-place rule is
+\ that the stream must END where the output ends: the true delta for
+\ this stream, walked out of the decode by tools/make_disc.py, is 1,566,
+\ so anything from &361E up is safe. &3700 takes it with 226 bytes of
+\ margin and keeps the whole stream (&3700-&3E93) BELOW &4000 — outside
+\ the title's framebuffer, so the load needs no display blanking, and
+\ its tail sits in SPR_SAVE, which is staging scratch at that moment.
+\ make_disc.py recomputes the delta every build and refuses to write a
+\ disc if this address stops being safe.
+FNT_STREAM  = &3700
 DEPK_ADDR   = &3000
 DEPK_STREAM = &3200
 
@@ -2301,8 +2313,10 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
 \ address still on the stack. See briefing.asm.
 .ts_loads
   LDX #LO(loadfnt)              \ the text font, straight back onto the
-  LDY #HI(loadfnt)              \ ground the title borrowed
-  JSR OSCLI
+  LDY #HI(loadfnt)              \ ground the title borrowed -- ZX0 since
+  JSR OSCLI                     \ 2026-08-29, 14 sectors down to 8, and
+  JSR UnpackFont                \ this seam runs on boot, on every title
+                                \ and on the briefing exit
 
   LDX #LO(loadlow)              \ the low overlay, staged at LOW_STAGE;
   LDY #HI(loadlow)              \ its copy-down must be the last
@@ -3313,13 +3327,27 @@ INCLUDE "src/zx0depack.asm"
 \ displaces BASIC, which we never return to, and not DFS, which lives in
 \ its own socket and which the MOS pages in and back out around each of
 \ its own calls.
+\ ---- UnpackFont — PARAFNT's stream into the font's ground -------
+\ SIX BYTES, because it shares everything below: all four addresses in
+\ play (DEPK_STREAM, SWRAM_BASE, FNT_STREAM, FONT_ADDR) have a ZERO LOW
+\ BYTE, so only the two high bytes differ and the tail sets both lows
+\ from one zero. The code image had nothing to spare when this landed.
+.UnpackFont
+  LDA #HI(FNT_STREAM)
+  LDX #HI(FONT_ADDR)
+  BNE UnpSet                    \ always: HI(FNT_STREAM) is non-zero
+
 .UnpackBankIn
   STA ROMSHAD                   \ both, always — PAGEBANK's rule
   STA ROMSEL
-  LDA #LO(DEPK_STREAM) : STA src
-  LDA #HI(DEPK_STREAM) : STA src+1
-  LDA #LO(SWRAM_BASE)  : STA mapptr
-  LDA #HI(SWRAM_BASE)  : STA mapptr+1
+  LDA #HI(DEPK_STREAM)
+  LDX #HI(SWRAM_BASE)
+.UnpSet
+  STA src+1
+  STX mapptr+1
+  LDA #0                        \ every one of the four is page-aligned
+  STA src
+  STA mapptr
   JMP Zx0Unpack                 \ its RTS returns to our caller
 
 

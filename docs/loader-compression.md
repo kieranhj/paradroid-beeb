@@ -201,23 +201,59 @@ nine sectors are worth ~0.5 s inbound and the dropped `PARDEPK` ~0.18 s outbound
 (which is `BuildLevel` decompressing its tile map through the cross-boundary call), and the view
 scrolls.
 
-### Still to do: PARAFNT
+### PARAFNT too — done the same day, in place
 
-It is worth 6 sectors (14 → 8, ~0.42 s) on **every** `ts_loads` — boot, every title, and the
-briefing exit — so it is the best of what is left. It was not done here because it needs a
-landing address and that needs care: **`PARAFNT` unpacks to `&3000` and its stream cannot land at
-`DEPK_STREAM`**, because the writer overtakes the reader. The arithmetic: with the stream at
-`&3200` the output starts 512 B behind and gains 0.446 B per output byte, so it catches up after
-~1,148 bytes of a 3,503-byte output and corrupts the rest.
+It is worth 6 sectors (14 → 8) on **every** `ts_loads`: boot, every title, and the briefing exit.
+The obstacle was that **`PARAFNT` unpacks to `&3000` and its stream cannot land at
+`DEPK_STREAM`** — from `&3200` the output starts 512 B behind and gains 0.446 B per output byte,
+so it overtakes the reader after ~1,148 of 3,503 bytes and corrupts the rest.
 
-**The fix is ZX0's standard in-place trick — land the stream so it ENDS where the output ends.**
-At `&3700` the output only catches the input after ~4,017 bytes, which is past the 3,503 it will
-ever write. That also puts the whole stream (`&3700`–`&3E93`) **below `&4000`**, outside the
-displayed title framebuffer, so it needs no display blanking — the tail sits in `SPR_SAVE`, which
-is scratch at that moment.
+**The landing address is measured, not reasoned.** ZX0's in-place rule is that the stream must
+end where the output ends, but the required gap is a property of *this stream*: a literal run
+copies 1:1 plus its flag bits, so the writer can gain locally however good the average ratio is.
+`make_disc.py`'s `in_place_delta()` walks the decode and tracks `max(write_index − bytes
+consumed)`. For today's font that is **1,566**, and — tellingly — the worst point is at the very
+end (`out=3500` of 3503, `in=1935` of 1940), because ZX0's closing matches consume almost no
+input. Minimum safe landing is therefore `&361E`.
 
-**Do not take `&3700` on the strength of that average, though.** ZX0 can expand locally (a
-literal run copies 1:1 plus its flag bits), so the true minimum gap is a property of the actual
-stream, not of the ratio. Compute the real delta by walking the decode and tracking
-`max(out_pos − in_pos)`, and assert it in `make_disc.py` so a text edit that changes the
-compression cannot silently break the boot.
+**`FNT_STREAM = &3700`**, which keeps **226 B of margin** and puts the whole stream
+(`&3700`–`&3E93`) **below `&4000`** — outside the title's framebuffer, so the seam needs no
+display blanking, and its tail sits in `SPR_SAVE`, staging scratch at that moment.
+
+**The check runs every build.** `make_disc.py` recomputes the delta from the actual compressed
+bytes and refuses to write a disc if `FNT_STREAM` has stopped being safe, naming the address it
+would need. A `briefing.txt` or font edit that compresses worse fails the build instead of
+corrupting the boot. It prints the margin: `PARAFNT 3503 -> 1940 (in place, 226 B of margin)`.
+
+**`UnpackFont` cost six bytes**, because all four addresses in play — `DEPK_STREAM`,
+`SWRAM_BASE`, `FNT_STREAM`, `FONT_ADDR` — are page-aligned. It loads the two high bytes and drops
+into `UnpackBankIn`'s tail, which sets both low bytes from one zero. That mattered: the code image
+had **nothing** left after the resident depacker.
+
+**Paid for by moving `DoorTdp` (56 B) into bank 4**, and that is a better home than main RAM was:
+**all three of its callers are bank 4 already** — `screen.asm`'s `MapChar` and `scroll.asm`'s band
+and column paths — so every call used to leave bank 4 and come straight back. Now they are local.
+
+### Where it all landed
+
+| | before this work | after |
+|---|---|---|
+| disc files | 12 | **11** (`PARDEPK` gone) |
+| total sectors | 210 | **177** |
+| image | 49,920 B | **45,824 B** |
+| code image free | 296 B | **48 B** (`code_end` `&2FCF`) |
+| bank 4 free | 25 B | **175 B** |
+
+**Verified in jsbeeb**: boots, the briefing renders from the compressed `PARMAN`, the 001 screen
+and the panel render from the in-place-unpacked `PARAFNT` — the font is what would break first and
+most visibly — and a deck draws, which is `BuildLevel` decompressing through the cross-boundary
+call to the one resident depacker.
+
+### What is left
+
+`PARTITL` is the last one worth compressing: 13 → 7 sectors, ~0.42 s on boot and on every title.
+It has the same shape of problem as `PARAFNT` (it also loads to `&3000`) and the same solution is
+available — `in_place_delta()` is now there to size it — but it is *code* that runs at `&3000`,
+and on the game-over path the 999 page is on display while it loads, so the landing area wants
+checking against what is being shown as well as against the delta. `PARBRF` and `PARALOW` save one
+sector each and are not worth the risk.

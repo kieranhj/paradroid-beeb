@@ -108,7 +108,7 @@ lives only in `build.ps1`.
 DFS filenames are max 7 characters — the executable on disc is `PARA`.
 
 **The build is two stages: beebasm, then `tools/make_disc.py`.** The tool ZX0-compresses the four
-bank files **and `PARMAN`** with `bin/zx0.exe` (sources and build line in `tools/zx0src/`; round-trip-verified
+bank files **and `PARMAN` and `PARAFNT`** with `bin/zx0.exe` (sources and build line in `tools/zx0src/`; round-trip-verified
 through `tools/zx0.py` every build), moves their catalogue load address to `DEPK_STREAM`, and lays
 the disc out physically in boot access order. The loader (`UnpackBankIn`, resident in the code
 image) only understands that layout, so **`PARADROID-raw.ssd` hangs at the first bank load** — never hand
@@ -209,8 +209,8 @@ paragraph:
 
 | Region | Free (2026-08-25, post-pass) |
 |---|---|
-| Main RAM code image | **0 B** — `code_end` is exactly `&3000` since the resident depacker (2026-08-29). Anything new needs a move to bank 4 first |
-| Bank 4 | **231 B** on the gauge (2026-08-29: +206 from losing its depacker copy), + `colourMap` `ALIGN` pad |
+| Main RAM code image | **48 B** — `code_end` `&2FCF`. It hit exactly `&3000` when the depacker moved in; `DoorTdp` to bank 4 bought this back (2026-08-29) |
+| Bank 4 | **175 B** on the gauge (2026-08-29: +206 from losing its depacker copy, −56 taking `DoorTdp` in), + `colourMap` `ALIGN` pad |
 | Bank 5 | **602 B** |
 | Bank 6 | **114 B** |
 | Bank 7 | 7 B tail + **~176 B** of `planInk` `ALIGN` pad |
@@ -247,7 +247,7 @@ IRQ does with banks is Layer 11e's sound tick**, which saves `ROMSHAD`, pages `S
 `SndTick` and restores what it found — legal because `PAGEBANK` writes the shadow first. Anything
 else in the IRQ must still read no bank; check that again before putting anything else in one.
 
-The four bank files **and `PARMAN`** ship ZX0-compressed on disc (written by
+The four bank files **and `PARMAN` and `PARAFNT`** ship ZX0-compressed on disc (written by
 `tools/make_disc.py`, not by the SAVEs): `*LOAD` drops each stream at `DEPK_STREAM = &3200` and
 `UnpackBankIn` decompresses it straight into the bank.
 
@@ -259,7 +259,14 @@ code image** (`.Zx0Unpack`, with `UnpackBankIn` and `BootBanks` beside it) serve
 `PARDEPK` is gone: one fewer disc file everywhere, and nothing lands on `&3000` at the briefing
 exit any more. It cost the code image its last bytes — **`code_end` is now exactly `&3000`** —
 paid for by moving `DoorCopyDef` into bank 4, which the same change had just enriched by 257 B.
-`docs/loader-compression.md` has the ledger and the measurements. The banks cannot be loaded at `&8000` even
+`docs/loader-compression.md` has the ledger and the measurements.
+
+**`PARAFNT` unpacks IN PLACE and its landing address is checked every build.** It decompresses to
+`&3000`, so its stream cannot use `DEPK_STREAM` — the output would overtake it. `FNT_STREAM =
+&3700` is derived from the stream's true in-place delta (1,566 for today's font, measured by
+`make_disc.py`'s `in_place_delta()`), and the build **fails** rather than shipping if a font or
+briefing edit ever compresses worse than that address allows. Do not move `FNT_STREAM` without
+reading that function. The banks cannot be loaded at `&8000` even
 uncompressed, because the MOS has the DFS ROM paged in there during a filing-system call. `*LOAD`
 must also happen **before** `InstallIrq` — taking over IRQ1V stops the MOS servicing the filing
 system. See `docs/loader-compression.md`.

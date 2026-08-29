@@ -37,7 +37,87 @@ sys.path.insert(0, str(Path(__file__).parent))
 import zx0
 
 DEPK_STREAM = 0x3200            # must match main.asm
-COMPRESSED = ["PARADAT", "PARASPR", "PARSPR2", "PARXFER", "PARMAN"]
+FNT_STREAM  = 0x3700            # must match main.asm
+# Compressed files, and where each one's STREAM is *LOADed to. Four of
+# them decompress into a sideways bank, so their stream can sit at the
+# shared staging address; PARAFNT decompresses into MAIN RAM at &3000,
+# under itself, so its stream has to land where its own output will not
+# overtake it -- see in_place_delta() and FNT_STREAM in main.asm.
+COMPRESSED = {"PARADAT": DEPK_STREAM, "PARASPR": DEPK_STREAM,
+              "PARSPR2": DEPK_STREAM, "PARXFER": DEPK_STREAM,
+              "PARMAN":  DEPK_STREAM, "PARAFNT": FNT_STREAM}
+
+# Where each compressed file's output goes, for the in-place check. Only
+# the ones whose stream and output share memory actually need it.
+UNPACK_DEST = {"PARAFNT": 0x3000}
+
+
+def in_place_delta(packed, raw):
+    """max(write_index - input bytes consumed) over the whole decode.
+
+    ZX0 unpacks forwards, so a stream that shares memory with its own
+    output is safe only while the writer stays behind the reader. The
+    margin is a property of THIS stream, not of the compression ratio:
+    a literal run copies 1:1 plus its flag bits, so the gap can grow
+    locally however good the average is. Walk the decode and measure it.
+    Landing address must be >= dest + delta + 1.
+    """
+    out = bytearray(); pos = 0; bit_mask = 0; bit_byte = 0
+    backtrack = [None]; worst = -1 << 30
+
+    def note():
+        nonlocal worst
+        g = (len(out) - 1) - pos
+        if g > worst:
+            worst = g
+
+    def bit():
+        nonlocal bit_mask, bit_byte, pos
+        if backtrack[0] is not None:
+            b = backtrack[0] & 1
+            backtrack[0] = None
+            return b
+        if not bit_mask:
+            bit_byte = packed[pos]
+            pos += 1
+            bit_mask = 128
+        b = 1 if (bit_byte & bit_mask) else 0
+        bit_mask >>= 1
+        return b
+
+    def gamma(invert):
+        v = 1
+        while not bit():
+            d = bit()
+            if invert:
+                d ^= 1
+            v = (v << 1) | d
+        return v
+
+    last_offset = zx0.INITIAL_OFFSET
+    state = "literals"
+    while True:
+        if state == "literals":
+            for _ in range(gamma(False)):
+                out.append(packed[pos]); pos += 1; note()
+            state = "new" if bit() else "copy"
+        elif state == "copy":
+            for _ in range(gamma(False)):
+                out.append(out[-last_offset]); note()
+            state = "new" if bit() else "literals"
+        else:
+            msb = gamma(True)
+            if msb == 256:
+                break
+            lsb = packed[pos]; pos += 1
+            last_offset = msb * 128 - (lsb >> 1)
+            backtrack[0] = lsb
+            for _ in range(gamma(False) + 1):
+                out.append(out[-last_offset]); note()
+            state = "new" if bit() else "literals"
+    if bytes(out) != raw:
+        raise SystemExit("in_place_delta: decode disagrees with the source")
+    return worst + 1
 
 # Physical layout, first file at sector 2. Boot access order: !BOOT,
 # PARA, then the four banks (PARDEPK is gone -- the depacker is resident
@@ -181,13 +261,23 @@ def main():
         print("make_disc: INTRO build - PINTRO wired into !BOOT")
 
     report = []
-    for name in COMPRESSED:
+    for name, stream in COMPRESSED.items():
         raw = files[name]["data"]
         packed = compress(zx0_exe, raw, name)
+        dest = UNPACK_DEST.get(name)
+        note = ""
+        if dest is not None:
+            need = dest + in_place_delta(packed, raw)
+            if stream < need:
+                raise SystemExit(
+                    f"{name}: stream at {stream:#06x} would be overtaken by "
+                    f"its own output at {dest:#06x} - needs {need:#06x} or "
+                    f"higher. Raise FNT_STREAM in main.asm AND here.")
+            note = f"  (in place, {stream - need} B of margin)"
         files[name]["data"] = packed
-        files[name]["load"] = DEPK_STREAM
-        files[name]["exec"] = DEPK_STREAM
-        report.append(f"  {name:7s} {len(raw):5d} -> {len(packed):5d}")
+        files[name]["load"] = stream
+        files[name]["exec"] = stream
+        report.append(f"  {name:7s} {len(raw):5d} -> {len(packed):5d}{note}")
 
     out = build_image(files, img[0:8] + img[0x100:0x104], img[0x104],
                       (img[0x106] >> 4) & 3)

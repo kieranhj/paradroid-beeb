@@ -203,51 +203,16 @@ DOOR_SLOTS = 7                  \ the C64's cap, and it compacts on close
 \ have, and its one caller (dp_new above) is main-RAM play-path code
 \ where SWRAM_DATA is the resting state.
 \ ============================================================
-\ DoorTdp — point tdp at this tile's patched copy, if it has one
+\ DoorTdp LIVES IN BANK 4 NOW — see screen.asm
 \ ============================================================
-\ A = tile column, doorTileRow = tile row. Carry set on return means
-\ tdp was rewritten. The caller has ALREADY built the ordinary tdp, so
-\ a miss costs only the search and leaves it alone.
-\
-\ Callers test `LDA numDoors : BEQ` first, so the common case — no door
-\ open anywhere on the deck — never reaches here at all.
-\
-\ dtOfs is added to the base: the band folds its sub-row offset into
-\ tdp, the column path and MapChar do not.
-\ X IS PRESERVED, and that is not tidiness: ProbeGroup keeps the probe
-\ index in X across its call to MapChar, which is one of the callers.
-.DoorTdp
-  STA dtCol
-  STX dtSaveX
-  LDX numDoors
-  DEX
-.dt_find
-  LDA doorCol,X
-  CMP dtCol
-  BNE dt_next
-  LDA doorRow,X
-  CMP doorTileRow
-  BEQ dt_hit
-.dt_next
-  DEX
-  BPL dt_find
-  LDX dtSaveX
-  CLC
-  RTS
-
-.dt_hit
-  CLC
-  LDA doorMul16,X               \ <= 96, plus dtOfs <= 12: cannot carry
-  ADC dtOfs
-  ADC #LO(doorDef)
-  STA tdp
-  LDA #HI(doorDef)
-  ADC #0
-  STA tdp+1
-  LDX dtSaveX
-  SEC
-  RTS
-
+\ Moved 2026-08-29, and it is a better home than this one was: ALL
+\ THREE CALLERS ARE BANK 4 ALREADY — screen.asm's MapChar and
+\ scroll.asm's band and column paths — so every call was crossing the
+\ boundary out of bank 4 and straight back in. In bank 4 they are
+\ ordinary local calls. It reads door.asm's variables, which is main
+\ RAM, and bank code may read main RAM freely.
+\ The 56 bytes paid for the PARAFNT unpack in the code image, which had
+\ none left after the resident depacker.
 \ ============================================================
 \ DoorsUpdate — close what was not touched, redraw what moved
 \ ============================================================
