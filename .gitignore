@@ -10,13 +10,18 @@ compile.txt
 
 # beebasm's SAVE writes a loose host file whenever it has no disc image to
 # put it in — so any run without a working -do, the -d symbol dump included,
-# drops these six in the project root
+# drops these in the project root
 /PARA
 /PARADAT
 /PARASPR
 /PARSPR2
 /PARXFER
 /PARAFNT
+/PARSWR
+/PARALOW
+/PARTITL
+/PARBRF
+/PARMAN
 
 # ---- Third-party tools (fetch locally, see README) ----
 bin/

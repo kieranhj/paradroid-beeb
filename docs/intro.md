@@ -1,9 +1,9 @@
 # The C64 intro on the BBC — plan
 
-*Part of the Paradroid BBC Micro port. Start at [`../PLAN.md`](../PLAN.md). Status: **v1 BUILT
-2026-08-26**, same day as the plan — screen, flash, split, and the boot chain all verified in
-jsbeeb (§5's checks: depack diffed byte-for-byte, forced-peak screenshots, full boot → key →
-game). The C64 side — what the intro is and how its effect works — is [`graphics.md`](graphics.md)
+*Part of the Paradroid BBC Micro port. Start at [`../PLAN.md`](../PLAN.md). Status: **the ARTWORK is built and shipping; the EXECUTABLE was
+replaced 2026-08-29** by scarybeasts' intro and its sample player — see §8, which is where to
+start. §1–§2 are still current (he took our picture and our colourways unchanged); §3–§5
+describe v1's own executable and are kept as the record of it. The C64 side — what the intro is and how its effect works — is [`graphics.md`](graphics.md)
 §10; the rip it builds on is `tools/rip_intro.py` and the analysis in its docstring. §7 records
 what the build changed against this plan and the traps it found.*
 
@@ -110,6 +110,8 @@ logical colours under §1's model instead of RGB:
 
 ## 3. The executable — `src/pintro.asm`
 
+**RETIRED 2026-08-29 — the file is deleted and `pdloader/` replaces it (§8). Kept as the record of what v1 did.**
+
 A separate BeebASM top file — **not** included from `main.asm`, no interaction with the game
 build's GUARDs, banks or zero page. Assembled by a second, tiny beebasm pass in `build.ps1`.
 
@@ -160,6 +162,8 @@ build's GUARDs, banks or zero page. Assembled by a second, tiny beebasm pass in 
   running, the file below `&3000` and the screen.
 
 ## 4. Disc and build — an OPT-IN build switch
+
+**Superseded by §8**: the switch is still `-Intro`, but it assembles `pdloader/` and splices twelve files, and `-Release` implies it.
 
 **The intro on the front of the disc is a build option, default OFF** — the everyday test
 build boots straight into the game as it does today. `.\build.ps1 -Intro` (passed through by
@@ -262,3 +266,95 @@ write itself can glitch a few displayed pixels at the beam position on the write
 (visible as short dashes at flash peaks only, over black). Real-hardware behaviour, shared
 with every mid-frame palette split; invisible at rest because black-to-black writes change
 nothing on screen.
+
+## 8. v2 — scarybeasts' intro replaces ours (2026-08-29)
+
+**`src/pintro.asm` is gone.** The MOD player §6 was waiting for arrived as a whole intro:
+`pdloader/`, Chris Evans' own executable, carrying our picture and our lightning over a
+three-channel sample player. Everything in §1–§5 is still the description of the ARTWORK —
+the colour model, the split, the exporter — because he took ours unchanged. What is retired is
+v1's executable, its `OSBYTE 19` timekeeping and its busy-wait split.
+
+**The artwork came back byte-identical**: `pdloader/screen` matches the depacked
+`src/data/introscr.zx0` exactly, and his `cwSteps` is `src/data/introfx.asm`'s four colourways
+padded from 12 bytes to 16 with our own sky entries. `tools/export_intro.py` is therefore still
+the source of truth, and **those two generated files stay in `src/data/` although nothing
+includes them any more** — the exporter needs a local `paradroid_ce.lst` to run, which is the
+whole reason generated data is committed (KC, 2026-08-27). A picture change starts there.
+
+### How it differs from v1
+
+| | v1 (ours, retired) | v2 (`pdloader/`) |
+|---|---|---|
+| Sound | none | 3 channels of samples, ~15.6 kHz each, straight at the SN76489's attenuation registers |
+| Timekeeping | `OSBYTE 19` and a busy-wait to the split row | cycle-exact; the whole frame is a hand-scheduled jump chain and the split and the flash ride in its spare cycles |
+| The machine | politely borrowed | taken: `*TAPE`, System VIA interrupts off, zero page and `&0D00` saved and restored |
+| Exit | any key, `RTS` into `!BOOT`'s exec | any key, then it silences the chip, `*DISC`s and chains to `PARA` itself |
+| Screen | 1,256 B ZX0, depacked in place | 20,480 B raw — see §8's open items |
+| RAM | `&1900`, ~4K | `&2700-&2AFF`, all of zero page, `&0100-&016F`, `&0400-&09FF`, and a sideways bank |
+
+### The four port changes
+
+His file is vendored **verbatim** (KC, 2026-08-29) so his next drop is a clean diff; ours are
+marked `\ PORT:` at the site and listed in its header and in `pdloader/README.md`:
+
+1. **The bank is `PARSWR`'s**, not 4 — Layer 13b made the four bank numbers a run-time answer,
+   so the intro reads the first of them from the handover at `&0A00`. `&0A01` is safe to hold it:
+   the advance tables end at `&0A00` exactly.
+2. **It chains to `PARA`**, not to itself.
+4. **It keeps `PARSWR`'s handover safe over its own run**, copying the five bytes into its own
+   binary at entry and writing them back in `do_exit`. **This is the one that actually bit**
+   — see below.
+
+### The trap: `&0A00` is inside the advance tables
+
+`init_player` unpacks its advance tables to `&0400`, and they are `advance_tables_len` × **256**,
+not × 64: the inner loop writes four bytes per packed byte, and his own comment says so — *"Number
+of 256 byte tables to output."* So they cover **`&0400-&1BFF`**, which is exactly why the packed
+source loads at `&1C00`. `&0A00` is in the middle of them.
+
+Left in place, the handover was overwritten with an `AND #3` value, the game missed the magic byte
+and **fell back to banks 4,5,6,7**. On a machine that has 4-7 — jsbeeb, and this desk — the
+fallback is right by coincidence and everything works. On KC's emulator, with sideways RAM in
+slots **0,1,2,3**, the game unpacked its four banks into banks that are not there: every `*LOAD`
+appeared to succeed and the first call into bank code crashed. Reported and fixed 2026-08-29.
+
+**The lesson is the general one this project already knows** (`jsbeeb-zeroes-ram`): a bug that
+only shows up off the development machine is the one your emulator's configuration is hiding.
+Layer 13b made the bank numbers a run-time answer precisely so that 4-7 stops being special —
+and then the first thing built on top of it silently depended on 4-7 again. **Test the
+relocated case**: force the handover to a different four and boot the whole chain.
+3. **It closes the `*EXEC` file before `*TAPE`.** This is the one that could have bitten: `!BOOT`
+   is still open as an exec file when the intro starts, and `*TAPE` unloads the filing system
+   underneath it. His own build chains from the keyboard, so that path had never been exercised.
+
+### Boot order, and the release build
+
+`!BOOT` is now `*RUN PARSWR` → `*RUN PINTRO` → `*RUN PARA`. **The intro goes after the probe**,
+because it needs a bank number from it. The third line is dead — `PINTRO` chains — and is left
+in as the fallback if the intro is ever changed to exit by returning.
+
+**`build.ps1 -Release` is the build for other people** (KC, 2026-08-29): `-Intro` plus every
+`DEBUG_` flag forced off. The switch is `-D RELEASE=1` on beebasm's command line, because
+beebasm has no `IFDEF` and refuses a symbol defined twice, so `main.asm` cannot carry a default
+— which means **every** build passes `RELEASE`, bare invocations included. `main.asm`'s `DEV`
+is what `DEBUG_XFERWIN`/`DECK`/`KILL` read, and an `ASSERT DEBUG_ANY = 0` catches a readout
+left on by hand. `-Intro` on its own still gives a debug build with the intro in front of it.
+
+### Verified in jsbeeb, 2026-08-29
+
+Full release build, cold boot: `PARSWR` reports `SWRAM BANKS 4 5 6 7`, the intro loads and
+plays (938 sound writes in 40,000 cycles, one every ~43 cycles), a keypress chains it through
+`*TAPE`/`*DISC` into `PARA`, and the game reaches the title, the briefing and play. The game's
+own sound driver is healthy afterwards — 88 writes over 30 frames of shooting — so the intro's
+takeover of the chip and the System VIA leaves nothing behind. 24 files on the disc, of 31.
+
+### Open items
+
+- **`SCREEN` ships raw at 20,480 B** where we already hold it packed at 1,256. With the game's
+  257-byte depacker macro that is **~3.4 s off every boot** at this project's measured DFS rate.
+- **Ten data files could be one 16K image**, laid out by page where `init_metadata` expects it:
+  one catalogue entry and one seek instead of ten.
+- **The gap is silent.** The music stops at the keypress and the game then loads for 10.4 s with
+  nothing playing. Nothing can be done about it with this player — it owns the CPU with
+  interrupts off, so no disc access can happen underneath it. Accepted by KC, 2026-08-29.

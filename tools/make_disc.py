@@ -243,23 +243,39 @@ def main():
                          "would disagree")
 
     if intro_path:
-        # Splice the intro build in: PINTRO from its own beebasm pass,
-        # laid after !BOOT, and "*RUN PINTRO" patched in front of
-        # "*RUN PARA" so it runs (and exits into) the boot sequence.
+        # Splice the intro build in: scarybeasts' PINTRO and ALL of its data
+        # (pdloader/, its own beebasm pass), laid after PARSWR, and
+        # "*RUN PINTRO" patched in front of "*RUN PARA".
+        #
+        # AFTER PARSWR, NOT BEFORE IT: the intro borrows a sideways bank for
+        # its samples and takes the number from PARSWR's handover, so the
+        # probe has to have run first. PINTRO chains to PARA itself, which is
+        # why it closes the exec file before *TAPE -- see pdloader's header.
+        # The !BOOT line below is then never read, and is left in as the
+        # fallback if the intro is ever changed to exit by returning.
+        #
         # The default build takes this branch never — no PINTRO on the
         # disc and an untouched !BOOT, so the option cannot half-apply.
         intro_files = read_catalogue(intro_path.read_bytes())
         if "PINTRO" not in intro_files:
             raise SystemExit(f"{intro_path} lacks PINTRO")
-        files["PINTRO"] = intro_files["PINTRO"]
-        LAYOUT.insert(1, "PINTRO")
+        at = LAYOUT.index("PARSWR") + 1
+        for name, entry in intro_files.items():
+            if name in files:
+                raise SystemExit(f"intro file {name} collides with the game's")
+            files[name] = entry
+            LAYOUT.insert(at, name)
+            at += 1
+        if len(files) > 31:
+            raise SystemExit(f"{len(files)} files - a DFS catalogue holds 31")
         boot = files["!BOOT"]["data"]
         marker = b"*RUN PARA\r"
         if marker not in boot:
             raise SystemExit("!BOOT lacks '*RUN PARA' - cannot wire PINTRO")
         files["!BOOT"]["data"] = boot.replace(
             marker, b"*RUN PINTRO\r" + marker, 1)
-        print("make_disc: INTRO build - PINTRO wired into !BOOT")
+        print(f"make_disc: INTRO build - PINTRO + {len(intro_files) - 1} data "
+              "files wired into !BOOT")
 
     report = []
     for name, stream in COMPRESSED.items():

@@ -88,9 +88,18 @@ proves no instruction was added, removed or reordered.
 ## Build
 
 ```powershell
-.\build.ps1          # assemble into build/
-.\build.ps1 -Run     # assemble and launch in b-em
+.\build.ps1           # assemble into build/
+.\build.ps1 -Run      # assemble and launch in b-em
+.\build.ps1 -Intro    # + scarybeasts' loading intro (pdloader/, docs/intro.md §8)
+.\build.ps1 -Release  # THE BUILD FOR OTHER PEOPLE: -Intro, every DEBUG_ flag off
 ```
+
+**`RELEASE` is a beebasm command-line symbol and every build passes it.** beebasm has no
+`IFDEF` and refuses a symbol defined twice, so `main.asm` cannot carry a default of its own:
+`build.ps1` passes `-D RELEASE=0`, or `-D RELEASE=1` on `-Release`, and `main.asm`'s `DEV` is
+what `DEBUG_XFERWIN`/`DEBUG_DECK`/`DEBUG_KILL` read. **A bare `beebasm` invocation has to pass
+it too** — the symbol dump below does — or assembly stops at `DEV` with *Symbol not defined*.
+An `ASSERT DEBUG_ANY = 0` under `RELEASE` catches a readout left on by hand.
 
 **`make.bat` and `make.sh` are thin wrappers over `build.ps1`** — KC uses them, so keep them
 working. They map `make run` to `-Run` and pass everything else through; the pipeline itself
@@ -127,13 +136,13 @@ code. Redirecting **stdout** alone is safe, which is how `build.ps1` captures th
 
 **beebasm's `SAVE` writes a loose host file whenever it has no disc image to put it in**, so any
 run without a working `-do` drops `PARA`, `PARADAT`, `PARASPR`, `PARSPR2`, `PARXFER`, `PARAFNT`,
-`PARALOW`, `PARTITL`, `PARBRF` and `PARMAN` in the project root. They are gitignored. Two things follow: a `-do` path that cannot be written leaves a
+`PARALOW`, `PARTITL`, `PARBRF`, `PARMAN` and `PARSWR` in the project root. They are gitignored. Two things follow: a `-do` path that cannot be written leaves a
 build that *looks* like it worked, and the symbol dump below litters unless you give it one.
 
 Symbol addresses come from
 
 ```bash
-./bin/beebasm.exe -i src/main.asm -do build/symbols.ssd -d | tr ',' '\n' | grep "'score'"
+./bin/beebasm.exe -i src/main.asm -do build/symbols.ssd -D RELEASE=0 -d | tr ',' '\n' | grep "'score'"
 ```
 
 which dumps every global label as one long line of `'name':decimal` — the quick way to find a
@@ -279,6 +288,16 @@ and it crashes through the trampled vectors. The game-over → title seam does e
 why `SaveDfsWs` snapshots `&0D60–&0DEF` and `&0E00–&10FF` into bank 6 (`dfsSave`, 912 B) right
 before `PageLowIn` and `GoTitle` restores them before its loads. `PARALOW` stages on the panel rather than at `&3000`,
 because `PARAFNT` owns `&3000` and has to load first.
+
+**`pdloader/` IS A VENDORED DROP AND IS KEPT VERBATIM.** It is scarybeasts' loading intro and
+its three-channel sample player — his source, his style, his binaries — so that his next version
+is a clean diff. Our three changes to it are marked `\ PORT:` at the site and listed in its
+header and in `pdloader/README.md`; do not restyle it and do not put anything there that could
+live in the game. **Its beebasm pass must run from inside that directory** (`PUTFILE` paths are
+relative to the working directory), which `build.ps1 -Intro` does. The picture and the lightning
+colourways are OURS — `tools/export_intro.py` — and came back byte-identical, so
+`src/data/introscr.zx0` and `src/data/introfx.asm` stay as the committed provenance even though
+nothing includes them now. `docs/intro.md` §8.
 
 **`PARSWR` is an eighth disc file and the FIRST thing `!BOOT` runs** — the sideways RAM
 detector (`src/swram.asm`, Layer 13b). It probes all sixteen banks, takes the highest four, and

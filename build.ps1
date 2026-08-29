@@ -1,10 +1,18 @@
 # Build Paradroid (BBC Model B) -> build/PARADROID.SSD
-# -Intro additionally assembles src/pintro.asm (the C64 loading intro,
-# docs/intro.md) and wires "*RUN PINTRO" into !BOOT ahead of the game;
-# the default build carries no trace of it.
-param([switch]$Run, [switch]$Intro)
+# -Intro additionally assembles pdloader/paradroid_intro.asm (scarybeasts'
+# loading intro and its sample player, docs/intro.md) and wires "*RUN PINTRO"
+# into !BOOT behind PARSWR; the default build carries no trace of it.
+# -Release is the build for other people: -Intro, plus every DEBUG_ flag
+# forced off. It is the only build a player should ever see.
+param([switch]$Run, [switch]$Intro, [switch]$Release)
 
 $ErrorActionPreference = 'Stop'
+if ($Release) { $Intro = $true }
+# RELEASE is a command-line symbol because beebasm has no IFDEF and refuses a
+# symbol defined twice, so main.asm cannot carry a default of its own. It is
+# passed on EVERY build, and a bare beebasm invocation has to pass it too -
+# the symbol dump in CLAUDE.md does. main.asm's DEV is what the flags read.
+$relDef = if ($Release) { 'RELEASE=1' } else { 'RELEASE=0' }
 $root    = $PSScriptRoot
 $beebasm = Join-Path $root 'bin\beebasm.exe'
 $build   = Join-Path $root 'build'
@@ -49,22 +57,24 @@ if ((Test-Path $palJson) -and (Test-Path $palAsm)) {
 # $ErrorActionPreference even though the assembly succeeded. See CLAUDE.md.
 # -opt 3 makes the disc *EXEC !BOOT on SHIFT+BREAK; main.asm assembles
 # its own !BOOT (with the build timestamp) rather than using -boot.
-& $beebasm -i (Join-Path $root 'src\main.asm') -do $raw -opt 3 -title PARADROID -v |
+& $beebasm -i (Join-Path $root 'src\main.asm') -do $raw -opt 3 -title PARADROID -D $relDef -v |
     Out-File -FilePath $listing -Encoding utf8
 if ($LASTEXITCODE -ne 0) { throw "beebasm failed ($LASTEXITCODE)" }
 
-# -Intro: a second, tiny beebasm pass for the loading intro. Its data
-# (src/data/introscr.zx0, introfx.asm) comes from tools/export_intro.py,
-# which build.ps1 does not run - same rule as the other exporters.
+# -Intro: a second beebasm pass over scarybeasts' intro, which brings its own
+# SAVE and eleven PUTFILEs. IT MUST RUN FROM pdloader/: those PUTFILE paths are
+# relative to the working directory, and from the project root they resolve to
+# nothing, leaving a disc with PINTRO on it and none of its samples.
 $introRaw = $null
 if ($Intro) {
-    if (-not (Test-Path (Join-Path $root 'src\data\introscr.zx0'))) {
-        throw ("src/data/introscr.zx0 is missing - the intro's data is " +
-               "generated. Run:`n    python tools\export_intro.py")
-    }
     $introRaw = Join-Path $build 'PINTRO-raw.ssd'
-    & $beebasm -i (Join-Path $root 'src\pintro.asm') -do $introRaw -opt 0
-    if ($LASTEXITCODE -ne 0) { throw "beebasm failed on pintro.asm ($LASTEXITCODE)" }
+    Push-Location (Join-Path $root 'pdloader')
+    try {
+        & $beebasm -i 'paradroid_intro.asm' -do $introRaw -opt 0
+        if ($LASTEXITCODE -ne 0) {
+            throw "beebasm failed on paradroid_intro.asm ($LASTEXITCODE)"
+        }
+    } finally { Pop-Location }
 }
 
 # Post-process: ZX0-compress the four bank files, lay the disc out in boot
@@ -77,6 +87,7 @@ if ($introRaw) { $discArgs += @('--intro', $introRaw) }
 python (Join-Path $root 'tools\make_disc.py') @discArgs
 if ($LASTEXITCODE -ne 0) { throw "make_disc failed ($LASTEXITCODE)" }
 
+if ($Release) { "RELEASE build: intro on, every DEBUG_ flag off" }
 "Built  $ssd"
 "       $padded   padded, for jsbeeb"
 "       $listing   assembly listing"

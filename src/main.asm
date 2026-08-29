@@ -217,6 +217,19 @@ MAP_CHAR_H = MAP_ROWS * 4       \ 64 character rows
 \ RAM situation, and they need main-RAM room found before they can come
 \ back. DEBUG_RASTER's and DEBUG_DRAW's instrumentation cannot move to a
 \ bank at all: the interrupt and the blitter call it, and neither may
+\ ---- dev build or release build ------------------------------
+\ RELEASE COMES FROM THE COMMAND LINE and is not defined here, because
+\ beebasm has no IFDEF and refuses a symbol defined twice: build.ps1
+\ passes `-D RELEASE=0` on every build and `-D RELEASE=1` on -Release.
+\ A bare beebasm invocation -- the symbol dump in CLAUDE.md is the one
+\ that matters -- has to pass it too, and says so plainly if it forgets.
+\r
+\ DEV is what the flags below read. The three that ship ON are the three
+\ that change what the GAME does, and a release build is exactly the
+\ build where a player must not have them; the ASSERT under DEBUG_ANY
+\ catches any of the others left on by hand.
+DEV = RELEASE EOR 1
+
 \ page. See docs/memory-map.md for where the next bytes could come from.
 \ DEBUG_RASTER tints the background at entry to each rupture
 \ interrupt, so the scanline each one lands on is visible:
@@ -442,7 +455,7 @@ DEBUG_MAPGUARD = FALSE
 \ point: the code under test is the code that ships.
 \
 \ Losing on purpose needs no key: stop steering.
-DEBUG_XFERWIN = TRUE
+DEBUG_XFERWIN = DEV              \ dev only: see DEV above
 
 \ DEBUG_RESTART IS GONE, 2026-08-21. R threw the game away and started
 \ another, which was how Layer 11a's boot split got tested before there
@@ -465,7 +478,7 @@ DEBUG_XFERWIN = TRUE
 \ liftMode first, although the collision that test was written for is
 \ gone: hopping decks out from under a lift that is already entering
 \ one is nonsense whatever the keys are.
-DEBUG_DECK = TRUE
+DEBUG_DECK = DEV              \ dev only: see DEV above
 
 \ DEBUG_KILL is the fourth that changes what the GAME does: C kills
 \ every droid on the deck, one at a time through DrKillDroid, so the
@@ -473,7 +486,7 @@ DEBUG_DECK = TRUE
 \ shooting a deck empty. It is the REAL kill path -- explosions,
 \ sound, score, alert and DrRemoveShip all happen -- so what it tests
 \ is the mechanism, not a shortcut past it. src/droid.asm.
-DEBUG_KILL = TRUE
+DEBUG_KILL = DEV              \ dev only: see DEV above
 
 \ DEBUG_INVULN pins the player's energy at full, so a run can be taken
 \ deep into the ship without a 001's death ending it. Asked for by KC
@@ -4136,6 +4149,13 @@ DEBUG_ANY1 = DEBUG_RASTER OR DEBUG_DRAW OR DEBUG_POS OR DEBUG_VSYNC
 DEBUG_ANY2 = DEBUG_TIME OR DEBUG_ENERGY OR DEBUG_MAPGUARD OR DEBUG_XFERWIN
 DEBUG_ANY3 = DEBUG_INVULN OR DEBUG_DECK OR DEBUG_KILL
 DEBUG_ANY  = DEBUG_ANY1 OR DEBUG_ANY2 OR DEBUG_ANY3
+
+\ A RELEASE BUILD CARRIES NO DEBUG AT ALL. The three above go off with
+\ DEV; this catches one of the readouts left on by hand, which would
+\ otherwise ship a tinted raster or a readout over the panel.
+IF RELEASE
+ASSERT DEBUG_ANY = 0
+ENDIF
 
 CLEAR &7E00, &7F00
 ORG &7E00
