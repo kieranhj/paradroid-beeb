@@ -598,6 +598,8 @@ The port has no `sndState $11`: 11f [DECISION 11].)*
 
 ## 9. The volume keys and the mute — built 2026-08-26
 
+> **The mute moved to CTRL+Q on 2026-08-30** (KC), and pause to CTRL+P — see §12.
+
 `AdjustVolume` is one of the few C64 routines this port does not take verbatim. Everything
 that could be kept was: the 0–15 range, the clamp at both ends, and the every-fourth-frame
 repeat gate, which lands on the same wall-clock rate here by different arithmetic. What
@@ -683,6 +685,8 @@ act: at volume 2 with `snLevel[0]` = 85 (nibble 5) the unclamped value would be 
 touches it.
 
 ## 10. Pause — built 2026-08-26
+
+> **The trigger moved to CTRL+P on 2026-08-30** (KC); plain P still unpauses. See §12.
 
 KC asked for "pause/unpause button on P" the hour after the volume keys landed, and it shares
 their call site and their key-poll machinery, which is why it is written up here rather than in
@@ -820,3 +824,39 @@ normally (CH0 att 3, CH3 att 6) — the driver takes the chip back cleanly.
 **The standing lesson.** The charset/`&0800` overlap is safe *only* while we own the IRQ. Any
 future path that hands the machine back to the MOS has to flush first. There is exactly one such
 seam today (`GoTitle`); `UninstallIrq` has one call site, and that is worth keeping true.
+
+---
+
+## 12. CTRL+P and CTRL+Q — 2026-08-30
+
+KC: *"is it possible to change the pause and mute keys to be CTRL+P and CTRL+Q?"* Yes, and the
+mechanism costs nothing: `keydown` takes an INKEY byte and `EOR #&FF`s it into an internal key
+number, so CTRL is simply `KEY_CTRL = &FE` (INKEY -2, internal 1). It asks the matrix about **one
+key at a time**, so a modifier is just a second query and there is no ghosting to design around.
+
+**[DECISION 16] CTRL gates the TRIGGERS only; plain P unpauses.** `DoPause` tests `KEY_P` four
+times — the trigger, two release waits and the held loop — and only the trigger is gated. You are
+already holding CTRL by the time you want out, so requiring it again buys nothing, and the three
+bare tests cost nothing to leave alone. KC, 2026-08-30: *"unpause with just P is fine."* The mute
+has one site and it is a trigger, so CTRL+Q throughout.
+
+At both sites CTRL-up branches to the **same exit as key-up** (`pau_up`, `vk_qup`), which is what
+keeps the edge flags (`pausePrev`, `volQPrev`) honest: a half-pressed combo resets them exactly as
+letting go of the key does. Verified in jsbeeb by reading `paused` and `sndVolume` rather than by
+looking at the screen: bare P leaves `paused` 0, CTRL+P sets it, plain P clears it; bare Q leaves
+`sndVolume` 15, CTRL+Q drops it to 0, holding the combo does **not** re-toggle, and CTRL+Q again
+restores 15.
+
+**What it cost, and where the room came from.** 14 bytes of a main-RAM code image that had 6 free.
+None of `docs/ram-pass.md`'s reserves fit — `sprsplit` and SCANSTEP buy banks 5 and 6, and
+`door.asm` is the only main-RAM one but is gated on freeing ~650 B of bank 4 first. So it was paid
+for locally, from four sites that were writing `PAGEBANK` out longhand where RAM pass 5 had
+already established the trade:
+
+| | |
+|---|---|
+| `CbBulletFrame`'s two pagings → `JSR PgSpr` / `JSR PgData` | **−10 B** |
+| `sprite.asm`'s two effect-slot pagings → a new `PgSprSlot` (it sets `sprBank` too, which is why neither `Pg*` fitted and both wrote the four stores out) | **−4 B** |
+
+Net zero: `code_end` was `&2FFA` before and is `&2FFA` after. Both are transition or
+once-per-effect-slot code, so the 12 cycles a call buy nothing back and cost nothing.

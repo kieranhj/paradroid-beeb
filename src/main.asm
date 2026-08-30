@@ -1051,8 +1051,14 @@ KEY_R      = &CC                \ -52, DEBUG: the forced redraw. IT WAS
                                 \ says SPACE means this now. R has been free
                                 \ since DEBUG_RESTART was removed
 KEY_L      = &A9                \ -87, the fire button
-KEY_Q      = &EF                \ -17, the mute toggle
-KEY_P      = &C8                \ -56, pause and unpause
+KEY_Q      = &EF                \ -17, the mute toggle, with CTRL
+KEY_P      = &C8                \ -56, pause (with CTRL) and unpause (without)
+KEY_CTRL   = &FE                \ -2. NOTHING SPECIAL IS NEEDED FOR A
+                                \ MODIFIER: keydown asks the matrix about one
+                                \ key at a time, so CTRL is just another query
+                                \ and there is no ghosting to worry about
+                                \ either. CTRL's internal number is 1, which
+                                \ is what &FE EOR &FF gives — see keydown
 KEY_W      = &DE                \ -34, DEBUG_XFERWIN only
 KEY_C      = &AD                \ -83, DEBUG_KILL only
 KEY_ESCAPE = &8F                \ -113, the self-destruct
@@ -1993,6 +1999,19 @@ ENDIF                           \ other close: no band may outlive a pass
   PAGEBANK SWRAM_XFER
   RTS
 
+\ PgSprSlot — PgSpr, and it remembers the slot's bank too. The two
+\ EFFECT sites in sprite.asm want the sprite bank AND sprBank set to
+\ it (SprFetchRow pages the data bank in over the top and has to put
+\ this back), which PAGESPRBANK does for a droid and neither Pg* did
+\ for an effect — so both wrote the four stores out longhand, 11 bytes
+\ each. X and Y are untouched, which both callers need.
+.PgSprSlot
+  LDA swBank+SWRAM_SPR
+  STA sprBank
+  STA ROMSHAD
+  STA ROMSEL
+  RTS
+
 \ PageCopyAt — the staging copy: X = pages, swSrc and swDst set.
 .PageCopyAt
 .pdi_page
@@ -2763,6 +2782,9 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
   BEQ vk_notdn
   DEC sndVolume
 .vk_notdn
+  LDX #KEY_CTRL                 \ CTRL+Q, not bare Q (KC, 2026-08-30) —
+  JSR keydown                   \ CTRL up takes the same exit as Q up, so a
+  BNE vk_qup                    \ half-pressed combo resets the edge flag
   LDX #KEY_Q
   JSR keydown
   BNE vk_qup
@@ -2898,9 +2920,12 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
   LDA overPhase                 \ no pause over a death: the C64's game
   BNE pau_x                      \ over runs its own loop and never calls
                                 \ DoPause either
-  LDX #KEY_P
-  JSR keydown
-  BNE pau_up
+  LDX #KEY_CTRL                 \ CTRL+P PAUSES; PLAIN P UNPAUSES (KC,
+  JSR keydown                   \ 2026-08-30). Only the trigger is gated:
+  BNE pau_up                    \ you are already holding CTRL by the time
+  LDX #KEY_P                    \ you want out, and the three tests below
+  JSR keydown                   \ stay bare P, which costs nothing and is
+  BNE pau_up                    \ the friendlier half of the bargain
   LDA pausePrev
   BNE pau_x
   INC pausePrev                 \ it is 0 — the BNE above tested it

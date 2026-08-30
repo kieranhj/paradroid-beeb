@@ -645,16 +645,16 @@ CB_FIRE_CY = 10
 \ Main RAM can page freely, and bank code may call main RAM freely, so
 \ the lookup lives here and the one-way rule is not bent. DoFire uses
 \ the same table directly, and can, because it is already in main RAM.
+\ THE TWO PAGINGS ARE `JSR Pg*`, not the macro written out longhand: the
+\ expansion is 8 bytes and the helper call is 3, which is RAM pass 5's
+\ trade (main.asm, above PgData) applied to the two sites that were
+\ writing it out by hand. 12 cycles each, a handful of times a pass.
 .CbBulletFrame
   TAY
-  LDA swBank+SWRAM_SPR
-  STA ROMSHAD
-  STA ROMSEL
+  JSR PgSpr
   LDA efBullet,Y
   TAY
-  LDA swBank+SWRAM_DATA               \ the resting state the caller expects
-  STA ROMSHAD
-  STA ROMSEL
+  JSR PgData                    \ the resting state the caller expects
   TYA
   RTS
 

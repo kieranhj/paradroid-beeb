@@ -42,7 +42,7 @@ passes.
 machine, the lift, console and transfer trigger. **ESCAPE self-destructs and ends the game.**
 **SPACE is a second transfer button** — hold it and moveMode goes straight to Transfer, direction
 or no direction, which the fire route cannot do (it needs you stopped and 8 passes of settle).
-**Cursor up/down are the master volume, Q mutes and P pauses**, everywhere the game has a loop:
+**Cursor up/down are the master volume, CTRL+Q mutes and CTRL+P pauses** (plain P unpauses), everywhere the game has a loop:
 play, the modal screens, the briefing and the title (P in play and the modal screens). `[` and `]` are `DEBUG_DECK`'s deck hop, C is
 `DEBUG_KILL`'s clear-the-deck, W wins a transfer (`DEBUG_XFERWIN`), R a forced redraw — all
 three flags ship ON.
@@ -64,7 +64,7 @@ or triple digits in every other region** — current figures in `CLAUDE.md`'s ta
 
 | | | |
 |---|---|---|
-| ~~**The ± volume keys**~~ — `AdjustVolume` (`$0CB4`) | **BUILT 2026-08-26** — cursor UP/DOWN move `sndVolume` 0–15 and **Q mutes**, at `ml_passend`, `BrWaitField` and `TiWait`, so the volume works in play, in every modal screen, in the briefing and at the title — and it outlives a game. The C64's own range, clamp and repeat rate; its keys, its title-only scope and its readout deliberately not. The round-nine attenuation clamp came back first, in the C64's 6-byte form (the costed 4-byte `BCS snfv_off` was rejected — it freezes a quiet voice's pitch). Five DECISIONs and the measurements in [`docs/layer-11e-sound.md`](docs/layer-11e-sound.md) §9 | **done** |
+| ~~**The ± volume keys**~~ — `AdjustVolume` (`$0CB4`) | **BUILT 2026-08-26** — cursor UP/DOWN move `sndVolume` 0–15 and **CTRL+Q mutes** (bare Q until 2026-08-30), at `ml_passend`, `BrWaitField` and `TiWait`, so the volume works in play, in every modal screen, in the briefing and at the title — and it outlives a game. The C64's own range, clamp and repeat rate; its keys, its title-only scope and its readout deliberately not. The round-nine attenuation clamp came back first, in the C64's 6-byte form (the costed 4-byte `BCS snfv_off` was rejected — it freezes a quiet voice's pitch). Five DECISIONs and the measurements in [`docs/layer-11e-sound.md`](docs/layer-11e-sound.md) §9 | **done** |
 | **Sound: the game-over set** | Layer 11e is otherwise built and tuned. KC: "needs work, leave for now." Also open: the transfer-verdict mapping (unverified guess) and fx06 with 11d | open |
 | **Briefing F6: exit-load trim** | The briefing → game reload is ~1.1 s naive; deferred from 11f. The pause-legend wording in `briefing.txt` is KC's, ongoing | later |
 | **Layer 12 — balance, fidelity and feel** | Not a feature layer: the fidelity audit against the listing, the Redux fix list triaged, playtesting against the isolated dials, graceful degradation. **Verify before tuning**, or a fidelity bug gets balanced around instead of fixed. [`docs/layer-12-balance.md`](docs/layer-12-balance.md) | TODO |

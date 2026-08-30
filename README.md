@@ -74,7 +74,7 @@ converts mechanically from the ripped data with nothing redrawn.
 | K / M | up / down — and, on the lift screen, move along the shaft. On the high-score entry they walk the alphabet; on the intro manual K pauses the scroll and M doubles it and skips the dwells |
 | L | fire; on a lift platform it opens the ship's deck-selection screen, and fire again commits. It commits an initial on the entry, and starts the game from anywhere in the manual |
 | SPACE | a second transfer button — hold it and the transfer triggers without needing a direction |
-| Cursor up/down | master volume; **Q** mutes, **P** pauses. All three work in play, in the modal screens, in the manual and at the title |
+| Cursor up/down | master volume; **CTRL+Q** mutes, **CTRL+P** pauses (plain **P** unpauses). All three work in play, in the modal screens, in the manual and at the title |
 | `[` `]` | debug deck hop |
 | ESCAPE | self-destruct — ends the game. The port's own; the C64 has no abort |
 | R | force a full redraw (also the verification oracle) |

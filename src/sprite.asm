@@ -305,10 +305,9 @@ ENDMACRO
   LDA sprKind,X
   STA sprKindS,X                \ the restore runs a frame later and the slot
   BEQ sss_droid                 \ may have been reused by then
-  LDA swBank+SWRAM_SPR                \ not PAGESPRBANK — see the note above; paged
-  STA sprBank                   \ HERE, from main RAM, because SprEfSetup now
-  STA ROMSHAD                   \ lives in the bank it is paging in
-  STA ROMSEL
+  JSR PgSprSlot                 \ not PAGESPRBANK — see the note above; paged
+                                \ from main RAM, because SprEfSetup lives in
+                                \ the bank it is paging in
   JMP SprEfSetup
 .sss_droid
   LDA sprShift,X
@@ -1191,10 +1190,7 @@ efSrc = psrc
 \ background, and it has to go back the way it came.
   LDA sprKindS,X
   BEQ sr_droid
-  LDA swBank+SWRAM_SPR                \ where the boxes live — see SprEfSetup
-  STA sprBank
-  STA ROMSHAD
-  STA ROMSEL
+  JSR PgSprSlot                 \ where the boxes live — see SprEfSetup
   LDA sprEfFrmS,X
   JSR SprEfBox
   JSR SprSetSave
