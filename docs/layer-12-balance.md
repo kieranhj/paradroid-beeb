@@ -158,6 +158,38 @@ bank, so the test is the waypoint's character coordinates shifted to tiles again
 lift tiles. It must degrade to placing the droid anyway when the exclusion exhausts the table —
 deck 2 is 5 waypoints against 3 droids.
 
+**[DECISION 4] — (4) the high-score entry seeds from the previous initials: BUILT.
+2026-08-31.**
+
+`GetInitial` ($E56D) starts every initial at index 0, 'A', and so did this port — so entering a
+third set of initials meant walking the alphabet from A again for each letter. Redux starts you
+at what you typed last time.
+
+*Where the memory lives, and why it needed no new disc file.* KC asked whether this wanted a file
+of its own, since the bank files ship ZX0-compressed. It does not: compression only affects the
+load, and after `UnpackBankIn` a bank is ordinary RAM. What matters is whether anything reloads
+it, and **nothing reloads bank 7** — `BootBanks` `*LOAD`s `PARXFER` once, and the only later loads
+are `PARASPR` on the briefing exit and `PARAFNT`/`PARALOW`/`PARTITL` at `GoTitle`. That is exactly
+why `hstable.asm` exists and how `hsHigh` already survives between games, so `hsPrev` is three
+more bytes in the same file. `HsEntry` already pages bank 7 for the whole of `HsRun`, so no new
+paging either.
+
+*It cost nothing.* The three bytes ride `plandata.asm`'s `ALIGN` pad — `hstable.asm` assembles
+before it — so bank 7 still ends at `&BFF9`, and the code image is untouched at `&2FF9`.
+
+*It remembers `hsSelFor`, not the table entry*, and is written before the initials are filed into
+either end. What the next entry starts from is what you last typed, not what the high score
+happens to hold — the two differ as soon as a low score is entered.
+
+*Zero is the assembled value*, so the first entry of a session still starts at 'A' exactly as
+before. Nothing changes until there genuinely is a previous set.
+
+*Verified in jsbeeb, both arms of the table.* First game: ESCAPE to end it, the entry opens on
+"Lowest Score of the Day!" showing `a..`, and D, G, Z entered. `hsPrev` read back as 3, 6, 25.
+Second game, score poked past the 6809 default so it takes the OTHER arm: the entry opens on
+"Great Score!" showing `D..`, and the second slot seeds to `G` on commit — so the seeding survives
+the overlay being reloaded from disc in between, which is the whole point of it being in bank 7.
+
 **Paradroid Redux is a different codebase** — `docs/decisions.md` has the evidence — so its fixes
 cannot be lifted as code. What it is good for is a **list of what Braybrook himself thought was
 wrong**, each one then a question to ask of our own port: does the same defect exist here, and do

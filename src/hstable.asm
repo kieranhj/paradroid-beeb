@@ -28,6 +28,21 @@
 .hsLow    EQUB &00, &00, &65, &02
 .hsLoIni  EQUB 1, 0, 3                  \ BAD
 
+\ ---- Redux (4): the entry seeds from the LAST initials ------
+\ Layer-12 [DECISION 4]. GetInitial ($E56D) starts every initial at
+\ index 0, 'A', and so did this port -- so a player entering a third
+\ high score walked the whole alphabet from A again for each letter.
+\ Redux remembers what you typed last time and starts you there.
+\ IT HAS TO BE HERE, not in the overlay, for this file's own reason:
+\ PARTITL is loaded from disc every time it is wanted, so hsSelFor is
+\ back to its assembled value at every title. This is the only RAM in
+\ the entry's reach that remembers, and the overlay already pages this
+\ bank in for the whole of HsRun.
+\ ZERO IS THE ASSEMBLED VALUE, so the FIRST entry of a session still
+\ starts at 'A' exactly as before and nothing changes until there is
+\ genuinely a previous set to remember. Letter indices, as above.
+.hsPrev   EQUB 0, 0, 0
+
 \ Set by IsDone when the 999 page is dismissed, cleared by the overlay
 \ when it has run. It is what stops the entry firing at BOOT, where
 \ TitleSeq runs the same sequence with a score of zero — which would
