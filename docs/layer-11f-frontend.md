@@ -524,6 +524,60 @@ branches — `PN_SPACE` is zero. The leading zeros printed as `0`s until it beca
   **F6** (exit-load trim) deferred per KC's "optimise the loading later" — the naive exits cost
   ~1.1 s into a game, ~0.6 s back to title.
 
+### 4e-2. The scroll hitched once a character row, 2026-08-31 — measured and fixed
+
+KC, on **real hardware**: the scroller "looks a little bit jerky". It was, and the rate was not the
+reason.
+
+**The rate is exactly right.** Sampling `fieldCount` against the scroll position (`brTop` × 8 +
+`line`) over 100 fields mid-travel: field 36 → 136, position 36 → 136. **100 scanlines in 100
+fields**, no dropped field.
+
+**The motion was not.** What the display actually gets is what the rupture IRQ latches at fire 1 —
+R12/R13 and `iline` — and sampling those field by field across a row boundary gave:
+
+```
+field:  136   137   138   139
+iline:    7     7     1     2
+R12/13: 0B00  0B00  0B50  0B50
+```
+
+Field 137 repeats field 136 exactly, and 139 lands two scanlines on: **a stall and a double step,
+once every eight fields — 6.25 times a second.** The average is preserved, which is why the
+position counters looked perfect.
+
+**Cause: `BrPaintRow` is 35,850 cycles — 90% of a 39,936-cycle field** (measured with the
+free-running User VIA T1, breakpoints at the routine's entry and at `brs_x`), and `br_scroll`'s
+`SetCRTCStart` came *after* it. On the one field in eight that paints a row, the park missed the
+next field's fire-1 latch entirely.
+
+**The fix is three bytes: park before painting.** `BrStep` now calls `SetCRTCStart` as soon as the
+position is complete — `line`, `scrollS` and `brTop` are all updated by then — and paints
+afterwards. The park is a few hundred cycles after fire 3 and beats every fire 1; the paint still
+overruns into the next field, but invisibly, because `BrWaitField` returns immediately afterwards
+with `fieldCount` already moved and the cadence recovers with no field lost. It cannot tear: the
+row being painted is the **staged** one, `brTop+15`, one below a 15-row window, so it is not on
+display while it is written. `br_scroll` keeps its own `SetCRTCStart` — that is what parks the
+seven cheap fields and the second step of a held DOWN key.
+
+**Verified**, same measurement, same point in the travel:
+
+```
+field:   36    37    38    39    40    41    42
+line:     4     5     6     7     0     1     2
+pline:    4     5     6     7     0     1     2      <- was 7 on the wrap field
+iline:    3     4     5     6     7     0     1      <- one a field, no repeat
+R12/13: 0C40  0C40  0C40  0C40  0C90  0C90  0C90
+```
+
+and the average re-checked over a second 100-field window: field 142 → 242, position 142 → 242.
+The page paints correctly throughout.
+
+*Worth keeping for anything else that scrolls under the rupture:* the position counters are not
+evidence about smoothness. `line`/`brTop` can advance perfectly while the display stutters, because
+what is displayed is whatever `crtcHi`/`crtcLo`/`pline` held **at fire 1**. `iline` is the byte to
+sample — it is the latched copy, and it is the truth.
+
 ## 4f. F2 as built — the chatter, 2026-08-22
 
 **BUILT AND VERIFIED.** It was blocked on 33 bytes of effect records against a bank 4 that has 4,

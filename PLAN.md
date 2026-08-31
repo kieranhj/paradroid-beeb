@@ -130,7 +130,8 @@ home and the note is cross-referenced.
 - Update the scroll text wording.
 - Add a Beeb page.
 - Why does it need to load after the Paradroid logo?
-- The briefing scroll speed is 2× the C64's.
+- The briefing scroll speed is 2× the C64's. The motion itself is one scanline a field exactly,
+  and stopped hitching at row boundaries on 2026-08-31 — `docs/layer-11f-frontend.md` §4e-2.
 - The copyright symbol is missing.
 - ~~After exiting the game back to the front end there's a quiet sequence of tones that rise in
   pitch?!~~ **DONE 2026-08-26.** The MOS was playing the charset. `&0800-&08FF` — its sound

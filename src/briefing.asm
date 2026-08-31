@@ -406,6 +406,28 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
   ADC #15                       \ the staged row is 15 on from the top;
   AND #15                       \ carry is clear, 0-15 + 15 cannot wrap
   STA brStrip
+
+\ ---- PARK THE POSITION BEFORE PAINTING, and this is a timing fix ----
+\ BrPaintRow is 35,850 cycles, measured -- 90% of a 39,936-cycle field
+\ -- and br_scroll's own SetCRTCStart comes AFTER it. So on the one
+\ field in eight that paints a row, the park landed after the rupture's
+\ fire-1 latch, the display re-showed the position it had just shown,
+\ and the field after that jumped TWO scanlines. The scroll averaged
+\ exactly one scanline a field and still hitched 6.25 times a second;
+\ KC saw it on real hardware, 2026-08-31.
+\ Parking here fixes it because the position is complete by this point
+\ -- line, scrollS and brTop are all updated above -- so the park is a
+\ few hundred cycles after fire 3 and beats every fire 1. The paint
+\ then overruns into the next field exactly as it did, but invisibly:
+\ BrWaitField returns immediately afterwards, fieldCount having already
+\ moved, so the cadence recovers with no field lost.
+\ IT IS SAFE AGAINST TEARING because the row being painted is the
+\ STAGED one, brTop+15, one below a 15-row window -- it is not on
+\ display at any point during the paint.
+\ br_scroll's SetCRTCStart stays: it is what parks the seven cheap
+\ fields, and the second step of a held DOWN key.
+  JSR SetCRTCStart
+
   LDA brTop
   CLC
   ADC #15
