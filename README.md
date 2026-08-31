@@ -46,8 +46,8 @@ sideways bank until a keypress hands over to the game. `build.ps1 -Release` is t
 carries it with every debug flag off. The four sideways banks are **probed at boot** rather than
 assumed to be 4-7, so the port runs on a board jumpered anywhere.
 
-**What is left** is the rest of the visual pass, the balance pass, the game-over sound set, the
-polish list in `PLAN.md`, and testing on the machines people actually have. RAM is the binding
+**What is left** is the last of the visual pass, the balance pass, the polish list in `PLAN.md`,
+and testing on the machines people actually have. RAM is the binding
 constraint rather than any of them: main RAM is down to **7 bytes**, so the next feature of any
 size has to buy its room from somewhere first — `docs/ram-pass.md` keeps the list of what is
 still there to sell. See [`PLAN.md`](PLAN.md) for the layered build plan, the memory map, decisions taken
@@ -113,14 +113,15 @@ emulator before the next begins:
 11. **Title, game over, sound and the droid screens** — ✅ done: the title, the death and game-over
     sequence, the SN76489 sound driver, the four information screens, and the front end — the
     high-score entry and the scrolling intro manual, which burbles to itself as it scrolls just
-    as the original's does. The ± volume keys, mute, pause, and the CTRL+R key redefinition. The
-    game-over sound set is the piece outstanding
+    as the original's does. The ± volume keys, mute, pause, and the CTRL+R key redefinition. Two
+    small sound items are left: the transfer-verdict mapping and fx06
 12. Balance, fidelity and feel
 13. **Memory and machine compatibility** — the RAM pass ✅ done; sideways-RAM detection ✅ done
     (`PARSWR` probes all sixteen banks before the game loads, takes the top four and refuses a
     machine it cannot drive); testing on real machines outstanding
-14. **Visual pass** — the deck dither and the per-deck text-screen backgrounds ✅ done; the
-    remaining palettes and the characters that fight MODE 1 outstanding
+14. **Visual pass** — ✅ nearly done: the deck dither, the per-deck text-screen backgrounds, the
+    cleared-deck floor and the lift tile, with the deck palettes and the ALERT lamp signed off on
+    2026-08-31. What is left is an eye for any character whose C64 colour merges in MODE 1
 15. **The endgame** — ✅ done: the deck and ship payouts, the congratulations screen, and the
     ship progression. Before this the port had no win condition at all — `shipNumDroids` was
     maintained and never read, and the C64's two entry points were fused into one routine so

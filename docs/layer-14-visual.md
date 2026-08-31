@@ -413,6 +413,10 @@ The port does **none** of the rest of the C64's event: the **500 points**, the *
 the `notInDeck` arm for a wholly cleared ship. Only the colour was asked for. The score in
 particular is a real gameplay difference — clearing a deck pays nothing in the port.
 
+> **Overtaken by Layer 15 (2026-08-28).** All three landed there: the deck pays 500 with its
+> chord, the ship pays 2,000, and `notInDeck` drives the congratulations screen and the next ship.
+> [`layer-15-endgame.md`](layer-15-endgame.md).
+
 ### DEBUG_KILL
 
 `C` kills every droid on the deck, so the floor can be reached without shooting one empty.

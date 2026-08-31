@@ -69,13 +69,13 @@ build output rather than from any document.
 
 | | | |
 |---|---|---|
-| **Sound: the game-over set** | Layer 11e is otherwise built and tuned. KC: "needs work, leave for now." Also open: the transfer-verdict mapping (unverified guess) and fx06 with 11d | open |
+| **Sound: two loose ends** | ~~The game-over set~~ — **CLOSED by KC 2026-08-31**, after the wash's length and its effect coverage were fixed in Layer 15 §6a. What is left of 11e is smaller: the transfer-verdict mapping is an unverified guess, and fx06 wants checking with 11d | small |
 | **Briefing F6: exit-load trim** | The briefing → game reload is ~1.1 s naive; deferred from 11f. The pause-legend wording in `briefing.txt` is KC's, ongoing | later |
 | **Layer 12 — balance, fidelity and feel** | Not a feature layer: the fidelity audit against the listing, the Redux fix list triaged, playtesting against the isolated dials, graceful degradation. **Verify before tuning**, or a fidelity bug gets balanced around instead of fixed. [`docs/layer-12-balance.md`](docs/layer-12-balance.md) | TODO |
 | **Layer 13c — machine compatibility** | **13b is BUILT** (2026-08-29): `PARSWR` probes all sixteen banks before the game loads, takes the top four, refuses a board it cannot drive, and makes the bank numbers a run-time table. Three DECISIONs and the cost ledger in [`docs/layer-13-compatibility.md`](docs/layer-13-compatibility.md). **13c — running on the machines people actually have — is the open half**, and everything under *Open hazards* that says "check on hardware" belongs to it | open |
-| **Layer 14 — the rest of the visual pass** | Deck floors, the fifth-tone dither and the cleared-deck floor are done. Still to do: the remaining screens' palettes, the characters that fight MODE 1, and the ALERT lamp's blinking fourth state (revisit promised 2026-08-21). [`docs/layer-14-visual.md`](docs/layer-14-visual.md) | in progress |
+| **Layer 14 — the visual pass, nearly done** | Deck floors, the fifth-tone dither, the per-deck text-screen backgrounds, the cleared-deck floor and the lift tile are done, and on **2026-08-31 KC signed off the deck palettes and accepted the ALERT lamp as it is** — the blinking fourth state promised a revisit on 2026-08-21 is not wanted. What is left is small and needs an eye rather than a plan: any remaining characters whose C64 colour merges in MODE 1 (the lift tile was one), and the open question at the end of [`docs/layer-14-visual.md`](docs/layer-14-visual.md) — deck 5 is scheme 6 yet carries scheme 0's collision, so either it was intended and undocumented or it slipped in | nearly done |
 | Collision box shape | **Agreed 2026-08-18, confirmed 2026-08-21, not built.** `DR_COL_W`/`DR_COL_H` become a generated silhouette profile instead of a rectangle, at box-test cost. [DECISION 1] in [`docs/layer-6-droids-live.md`](docs/layer-6-droids-live.md). `BUGS.md` #7b's bounce tuning waits on it | agreed, unbuilt |
-| Twelve title characters, four wash characters | `export_bbc.py` converts only what a TILE references, so the title ships its own 36 glyphs and `EndGame`'s wash uses substitutes. **KC 2026-08-21: extend the shared charset when space allows** — bank 4 now has the room | unblocked by the RAM pass |
+| ~~Twelve title characters, four wash characters~~ | **CLOSED 2026-08-31 — nothing is substituted any more.** The wash half was settled on 2026-08-26: `$7A`-`$7D` are the C64's own four characters now, converted in place in `goWashPat` rather than through the shared set ([`docs/layer-11-sound-title.md`](docs/layer-11-sound-title.md) [DECISION 7]), and the title carries its own thirty-six glyphs by design ([DECISION 8]). Extending `NUM_CHARS` would change the code→index remap every deck's rendering depends on, and with both consumers correct there is nothing left to buy with that risk. Revive it only if a third thing needs a character no tile references | **closed** |
 | The enemy bullet's colour flicker | `efAlt` from bank 5 plus a second per-entry field; effect sprites run the interpreted path (now in bank 5 itself, `src/sprfx.asm`) and are one colour | Layer 7, deferred |
 | 2 px world scrolling | Parked, Master-only via shadow RAM. Costs +60–80 % on all drawing — [`docs/master-extensions.md`](docs/master-extensions.md) | parked |
 | **The six Redux adoptions** — triaged with KC 2026-08-26 | (1) explosions not restarted by the disruptor/bullets; (2) the three-droid-deadlock priority randomisation, **after reproducing the deadlock here first**; (3) lift-adjacent waypoints excluded from droid starts; (4) high-score entry remembers the previous initials; (5) **the console menu shows droids remaining on the deck and across the ship** (`drCount` is already mirrored; the ship count needs the same); (6) **the lift's deck-selection screen colours completed decks differently** — the per-deck cleared state exists since Layer 15, the palette choice joins Layer 14's pass. Everything else on https://paradro.id/ was rejected for 1.0, and the damage tables stay CE's in full — the record is in [`docs/decisions.md`](docs/decisions.md) and §12b | adopted, unbuilt |
@@ -114,12 +114,15 @@ own DONE/NO marks are the sign-off: an item struck through here is struck there.
   tile was there — 4 of its 16 cells were drawn in a C64 colour that merged onto logical 0, which
   IS the floor on those three decks. The lift is **tile 3**, not tiles 23-27 as `graphics.md`'s
   table implies. [`docs/layer-14-visual.md`](docs/layer-14-visual.md) [DECISION 10]
-- Lift selection does weird palette changes.
+- ~~Lift selection does weird palette changes~~ (it showed the previous deck's briefly, then the
+  new one). **DONE** — confirmed fixed by KC, 2026-08-31.
 - ~~Separate key for transfer vs fire?~~ **DONE 2026-08-26.** SPACE goes straight to transfer mode
   and holds it, direction or no direction — the settle delay exists only to disambiguate a single
   button, so a dedicated one skips it. The fire route is untouched.
   [`docs/layer-7-combat.md`](docs/layer-7-combat.md) [DECISION 12]
-- Getting into the lift just as the disruptor fires leaves the screen white.
+- ~~Getting into the lift just as the disruptor fires leaves the screen white.~~ **DONE
+  2026-08-27** — a modal screen FROZE the burst instead of ending it, so `disrFlash` kept
+  overriding the palette; `ml_modalend` ends it now. Confirmed by KC, 2026-08-31.
 
 **Console**
 
@@ -138,7 +141,10 @@ own DONE/NO marks are the sign-off: an item struck through here is struck there.
 
 - Update the scroll text wording.
 - Add a Beeb page.
-- Why does it need to load after the Paradroid logo?
+- ~~Why does it need to load after the Paradroid logo?~~ **ANSWERED, and accepted by KC
+  2026-08-31.** The title is a disc overlay itself (`PARTITL`), and the manual's text (`PARMAN`,
+  ~3.4 K compressed) is fetched only when the title times out, because it lands in bank 5 over the
+  blitter and cannot be resident while a game might still start. `BrTimeout` is the load.
 - ~~The briefing scroll speed is 2× the C64's — "OK as long as it is smooth on real hw/CRT, check
   the code again".~~ **CHECKED AND FIXED 2026-08-31.** The rate is one scanline a field exactly
   (100 scanlines in 100 fields, measured); the *motion* stalled a field and jumped two at every
@@ -284,10 +290,10 @@ The one-line summaries below are an index; the layer docs hold everything else.
 | 8 | Doors, lifts and the deck-selection screen | **DONE** [`docs/layer-8-doors-lifts.md`](docs/layer-8-doors-lifts.md), [`docs/layer-8b-lift-view.md`](docs/layer-8b-lift-view.md) |
 | 9 | HUD and console — `ConsoleMain` line for line, all four pages | **DONE** [`docs/layer-9-hud.md`](docs/layer-9-hud.md) |
 | 10 | The transfer minigame, all three outcomes | **DONE** [`docs/layer-10-transfer.md`](docs/layer-10-transfer.md) |
-| 11 | Title, game over, boot split, droid screens (11d), sound (11e), front end (11f) | **DONE** except the open sound items above [`docs/layer-11-sound-title.md`](docs/layer-11-sound-title.md), [`docs/layer-11d-droid-screens.md`](docs/layer-11d-droid-screens.md), [`docs/layer-11e-sound.md`](docs/layer-11e-sound.md), [`docs/layer-11f-frontend.md`](docs/layer-11f-frontend.md) |
+| 11 | Title, game over, boot split, droid screens (11d), sound (11e), front end (11f) | **DONE** but for two small sound items above [`docs/layer-11-sound-title.md`](docs/layer-11-sound-title.md), [`docs/layer-11d-droid-screens.md`](docs/layer-11d-droid-screens.md), [`docs/layer-11e-sound.md`](docs/layer-11e-sound.md), [`docs/layer-11f-frontend.md`](docs/layer-11f-frontend.md) |
 | 12 | **Balance, fidelity and feel** — verify before tuning | **TODO** [`docs/layer-12-balance.md`](docs/layer-12-balance.md) |
 | 13 | Memory and compatibility. 13a (+6,085 B), 13b (**sideways-RAM detection, 2026-08-29**) and 13d (title overlay, portrait, ZX0 maps) done; **13c real machines is open** | **PART** [`docs/layer-13-ram-pass.md`](docs/layer-13-ram-pass.md), [`docs/layer-13d-space.md`](docs/layer-13d-space.md), [`docs/layer-13-compatibility.md`](docs/layer-13-compatibility.md) |
-| 14 | **The visual pass** — floors and cleared-deck done; screens' palettes, the MODE-1-fighting characters and the ALERT blink open | **in progress** [`docs/layer-14-visual.md`](docs/layer-14-visual.md) |
+| 14 | **The visual pass** — floors, dither, text-screen backgrounds, cleared-deck and lift tile done; deck palettes and the ALERT lamp signed off 2026-08-31 | **nearly done** [`docs/layer-14-visual.md`](docs/layer-14-visual.md) |
 | 15 | **The endgame** — deck clear, ship clear, the next ship, names cycling at the cap | **DONE** [`docs/layer-15-endgame.md`](docs/layer-15-endgame.md) |
 | — | **The RAM recovery pass** — every region bought back room for the final features | **DONE** [`docs/ram-pass.md`](docs/ram-pass.md) |
 | — | **The loading intro** — scarybeasts' executable and sample player, chained behind `PARSWR` on `-Intro`/`-Release` builds | **DONE** [`docs/intro.md`](docs/intro.md) |
