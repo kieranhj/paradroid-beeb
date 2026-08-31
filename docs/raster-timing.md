@@ -757,3 +757,21 @@ back to 18 bytes free.
 
 **jsbeeb cannot confirm this one** — it showed no fault before the change either. b2 is the
 instrument for it.
+
+### The tail of that change: the 001 was painted before its palette arrived
+
+KC, same evening: the 001 came up in the FRONT END's palette and switched to the deck's text
+palette a moment later. `InfoCall` calls `SetTextPal` immediately before it draws — deliberately,
+"so the page lands on the colours it will be seen in" — but `SetPalette` only builds `palPlay` now
+and fire 1 is what makes it live, so the page was painted into whatever the ULA still held.
+
+`IsStart` waits for it: `ruptState` is 0 at VSync and 1 at fire 1, so wait for a VSync **first**
+(fire 1 may already have run this field, before `SetTextPal` wrote the table) and then for fire 1
+itself. Less than a field, and it fixes every screen that door opens — the 001, the two transfer
+pages, the ship-cleared page and the 999. A is the screen id on the way in, so it is parked across
+the wait.
+
+Safe there and nowhere else in that file: every screen through `IsStart` runs with the rupture up.
+`IsBlank` is the door that does not — `ts_loads` calls it before `SetupRupture` — and it branches
+away in `IsEntry`, well above. Verified through the 001 (background correct in the first field it
+is visible), a deck, ESCAPE, the wash, the 999 and the high-score entry.

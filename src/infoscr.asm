@@ -148,6 +148,35 @@ IS_BLANK = &FF                  \ IsEntry's third door, and not a screen
 \ fixed and the fourth pair comes from the transfer's own mirrors, which
 \ XferEnter4 filled before any of this could run.
 .IsStart
+\ ---- LET THE PALETTE LAND BEFORE THE PAGE IS DRAWN ----------
+\ KC, 2026-08-31: the 001 came up in the FRONT END's palette and
+\ switched to the deck's text palette a moment later. InfoCall calls
+\ SetTextPal immediately above this -- but SetPalette only builds
+\ palPlay now and the rupture's fire 1 is what makes it live (see
+\ level.asm: writing the ULA from main-loop code is what put a
+\ one-frame flash across the panel). So the page was being painted
+\ in whatever the ULA still held, and the colours arrived after it.
+\
+\ Waiting for the next fire 1 costs less than a field and fixes it
+\ for every screen this door opens -- the 001, the two transfer
+\ pages, the ship-cleared page and the 999. ruptState is the
+\ rupture's own stage counter: 0 at VSync, 1 at fire 1, so wait for
+\ a VSync FIRST (or fire 1 may already have run this field, before
+\ SetTextPal wrote the table) and then for fire 1 itself.
+\
+\ SAFE HERE AND NOWHERE ELSE IN THIS FILE: every screen that comes
+\ through IsStart runs with the rupture up. IsBlank is the door that
+\ does not -- ts_loads calls it before SetupRupture -- and it takes
+\ its own branch in IsEntry, well above this.
+  PHA                           \ A IS THE SCREEN ID and the wait reads
+.is_pw_vsync                    \ ruptState into it, so park it first
+  LDA ruptState
+  BNE is_pw_vsync               \ wait for the field to start
+.is_pw_fire1
+  LDA ruptState
+  BEQ is_pw_fire1               \ fire 1 has applied palPlay
+  PLA
+
   STA isScr
   TAX
   LDA isTypeFor,X
