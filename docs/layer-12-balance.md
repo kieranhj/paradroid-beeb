@@ -319,6 +319,62 @@ poking `shipNumDroids` to 1 and reopening: "1 droid" above "9 droids" on the sam
 `CMP #CHAR_CONSOLE` to `LDA #0` in the running machine so fire opens it anywhere; a runtime patch
 only, and a useful one to know for any future console work.)
 
+**[DECISION 6] — (6) the lift's deck-selection screen colours cleared decks: DESIGNED, COSTED,
+NOT BUILT. It does not fit in the RAM that is free. 2026-08-31.**
+
+KC asked for a magenta/blue stipple. The rendering half is cheap and is worked out below; what
+stops it is the *state*, and the numbers are worth keeping so this is not re-derived.
+
+*The stipple needs no new artwork, which was the first worry.* `LvHighlight` is not a recolour —
+it swaps character CODES between the normal `$8x` box glyphs and the lit `$9x` ones, whose magenta
+fill is baked in at export. A third state would normally mean a third glyph set, 13-16 codes at 16
+bytes each, which bank 7 cannot hold. It does not have to: **`LvCellPaint` ends in a flat 16-byte
+glyph copy**, and a stippled cell is that same copy with each byte `AND`ed against a 16-entry mask
+alternating `&AA` / `&55` by scanline. In MODE 1 pixel *n* takes bits `7-n` and `3-n`, so `&AA`
+keeps pixels 0 and 2 and `&55` keeps 1 and 3 — a checkerboard of the lit glyph's magenta against
+the background. The cleared cell draws the LIT glyph (index + 16, the `$9x` variant of the same
+box) through that mask.
+
+*Selection stays legible* by making the lit code win: a cell whose code is already `$9x` is the
+selected deck and paints solid, so a deck that is both cleared and selected reads as selected. One
+compare.
+
+*What blocks it is the bank boundary.* "Cleared" is `shipDroids` — a deck is clear when its
+sixteen roster bytes are zero — and **`shipDroids` is at `&B69C`, in bank 4**, while the lift
+screen is bank 7. Only one bank is visible at a time, so the answer has to be computed on bank 4's
+side and handed over in main RAM. The cheapest channel found:
+
+| | |
+|---|---|
+| bank 4 | ~14 B — `LDX deck` / `INC deckDone,X` at `DroidsUpdate`'s existing deck-clear arm (6 B), and a 16-iteration clear in `NewShipDroids` for the next ship (8 B) |
+| main RAM | 16 B — the `deckDone` table, in the `PARAFNT` block so bank 7 can read it |
+| bank 7 | ~90-120 B — the masked copy, the mask, the pen, and a rectangle walk to mark cleared decks in the colour shadow |
+
+*And the measured space, taken 2026-08-31:*
+
+| Region | Free | Wanted |
+|---|---|---|
+| Bank 4 | **11 B** | ~14 B |
+| `PARAFNT` block | **16 B** | 16 B |
+| Bank 7 | **~107 B** (bisected by assembling a `SKIP` in `liftview.asm`: 105 assembles, 110 does not) | ~90-120 B |
+
+So it would take bank 4 past zero, the `PARAFNT` block exactly to zero, and bank 7 to nearly zero
+— three regions spent for one cosmetic feature. **Not built without KC's word on the budget.**
+
+*Note the bank-7 figure is not the ~176 B the memory map claims.* That number is stale: the
+`plandata` `ALIGN` pad has been eaten. `CLAUDE.md` and `docs/memory-map.md` should be corrected
+from the measurement, not the other way round.
+
+*None of `ram-pass.md`'s held reserves frees bank 4 directly.* `sprsplit.asm` → bank 5 frees bank
+6; the SCANSTEP tail folding frees banks 5 and 6 and is the only one that reaches bank 4, and then
+only indirectly (it makes room in bank 5 for bank-4-resident, bank-independent code to move out) —
+high effort, and its own entry says the mechanical-diff check cannot validate it.
+
+*Cheaper shapes worth weighing before spending anything:* the per-deck flag could live in the
+**roster's own unused byte** — `DroidsInit` walks indices 15 down to 1, so `shipDroids + deck*16`
+is free and `NewShipDroids` already zeroes all 256 bytes, which would make the new-ship clear cost
+nothing — but it is still bank 4, so it does not solve the handover and costs more to condense.
+
 **Paradroid Redux is a different codebase** — `docs/decisions.md` has the evidence — so its fixes
 cannot be lifted as code. What it is good for is a **list of what Braybrook himself thought was
 wrong**, each one then a question to ask of our own port: does the same defect exist here, and do
