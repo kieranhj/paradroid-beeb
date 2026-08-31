@@ -981,9 +981,11 @@ is legal), leaving `JSR DbgRedrawKey` behind:
 | Bank 4 | 175 B | 143 B — `DbgRedrawKey` 14 B, the two hop tests 14 B, the kill test 7 B (which rides `colourMap`'s ALIGN pad) |
 | Bank 7 | 7 B tail + pad | unchanged — `xfer.asm` is in front of `plandata.asm`'s ALIGN, so its 7 B ride the padding |
 
-`DbgRedrawKey` is **not** inside an `IF DEBUG_`, which it never has been: R is the oracle every
-scrolling bug so far has been found with and it is wanted on the ordinary build, so it ships in
-RELEASE too, at 14 bytes of a bank with room. Gating it would be a decision, not a tidy-up.
+`DbgRedrawKey` **is under `DEBUG_REDRAW`**, taken the same day: it had never been gated — the
+oracle is wanted on the ordinary build and R was simply always live — and KC's call is that a debug
+key belongs under a flag like the rest, so a release build has no way to reach it. The flag is
+`DEV`, so every dev build still has it; RELEASE loses the 3 bytes of image and 14 of bank 4, and
+`DEBUG_ANY` and `!BOOT`'s debug line name it like the other four.
 
 **Verified in jsbeeb**, in a game, by the panel score rather than by reading bank-4 bytes:
 plain C held 120 frames — score **0**, deck unchanged; CTRL added, same key still down — score

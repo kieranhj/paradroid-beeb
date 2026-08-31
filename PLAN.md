@@ -51,7 +51,8 @@ or no direction, which the fire route cannot do (it needs you stopped and 8 pass
 play, the modal screens, the briefing and the title (P in play and the modal screens). **Every debug key takes CTRL too** (2026-08-31, because the six
 controls are redefinable and R, C, W, `[` and `]` are keys like any other): **CTRL+`[`** and
 **CTRL+`]`** are `DEBUG_DECK`'s deck hop, **CTRL+C** is `DEBUG_KILL`'s clear-the-deck, **CTRL+W**
-wins a transfer (`DEBUG_XFERWIN`), **CTRL+R** a forced redraw — all three flags ship ON.
+wins a transfer (`DEBUG_XFERWIN`), **CTRL+R** a forced redraw (`DEBUG_REDRAW`, its own flag since
+2026-08-31) — all four flags ship ON in a dev build and none of them in a RELEASE one.
 
 **The frame budget:** the eight sprite slots cost ~36,000 cycles of the 79,872 in a pass and the
 droid AI another ~17,000, so the loop keeps roughly a third spare. The RAM squeeze that shaped

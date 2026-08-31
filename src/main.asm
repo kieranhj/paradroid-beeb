@@ -488,6 +488,30 @@ DEBUG_DECK = DEV              \ dev only: see DEV above
 \ is the mechanism, not a shortcut past it. src/droid.asm.
 DEBUG_KILL = DEV              \ dev only: see DEV above
 
+\ DEBUG_REDRAW is the ORACLE, and it is the one debug key that changes
+\ neither the game nor the readouts: hold CTRL+R and RedrawAll repaints
+\ the whole viewport from the map and the current position, every pass,
+\ over whatever the incremental edge draws have left there.
+\ HOW TO READ IT. The incremental draw is the thing under test and this
+\ is the reference: freeze the view, take a copy of the play buffer,
+\ hold CTRL+R for a pass, and diff. A byte that differs is a cell the
+\ scroll drew wrong -- and every scrolling bug so far has hidden in odd
+\ mapHX, non-zero line or a diagonal, so the diff has to be taken over
+\ all of those. The full recipe, including the three draw call sites
+\ that must be NOPed first and why a screenshot will not do, is in
+\ CLAUDE.md and docs/ram-pass.md.
+\ IT IS NOT A READOUT AND IT DOES NOT LIE: RedrawAll is the same
+\ routine LoadDeck and ReframeView end in, so the reference is the
+\ shipping draw path rather than a second implementation kept in step
+\ by hand.
+\ ON IN DEV BUILDS, and it was not a flag at all until 2026-08-31 --
+\ the key test was ten unconditional bytes of code image, then fourteen
+\ of bank 4 once it moved beside RedrawAll. KC: a debug key belongs
+\ under a DEBUG_ flag like the rest, so a release build has no way to
+\ reach it. The player sprite vanishing while it is held is the tell
+\ that a build has it on -- the repaint draws the map, not the pool.
+DEBUG_REDRAW = DEV            \ dev only: see DEV above
+
 \ DEBUG_INVULN pins the player's energy at full, so a run can be taken
 \ deep into the ship without a 001's death ending it. Asked for by KC
 \ alongside 11b, which is what took the free respawn away: the port used
@@ -1052,7 +1076,7 @@ KEY_M      = &9A                \ -102
 KEY_UP     = &C6                \ -58, volume up
 KEY_DOWN   = &D6                \ -42, volume down
 KEY_SPACE  = &9D                \ -99, the second transfer button
-KEY_R      = &CC                \ -52, DEBUG: the forced redraw, WITH CTRL
+KEY_R      = &CC                \ -52, DEBUG_REDRAW's forced redraw, WITH CTRL
                                 \ since 2026-08-31 like every other debug
                                 \ key -- the six controls are redefinable
                                 \ and R is a key like any other. IT WAS
@@ -1753,8 +1777,12 @@ ENDIF
 \ the RedrawAll it calls: it was ten bytes of code image for a debug
 \ key, the data bank is the resting state here so the call is legal,
 \ and the seven bytes it gives back are what paid for the CTRL on all
-\ five debug keys. See DbgRedrawKey in screen.asm.
+\ five debug keys. UNDER ITS OWN FLAG since 2026-08-31 (KC): it is a
+\ debug key and a release build should have no way to reach it. See
+\ DbgRedrawKey in screen.asm.
+IF DEBUG_REDRAW
   JSR DbgRedrawKey
+ENDIF
 
 
 IF DEBUG_DRAW
@@ -4260,7 +4288,7 @@ INCLUDE "src/swram.asm"
 \ ------------------------------------------------------------------
 DEBUG_ANY1 = DEBUG_RASTER OR DEBUG_DRAW OR DEBUG_POS OR DEBUG_VSYNC
 DEBUG_ANY2 = DEBUG_TIME OR DEBUG_ENERGY OR DEBUG_MAPGUARD OR DEBUG_XFERWIN
-DEBUG_ANY3 = DEBUG_INVULN OR DEBUG_DECK OR DEBUG_KILL
+DEBUG_ANY3 = DEBUG_INVULN OR DEBUG_DECK OR DEBUG_KILL OR DEBUG_REDRAW
 DEBUG_ANY  = DEBUG_ANY1 OR DEBUG_ANY2 OR DEBUG_ANY3
 
 \ A RELEASE BUILD CARRIES NO DEBUG AT ALL. The three above go off with
@@ -4311,6 +4339,9 @@ EQUS " DECK"
 ENDIF
 IF DEBUG_KILL
 EQUS " KILL"
+ENDIF
+IF DEBUG_REDRAW
+EQUS " REDRAW"
 ENDIF
 EQUB 13
 ENDIF

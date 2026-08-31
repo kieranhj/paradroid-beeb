@@ -458,11 +458,13 @@
 \ step left would repaint the whole viewport. Every debug key took the
 \ same treatment — C, [, ] and W — and CTRL costs nothing to test,
 \ keydown asking the matrix about one key at a time.
-\ IT IS NOT INSIDE AN `IF DEBUG_`, which it never has been: R is the
-\ oracle every scrolling bug so far has been found with, and it is
-\ wanted on the ordinary build. It ships in RELEASE too, at 14 bytes
-\ of a bank with room; gating it would take an agreed decision, not a
-\ tidy-up.
+\ IT IS UNDER DEBUG_REDRAW as of 2026-08-31, which is the agreed
+\ decision the previous version of this note said it would take (KC).
+\ The flag is DEV, so the oracle is still there in every ordinary
+\ build -- it is what every scrolling bug so far has been found with --
+\ and a RELEASE build has no way to reach it at all. main.asm's flag
+\ block is where the recipe for using it lives.
+IF DEBUG_REDRAW
 .DbgRedrawKey
   LDX #KEY_CTRL
   JSR keydown
@@ -473,6 +475,7 @@
   JMP RedrawAll                 \ and its RTS
 .dbr_x
   RTS
+ENDIF
 
 \ ============================================================
 \ RedrawAll — fill the whole viewport from the current position

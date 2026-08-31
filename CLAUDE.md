@@ -60,8 +60,9 @@ emulator` comments and a half-finished derivation in the middle of it. It surviv
 months looking like working code.
 
 **Verify against the buffer, not the screenshot.** Screenshots have repeatedly said "fine" when it
-was not. Diff the play buffer against `RedrawAll` at the same position (**CTRL+R** — plain R
-until 2026-08-31, when every debug key gained the modifier, and SPACE before 2026-08-26) byte for byte, over
+was not. Diff the play buffer against `RedrawAll` at the same position (**CTRL+R**, which needs
+`DEBUG_REDRAW` — on in every dev build, off in RELEASE. Plain R until 2026-08-31, when every
+debug key gained the modifier; SPACE before 2026-08-26) byte for byte, over
 **odd and even** `mapHX`, **non-zero `line`** and **diagonals** — every scrolling bug so far has
 hidden in one of those. Let the view settle ~1,500,000 cycles first, and poke **all three** draw
 call sites to NOPs — the `JSR SprDrawAll` **and both `JSR SprDrawTr`s** near the top of the main
@@ -247,8 +248,8 @@ so none of their spare is reachable from the main loop.
 **Some debug builds still fail to assemble** — before the pass every one except `DEBUG_INVULN`
 did, from the RAM squeeze rather than the flags: `RASTER`/`DRAW`/`TIME` hit the main-RAM `GUARD`,
 `POS`/`VSYNC`/`ENERGY` blew bank 6's `spr2_end` assert, `MAPGUARD` blew bank 4's one-page assert
-in `sound.asm`. The three that ship ON — `XFERWIN`, `DECK`, `KILL` — build, which is why the
-default build is fine. Accepted by KC 2026-08-21; the pass's headroom may have brought others
+in `sound.asm`. The four that ship ON — `XFERWIN`, `DECK`, `KILL` and (since 2026-08-31) `REDRAW` — build,
+which is why the default build is fine. Accepted by KC 2026-08-21; the pass's headroom may have brought others
 back — try the flag before assuming, but do not chase a failure as a bug in the flag.
 
 **Only one bank is visible at a time.** `SprRestoreAll` and `SprDrawAll` page their own bank in and
@@ -393,7 +394,7 @@ Both worked around locally; extending the shared set is the better fix and moves
   the C64 original
 - Debug builds are switched by constants at the top of `main.asm` — `DEBUG_RASTER`, `DEBUG_DRAW`,
   `DEBUG_VSYNC`, `DEBUG_TIME`, `DEBUG_POS`, `DEBUG_ENERGY`, `DEBUG_MAPGUARD`, `DEBUG_XFERWIN`,
-  `DEBUG_INVULN`, `DEBUG_DECK`, `DEBUG_KILL`. Each carries a header explaining what it shows and
+  `DEBUG_INVULN`, `DEBUG_DECK`, `DEBUG_KILL`, `DEBUG_REDRAW`. Each carries a header explaining what it shows and
   how to read it; `DEBUG_TIME` in particular documents how to take a cycle measurement that means
   something, including why only one call site may be instrumented at a time. **Three change what the
   GAME does rather than what it draws**. **EVERY DEBUG KEY NEEDS CTRL** since
