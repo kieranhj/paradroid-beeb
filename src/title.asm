@@ -55,6 +55,14 @@ tigd  = svp                     \ and where it lands
                                 \ display work and long before PageLowIn
   JSR TiCRTC
   JSR TiPaint
+\ THE PALETTE, BY HAND, because this screen has no rupture to apply it
+\ (2026-08-31): SetPalette builds palPlay and leaves the ULA alone now,
+\ and the next fire 1 is what makes a change live -- see level.asm for
+\ the panel flicker that bought. At a cold boot TiBootPal has just
+\ picked a deck and called SetTextPal, so without this the title would
+\ come up on whatever the ULA last held; on the game-over path
+\ SetupPlain has already applied palPlay and this simply repeats it.
+  JSR SetPalPlay
 \ AND NOW THE PICTURE EXISTS, so show it (KC, 2026-08-31). The frame
 \ has been blank since SetupMode or SetupPlain: this is the first
 \ instant in the whole boot -- or the whole game-over seam -- at which

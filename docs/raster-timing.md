@@ -688,3 +688,32 @@ Checked over every path that could have come up black instead: boot to title, th
 briefing, the briefing exit into the 001 screen, a game, ESCAPE, the wash, the 999 page, and the
 high-score entry — which is the sharp one, because `HsEntry` displays on its own rupture between
 two `SetupPlain`s.
+
+## The panel flicker at a screen change is the PALETTE, not a redraw — 2026-08-31
+
+KC: "the top panel flickers (looks like a redraw) going from the game over static to Transmission
+Terminated". Nothing writes the panel's bytes at that transition — `GoWashStart` put "Game over"
+there when the wash began and `IsStart` only parks the scroll, asks for the 16-row bottom edge and
+draws the page in the strip. What changes is the ULA.
+
+`InfoCall`'s first act is `SetTextPal`, which used to end in `SetPalPlay` — sixteen ULA writes,
+**from main-loop code, wherever the raster happens to be**. The panel has a palette of its own and
+it is applied in exactly one place, `RuptVSync`'s `SetPalPanel`, at VSync; the panel then displays
+64 to 96 scanlines later. A write landing in that window leaves the panel in the DECK's palette for
+the rest of the field — a one-frame flash across the top box. ~96 lines out of 312, so about one
+transition in three, and worst at the game over, where the panel is white and red and the wash's
+palette is black and white.
+
+**The IRQ's own `SetPalPlay` was never the problem**: fire 1 is at P+44, twelve scanlines after the
+panel's four rows have finished displaying. That is the one safe moment in the field, so every
+change goes through it now — `SetPalette` builds `palPlay` and returns, and the next fire 1 makes
+it live, at most one field later.
+
+Two screens have no rupture to apply it and write the ULA themselves: `SetupPlain`'s table already
+ended with its own sixteen writes, and `TiShow` now calls `SetPalPlay` after `TiPaint` (3 bytes of
+PARTITL, which has 24 left). Everything else — the deck, the console, the lift, the information
+screens, the transfer board, the briefing, the wash — runs under the rupture.
+
+Checked in jsbeeb: cold-boot title on its random deck palette, the 001 screen, a deck, the wash's
+black-and-white, and the wash → 999 transition stepped a field at a time, with the panel intact in
+the field the palette changes in.

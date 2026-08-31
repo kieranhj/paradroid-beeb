@@ -112,8 +112,30 @@ DECK_CLEAR_PHYS = 4             \ BBC physical 4 is blue: the floor of a
   STA palPlay,X
   DEX
   BPL sp_loop
-  JSR SetPalPlay                \ live immediately, not at the next fire 1
-  PLA                           \ and X back, for InfoCall — see stp_go
+\ NO ULA WRITE HERE ANY MORE -- the next fire 1 applies it, one field
+\ at the most. It used to end `JSR SetPalPlay`, "live immediately, not
+\ at the next fire 1", and THAT IS THE PANEL FLICKER KC reported at the
+\ game over (2026-08-31): SetPalPlay writes all sixteen ULA entries, and
+\ from here it writes them wherever the raster happens to be. The panel
+\ has its own palette, applied in exactly one place -- RuptVSync's
+\ SetPalPanel, at VSync -- and it displays 64 to 96 scanlines later. So
+\ a write landing in that window left the panel in the DECK's palette
+\ for the rest of the field: a one-frame flash across the top box that
+\ reads as a redraw. ~96 lines of 312, so about one transition in three,
+\ and worst at the game over, where the panel is white and red and the
+\ wash's palette is black and white.
+\
+\ The IRQ's own SetPalPlay is safe and stays: fire 1 is at P+44, twelve
+\ scanlines after the panel's four rows have finished displaying. That
+\ is the only moment in the field at which the play palette may change,
+\ so every change goes through it now.
+\
+\ WHAT STILL NEEDS AN IMMEDIATE WRITE is a screen with no rupture to
+\ apply it: SetupPlain's table ends with its own sixteen writes, and
+\ TiShow calls SetPalPlay after TiPaint for the title. Everything else
+\ -- the deck, the console, the lift, the information screens, the
+\ transfer board, the briefing -- runs under the rupture.
+  PLA                           \ and X back, for InfoCall -- see stp_go
   TAX
   RTS
 
