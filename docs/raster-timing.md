@@ -579,3 +579,103 @@ bank, as a call rather than inline.
 Two related seams: `HsEntry` already calls `SetupRupture` and `InstallIrq` back to back, so it
 was never in this class; and the reverse transition (`UninstallIrq` then `SetupPlain`) rewrites
 R4-R7 mid-frame and costs at most one field, unmeasured.
+
+## The switch itself — measured, prototyped, and REVERTED, same day
+
+The reorder above left the transition, and it is worth three malformed fields. Frame lengths in
+cycles across the briefing exit, stepped one field at a time (`run_frames(1)`, `cycles_run`):
+
+| | |
+|---|---|
+| Before | 39,936 · 39,936 · **38,378 · 49,154 · 6,168** · 39,938 · 39,936 |
+| After | 39,936 · 39,936 · **39,939 · 39,933 · 39,935** · 39,937 · 39,936 |
+
+300 lines, then 384, then 48 — that is the roll KC reported at "briefing to 001" and at every
+other place the rupture is established. The 384-line field is the diagnosis: `SetupRupture` writes
+R4 = TAIL_R4 = 12 wherever the main loop happens to be, and the plain frame is 39 rows, so the row
+counter is usually **past** 12 and the 6845 runs on toward its wrap before the compare matches.
+
+**The prototype is not in the tree**: KC judged it *worse* by eye than the version with the three
+malformed fields, so it was reverted pending a look at the teardown side. It is recorded here
+because the measurement stands and the diagnosis above is the useful part. What it did:
+`RuptAlign` (`src/briefing.asm`, PARBRF) waited for VSync with `OSBYTE 19` and then spun out the
+rest of the frame — 8 rows, 8,192 cycles, against a landing window of another 11 rows — so the
+writes land in row 0 or 1 of a fresh frame, where R4 = 12 is ahead of the counter. `ts_loads`
+called it immediately before `SetupRupture`. **No malformed field survived** — every field 39,93x
+— and it still looked worse, which is the fact that sent the search to the teardown. Cost was 3
+bytes of code image and 24 of PARBRF.
+
+It lives in PARBRF because it needs ~16 bytes of main RAM that need no paging and the code image
+has seven; PARBRF is resident and valid on every route into `ts_loads`. It is NOT valid at
+`HsEntry` — a game has rebuilt the charset over &0400 by then — which is why the call is in
+`ts_loads` rather than inside `SetupRupture`, and why the high-score screen's own switch is
+still unaligned.
+
+### What is NOT this bug
+
+"Game over static to Transmission Terminated" was measured the same way and is **39,936 cycles
+either side, with no anomalous field**: the rupture is never torn down there. `GoWashStart` and
+`IsStart` both park the scroll and ask for the 16-row bottom edge, which is the same value twice.
+Whatever flickers there is content: `SetTextPal` writes all sixteen ULA entries from main-loop
+code mid-frame, and `DbClear` wipes 10 K of live strip under the display. Neither is a sync event.
+
+## The teardown, and the stripe nobody had noticed — 2026-08-31
+
+Measured with a frame boundary taken before the switch and the remainder stepped after it
+(`elapsed_cycles` at a `run_frames(1)` boundary, then at a breakpoint on `SetupPlain`, then the
+rest of the field):
+
+    field containing SetupPlain = 32,775 + 15,356 = 48,131 cycles = 376 lines  (+64)
+    the fields after it         = 39,933 · 39,936 · 39,936          clean
+
+One malformed field, the mirror of the switch-on: `SetupPlain` writes R4 = PLAIN_R4 = 38 while
+the rupture is mid-cycle (7, 18 or 13 rows), so the cycle in flight stretches to 39 rows.
+
+**But the teardown's real artefact is not a field length.** `SetupPlain`'s table blanked with
+R6 = 0, and R6 = 0 LEAKS ONE ROW — the same leak `SetupMode` hit this morning, for the same
+reason (the row counter is compared at the end of a row, so row 0 displays whatever R6 says).
+Its R12/R13 park on `BUF_BASE`, so what leaked was a 640-byte stripe of the play buffer sitting
+on an otherwise black screen for the **3.7 s** of the briefing exit and for the whole game-over
+seam. Screenshotted as a solid blue line. That is 3.7 seconds of visible artefact against 60 ms
+of roll, which is very likely what KC was reacting to at "briefing to 001".
+
+### The fix: R8_BLANK in the table, R8_ON in TiCRTC
+
+`SetupPlain`'s R8 entry is `R8_BLANK` (the skew bits, not the interlace ones) instead of 0. The
+display comes back two ways and both are covered: the rupture's IRQ writes R8 at fires 1-3 every
+field, and `TiCRTC` writes `R8_ON` for the title, which is the one display that runs without the
+rupture. One byte in bank 4's table, ten in PARTITL; the code image pays nothing.
+
+Verified in jsbeeb over the paths that could have gone black: title (R8 back on), briefing exit
+(gap now **fully black**, screenshotted), the 001 screen, a game, ESCAPE, the wash, the 999 page,
+and the high-score entry — which is the sharp case, because `HsEntry` displays on its own rupture
+between two `SetupPlain`s. Field lengths through it all stay 39,93x, so nothing here changed the
+timing; the 376-line teardown field and the three at switch-on are untouched and still open.
+
+## Every blank in the port is R8 now, and the title is not watched being drawn
+
+KC, 2026-08-31, following the stripe above. **R6 = 0 is not a blank** — it leaks row 0, measured
+twice — so all four blanking points use `R8_BLANK`, the 6845's display-skew bits, which gate the
+display enable itself:
+
+| Where | Was | Now |
+|---|---|---|
+| `SetupMode` (boot, before the loads) | R1 = 0 | R1 back to `PLAY_UNITS`, R8 = `R8_BLANK` |
+| `SetupPlain`'s table (every teardown) | R6 = 0, leaked a play-buffer stripe for 3.7 s | R6 = 0 **and** R8 = `R8_BLANK` |
+| `tiw_done` (title dismissed) | R6 = 0 | + R8 = `R8_BLANK` |
+| `BrTimeout` (title timed out) | R6 = 0 | + R8 = `R8_BLANK` |
+
+**The display comes back in exactly two places**: the rupture's IRQ, which writes R8 at fires 1-3
+every field and so covers everything in the game; and the title, which has no rupture. `TiCRTC`
+sets the title's shape but no longer unblanks — **`TiShow` does, after `TiPaint`** — so the RLE
+picture is painted into a dark screen and the logo appears complete rather than a cell at a time
+(KC's ask). Verified by breaking inside `TiPaint` and screenshotting: black.
+
+Costs nothing in the code image: `SetupMode`'s blank is the R1 write it was already making, given
+a different register; `TiCRTC` gave back the ten bytes the R1 restore had cost PARTITL. PARBRF is
+down to 18 bytes, PARTITL to 27, bank 4 unchanged.
+
+Checked over every path that could have come up black instead: boot to title, the timeout into the
+briefing, the briefing exit into the 001 screen, a game, ESCAPE, the wash, the 999 page, and the
+high-score entry — which is the sharp one, because `HsEntry` displays on its own rupture between
+two `SetupPlain`s.

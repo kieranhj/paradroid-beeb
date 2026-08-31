@@ -80,34 +80,40 @@
   LDA #&08 OR 5                 \ C1 = 1  -> subtract &2800, restart &5800
   STA VIA_PORTB
 
-  CRTC 1,  0                    \ ...and NOTHING IS DISPLAYED with it
+  CRTC 1,  PLAY_UNITS           \ 80 units = 320 px displayed
 
-\ ---- the blank, and why it is R1 and not R6 -----------------
+\ ---- and NOTHING IS DISPLAYED until the title says so -------
 \ KC, 2026-08-31, the other half of moving this call below BootBanks:
 \ the mode change has no bank load behind it any more, but TitleSeq's
-\ own *LOAD of PARTITL lands at &4000 — inside the MODE 1 frame the
-\ VDU 22 above has just set up — so the title still arrived as a block
-\ of loading wreckage. TiCRTC gives the display back with the real
-\ PLAY_UNITS, which is the same 80 the title needs; nothing between
-\ these two points is meant to be seen, and R1 does not disturb VSync,
-\ which the loads need.
-\ R6 = 0 WAS TRIED FIRST, because that is the blank tiw_done,
-\ BrTimeout and SetupPlain's table already use — and it leaks ONE
-\ ROW, measured in jsbeeb: the row counter is compared at the END of
-\ a row, so row 0 is displayed whatever R6 says. Those three get away
-\ with it because their R12/R13 park on ground that happens to be
-\ black; here the start address is still the OS's &3000 and the bank
-\ streams land at DEPK_STREAM = &3200, which is 512 bytes INTO that
-\ first row. R1 = 0 kills the row itself, costs nothing (this write
-\ existed already) and needs no start-address games.
-  CRTC 8,  0                    \ R8 = 0: non-interlaced. The OS leaves
-                                \ MODE 1 at R8=1 (interlace sync), which
-                                \ offsets VSync by half a scanline on
-                                \ alternate fields. Our rupture timers are
-                                \ fixed intervals from VSync, so that half
-                                \ line makes the split land in a different
-                                \ place every other field — an intermittent
-                                \ glitch along the top of the play area
+\ own *LOAD of PARTITL lands at &4000 -- inside the MODE 1 frame the
+\ VDU 22 above has just set up -- so the title arrived as a block of
+\ loading wreckage. TiCRTC gives the display back with R8_ON.
+\
+\ IT IS R8 AND NOT R6, and that is measured rather than chosen:
+\ R6 = 0 LEAKS ONE ROW. The row counter is compared at the END of a
+\ row, so row 0 displays whatever R6 says -- and here the start
+\ address is still the OS's &3000 while the bank streams land at
+\ DEPK_STREAM = &3200, 512 bytes INTO that first row, so the leak was
+\ a stripe of ZX0 stream across the top of a black screen. The same
+\ leak put a stripe of the play buffer under SetupPlain's blank for
+\ the whole 3.7 s of the briefing exit; that one is R8 now too, and
+\ so are tiw_done's and BrTimeout's. ONE MECHANISM FOR EVERY BLANK.
+\
+\ R1 = 0 was tried first and also works -- it was this write, with a
+\ 0 in it -- but it needs its own restore, where R8 is written by the
+\ rupture IRQ at fires 1-3 every field anyway. So the display comes
+\ back for free in the game, and TiCRTC covers the title, which is
+\ the one display that runs without the rupture. R8_BLANK is the
+\ skew bits; the interlace bits stay 0, which is what the note below
+\ was always about.
+\
+\ R8 = 0 IS STILL WHAT THE FRAME WANTS once it is visible: the OS
+\ leaves MODE 1 at R8 = 1 (interlace sync), which offsets VSync by
+\ half a scanline on alternate fields, and our rupture timers are
+\ fixed intervals from VSync -- so that half line makes the split land
+\ in a different place every other field, an intermittent glitch along
+\ the top of the play area. TiCRTC's R8_ON is that 0.
+  CRTC 8,  R8_BLANK
   RTS
 
 \ ---- the second half: after the loads, before InstallIrq ----

@@ -614,6 +614,25 @@ ENDIF
                                 \ load's wreckage. SetupRupture or
                                 \ TiCRTC give the display back
   EQUB PLAIN_R7                 \ VSync alive, which the loads need
-  EQUB 0                        \ R8: no blanking, no interlace
+  EQUB R8_BLANK                 \ R8: BLANK, and R6 = 0 is not enough.
+                                \ MEASURED 2026-08-31: R6 = 0 leaks ONE
+                                \ ROW -- the row counter is compared at
+                                \ the END of a row, so row 0 displays
+                                \ whatever R6 says -- and R12/R13 below
+                                \ park on BUF_BASE, so what leaked was a
+                                \ 640-byte stripe of the play buffer,
+                                \ sitting on an otherwise black screen
+                                \ for the 3.7 s of the briefing exit and
+                                \ the whole game-over seam. KC saw it as
+                                \ flicker at both. The same leak is why
+                                \ SetupMode blanks with R1 = 0 instead.
+                                \ THE DISPLAY COMES BACK two ways and
+                                \ both are covered: the rupture's IRQ
+                                \ writes R8 every field (fires 1-3), and
+                                \ TiCRTC writes R8_ON for the title,
+                                \ which is the one path that displays
+                                \ without the rupture. Interlace stays
+                                \ off either way -- R8_BLANK is the
+                                \ skew bits, not the interlace ones
   EQUB HI(BUF_BASE / 8)         \ R12/13 park on the play buffer; moot
   EQUB LO(BUF_BASE / 8)         \ while R6 shows nothing

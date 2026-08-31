@@ -55,6 +55,12 @@ tigd  = svp                     \ and where it lands
                                 \ display work and long before PageLowIn
   JSR TiCRTC
   JSR TiPaint
+\ AND NOW THE PICTURE EXISTS, so show it (KC, 2026-08-31). The frame
+\ has been blank since SetupMode or SetupPlain: this is the first
+\ instant in the whole boot -- or the whole game-over seam -- at which
+\ there is something worth looking at. R8_ON is 0: no blanking, no
+\ interlace. The rupture takes the register over from here.
+  CRTC 8, R8_ON
   JMP TiWait                    \ and its RTS
 
 \ ---- the briefing driver, loaded on every title -------------
@@ -172,13 +178,13 @@ TITLE_R7 = MODE1_R7 - FRAME_DROP_ROWS
 ASSERT TITLE_R7 >= TITLE_ROWS   \ VSync must fall after the last row shown
 
 .TiCRTC
-\ R1 = PLAY_UNITS, AND THIS IS WHERE THE DISPLAY COMES BACK ON (KC,
-\ 2026-08-31). SetupMode leaves R1 = 0 so that the *LOAD of this very
-\ overlay cannot be seen — bufcore.asm's SetupMode has the note, and
-\ why it is R1 rather than the R6 = 0 tiw_done uses below. 80 units is
-\ the title's width as well as the play area's: 40 columns of 16-byte
-\ characters is the same 640 bytes a row.
-  CRTC 1, PLAY_UNITS
+\ NO UNBLANK HERE. SetupMode and SetupPlain both leave the frame
+\ blanked with R8_BLANK (bufcore.asm has why it is R8 and not R6),
+\ and this sets the title's SHAPE only -- the picture is painted a
+\ cell at a time by TiPaint and KC does not want that watched, so
+\ TiShow turns the display on after the paint instead. Every other
+\ route into a picture is the rupture's, whose IRQ writes R8 at
+\ fires 1-3 every field; the title is the one that has none.
   CRTC 6, TITLE_ROWS
   CRTC 7, TITLE_R7
   CRTC 12, HI(TI_BASE / 8)
@@ -350,6 +356,13 @@ ASSERT TITLE_R7 >= TITLE_ROWS   \ VSync must fall after the last row shown
 \ SetupRupture gives the display back once the ground is rebuilt. The
 \ timed-out path gets the same blank from BrTimeout.
   CRTC 6, 0
+\ AND R8, which is what actually blanks it (2026-08-31): R6 = 0 alone
+\ leaks row 0 -- measured -- and row 0 here is the top of the title's
+\ own framebuffer. It is black, so nothing showed, but the blank
+\ should not depend on what happens to be in one row: SetupMode,
+\ SetupPlain and BrTimeout all blank with R8 now. The rupture's IRQ
+\ turns it back on.
+  CRTC 8, R8_BLANK
   RTS
 
 .tiIdx  EQUB 0

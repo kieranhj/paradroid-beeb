@@ -51,7 +51,11 @@ BR_EXIT_OFF   = 1               \ off the end of the last page: the title
   LDA #6                        \ blank the display for the loads: the
   STA CRTC_ADDR                 \ title picture is still up and the low
   LDA #0                        \ overlay stages inside its framebuffer.
-  STA CRTC_DATA                 \ VSync carries on; SetupRupture unblanks
+  STA CRTC_DATA                 \ VSync carries on, which they need
+  LDA #8                        \ and R8, which is what actually blanks
+  STA CRTC_ADDR                 \ it: R6 = 0 leaks row 0, measured
+  LDA #R8_BLANK                 \ 2026-08-31. Every blank in the port is
+  STA CRTC_DATA                 \ R8 now; the rupture IRQ unblanks
   LDA #1
   STA brFlag
   LDX #LO(brLoadMan)

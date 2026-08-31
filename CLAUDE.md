@@ -228,7 +228,7 @@ paragraph:
 | Bank 5 | **602 B** |
 | Bank 6 | **7 B** (2026-08-31: −32 for DECISION 5's `ConCount` and the count lines; 39 B before that. The 114 B here before 2026-08-30 was stale) |
 | Bank 7 | 7 B tail + the `planInk` pad — **~100-105 B all in, MEASURED 2026-08-31** by bisecting a `SKIP` in `liftview.asm`. The "~176 B of pad" this table and `memory-map.md` used to quote was stale. **No held reserve frees bank 7**, which is what parked layer-12 DECISION 6 |
-| `PARBRF` (`&0400`, hard ceiling `&0800`) | **36 B** (56 B before the CTRL+R hook) |
+| `PARBRF` (`&0400`, hard ceiling `&0800`) | **18 B** (36 B before `BrTimeout`'s R8 blank, 56 B before the CTRL+R hook) |
 | `PARAFNT` block | **16 B** before `SPR_SAVE` (`KeyDownIx` took 7, DECISION 5's `CN_STRS` 10) |
 | `PARMAN` (bank 5's briefing load; the bound is `DEPK_STREAM + size <= PANEL_ADDR`) | **225 B** — the redefine screen took 893 |
 | Low overlay | `lowcode` **9 B** (its two raw `PAGEBANK`s became `JSR Pg*`), `lowcode2` 3 B, `lowbss` 8 B |
