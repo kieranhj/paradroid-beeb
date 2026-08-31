@@ -175,8 +175,12 @@ variable's runtime address for an emulator poke. `-do` is there only to stop the
 - **Code can start at `&1100`, not DFS's `PAGE` of `&1900`.** `&1100–&18FF` is DFS random-access
   file buffer space, untouched by simple `*LOAD` / OSFILE loads. Worth 2K.
 - `VDU 22` makes the OS clear `&3000–&7FFF` (what it still thinks is its screen). Data loaded
-  above `&3000` is wiped before it can be read — hence the split `PARA` / `PARADAT` disc files,
-  with `PARADAT` `*LOAD`ed after the mode change.
+  above `&3000` is wiped before it can be read — hence the split `PARA` / `PARADAT` disc files.
+  **The mode change is the LAST thing boot does before the title (2026-08-31)**: every bank load
+  and copy-up happens in the MOS's boot mode, where nothing they touch is displayed, and
+  `SetupMode` then leaves the frame blank with **R1 = 0** so that `TitleSeq`'s own `*LOAD` of
+  `PARTITL` cannot be seen either — `TiCRTC` restores `R1 = PLAY_UNITS` with the title.
+  `docs/loader-compression.md` has the note, including why R6 = 0 leaks a row and R1 does not.
 - **`&FE44` read at a fixed point in a vsync-locked loop is NOT random.** System VIA T1 runs
   the 100 Hz tick: 20,000 cycles, exactly half a frame, so the sampled byte is near-constant
   and only drifts with interrupt jitter. Cost PINTRO its lightning randomness (docs/intro.md

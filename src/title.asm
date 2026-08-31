@@ -172,6 +172,13 @@ TITLE_R7 = MODE1_R7 - FRAME_DROP_ROWS
 ASSERT TITLE_R7 >= TITLE_ROWS   \ VSync must fall after the last row shown
 
 .TiCRTC
+\ R1 = PLAY_UNITS, AND THIS IS WHERE THE DISPLAY COMES BACK ON (KC,
+\ 2026-08-31). SetupMode leaves R1 = 0 so that the *LOAD of this very
+\ overlay cannot be seen — bufcore.asm's SetupMode has the note, and
+\ why it is R1 rather than the R6 = 0 tiw_done uses below. 80 units is
+\ the title's width as well as the play area's: 40 columns of 16-byte
+\ characters is the same 640 bytes a row.
+  CRTC 1, PLAY_UNITS
   CRTC 6, TITLE_ROWS
   CRTC 7, TITLE_R7
   CRTC 12, HI(TI_BASE / 8)

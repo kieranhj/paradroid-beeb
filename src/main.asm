@@ -1338,12 +1338,6 @@ GUARD FONT_ADDR
 ORG &1100
 .start
 
-\ MODE 1 ONLY. The rupture's CRTC shape is set AFTER the loads, in
-\ SetupRupture, because R7 = TAIL_R7 stops VSync and the MOS's disc
-\ code hangs without it — the same rule as InstallIrq's below, one
-\ step earlier. bufcore.asm's header has the measurement.
-  JSR SetupMode
-
 \ NO DEPACKER LOAD ANY MORE. PARDEPK was an eighth disc file whose only
 \ job was to carry a second copy of a decompressor the code image now
 \ holds outright; BootBanks and Zx0Unpack are both resident. KC,
@@ -1369,6 +1363,26 @@ ORG &1100
                                 \ pass 3) — it only runs while the overlay
                                 \ it JSRs is resident, so it need not spend
                                 \ the code image
+
+\ ---- the display mode, AFTER the banks are in -------------
+\ KC, 2026-08-31: SetupMode used to be the FIRST thing .start did, so
+\ VDU 22's clear of &3000-&7FFF blanked whatever was on screen and the
+\ four bank streams then landed at DEPK_STREAM (&3200) in full view of
+\ a MODE 1 display still pointed at &3000 — the loads drew themselves
+\ as blocks of garbage. Nothing in the bank loading needs MODE 1:
+\ BootBanks *LOADs to &3200 and unpacks to &8000+, which is the same
+\ work in the MOS's boot mode, where &3200 is not displayed at all.
+\ So the mode change comes here instead, once every load and every
+\ copy-up into sideways RAM is finished.
+\ IT STILL HAS TO BE BEFORE TitleSeq, and by more than habit: the
+\ title is MODE 1 artwork at &4000 and its own loads run under the
+\ clear this VDU 22 performs.
+\ MODE 1 ONLY, AND ONLY THE MODE. The rupture's CRTC shape is set
+\ later still, in SetupRupture at the end of TitleSeq, because
+\ R7 = TAIL_R7 stops VSync and the MOS's disc code hangs without it —
+\ the same rule as InstallIrq's, one step earlier. bufcore.asm's
+\ header has the measurement.
+  JSR SetupMode
 
 \ ---- the title, and everything that rebuilds after it ------
 \ TitleSeq is shared with the game-over seam (GoTitle): load PARTITL,

@@ -257,3 +257,38 @@ available — `in_place_delta()` is now there to size it — but it is *code* th
 and on the game-over path the 999 page is on display while it loads, so the landing area wants
 checking against what is being shown as well as against the delta. `PARBRF` and `PARALOW` save one
 sector each and are not worth the risk.
+
+## The boot no longer shows its own loading (2026-08-31)
+
+KC: the loads should not be visible. Two changes, both zero bytes of main
+RAM — which had seven free at the time and is the binding constraint:
+
+- **`SetupMode` moved below `BootBanks`** in `.start`. It used to be the
+  first thing the game did, so the VDU 22 blanked whatever was on screen
+  and the four bank streams then landed at `DEPK_STREAM = &3200` inside a
+  MODE 1 frame still pointed at &3000 — the loads drew themselves. Nothing
+  in the bank loading needs MODE 1: `*LOAD` to &3200 and `UnpackBankIn` to
+  &8000+ are the same work in the MOS's boot mode, where &3200 is not
+  displayed at all. The mode change happens once every load **and** every
+  copy-up into sideways RAM is done. It still has to be before `TitleSeq`,
+  whose artwork lands at &4000 under the clear the VDU 22 performs.
+- **`SetupMode` leaves the frame blank and `TiCRTC` gives it back.** That
+  left one window — TitleSeq's own `*LOAD PARTITL` into &4000, which is
+  inside the fresh MODE 1 frame. `SetupMode` now writes **R1 = 0** instead
+  of `PLAY_UNITS`, and `TiCRTC` writes `CRTC 1, PLAY_UNITS` as its first
+  act; the title needs the same 80 units the play area does. VSync is
+  untouched, which the loads require.
+
+**It is R1 rather than the R6 = 0 the other three blanks use** (`tiw_done`,
+`BrTimeout`, `SetupPlain`'s table). R6 = 0 was tried first and **leaks one
+row**, measured in jsbeeb: the row counter is compared at the end of a row,
+so row 0 displays whatever R6 says. The other three get away with it because
+their R12/R13 park on ground that happens to be black; at boot the start
+address is still the OS's &3000 and `DEPK_STREAM` is 512 bytes into that
+first row, so the top row of the screen filled with stream. R1 = 0 kills the
+row itself and cost nothing, because `SetupMode` was already writing R1.
+
+The three windows a load can be seen in — boot, title→`ts_loads`, and the
+briefing's timeout — are now all blanked. Verified in jsbeeb end to end:
+MODE 7 boot text through the four bank loads, black through PARTITL, then
+the title, the briefing and a deck.

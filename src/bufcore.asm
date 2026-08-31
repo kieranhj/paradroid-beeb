@@ -5,10 +5,12 @@
 \ next to the tile, deck and waypoint data they read. Four routines and
 \ one pair of tables cannot go with them, for two different reasons.
 \
-\ RUN BEFORE THE BANK EXISTS. SetupMode is the first thing `start`
-\ calls — before the *LOAD of PARADAT, let alone the copy up into
-\ the bank. SetupRupture runs between the loads and InstallIrq, and
-\ SetCRTCStart comes with them, because SetupRupture calls it.
+\ RUN WITH NO BANK PAGED IN. SetupMode runs at `start`, straight
+\ after BootBanks (KC, 2026-08-31 — it used to run BEFORE it, and
+\ moved so the bank streams load off-screen; main.asm has the note),
+\ which leaves SWRAM_XFER paged rather than SWRAM_DATA. SetupRupture
+\ runs between the last load and InstallIrq, and SetCRTCStart comes
+\ with them, because SetupRupture calls it.
 \
 \ RUN WHILE SWRAM_SPR IS PAGED IN. SprDrawAll and SprRestoreAll page
 \ the sprite bank in around themselves, and inside that window:
@@ -78,14 +80,34 @@
   LDA #&08 OR 5                 \ C1 = 1  -> subtract &2800, restart &5800
   STA VIA_PORTB
 
-  CRTC 1,  PLAY_UNITS           \ 80 units = 320 px displayed
+  CRTC 1,  0                    \ ...and NOTHING IS DISPLAYED with it
 
-\ R8 = 0: non-interlaced. The OS leaves MODE 1 at R8=1 (interlace
-\ sync), which offsets VSync by half a scanline on alternate fields.
-\ Our rupture timers are fixed intervals from VSync, so that half
-\ line makes the split land in a different place every other field
-\ — an intermittent glitch along the top of the play area.
-  CRTC 8,  0
+\ ---- the blank, and why it is R1 and not R6 -----------------
+\ KC, 2026-08-31, the other half of moving this call below BootBanks:
+\ the mode change has no bank load behind it any more, but TitleSeq's
+\ own *LOAD of PARTITL lands at &4000 — inside the MODE 1 frame the
+\ VDU 22 above has just set up — so the title still arrived as a block
+\ of loading wreckage. TiCRTC gives the display back with the real
+\ PLAY_UNITS, which is the same 80 the title needs; nothing between
+\ these two points is meant to be seen, and R1 does not disturb VSync,
+\ which the loads need.
+\ R6 = 0 WAS TRIED FIRST, because that is the blank tiw_done,
+\ BrTimeout and SetupPlain's table already use — and it leaks ONE
+\ ROW, measured in jsbeeb: the row counter is compared at the END of
+\ a row, so row 0 is displayed whatever R6 says. Those three get away
+\ with it because their R12/R13 park on ground that happens to be
+\ black; here the start address is still the OS's &3000 and the bank
+\ streams land at DEPK_STREAM = &3200, which is 512 bytes INTO that
+\ first row. R1 = 0 kills the row itself, costs nothing (this write
+\ existed already) and needs no start-address games.
+  CRTC 8,  0                    \ R8 = 0: non-interlaced. The OS leaves
+                                \ MODE 1 at R8=1 (interlace sync), which
+                                \ offsets VSync by half a scanline on
+                                \ alternate fields. Our rupture timers are
+                                \ fixed intervals from VSync, so that half
+                                \ line makes the split land in a different
+                                \ place every other field — an intermittent
+                                \ glitch along the top of the play area
   RTS
 
 \ ---- the second half: after the loads, before InstallIrq ----
