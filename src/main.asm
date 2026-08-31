@@ -733,8 +733,24 @@ FONTCODE_BYTES = 201            \ FontCell, its table, DoScore and
 PN_TABS     = FONTCODE_ADDR + FONTCODE_BYTES
 pnTabCent   = PN_TABS + 0
 pnTabNum    = PN_TABS + 24
-ASSERT PN_TABS + 48 <= PANEL_ADDR
-ASSERT PN_TABS + 48 <= SPR_SAVE  \ the whole PARAFNT block sits below
+
+\ ---- Redux's droid counts: eight bytes both banks see -------
+\ Layer-12 [DECISION 5]. The counting is BANK 4's -- the droid table
+\ and shipNumDroids are there -- and the drawing is BANK 6's, and only
+\ one bank is visible at a time, so the answer has to be handed over in
+\ main RAM. This is PN_TABS' own trick and it lands in the same block
+\ for the same reason: it must be main RAM, it need not be the code
+\ image, and the code image is the region with nothing to spare.
+\ THEY ARE FINISHED ASCII STRINGS, not numbers, and that is what keeps
+\ bank 6 affordable: the reader is one ConLine call, no digit loop and
+\ no divide. Up to three digits and a terminator each; PnAscii maps
+\ '0'-'9' to PN_DIGIT0 already, so nothing else was needed to print
+\ them. Leading zeros are dropped by the writer, so "7" is one byte.
+CN_STRS     = PN_TABS + 48
+cnDeckStr   = CN_STRS + 0
+cnShipStr   = CN_STRS + 4
+ASSERT PN_TABS + 56 <= PANEL_ADDR
+ASSERT PN_TABS + 56 <= SPR_SAVE  \ the whole PARAFNT block sits below
                                  \ the save areas now, not above the map
 
 \ ---- the panel is FOUR rows, because the C64's box is 32 scanlines ----

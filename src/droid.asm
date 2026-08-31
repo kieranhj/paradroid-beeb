@@ -3286,7 +3286,116 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
 \ KC, 2026-08-24.
   JSR ConIconInk4               \ the icon colours BEFORE ConsoleOpen
                                 \ draws them - KC 2026-08-24
+  JSR CnCounts4                 \ and Redux's two droid counts, for the
+                                \ same reason: this is the last bank-4
+                                \ code before ConsoleEnter pages bank 6
   JMP SetTextPal                \ and its RTS
+
+
+
+\ ============================================================
+\ CnCounts4 - the droids left, on this deck and on the ship
+\ ============================================================
+\ Redux's console shows both; layer-12 [DECISION 5]. Called from
+\ ConMenuInit4, the last bank-4 code to run before ConsoleEnter pages
+\ bank 6 for the draw.
+\ IT WRITES FINISHED ASCII STRINGS into the PARAFNT block rather than
+\ numbers, and that is not tidiness: bank 6 is the region with 39 bytes
+\ free, so the expensive half - the conversion - has to be on this side
+\ of the handover, and the reader is then one ConLine call with no
+\ digit loop and no divide. See CN_STRS in main.asm.
+\ AND IT IS IN THIS FILE, NOT consolesel.asm, which was tried first on
+\ the reasoning that colourMap's ALIGN pad takes anything assembled in
+\ front of it for nothing. THE PAD IS SPENT: 200 bytes put there cost
+\ the bank 259, because past the pad the ALIGN rolls a whole page. That
+\ is the trap consolesel.asm's own header warns about, measured.
+\ THE DECK COUNT IS NOT drCount. That is the table's high-water mark
+\ and it counts BULLETS AND EXPLOSIONS as well as droids - a count that
+\ went up when something fired would be worse than none - so the table
+\ is walked and only real droids, type below DR_TYPE_BULLET with energy
+\ left, are counted. drCount still bounds the walk: entries above it are
+\ stale, and DroidsUpdate's compaction keeps the live ones below it.
+\ THE SHIP COUNT IS shipNumDroids AS IT STANDS, with nothing taken off.
+\ It looks like it should be one too many - NewShipDroids seeds it with
+\ 1 - but that 1 is not the player: it pre-counts the 999 that $1D of
+\ the roster is given after the placing loop, without an INC of its own.
+\ The player is entry 0 of the DECK table and was never in this total,
+\ and the ship-clear test at $17ED reading zero is the proof.
+.CnCounts4
+  LDA #0
+  STA cnTmp
+  LDX drCount
+  DEX
+  BEQ cnc_deck                  \ the deck is empty
+.cnc_loop
+  LDA drEnergy,X
+  BEQ cnc_next                  \ a hole the compaction has not squeezed
+  LDA drType,X
+  CMP #DR_TYPE_BULLET
+  BCS cnc_next                  \ a bullet or an explosion, not a droid
+  INC cnTmp
+.cnc_next
+  DEX
+  BNE cnc_loop
+.cnc_deck
+  LDA cnTmp
+  LDX #0                        \ cnDeckStr
+  JSR CnDigits4
+  LDA shipNumDroids
+  LDX #4                        \ cnShipStr
+\ falls into CnDigits4
+
+\ ---- A = the value, X = the offset into CN_STRS -------------
+\ THREE DIGITS AND A TERMINATOR, ALWAYS, right-justified with spaces
+\ rather than left-justified with the leading zeros dropped. It is the
+\ cheaper of the two - the digits go down unconditionally and a second
+\ pass blanks the leading zeros, where suppressing them on the way out
+\ needs a flag carried between the two divides - and it also lines the
+\ deck's count up under the ship's, which left-justified does not.
+\ Repeated subtraction rather than a divide: it runs twice per console
+\ and the 6502 has no divide worth the bytes. X is untouched throughout,
+\ so the offset needs no temporary of its own. ORA #'0' rather than an
+\ ADC because a digit is 0-9 and '0' is &30: the bits do not overlap.
+.CnDigits4
+  LDY #'0'-1
+.cnd_h
+  INY
+  SEC : SBC #100
+  BCS cnd_h
+  ADC #100                      \ carry is clear, so this puts back the
+  STY cnHund                    \ hundred the last subtract borrowed.
+                                \ PARKED, not stored to the string: A is
+                                \ the running value and the tens loop
+                                \ still needs it, and there is no
+                                \ STY abs,X on a 6502 to spend it into
+  LDY #'0'-1
+.cnd_t
+  INY
+  SEC : SBC #10
+  BCS cnd_t
+  ADC #10
+  ORA #'0'                      \ what is left of A is the units, and A
+  STA CN_STRS+2,X               \ is free from here
+  TYA
+  STA CN_STRS+1,X
+  LDA cnHund
+  STA CN_STRS,X
+  LDA #0
+  STA CN_STRS+3,X
+
+  LDA CN_STRS,X                 \ and blank the leading zeros
+  CMP #'0'
+  BNE cnd_x
+  LDA #' ' : STA CN_STRS,X
+  LDA CN_STRS+1,X
+  CMP #'0'
+  BNE cnd_x
+  LDA #' ' : STA CN_STRS+1,X
+.cnd_x
+  RTS
+
+.cnTmp   EQUB 0
+.cnHund  EQUB 0
 
 .ConMenu4
   LDX #CTL_UP                    \ up the menu

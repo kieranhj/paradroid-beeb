@@ -64,12 +64,36 @@ CON_TYPES = 24
 \ ported ones — the database, the information screens and the game over
 \ — because sixteen rows is what the C64 lays them out in. See
 \ condb.asm's geometry block.
-CON_ROW_UNIT  = 1
-CON_ROW_ACC   = 3
-CON_ROW_SHIP  = 6
+\ ---- and Redux's droid counts moved every one of them --------
+\ Layer-12 [DECISION 5]. Two more lines have to fit -- the droids left
+\ on this deck under the Deck line, and the droids left on the ship
+\ under the Ship line -- and a text line is TWO rows, so that is four
+\ rows wanted out of a sixteen-row area that had none spare.
+\ THE ROOM COMES FROM "Access granted.", which Redux deletes and KC
+\ agreed to delete here (2026-08-31). That is two of the four rows; the
+\ other two are the blank rows the layout used to carry.
+\ WHAT IT COSTS: the unit line goes back to ROW 0. Layer-9 DECISION 17
+\ spent the sixteenth row moving everything DOWN one, and this spends it
+\ again -- the arithmetic leaves nothing over. 2 (unit) + 3 (the droid
+\ icon) + 4 (ship and its count) + 4 (deck and its count) + 3 (alert and
+\ its icon) is exactly 16, with no blank rows anywhere. The alternative
+\ costed with KC was to put the droid icon BESIDE the unit line it
+\ depicts, which keeps two blanks and DECISION 17's row; it is a bigger
+\ move than the one asked for, and it is still there if the top row
+\ turns out to matter more than the icon's own block.
+\ ENTRY 0 HAS NO LABEL NOW. It is the "leave the console" entry and
+\ "Access granted." was its text; the icon -- the player's own droid --
+\ is what marks it, and the selection transform still lights it.
+CON_ROW_UNIT  = 0
+CON_ROW_ACC   = 2               \ entry 0: the droid icon, and no text
+CON_ROW_SHIP  = 5
+CON_ROW_SHIPN = 7               \ "NN droids", under the ship
 CON_ROW_DECK  = 9
-CON_ROW_ALERT = 12
+CON_ROW_DECKN = 11              \ and under the deck
+CON_ROW_ALERT = 13
 ASSERT CON_ROW_ALERT + 2 <= PLAY_ROWS         \ the alert glyph, two rows
+ASSERT CON_ROW_SHIPN + 2 <= CON_ROW_DECK      \ the counts do not collide
+ASSERT CON_ROW_DECKN + 2 <= CON_ROW_ALERT     \ with the line below them
 
 CON_COL_UNIT  = 2               \ UnitType_txt's own prntX
 CON_COL_TEXT  = 12              \ and $6E00's
@@ -744,9 +768,9 @@ ASSERT 4 + CON_SEL_UNITS <= CON_COL_TEXT * 2
   JSR ConDroid
   JSR ConUnitType
 
-  LDA #CON_ROW_ACC : STA conRow
-  LDA #LO(conTxtAccess) : LDY #HI(conTxtAccess)
-  JSR ConLine
+\ NO "Access granted." LINE. Redux drops it and its two rows are what
+\ pay for the droid counts below -- layer-12 [DECISION 5]. Entry 0 of
+\ the menu is marked by its icon alone now.
 
 \ ---- the ship, by shipLevel --------------------------------
   LDA #CON_ROW_SHIP : STA conRow
@@ -758,6 +782,10 @@ ASSERT 4 + CON_SEL_UNITS <= CON_COL_TEXT * 2
   CLC : ADC #CON_TOK_SHIP
   JSR ConTok
 
+  LDA #CON_ROW_SHIPN : STA conRow
+  LDA #LO(cnShipStr) : LDY #HI(cnShipStr)
+  JSR ConCount
+
 \ ---- the deck ----------------------------------------------
   LDA #CON_ROW_DECK : STA conRow
   LDA #LO(conTxtDeck) : LDY #HI(conTxtDeck)
@@ -765,6 +793,10 @@ ASSERT 4 + CON_SEL_UNITS <= CON_COL_TEXT * 2
   LDA deck
   CLC : ADC #CON_TOK_DECK
   JSR ConTok
+
+  LDA #CON_ROW_DECKN : STA conRow
+  LDA #LO(cnDeckStr) : LDY #HI(cnDeckStr)
+  JSR ConCount
 
 \ ---- the alert level, its top two bits ---------------------
 \ $298C's own arithmetic: three ROLs and AND 3.
@@ -780,6 +812,27 @@ ASSERT 4 + CON_SEL_UNITS <= CON_COL_TEXT * 2
 \ A/Y = the label, conRow already set. Leaves pnDst after it, so the
 \ token that follows continues on the same line, and sets conCap because
 \ every name after a label is capitalised.
+\ ---- ConCount — "NN droids", one of Redux's two ------------
+\ conRow set, A/Y = the digit string in the PARAFNT block. Layer-12
+\ [DECISION 5].
+\ THE DIGITS ARRIVE READY. consolesel.asm (bank 4) counted and
+\ converted them, because that side had the room and this one has 39
+\ bytes; all that is left here is a label draw and the word.
+\ THE WORD IS THE GAME'S OWN TOKEN, not a string of ours. Token 11 of
+\ the $C000 table is "droid" — CON_TOK_CLASS + 1, the one ShowRobotType
+\ prints for a hundreds digit of 5 to 8 — and every token carries its
+\ own leading space, so the digits and the word space themselves. Only
+\ the plural is ours, one character through the same pair ConStr uses.
+\ conCap is cleared after ConLine set it: this is a word, not a name.
+.ConCount
+  JSR ConLine                   \ positions at (conRow, CON_COL_TEXT)
+  LDA #0 : STA conCap
+  LDA #CON_TOK_CLASS + 1        \ "droid"
+  JSR ConTok
+  LDA #'s'
+  JSR PnAscii
+  JMP PnWide                    \ and its RTS
+
 .ConLine
   STA pnStrLo
   STY pnStrHi
@@ -793,7 +846,6 @@ ASSERT 4 + CON_SEL_UNITS <= CON_COL_TEXT * 2
 \ "Deck" are padded to the width of "Alert" so the colons line up, which
 \ is the original's doing and not ours.
 .conTxtUnit   EQUS " Unit type "  : EQUB 0
-.conTxtAccess EQUS "Access granted." : EQUB 0
 .conTxtShip   EQUS "Ship  :"      : EQUB 0
 .conTxtDeck   EQUS "Deck  :"      : EQUB 0
 .conTxtAlert  EQUS "Alert :"      : EQUB 0

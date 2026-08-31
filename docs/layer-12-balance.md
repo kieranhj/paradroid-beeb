@@ -190,6 +190,65 @@ Second game, score poked past the 6809 default so it takes the OTHER arm: the en
 "Great Score!" showing `D..`, and the second slot seeds to `G` on commit — so the seeding survives
 the overlay being reloaded from disc in between, which is the whole point of it being in bank 7.
 
+**[DECISION 5] — (5) the console shows droids remaining, on the deck and on the ship: BUILT.
+2026-08-31.**
+
+*The layout, and what it cost.* KC, 2026-08-31: "Redux removes the 'Access Granted' line in the
+console menu and adds 'N droids' underneath the Ship name and Deck name lines." A text line is
+**two** buffer rows, so two new lines want four rows out of a sixteen-row area that had none
+spare. Deleting "Access granted." gives two; the other two are the blank rows the layout carried.
+The arithmetic then leaves nothing over — 2 (unit) + 3 (droid icon) + 4 (ship + count) + 4 (deck +
+count) + 3 (alert + icon) is exactly 16 — so **the unit line goes back to row 0 and layer-9
+DECISION 17's row is spent again**. The alternative costed with KC put the droid icon beside the
+unit line it depicts, keeping two blanks and that row; it is a bigger move than the one asked for
+and is still available if the top row matters more. Rows are now 0 / 2 / 5+7 / 9+11 / 13, and
+`consolesel.asm`'s `CON_SEL*` literals moved with them — the `ASSERT`s in `console.asm` that tie
+the two together are what caught them, which is what they are for.
+
+Entry 0 of the menu has no label now. It is the "leave the console" entry, "Access granted." was
+its text, and its icon — the player's own droid — is what marks it.
+
+*Neither count was available as-is.* The deck count is **not** `drCount`: that is the table's
+high-water mark and it counts bullets and explosions too, so it would tick up when something
+fired. The table is walked instead, counting only types below `DR_TYPE_BULLET` with energy left.
+The ship count **is** `shipNumDroids` untouched — it looks one too many because `NewShipDroids`
+seeds it with 1, but that 1 is not the player: it pre-counts the 999 written to `$1D` of the
+roster after the placing loop without an INC of its own.
+
+*The split, and the failed first attempt.* Counting is bank 4's (the droid table is there),
+drawing is bank 6's, and only one bank is visible at a time, so the answer crosses in main RAM —
+eight bytes in the `PARAFNT` block, `PN_TABS`' own trick. **They are finished ASCII strings, not
+numbers**, because bank 6 is the region with 39 bytes free: the conversion belongs on the side
+with room, and the reader is then one `ConLine` call. `PnAscii` already maps `'0'`-`'9'`, so
+nothing was needed to print them, and the word is the game's own token 11, "droid", plus an `s`.
+
+Three digits and a terminator always, **right-justified with spaces** rather than left-justified
+with leading zeros dropped: the digits then go down unconditionally and a second pass blanks the
+leading zeros, where suppressing on the way out needs a flag carried between the two divides. It
+also lines the deck's count up under the ship's.
+
+**`CnCounts4` was written into `consolesel.asm` first and had to be moved out.** That file sits in
+front of `colourMap`'s `ALIGN` on the reasoning that the pad takes anything assembled there for
+nothing. **The pad is spent**: 200 bytes put in it cost the bank 259, because past the pad the
+ALIGN rolls a whole page. That is the trap `consolesel.asm`'s own header warns about, now
+measured — treat the pad as full.
+
+*What it cost, measured:*
+
+| Region | Before | After |
+|---|---|---|
+| Bank 4 | 143 B | **28 B** |
+| Bank 6 | 39 B | **22 B** |
+| `PARAFNT` block | 26 B | 18 B |
+| Code image | 7 B | 7 B — untouched |
+
+*Verified in jsbeeb.* On a deck of nine droids the console read `Ship : Paradroid / 120 droids /
+Deck : Repairs / 9 droids`. **CTRL+C** (`DEBUG_KILL`) then cleared the deck and the same console
+read **111** and **0** — nine off both, the deck bonus in the score. Three-digit, two-digit and
+one-digit cases all rendered and stayed aligned. (The console was reached by poking `DoCharUnder`'s
+`CMP #CHAR_CONSOLE` to `LDA #0` in the running machine so fire opens it anywhere; a runtime patch
+only, and a useful one to know for any future console work.)
+
 **Paradroid Redux is a different codebase** — `docs/decisions.md` has the evidence — so its fixes
 cannot be lifted as code. What it is good for is a **list of what Braybrook himself thought was
 wrong**, each one then a question to ask of our own port: does the same defect exist here, and do
