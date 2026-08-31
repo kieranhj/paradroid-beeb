@@ -98,6 +98,17 @@
   LDA #7  : STA CRTC_ADDR
   LDA #TAIL_R7 : STA CRTC_DATA  \ cycle C fires VSync at line 312
 
+\ ---- and the display stays off until there is something on it
+\ KC, 2026-08-31: the rupture starts here, but the deck is still to
+\ load and the first screen still to draw, so what it would show is
+\ IsBlank's cleared strip in the front end's palette and the panel as
+\ a bare white box. Patch the IRQ's two unblanks to R8_BLANK -- see
+\ rupture.asm at r2R8 -- and let IsArm or BrRun's first page put them
+\ back when there is a picture worth showing.
+  LDA #R8_BLANK
+  STA rvR8+1
+  STA r2R8+1
+
   JMP PgData                    \ the data bank is the resting state, and
                                 \ this is main RAM so it can page us out;
                                 \ its RTS is ours

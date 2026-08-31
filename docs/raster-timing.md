@@ -775,3 +775,26 @@ Safe there and nowhere else in that file: every screen through `IsStart` runs wi
 `IsBlank` is the door that does not — `ts_loads` calls it before `SetupRupture` — and it branches
 away in `IsEntry`, well above. Verified through the 001 (background correct in the first field it
 is visible), a deck, ESCAPE, the wash, the 999 and the high-score entry.
+
+### And the seam itself stays blanked until there is a picture
+
+The palette wait above was not the whole of it. Between the rupture starting and the first screen
+being drawn there is a second or more — the deck is still loading — and what the display showed in
+that window was `IsBlank`'s cleared strip in whatever palette the front end left, plus the panel as
+the bare white box `FillPanel` draws. KC: *"could actually just keep the screen blanked until the
+panel and the box are drawn"*.
+
+`RuptAlign` now patches the IRQ's two unblank operands to `R8_BLANK` when it starts the rupture,
+and they go back to `R8_ON` when there is something to look at: `IsArm`, which is every `IsStart`
+screen's common tail, and `BrRun`'s first page paint for the timed-out path. Both are idempotent.
+
+**They are patched operands, not a variable read.** One of the two is fire 2, which has to land in
+horizontal blanking — `T1_TUNE`'s whole business — and `LDA abs` would move the write two cycles
+later. A patched immediate costs nothing at either site. `rvR8` and `r2R8` label them.
+
+`HsEntry` starts a rupture of its own and is not affected: the last screen released the blank
+before the game-over path reached it.
+
+Verified in jsbeeb: the title→001 seam is now fully black end to end (no white panel box, no
+front-end-coloured strip), the 001 arrives complete and correctly coloured, and the timed-out path
+still reaches the briefing.

@@ -277,6 +277,16 @@ IS_BLANK = &FF                  \ IsEntry's third door, and not a screen
   LDA isTokHi,X : STA is_tk_get+2
   JSR IsPrint
 .IsArm
+\ THE DISPLAY COMES BACK ON HERE. RuptAlign patched the rupture's two
+\ unblanks to R8_BLANK when it started it, so the seam out of the front
+\ end shows nothing until a screen is finished -- rupture.asm at r2R8.
+\ This is every IsStart screen's common tail: the page above is
+\ complete and the panel was drawn long before it. Writing R8_ON when
+\ it is already R8_ON costs four bytes, which is cheaper than a flag.
+  LDA #R8_ON
+  STA rvR8+1
+  STA r2R8+1
+
   LDA #0                        \ $371C WaitNoFire: the press that opened
   STA isPhase                   \ the screen is still down
   LDA #IS_HOLD

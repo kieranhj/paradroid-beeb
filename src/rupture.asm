@@ -211,7 +211,9 @@ ENDIF
 
 \ Unblank for the panel, which starts in 64 scanlines. Safe to do
 \ now: the tail displays nothing either way.
-  LDA #8  : STA CRTC_ADDR : LDA #R8_ON   : STA CRTC_DATA
+  LDA #8  : STA CRTC_ADDR
+.rvR8
+  LDA #R8_ON   : STA CRTC_DATA  \ the operand is patched -- see r2R8
 
 \ R12/R13 for the panel cycle, latched when it starts at P+312.
   LDA #12 : STA CRTC_ADDR : LDA #HI(PANEL_START) : STA CRTC_DATA
@@ -306,7 +308,23 @@ ENDIF
 \ ---- fire 2, P+64: the visible top edge ---------------------
 \ Must land in horizontal blanking — see T1_TUNE.
 .rt_play
-  LDA #8  : STA CRTC_ADDR : LDA #R8_ON     : STA CRTC_DATA
+  LDA #8  : STA CRTC_ADDR
+\ ---- THE TWO UNBLANKS ARE PATCHABLE (KC, 2026-08-31) --------
+\ Coming out of the front end there is a window -- the rupture is
+\ running, the deck is still loading, the first screen is not drawn --
+\ in which the display shows IsBlank's cleared strip in whatever
+\ palette the front end left, and the panel as the bare white box
+\ FillPanel drew. KC: keep it blanked until the panel and the box are
+\ drawn. So RuptAlign patches these two operands to R8_BLANK when it
+\ starts the rupture, and IsArm (every information screen) and BrRun's
+\ first page put them back to R8_ON.
+\
+\ AN OPERAND AND NOT A VARIABLE, because this one is fire 2 and fire 2
+\ must land in horizontal blanking -- T1_TUNE's whole business. LDA abs
+\ would move the write two cycles later; a patched immediate costs
+\ nothing at all, here or at VSync.
+.r2R8
+  LDA #R8_ON     : STA CRTC_DATA
 IF DEBUG_RASTER
   LDA deck                      \ restore this deck's real background
   ASL A : ASL A

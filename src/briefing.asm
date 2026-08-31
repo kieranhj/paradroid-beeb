@@ -259,6 +259,14 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
 \ and the travel started again from the top. See BrKeyRedef.
 .br_page
   JSR BrPagePaint
+\ AND THE DISPLAY BACK ON, for the timed-out path: RuptAlign left the
+\ rupture's unblanks patched to R8_BLANK so the seam out of the title
+\ shows nothing until there is a picture (rupture.asm at r2R8). The
+\ page above is it. Idempotent, and this loop is re-entered per page
+\ and by BrKeyRedef, which costs nothing.
+  LDA #R8_ON
+  STA rvR8+1
+  STA r2R8+1
 
 \ the _4/_5 release wait: a held M must not eat the next page too
 .br_deb
