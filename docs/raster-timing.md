@@ -580,7 +580,7 @@ Two related seams: `HsEntry` already calls `SetupRupture` and `InstallIrq` back 
 was never in this class; and the reverse transition (`UninstallIrq` then `SetupPlain`) rewrites
 R4-R7 mid-frame and costs at most one field, unmeasured.
 
-## The switch itself — measured, prototyped, and REVERTED, same day
+## The switch itself — measured, prototyped, reverted, and REINSTATED, same day
 
 The reorder above left the transition, and it is worth three malformed fields. Frame lengths in
 cycles across the briefing exit, stepped one field at a time (`run_frames(1)`, `cycles_run`):
@@ -595,15 +595,24 @@ other place the rupture is established. The 384-line field is the diagnosis: `Se
 R4 = TAIL_R4 = 12 wherever the main loop happens to be, and the plain frame is 39 rows, so the row
 counter is usually **past** 12 and the 6845 runs on toward its wrap before the compare matches.
 
-**The prototype is not in the tree**: KC judged it *worse* by eye than the version with the three
-malformed fields, so it was reverted pending a look at the teardown side. It is recorded here
-because the measurement stands and the diagnosis above is the useful part. What it did:
+**Round one was reverted**: KC judged it *worse* by eye than the version with the three malformed
+fields. That was with the blanks still leaking a row, so a stripe of the play buffer sat on screen
+through the whole seam and swamped whatever the alignment did. **Round two put it back**, after
+every blank moved to R8 and KC still reported resync going into the game — and this time the
+frame-length sequence is clean AND the screen beside it is properly black. What it does:
 `RuptAlign` (`src/briefing.asm`, PARBRF) waited for VSync with `OSBYTE 19` and then spun out the
 rest of the frame — 8 rows, 8,192 cycles, against a landing window of another 11 rows — so the
 writes land in row 0 or 1 of a fresh frame, where R4 = 12 is ahead of the counter. `ts_loads`
-called it immediately before `SetupRupture`. **No malformed field survived** — every field 39,93x
-— and it still looked worse, which is the fact that sent the search to the teardown. Cost was 3
-bytes of code image and 24 of PARBRF.
+calls it immediately before `SetupRupture`. **No malformed field survives** — every field 39,93x
+across the switch, measured both rounds. Cost: 3 bytes of code image (7 → 4) and 16 of PARBRF,
+which is down to **2 bytes free** and is now the tightest region in the build after the code image.
+If it needs to grow again, the routine wants a new home — bank 5 has 602 bytes but costs `PgSpr`
+and `PgData` around the call.
+
+Also measured on the way in, and clean at 39,936 throughout: the 001 screen → deck transition,
+where `ReframeView` swaps the bottom edge back from 16 rows to 15 (`T1_I3X` → `T1_I3`). What is
+visible there is the deck painting over the info screen for a pass or two — a redraw cost, not a
+sync event.
 
 It lives in PARBRF because it needs ~16 bytes of main RAM that need no paging and the code image
 has seven; PARBRF is resident and valid on every route into `ts_loads`. It is NOT valid at

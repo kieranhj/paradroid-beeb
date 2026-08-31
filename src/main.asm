@@ -2569,7 +2569,9 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
 \ So the title's ordinary 39-row, 312-line, 50 Hz frame stands until
 \ the IRQ is ready to drive the replacement, one instruction later.
 \ KC, 2026-08-31. docs/raster-timing.md has the window either side.
-  JSR SetupRupture
+  JSR RuptAlign                 \ and land those writes on a frame
+  JSR SetupRupture              \ boundary -- briefing.asm has the
+                                \ measurement and why it lives there
 
   JMP InstallIrq                \ take the IRQ back, and its RTS
 
