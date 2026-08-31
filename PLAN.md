@@ -39,26 +39,24 @@ every `DEBUG_` flag forced off through the command-line `RELEASE` symbol that ev
 passes.
 
 **Keys:** Z/X left/right, K/M up/down, L fire — and, through the original's own `moveMode`
-machine, the lift, console and transfer trigger. **Those six are DEFAULTS since 2026-08-30**:
-**CTRL+R on the briefing screen redefines all six** (left, right, up, down, fire, transfer), the
-new ones hold everywhere the old ones were read — play, the console menus, the transfer game, the
-briefing, the high-score entry and the title — and they last until they are redefined or the
-machine is BREAKed. ESCAPE abandons the redefine and the modifiers cannot be bound;
-[`docs/layer-11f-frontend.md`](docs/layer-11f-frontend.md) §8 and its DECISION 15. **ESCAPE self-destructs and ends the game.**
-**SPACE is a second transfer button** — hold it and moveMode goes straight to Transfer, direction
-or no direction, which the fire route cannot do (it needs you stopped and 8 passes of settle).
-**Cursor up/down are the master volume, CTRL+Q mutes and CTRL+P pauses** (plain P unpauses), everywhere the game has a loop:
-play, the modal screens, the briefing and the title (P in play and the modal screens). **Every debug key takes CTRL too** (2026-08-31, because the six
-controls are redefinable and R, C, W, `[` and `]` are keys like any other): **CTRL+`[`** and
-**CTRL+`]`** are `DEBUG_DECK`'s deck hop, **CTRL+C** is `DEBUG_KILL`'s clear-the-deck, **CTRL+W**
-wins a transfer (`DEBUG_XFERWIN`), **CTRL+R** a forced redraw (`DEBUG_REDRAW`, its own flag since
-2026-08-31) — all four flags ship ON in a dev build and none of them in a RELEASE one.
+machine, the lift, console and transfer trigger — plus **SPACE**, a second transfer button that
+skips the settle a single button needs. **Those six are DEFAULTS since 2026-08-30: CTRL+R on the
+briefing screen redefines all six**, and the new keys hold everywhere the old ones were read, until
+they are changed again or the machine is BREAKed.
+[`docs/layer-11f-frontend.md`](docs/layer-11f-frontend.md) §8 has the mechanism, the refusals and
+[DECISION 15]. **ESCAPE self-destructs and ends the game. Cursor up/down are the master volume,
+CTRL+Q mutes, CTRL+P pauses** (plain P unpauses) — in play, the modal screens, the briefing and the
+title. **Every debug key takes CTRL** (2026-08-31, because a redefined control could otherwise fire
+one): CTRL+`[`/`]` hop decks, CTRL+C clears one, CTRL+W wins a transfer, CTRL+R forces a redraw —
+`DEBUG_DECK`, `DEBUG_KILL`, `DEBUG_XFERWIN`, `DEBUG_REDRAW`, all four on in a dev build and none in
+a RELEASE one.
 
 **The frame budget:** the eight sprite slots cost ~36,000 cycles of the 79,872 in a pass and the
-droid AI another ~17,000, so the loop keeps roughly a third spare. The RAM squeeze that shaped
-2026-08's work is over: **the RAM recovery pass (2026-08-25) left 639 B of main RAM and double
-or triple digits in every other region** — current figures in `CLAUDE.md`'s table, details in
-[`docs/ram-pass.md`](docs/ram-pass.md).
+droid AI another ~17,000, so the loop keeps roughly a third spare. **RAM is the tight one again:**
+the recovery pass (2026-08-25) left 639 B of main RAM and Layer 13b and the key redefinition have
+spent all but **7 B** of it — the RAM row under *Open hazards* has the per-region figures, the
+reserves left to sell are in [`docs/ram-pass.md`](docs/ram-pass.md), and live numbers come from the
+build output rather than from any document.
 
 > **Before trusting any speed number, read the speed model section of
 > [`docs/layer-4-player.md`](docs/layer-4-player.md).** The C64's constants are per `GameLoop`
@@ -71,33 +69,42 @@ or triple digits in every other region** — current figures in `CLAUDE.md`'s ta
 
 | | | |
 |---|---|---|
-| ~~**The ± volume keys**~~ — `AdjustVolume` (`$0CB4`) | **BUILT 2026-08-26** — cursor UP/DOWN move `sndVolume` 0–15 and **CTRL+Q mutes** (bare Q until 2026-08-30), at `ml_passend`, `BrWaitField` and `TiWait`, so the volume works in play, in every modal screen, in the briefing and at the title — and it outlives a game. The C64's own range, clamp and repeat rate; its keys, its title-only scope and its readout deliberately not. The round-nine attenuation clamp came back first, in the C64's 6-byte form (the costed 4-byte `BCS snfv_off` was rejected — it freezes a quiet voice's pitch). Five DECISIONs and the measurements in [`docs/layer-11e-sound.md`](docs/layer-11e-sound.md) §9 | **done** |
 | **Sound: the game-over set** | Layer 11e is otherwise built and tuned. KC: "needs work, leave for now." Also open: the transfer-verdict mapping (unverified guess) and fx06 with 11d | open |
 | **Briefing F6: exit-load trim** | The briefing → game reload is ~1.1 s naive; deferred from 11f. The pause-legend wording in `briefing.txt` is KC's, ongoing | later |
 | **Layer 12 — balance, fidelity and feel** | Not a feature layer: the fidelity audit against the listing, the Redux fix list triaged, playtesting against the isolated dials, graceful degradation. **Verify before tuning**, or a fidelity bug gets balanced around instead of fixed. [`docs/layer-12-balance.md`](docs/layer-12-balance.md) | TODO |
-| **Layer 13b/13c — machine compatibility** | **13b BUILT 2026-08-29**: `PARSWR`, a pre-load step `!BOOT` runs before `PARA`, probes all 16 banks (stnicc-beeb's aliasing-proof method, plus skipping banks the MOS found a ROM in), takes the **top four**, and hands them over at `&0A00`; the game's bank numbers are a four-byte table now, not constants. Solidisk boards are detected and **refused**, not driven; a bare `*RUN PARA` still falls back to 4–7. Three DECISIONs, the cost ledger and the relocation test in [`docs/layer-13-compatibility.md`](docs/layer-13-compatibility.md). 13c — running on the machines people actually have — still TODO | 13b done |
+| **Layer 13c — machine compatibility** | **13b is BUILT** (2026-08-29): `PARSWR` probes all sixteen banks before the game loads, takes the top four, refuses a board it cannot drive, and makes the bank numbers a run-time table. Three DECISIONs and the cost ledger in [`docs/layer-13-compatibility.md`](docs/layer-13-compatibility.md). **13c — running on the machines people actually have — is the open half**, and everything under *Open hazards* that says "check on hardware" belongs to it | open |
 | **Layer 14 — the rest of the visual pass** | Deck floors, the fifth-tone dither and the cleared-deck floor are done. Still to do: the remaining screens' palettes, the characters that fight MODE 1, and the ALERT lamp's blinking fourth state (revisit promised 2026-08-21). [`docs/layer-14-visual.md`](docs/layer-14-visual.md) | in progress |
-| **The C64 loading intro** — planned 2026-08-26, **v2 built 2026-08-29** | The three-robots screen and its lightning, ripped from a VICE dump ([`docs/graphics.md`](docs/graphics.md) §10) and reproduced as `PINTRO`, a separate exe `!BOOT` runs after `PARSWR` **on `-Intro` and `-Release` builds only**. **v2 IS scarybeasts' own intro** (`pdloader/`, vendored verbatim): our picture and our colourways — they came back byte-identical — over his three-channel sample player, ~15.6 kHz a channel, samples in one sideways bank, cycle-exact with the palette split and the flash riding in its spare cycles. It takes the machine (`*TAPE`, VIA IRQs off), plays until a keypress, then chains to `PARA`. Its data is two ZX0 streams — 33,912 bytes of loose files down to 5,451, about 5 s off every boot — and v1's `src/pintro.asm` is deleted. Plan, the five port changes and the as-built record in [`docs/intro.md`](docs/intro.md) §8 | **v2 built** |
 | Collision box shape | **Agreed 2026-08-18, confirmed 2026-08-21, not built.** `DR_COL_W`/`DR_COL_H` become a generated silhouette profile instead of a rectangle, at box-test cost. [DECISION 1] in [`docs/layer-6-droids-live.md`](docs/layer-6-droids-live.md). `BUGS.md` #7b's bounce tuning waits on it | agreed, unbuilt |
 | Twelve title characters, four wash characters | `export_bbc.py` converts only what a TILE references, so the title ships its own 36 glyphs and `EndGame`'s wash uses substitutes. **KC 2026-08-21: extend the shared charset when space allows** — bank 4 now has the room | unblocked by the RAM pass |
 | The enemy bullet's colour flicker | `efAlt` from bank 5 plus a second per-entry field; effect sprites run the interpreted path (now in bank 5 itself, `src/sprfx.asm`) and are one colour | Layer 7, deferred |
 | 2 px world scrolling | Parked, Master-only via shadow RAM. Costs +60–80 % on all drawing — [`docs/master-extensions.md`](docs/master-extensions.md) | parked |
-| **The six Redux adoptions** — triaged with KC 2026-08-26 | (1) explosions not restarted by the disruptor/bullets; (2) the three-droid-deadlock priority randomisation, **after reproducing the deadlock here first**; (3) lift-adjacent waypoints excluded from droid starts; (4) high-score entry remembers the previous initials; (5) **the console menu shows droids remaining on the deck and across the ship** (`drCount` is already mirrored; the ship count needs the same); (6) **the lift's deck-selection screen colours completed decks differently** — the per-deck cleared state exists since Layer 15, the palette choice joins Layer 14's pass. Everything else on https://paradro.id/ was rejected for 1.0 — a console stats page included, same substance as the rejected F3 stats — the record is in [`docs/decisions.md`](docs/decisions.md) and §12b. Damage tables stay CE's in full, laser swap included | adopted, unbuilt |
+| **The six Redux adoptions** — triaged with KC 2026-08-26 | (1) explosions not restarted by the disruptor/bullets; (2) the three-droid-deadlock priority randomisation, **after reproducing the deadlock here first**; (3) lift-adjacent waypoints excluded from droid starts; (4) high-score entry remembers the previous initials; (5) **the console menu shows droids remaining on the deck and across the ship** (`drCount` is already mirrored; the ship count needs the same); (6) **the lift's deck-selection screen colours completed decks differently** — the per-deck cleared state exists since Layer 15, the palette choice joins Layer 14's pass. Everything else on https://paradro.id/ was rejected for 1.0, and the damage tables stay CE's in full — the record is in [`docs/decisions.md`](docs/decisions.md) and §12b | adopted, unbuilt |
+| ~~**The ± volume keys**~~ | **BUILT 2026-08-26** — [`docs/layer-11e-sound.md`](docs/layer-11e-sound.md) §9 | **done** |
+| ~~**Key redefinition**~~ | **BUILT 2026-08-30**: CTRL+R on the briefing sets all six controls, and all 36 sites read the table — [`docs/layer-11f-frontend.md`](docs/layer-11f-frontend.md) §8, [DECISION 15] | **done** |
+| ~~**The C64 loading intro**~~ | **v2 BUILT 2026-08-29/30**: scarybeasts' executable and sample player, vendored in `pdloader/`, over our picture and colourways — [`docs/intro.md`](docs/intro.md) §8. The silent gap while the game loads is the one thing still open, under **Loader** below | **done** |
 
 ### Polish items — from Kieran's Human Notes
 
 Everything in [`docs/Kieran's Human Notes.txt`](docs/Kieran's%20Human%20Notes.txt) not marked
-DONE or NO, added 2026-08-26. Where a note overlaps a row elsewhere in this file, the row is the
-home and the note is cross-referenced.
+DONE or NO, added 2026-08-26 and **reconciled against that file again on 2026-08-31**. Where a note
+overlaps a row elsewhere in this file, the row is the home and the note is cross-referenced. KC's
+own DONE/NO marks are the sign-off: an item struck through here is struck there.
 
 **Transfer**
 
-- The score should go up **inside** the transfer game, before returning to the main game. Was
-  marked NEEDS RAM — the RAM pass has since provided it.
+- ~~The score should go up **inside** the transfer game, before returning to the main game.~~
+  **DONE 2026-08-27** — the transfer arm calls `DoScore` for itself, so a win counts up on the
+  board rather than after it. It was marked NEEDS RAM; the RAM pass had provided it.
+- The intro droid cards have a white background on the C64. *(New in the notes since 2026-08-26.)*
 
 **Gameplay**
 
 - Sprite flicker (still).
+- **BUG:** shooting while at full tilt leaves a few pixels behind (KC, deck 476).
+- **BUG:** droid sprite corruption when entering the console.
+- Explosion sprites in multicolour — the note asks whether it needs a new sprite plotter; the
+  effect sprites run the interpreted path today, which is the same question as the enemy bullet's
+  colour flicker row above. *(All three new in the notes since 2026-08-26.)*
 - ~~Player 001 should flash on teleport-in at the start.~~ **DONE 2026-08-26.** It is not an entry
   effect: `_entership` holds him on SEVEN energy for 32 iterations, and the flash is the ordinary
   low-energy warning the port already had. `EntryHold` supplies the window; the same fix closed a
@@ -122,17 +129,25 @@ home and the note is cross-referenced.
 
 **Game over**
 
-- Improve the static — just B&W, and use the original's characters.
-- "Game over" has a small g, and should be in red.
+- ~~Improve the static — just B&W, and use the original's characters.~~ **DONE**, with the wash's
+  length fixed at the same time ([`docs/layer-15-endgame.md`](docs/layer-15-endgame.md) §6a).
+- ~~"Game over" has a small g, and should be in red.~~ **DONE.**
+- Nothing in this section of the notes is open any more.
 
 **Front end**
 
 - Update the scroll text wording.
 - Add a Beeb page.
 - Why does it need to load after the Paradroid logo?
-- The briefing scroll speed is 2× the C64's. The motion itself is one scanline a field exactly,
-  and stopped hitching at row boundaries on 2026-08-31 — `docs/layer-11f-frontend.md` §4e-2.
-- The copyright symbol is missing.
+- ~~The briefing scroll speed is 2× the C64's — "OK as long as it is smooth on real hw/CRT, check
+  the code again".~~ **CHECKED AND FIXED 2026-08-31.** The rate is one scanline a field exactly
+  (100 scanlines in 100 fields, measured); the *motion* stalled a field and jumped two at every
+  character row, because `BrPaintRow` is 90% of a field and the CRTC park came after it. Parking
+  first fixed it. [`docs/layer-11f-frontend.md`](docs/layer-11f-frontend.md) §4e-2
+- The top line of the briefing scroller flickers a bit more on real hardware. *(New in the notes
+  since 2026-08-26; the same §4e-2 measurement method applies — sample `iline`, not the counters.)*
+- ~~The copyright symbol is missing.~~ **DONE** — it is a `glyph @` record in `briefing.txt`, the
+  shared font having none, and it prints in "© Graftgold Ltd. 1986."
 - ~~After exiting the game back to the front end there's a quiet sequence of tones that rise in
   pitch?!~~ **DONE 2026-08-26.** The MOS was playing the charset. `&0800-&08FF` — its sound
   workspace, channel queues and envelopes — sits inside the charset at `&0400-&0C90`, and
@@ -145,7 +160,15 @@ home and the note is cross-referenced.
 - ~~Pause~~ — **built 2026-08-26**, P both ways, [`docs/layer-11e-sound.md`](docs/layer-11e-sound.md) §10.
 - ~~Volume~~ — **built 2026-08-26**, [`docs/layer-11e-sound.md`](docs/layer-11e-sound.md) §9.
 - What's Cheese?
-- Redefine keys.
+- ~~Redefine keys.~~ **BUILT 2026-08-30** — CTRL+R on the briefing, all six controls, everywhere
+  they are read. [`docs/layer-11f-frontend.md`](docs/layer-11f-frontend.md) §8 and [DECISION 15].
+- ~~Pressing Z, X, K, M and L together on real hardware triggers C and clears the deck — check
+  once the debug flags are off.~~ **ADDRESSED 2026-08-31**, and worth knowing why: the BBC's
+  keyboard matrix has no diodes, so five keys held at once can phantom a sixth, and `keydown`
+  asking about one key at a time does not save you from it. Every debug key needs CTRL now, so a
+  phantom C is not enough to fire one — and a RELEASE build has none of them compiled in at all.
+  **Still worth a look on hardware**: a phantom that lands on a *control* rather than a debug key
+  is a different matter, and nothing about the redefinition changes it.
 
 **Attention to detail**
 
@@ -155,7 +178,8 @@ home and the note is cross-referenced.
   note was right.** `keydown` drives the System VIA matrix directly instead of calling OSBYTE
   `&81`: 243 cycles down to 69, ~2,175 a pass across a dozen keys. KC confirms the flicker is
   gone. [`docs/raster-timing.md`](docs/raster-timing.md)
-- Blanking during load.
+- ~~Blanking during load.~~ **DONE** — KC's note adds a caveat rather than closing it: it is
+  aggressive, and there may be too many black screens.
 - Show the screen only after the frame is drawn — return from console, high-score → Paradroid
   logo, between briefing pages.
 
@@ -178,7 +202,7 @@ home and the note is cross-referenced.
 
 | | |
 |---|---|
-| **RAM** | **The squeeze is over but the discipline stays — and main RAM is tight again.** Measured 2026-08-30, after the CTRL+R key redefinition: main RAM **7 B** (`code_end` `&2FF9`: `keyTab` took the last six on 2026-08-30 and `DbgRedrawKey` gave seven back on 2026-08-31), bank 4 **143 B**, bank 5 **602 B**, bank 6 **39 B**, bank 7 **7 B** + ~176 B pad, `PARBRF` 36 B, `PARAFNT` tail 26 B, `PARMAN` 225 B, `PINTRO` **0 B** (it fills to `&3000` exactly; it starts at `&2700` and `&2500-&26FF` is free below it). The RAM pass left 639 B of main RAM; Layer 13b's `swBank` reads, the handover copy and the early `disrFlash` clear have spent most of it. Take live numbers from the build output; spending rules and reserves in [`docs/ram-pass.md`](docs/ram-pass.md) and `CLAUDE.md` |
+| **RAM** | **The squeeze is over but the discipline stays — and main RAM is tight again.** Measured 2026-08-31, after the key redefinition and the debug keys' CTRL: main RAM **7 B** (`code_end` `&2FF9`: `keyTab` took the last six on 2026-08-30 and `DbgRedrawKey` gave seven back on 2026-08-31), bank 4 **143 B**, bank 5 **602 B**, bank 6 **39 B**, bank 7 **7 B** + ~176 B pad, `PARBRF` 36 B, `PARAFNT` tail 26 B, `PARMAN` 225 B, `PINTRO` **0 B** (it fills to `&3000` exactly; it starts at `&2700` and `&2500-&26FF` is free below it). The RAM pass left 639 B of main RAM; Layer 13b's `swBank` reads, the handover copy and the early `disrFlash` clear have spent most of it. Take live numbers from the build output; spending rules and reserves in [`docs/ram-pass.md`](docs/ram-pass.md) and `CLAUDE.md` |
 | **Some debug builds may still fail to assemble** | Pre-pass, every flag except `DEBUG_INVULN` broke the build on space (`GUARD` / `spr2_end` / `sound.asm` asserts). KC 2026-08-21: accepted. The pass's headroom may have brought some back — try the flag before assuming. `BUGS.md` #17 |
 | Droid worst case unmeasured | 8 slots (~36,000) + droids (17,000) + full-diagonal level draw (19,172) is ~72,000 of 79,872 before the rest of the loop. It never arose by chance; it wants a rig on a deck with a long open corridor. `docs/raster-timing.md` Step 3 is the planned relief |
 | **The rupture goes up mid-frame, and the TV loses lock** | `SetupRupture` switches the CRTC shape wherever the CPU happens to be; a television needs several fields to pull sync back — a roll or tear into a game and after a game over. Candidates: switch on a field boundary, order the writes so the frame stays legal at every step, blank across the change. Mind the R5/R6/R7 write-window rules in `CLAUDE.md`; nothing here is measured yet | 

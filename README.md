@@ -21,7 +21,9 @@ the three-initial entry under a panel reading "game over", the table survives in
 and leaving the title alone drops into the five-page intro manual — smooth-scrolled at the C64's
 own speeds and dwells, burbling to itself as it goes, with the live score table and a random droid
 portrait on its last page. The manual's text is hand-editable (`src/data/briefing.txt`), and every
-front-end screen wears the palette of the last deck played.
+front-end screen wears the palette of the last deck played. **CTRL+R on that manual redefines the
+six play controls** — a screen of its own, drawn with the manual's own font engine, that asks for
+each key in turn.
 
 And it now has an **endgame**. Clear a deck and it pays 500, sounds its chord and the floor
 goes to the cleared colour; clear every deck on the ship and it pays 2,000 and puts up the
@@ -44,10 +46,11 @@ sideways bank until a keypress hands over to the game. `build.ps1 -Release` is t
 carries it with every debug flag off. The four sideways banks are **probed at boot** rather than
 assumed to be 4-7, so the port runs on a board jumpered anywhere.
 
-**What is left** is the rest of the visual pass, the balance pass, the game-over sound set, and
-testing on the machines people actually have. RAM is the binding constraint rather than any of
-them: main RAM is down to single-figure bytes, so the next feature of any size has to buy its room
-from somewhere first. See [`PLAN.md`](PLAN.md) for the layered build plan, the memory map, decisions taken
+**What is left** is the rest of the visual pass, the balance pass, the game-over sound set, the
+polish list in `PLAN.md`, and testing on the machines people actually have. RAM is the binding
+constraint rather than any of them: main RAM is down to **7 bytes**, so the next feature of any
+size has to buy its room from somewhere first — `docs/ram-pass.md` keeps the list of what is
+still there to sell. See [`PLAN.md`](PLAN.md) for the layered build plan, the memory map, decisions taken
 and current status.
 
 ## Target
@@ -75,12 +78,21 @@ converts mechanically from the ripped data with nothing redrawn.
 | L | fire; on a lift platform it opens the ship's deck-selection screen, and fire again commits. It commits an initial on the entry, and starts the game from anywhere in the manual |
 | SPACE | a second transfer button — hold it and the transfer triggers without needing a direction |
 | Cursor up/down | master volume; **CTRL+Q** mutes, **CTRL+P** pauses (plain **P** unpauses). All three work in play, in the modal screens, in the manual and at the title |
-| `[` `]` | debug deck hop |
 | ESCAPE | self-destruct — ends the game. The port's own; the C64 has no abort |
-| R | force a full redraw (also the verification oracle) |
+| CTRL+`[` `]` | debug deck hop |
+| CTRL+C, CTRL+W | debug: clear the deck, win the transfer |
+| CTRL+R | force a full redraw (also the verification oracle) |
 
-Some keys are debug builds only and are listed by `!BOOT` when they are compiled in — see the
-`DEBUG_*` flags at the top of `src/main.asm`.
+**The six controls in the first four rows are defaults.** **CTRL+R on the briefing screen** — let the title time out into the
+intro manual — asks for a key for each of left, right, up, down, fire and transfer in turn, and
+what you choose holds everywhere the old keys were read: play, the console menus, the transfer
+game, the manual, the high-score entry and the title. ESCAPE abandons the run and puts the old set
+back; SHIFT and CTRL cannot be bound, and nor can a key the font has no name for. A choice lasts
+until it is changed again or the machine is BREAKed — nothing is written to disc.
+
+The debug keys are debug builds only, are listed by `!BOOT` when they are compiled in — see the
+`DEBUG_*` flags at the top of `src/main.asm` — and **all of them need CTRL**, so a rebound control
+cannot fire one by accident.
 
 ## Approach
 
@@ -101,8 +113,8 @@ emulator before the next begins:
 11. **Title, game over, sound and the droid screens** — ✅ done: the title, the death and game-over
     sequence, the SN76489 sound driver, the four information screens, and the front end — the
     high-score entry and the scrolling intro manual, which burbles to itself as it scrolls just
-    as the original's does. The ± volume keys, mute and pause. The game-over sound set is the
-    piece outstanding
+    as the original's does. The ± volume keys, mute, pause, and the CTRL+R key redefinition. The
+    game-over sound set is the piece outstanding
 12. Balance, fidelity and feel
 13. **Memory and machine compatibility** — the RAM pass ✅ done; sideways-RAM detection ✅ done
     (`PARSWR` probes all sixteen banks before the game loads, takes the top four and refuses a
