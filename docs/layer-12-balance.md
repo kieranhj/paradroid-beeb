@@ -96,6 +96,59 @@ constraint at 7 bytes free, to defend against a hypothetical future change to bu
 explosion energy — and no `ASSERT` can express the condition. KC, 2026-08-31: recording it is
 enough.
 
+**[DECISION 3] — (2) the three-droid deadlock randomisation: NOT REPRODUCED, held open as a
+playtesting question. No code written. 2026-08-31.**
+
+The triage made this one conditional on reproducing the deadlock here first. A deliberate harness
+could not, but it did not clear the port either, and the reasons are worth keeping.
+
+*The mechanism, read out of the code rather than assumed.* `DrCollide` services **one pair a
+pass** in a fixed order -- outer slot ascending from 0, inner descending from 7 -- so the pair
+chosen is always the lowest outer with the highest inner. That pair's arms are `DrReverse` on the
+lower slot and `DrPause16` on the higher, so the higher slot is re-paused every pass for as long
+as it stays the serviced pair. The dangerous part is `drCollHit`: `DrReverse` latches on it and
+**only a pass with no contact anywhere on screen clears it**, so one continuing contact suppresses
+every reversal, including ones that would break a different jam. What saves it in practice is that
+the reversed droid does get away -- it turns, walks, contact breaks, the latch clears. A permanent
+lock needs the reversed droid walled in AND the middle droid unable to leave.
+
+*The harness, so it does not have to be invented again.* Two temporary edits, neither committed:
+
+  1. `DroidsInit`'s per-index `ADDPTR src, 3` removed, so every droid on the deck is placed on
+     **waypoint 0** -- the player's own spawn, so the pile is in view from the first pass.
+     Waypoints are corridor and junction cells by construction, so this is a stacked pile in the
+     geometry the deadlock needs and more crowded than play produces.
+  2. A run-length counter in `DrCollide`: `dbgLockRun` incremented on every pass that services a
+     pair and zeroed at the `_x_none` exit -- the same pass that clears `drCollHit` -- with
+     `dbgLockMax` as the high-water mark, read from the emulator. A permanent deadlock saturates
+     it at 255; a jam that clears leaves its length in passes, at 25 Hz.
+
+  `DEBUG_INVULN` is required: spawning inside the pile otherwise kills the player in about a
+  second, which it did on the first attempt.
+
+*THE COUNTER MUST IGNORE THE PLAYER'S PAIRS, and the first version did not.* `DrCollided` reaches
+`dc_player` whenever `dcOuter` is 0 and the outer loop starts there, so **a droid leaning on the
+parked player wins over every droid-droid pair in the same pass** and holds the latch down by
+itself. That read 141 and 98 passes -- 4 to 6 seconds -- and looked like a hit. It was not one.
+With the player's pairs treated as breaking the run, the honest figures over 60 s a deck are:
+
+| Deck | Longest droid-droid contact |
+|---|---|
+| 0 | 35 passes (1.4 s) |
+| 1 | 16 passes |
+| 4 | 18 passes |
+
+Nothing near saturation. A stack of six disperses within seconds -- on deck 0 the initial pile had
+three droids on an exact shared position (`sprUnit` 37, `sprScrY` 42, slots 3, 4 and 5) and was
+gone inside ten seconds.
+
+*Why it is held open rather than closed.* Seconds-long jams demonstrably happen, so the mechanism
+is present and only its permanence is unproven; and the coverage is three decks of sixteen, on
+ship 1, with the player standing still. **The untested case is the likely one**: the player
+shepherding droids into a dead end, which is normal play and which a parked-player harness
+structurally excludes. It therefore belongs in 12c's session log beside DECISION 2 -- if droids
+are seen to stick in play, the harness above is two small diffs and can be re-run on that deck.
+
 **[DECISION 2] — (3) lift-adjacent waypoints excluded from droid starts: DEFERRED, not
 rejected. KC, 2026-08-31: "I'm not sure this is an issue until I've seen it in play testing."**
 It returns to 12c's session log as a question to answer from play, not a change to make in
@@ -128,6 +181,14 @@ The dials, all already isolated:
 Feedback goes into a session log — what deck, what was happening, what felt wrong — because
 "feels wrong" is not actionable and "the 872s on deck 8 corner me because they fire before I can
 see them" is.
+
+**Two of the Redux adoptions are waiting on this log rather than on a decision** — DECISION 2's
+lift-adjacent droid starts, and DECISION 3's droid-droid deadlock. Both have their answer written
+down and neither should be built on spec. What to watch for: **droids that arrive at a lift the
+moment you step out of one**, and **two or more droids stuck against each other for more than a
+second or so**. The second one has a harness recorded in DECISION 3 and a measured baseline —
+1.4 s is the longest jam seen without the player involved, so anything visibly longer than that is
+new information and worth the deck number.
 
 ## 12d — Performance and graceful degradation
 
