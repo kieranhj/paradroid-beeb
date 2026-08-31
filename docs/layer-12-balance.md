@@ -203,9 +203,10 @@ blank rows the layout carried. The final rows are
     0-1    Unit type 001 - Influence device
     2-4    [droid icon]  Alert : Green            text 2-3
     5-8    [ship icon]   Ship  : Paradroid        5-6
-                         120 droids               7-8
-    9-12   [deck icon]   Deck  : Repairs          9-10
-                         9 droids                 11-12
+                          120 droids              7-8
+    9                    (blank)
+    10-13  [deck icon]   Deck  : Staterooms       10-11
+                          8 droids                12-13
     13-15  [alert icon]                           no text
 
 and `consolesel.asm`'s `CON_SEL*` literals moved with them — the `ASSERT`s in `console.asm` tying
@@ -226,21 +227,35 @@ Text and icons never collide, which is what makes the move free: icons live in u
 every text line starts at `CON_COL_TEXT`, unit 24. Only the unit-type line at `CON_COL_UNIT`
 crosses the icon columns, which is why it has two rows to itself.
 
-**BLANK ROWS BETWEEN THE SHIP AND DECK GROUPS WERE ASKED FOR AND ARE NOT POSSIBLE**, and the
-arithmetic above is why: entry 0's icon ends at row 4, so the ship cannot start before 5; the ship
-needs four rows for two text lines, so the deck cannot start before 9; the same again puts the
-alert icon at 13, and 13 + 3 is 16. Every row is spoken for. A gap needs one of: the counts moved
-onto the name's own line (3 rows an entry, freeing two rows, but no longer *underneath*); one of
-the four icons dropped, which costs a menu entry its marker; or the unit-type line shortened and
-moved right so an icon can share rows 0-2, which changes the original's own text. **Not built —
-KC's call.**
+**THE BLANK ROW AT 9 WAS CALLED IMPOSSIBLE ONCE, AND THAT WAS WRONG.** The claim was that entry
+0's icon ends at 4, the ship wants four rows, so does the deck, and the alert icon then has to
+clear the deck's count — 16 with nothing over. **The last step does not hold**: only ICONS have to
+keep clear of each other, because they share the units 4-18 column, and only TEXT LINES have to
+keep clear of each other, because they share unit 24 up. An icon and a text line never collide, so
+the alert icon at 13-15 sits happily beside the deck's count at 12-13, and the deck block moves
+down a row for free. KC saw it; the `ASSERT`s in `console.asm` are now split into an icon set and
+a text set so the rule is written down rather than re-derived.
 
-*Alignment and the plural.* The count lines start at `CON_COL_TEXT + 9`, which is where the names
-begin: "Ship  :" is eight cells from the label column — a capital is two cells and everything in
-"hip  :" is one — and `ConTok`'s leading space is the ninth. "Deck  :" and "Alert :" are padded to
-the same width by the original, which is what lets one constant serve all three. The digits are
-therefore **left**-justified, not blank-padded to three; an earlier version right-justified them,
+*Alignment and the plural.* The count lines start at `CON_COL_TEXT + 10`, and the digits are
+**left**-justified rather than blank-padded to three; an earlier version right-justified them,
 which lined the two counts up with each other instead of with the names.
+
+**+ 10, not the + 9 the arithmetic says.** The names begin at `CON_COL_TEXT + 9` — "Ship  :" is
+eight cells from the label column, a capital being two cells and everything in "hip  :" one, and
+`ConTok`'s leading space is the ninth; "Deck  :" and "Alert :" are padded to the same width by the
+original, which is what lets one constant serve all three. But **the same column does not look
+like the same column**: read out of the play buffer at + 9, the digits and the names start on
+exactly the same character, and yet a capital in this font is **inset four pixels** — "Research"'s
+R has no ink in the left unit of its first cell, and neither does "Deck"'s D — while a digit
+starts hard against the left of its own. The counts read four pixels left of the names, which is
+what KC saw.
+
+Half a character would line the ink up exactly and `pnCol` cannot express it: `ConAt` multiplies it
+by 16 and a unit is 8. Nudging `pnDst` by 8 after `ConAt` would do it, but that needs an entry into
+`ConStr` past its own `ConAt` and about a dozen bytes bank 6 has not got — `ram-pass.md`'s
+sprsplit-to-bank-5 reserve is what would pay for it. A whole character is the nearest step and
+lands the digits four pixels the other way, reading as a slight indent. Verified in the buffer: the
+count's first ink is now unit 44 against the name's unit 43.
 
 *Neither count was available as-is.* The deck count is **not** `drCount`: that is the table's
 high-water mark and it counts bullets and explosions too, so it would tick up when something

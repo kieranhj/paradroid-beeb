@@ -60,7 +60,7 @@ CON_SEL_BYTES = CON_SEL_UNITS * UNIT_BYTES
 \ what caught these literals, which is what they are for.
 CON_SEL0 = BUF_BASE +  2 * ROW_BYTES + 7 * UNIT_BYTES
 CON_SEL1 = BUF_BASE +  5 * ROW_BYTES + 7 * UNIT_BYTES
-CON_SEL2 = BUF_BASE +  9 * ROW_BYTES + 4 * UNIT_BYTES
+CON_SEL2 = BUF_BASE + 10 * ROW_BYTES + 4 * UNIT_BYTES
 CON_SEL3 = BUF_BASE + 13 * ROW_BYTES + 4 * UNIT_BYTES
 
 \ ONE ENTRY, repainting all four, rather than the original's dim-the-old

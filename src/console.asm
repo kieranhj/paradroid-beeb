@@ -104,13 +104,31 @@ CON_ROW_ALERT = 2               \ the LINE. Its icon is CON_ROW_ALERTI
 CON_ROW_ACC   = 2               \ entry 0: the droid icon, no text
 CON_ROW_SHIP  = 5
 CON_ROW_SHIPN = 7               \ "NN droids", under the ship
-CON_ROW_DECK  = 9
-CON_ROW_DECKN = 11              \ and under the deck
+CON_ROW_DECK  = 10              \ a row lower than the icons alone need,
+CON_ROW_DECKN = 12              \ which is the blank row 9 (KC 2026-08-31)
 CON_ROW_ALERTI = 13             \ entry 3's icon, and no text beside it
-ASSERT CON_ROW_ALERTI + 2 <= PLAY_ROWS        \ the alert glyph, two rows
-ASSERT CON_ROW_ALERT + 2 <= CON_ROW_SHIP      \ the counts do not collide
-ASSERT CON_ROW_SHIPN + 2 <= CON_ROW_DECK      \ with the line below them
-ASSERT CON_ROW_DECKN + 2 <= CON_ROW_ALERTI
+
+\ ---- and why row 9 can be blank at all ----------------------
+\ It was called impossible once, on the arithmetic that entry 0's icon
+\ ends at 4, the ship wants four rows, so does the deck, and the alert
+\ icon then has to clear the deck's count. THE LAST STEP IS WRONG: only
+\ ICONS have to keep clear of each other, because they share the units
+\ 4-18 column, and only TEXT LINES have to keep clear of each other,
+\ because they share unit 24 up. An icon and a text line never collide,
+\ so the alert icon at 13-15 sits happily beside the deck's count at
+\ 12-13. That is what pays for the gap. KC spotted it; the ASSERTs
+\ below are the rule written down so it is not re-derived wrongly.
+\ THE ICONS, three rows each and never overlapping:
+ASSERT CON_ROW_ACC  + CON_ICON_ROWS <= CON_ROW_SHIP
+ASSERT CON_ROW_SHIP + CON_ICON_ROWS <= CON_ROW_DECK
+ASSERT CON_ROW_DECK + CON_ICON_ROWS <= CON_ROW_ALERTI
+ASSERT CON_ROW_ALERTI + CON_ICON_ROWS <= PLAY_ROWS
+\ THE TEXT LINES, two rows each and likewise:
+ASSERT CON_ROW_ALERT + 2 <= CON_ROW_SHIP
+ASSERT CON_ROW_SHIP  + 2 <= CON_ROW_SHIPN
+ASSERT CON_ROW_SHIPN + 2 <= CON_ROW_DECK
+ASSERT CON_ROW_DECK  + 2 <= CON_ROW_DECKN
+ASSERT CON_ROW_DECKN + 2 <= PLAY_ROWS
 \ and the menu's four rows still ascend with conSel, which is what
 \ makes up and down move the marker the way they look like they should
 ASSERT CON_ROW_ACC < CON_ROW_SHIP
@@ -122,14 +140,29 @@ ASSERT CON_ROW_DECK < CON_ROW_ALERTI
 CON_COL_UNIT  = 2               \ UnitType_txt's own prntX
 CON_COL_TEXT  = 12              \ and $6E00's
 
-\ ---- and the count lines' own column ------------------------
-\ THEY START UNDER THE NAME, not under the label (KC, 2026-08-31).
-\ "Ship  :" is eight cells from CON_COL_TEXT - a capital is two cells
-\ and everything in "hip  :" is one - and ConTok's leading space is a
-\ ninth, so the name begins at CON_COL_TEXT + 9. "Deck  :" and
-\ "Alert :" are padded to the same width by the original, which is
-\ what makes one constant serve all three.
-CON_COL_COUNT = CON_COL_TEXT + 9
+\\ ---- and the count lines' own column ------------------------
+\ THEY SIT UNDER THE NAME, not under the label (KC, 2026-08-31).
+\ "Ship  :" is eight cells from the label column - a capital is two
+\ cells and everything in "hip  :" is one - and ConTok's leading space
+\ is a ninth, so the NAME begins at CON_COL_TEXT + 9. "Deck  :" and
+\ "Alert :" are padded to the same width by the original, which is what
+\ makes one constant serve all three.
+\ SO WHY + 10, AND NOT + 9? Because the same column does not look like
+\ the same column. Read out of the buffer: at CON_COL_TEXT + 9 the
+\ digits and the names start on exactly the same character, but a
+\ CAPITAL IN THIS FONT IS INSET FOUR PIXELS - "Research"'s R has no ink
+\ in the left unit of its first cell, and neither does "Deck"'s D -
+\ while a digit starts hard against the left of its own. The count
+\ therefore READ four pixels left of the name, which is what KC saw.
+\ Half a character is what would line the ink up exactly, and pnCol
+\ cannot express it: ConAt multiplies it by 16 and a unit is 8. Nudging
+\ pnDst by 8 after ConAt would do it, but that needs an entry into
+\ ConStr past its own ConAt and about a dozen bytes this bank has not
+\ got. A whole character is the nearest it can get and lands the digits
+\ four pixels the other way, reading as a slight indent under the name.
+\ If the exact half is ever wanted, ram-pass.md's sprsplit-to-bank-5
+\ reserve is what pays for it.
+CON_COL_COUNT = CON_COL_TEXT + 10
 
 \ ---- token numbers into the $C000 string table ---------------
 \ ShowRobotType ($3149) and ConsoleMain ($2955) index it with these.
