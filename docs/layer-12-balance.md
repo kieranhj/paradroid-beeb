@@ -35,8 +35,9 @@ starts with them:
 
 **TRIAGED WITH KC, 2026-08-26** — every added feature on https://paradro.id/ was ruled on
 (the decision table in `decisions.md` has the one-paragraph record). What remains for 12b is
-the *implementation* of the four adoptions and the bug-behaviour list, plus the fidelity
-questions below:
+the *implementation* of the adoptions and the bug-behaviour list, plus the fidelity
+questions below. **The numbered decisions below record what each one came to** — (1) is closed
+without code and (3) is deferred, so read those before starting on any of them.
 
 - **Adopted**: (1) the disruptor and bullets no longer restart an explosion — bullets still
   absorbed; (2) randomise droid-droid collision priority to break the three-droid deadlock,
@@ -55,6 +56,54 @@ questions below:
   pulser link, the other map/spawn changes (randomised starts, separate spawn point, deck
   sections), disc-saved high scores, F7/F8 ship carryover, Competition Mode, statistics (both the intro's F3 page and a console stats page),
   and a shipped cheat mode (the DEBUG_* builds stay the cheat surface).
+
+### The numbered decisions
+
+**[DECISION 1] — (1) explosions restarted by the disruptor or bullets: ADOPTED, and the port
+already satisfies it. No code was written. 2026-08-31.**
+
+The adoption was built as a guard in `cbd_loop` (`src/combat.asm`) excluding both
+`DR_TYPE_XPLODE` and `DR_TYPE_BULLET` from the disruptor's sweep, and then **reverted, because
+the defect it defends against cannot occur**. Recorded here so it is not re-litigated.
+
+*The arithmetic.* An explosion's `drEnergy` is set to `DR_TYPE_XPLODE` — 64 — by
+`DrExplodeSprite`, and never changes while it burns. The sweep's damage is `2 * (40 - drType)`,
+and for a type of 64 that inner subtract underflows: `40 - 64` is `&E8`, doubled to 208.
+`64 - 208` borrows to `&70`, which is **positive**, so `BPL` takes `cbd_next` and the explosion
+is never killed. A bullet is the same story from the other end: `AddBullet` gives it
+`drEnergy = &25` = 37 against a damage of 6-16, so it survives too. `cbd_kill` is therefore
+unreachable for both, `DrKillDroid` is never called on either, and `ExplodeSprite`'s
+`STA sprType` — which would stamp `EF_EXPLODE`, frame 0, over an animation in flight — is never
+reached from this path.
+
+*Every other route to `DrExplodeSprite` is closed as well.* `DrBulletHit` skips any entry with
+`drType >= DR_TYPE_BULLET` before the box test; `drCollType`'s explosion row (`src/lowcode.asm`)
+is `&80` across, so nothing in the collision matrix ever takes an explosion as its target;
+`DrEnemyFireEnemy` and `DrPlyFireEnemy` are only ever dispatched onto droids; and the player's
+own death explosion is single-shot behind `plyDying`. The port arrives at Redux's fix by having
+transcribed the collision table verbatim rather than by guarding for it.
+
+*How it was verified, because the arithmetic alone was not trusted.* In jsbeeb: into a game,
+**CTRL+C** (`DEBUG_KILL`) to fill the screen with explosions, then `disruptorCnt` (`&0CF2`)
+poked to 4 to fire a burst mid-animation, reading `sprType` (`&2D29`) for the exploding slots
+across the pass. Frames advanced 2 -> 3. The four bytes of the guard were then **NOPed out at
+`&2370` in the running machine**, restoring the unguarded behaviour, and the same test repeated:
+2 -> 3 again, with `disruptorCnt` falling 4 -> 3 to prove the sweep had actually run and reached
+those slots. Same result with and without the guard, which is what says the guard is dead code.
+
+*Why it was not kept as insurance.* It costs four bytes of the code image, which is the binding
+constraint at 7 bytes free, to defend against a hypothetical future change to bullet or
+explosion energy — and no `ASSERT` can express the condition. KC, 2026-08-31: recording it is
+enough.
+
+**[DECISION 2] — (3) lift-adjacent waypoints excluded from droid starts: DEFERRED, not
+rejected. KC, 2026-08-31: "I'm not sure this is an issue until I've seen it in play testing."**
+It returns to 12c's session log as a question to answer from play, not a change to make in
+advance. The mechanism if it is wanted: `DroidsInit` walks one waypoint record per table index
+from waypoint 1 up, and `LiftFind`'s `liftDeck` / `liftTileCol` / `liftTileRow` are in the same
+bank, so the test is the waypoint's character coordinates shifted to tiles against this deck's
+lift tiles. It must degrade to placing the droid anyway when the exclusion exhausts the table —
+deck 2 is 5 waypoints against 3 droids.
 
 **Paradroid Redux is a different codebase** — `docs/decisions.md` has the evidence — so its fixes
 cannot be lifted as code. What it is good for is a **list of what Braybrook himself thought was
