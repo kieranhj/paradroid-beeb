@@ -382,10 +382,48 @@ calls:
 **Bank 4: 6 B of its 11.** Bank 7's ~107 B still has to hold the rendering, which is the part that
 was always going to be tight.
 
-**What needs agreeing before this is built** is not the byte count any more, it is *putting game
-state and game code in the stack page*. That is a deviation of the kind this project writes down
-before building, and it wants the transfer game, the lift, the game over and the briefing seeded
-and checked first — the lift especially, since it is this feature's own screen.
+KC approved the stack page 2026-08-31 and the state channel was then **built, and reverted with
+the rest when the rendering would not fit.** It worked and it is worth restating exactly, because
+it is not the part that failed:
+
+    main.asm      DECK_DONE = &0100, 16 bytes, with the standing warning
+                  DeckDoneClear in the PARAFNT block, 11 B
+    droid.asm     LDX deck / INC DECK_DONE,X at the deck-clear arm (bank 4, 5 B)
+                  JSR DeckDoneClear in NewShipDroids (bank 4, 3 B)
+
+That cost **8 bytes of bank 4's 11** and 11 of the `PARAFNT` block's 16, exactly as costed, and
+the game-over measurement below was taken with it in place.
+
+### What actually stopped it: bank 7, by about twenty bytes
+
+The rendering was written in full — `LvClearedMark`'s walk, the `XS_CLR` colour token, pen 4, the
+`&AA`/`&55` chequer with `EOR #&FF` flipping the mask so no table is needed, and the `$80-$8F`
+range test that lets a selected cleared deck paint solid. It does not fit, and these are the
+measurements, all by bisecting a `SKIP` in `liftview.asm`:
+
+| | |
+|---|---|
+| bank 7 free, clean tree | **100-105 B** |
+| the rendering minus the marking walk | fits, with **40-59 B** left |
+| the marking walk (`LvClearedMark`) | **~51 B**, and over by roughly twenty when everything else is counted |
+
+Three rounds of shrinking went in and were not enough: `LvRectAddr` factored out of `LvHighlight`
+so both walkers share one copy of the rectangle arithmetic (-24 B), `LvRowStep` likewise (-14 B),
+the mask table replaced by the `EOR #&FF` flip (-16 B), the loop counter moved onto the stack
+instead of a variable (-5 B), and `LvMarkOne` inlined (-4 B). **Those are all keepers if this is
+picked up again** — the design is sound and the arithmetic is right, including that the two range
+compares must be `#&80` then `#&90` so the carry into `ADC #&10` is clear (the other order silently
+adds `$11` and fetches the wrong glyph).
+
+**NO HELD RESERVE FREES BANK 7.** `sprsplit.asm` frees bank 6; SCANSTEP folding frees banks 5 and
+6. Bank 7 holds the transfer game, the lift screen, three console pages and the game over, and
+nothing in `ram-pass.md` reaches it. That is the finding to act on before this is tried again:
+**the next squeeze needs a bank-7 candidate, and there is currently no such thing on the list.**
+
+Options, for whoever picks this up: find a bank-7 reserve (nothing obvious — the console's deck
+plan and database pages are the biggest tenants); or put the marking walk in the stack page, which
+means shipping it as data in bank 5 and copying it down at boot, since page 1 cannot be loaded
+from disc; or accept a cheaper visual that needs no per-cell marking at all.
 
 *Note the bank-7 figure is not the ~176 B the memory map claims.* That number is stale: the
 `plandata` `ALIGN` pad has been eaten. `CLAUDE.md` and `docs/memory-map.md` should be corrected
