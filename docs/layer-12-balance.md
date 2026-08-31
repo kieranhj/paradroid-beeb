@@ -200,20 +200,32 @@ when there is one. A text line is **two** buffer rows, so two new lines want fou
 sixteen-row area that had none spare. Deleting "Access granted." gives two; the other two are the
 blank rows the layout carried. The final rows are
 
-    0-1    Unit type 001 - Influence device
-    2-4    [droid icon]  Alert : Green            text 2-3
-    5-8    [ship icon]   Ship  : Paradroid        5-6
-                          120 droids              7-8
-    9                    (blank)
-    10-13  [deck icon]   Deck  : Staterooms       10-11
-                          8 droids                12-13
-    13-15  [alert icon]                           no text
+    row   icon ladder        text ladder
+    0-1                      Unit type 001 - Influence device
+    2                        Alert : Green                     2-3
+    3-5   001, exit
+    5                        Ship  : Paradroid                 5-6
+    6-8   droid database      120 droids                       7-8
+    9-11  deck plan          (row 9 blank)
+    10                       Deck  : Staterooms                10-11
+    12-14 ship side view      8 droids                          12-13
+    15                       (spare)
 
 and `consolesel.asm`'s `CON_SEL*` literals moved with them — the `ASSERT`s in `console.asm` tying
 the two together are what caught them, which is what they are for.
 
 **The unit line goes back to row 0, spending layer-9 DECISION 17's row again.** The arithmetic
 leaves nothing over: 2 + 3 + 4 + 4 + 3 is exactly 16.
+
+**THE ICONS AND THE TEXT ARE ON SEPARATE LADDERS** (KC, 2026-08-31: "it's OK for the icons and
+the text lines to be offset"). They cannot share one: an entry carrying two text lines needs a
+four-row pitch, an icon is three rows, and four icons on a four-row pitch from row 2 would put
+the last at 14 and write three rows off the end of a sixteen-row buffer. So the text keeps the
+pitch it needs and **the icons keep the even, touching 3/6/9/12 spacing they had before the count
+lines went in**. It is legal because the two never collide: icons live in units 4-18 and every
+text line starts at unit 24, and only the unit-type line crosses the icon columns — which is why
+it has rows 0-1 to itself and the first icon starts at 3. `console.asm` now carries an `ASSERT`
+set per ladder, including that the icon gaps are equal.
 
 **THE ALERT LINE MOVED TO THE TOP; ITS ICON COULD NOT COME WITH IT.** The four icons are the
 menu's selection targets and `ConMenu4` walks `conSel` 0-3 with up and down, so their rows must
@@ -226,6 +238,11 @@ The three `ASSERT`s on the ascending rows are there so this cannot be undone by 
 Text and icons never collide, which is what makes the move free: icons live in units 4-18 and
 every text line starts at `CON_COL_TEXT`, unit 24. Only the unit-type line at `CON_COL_UNIT`
 crosses the icon columns, which is why it has two rows to itself.
+
+**TWO THINGS WERE CALLED IMPOSSIBLE HERE AND BOTH WERE WRONG**, for the same reason: a rule that
+holds between icons, or between text lines, was applied between an icon and a text line. Equal
+icon spacing alongside the count lines is the second — it needs only the two ladders above. The
+first:
 
 **THE BLANK ROW AT 9 WAS CALLED IMPOSSIBLE ONCE, AND THAT WAS WRONG.** The claim was that entry
 0's icon ends at 4, the ship wants four rows, so does the deck, and the alert icon then has to

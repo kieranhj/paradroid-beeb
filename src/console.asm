@@ -84,56 +84,59 @@ CON_TYPES = 24
 \ ENTRY 0 HAS NO LABEL NOW. It is the "leave the console" entry and
 \ "Access granted." was its text; the icon -- the player's own droid --
 \ is what marks it, and the selection transform still lights it.
-\ THE ALERT LINE IS AT THE TOP and its ICON IS NOT, which needs saying
-\ because they used to be the same row. KC, 2026-08-31: the alert
-\ reads as status, like the unit type, and belongs with it.
-\ THE ICON COULD NOT COME WITH IT. The four icons are the menu's
-\ selection targets and ConMenu4 walks conSel 0-3 with up and down, so
-\ their rows have to INCREASE with conSel or the marker jumps about;
-\ conSel 0 is "leave the console", which the C64 puts at the top, so
-\ the alert's icon - conSel 3, the ship's side view - is necessarily
-\ the bottom one. The text is free to go anywhere, and does. What that
-\ leaves is entry 0's icon with the alert line beside it and entry 3's
-\ with nothing, where before it was entry 0 that had no label.
-\ TEXT AND ICONS NEVER COLLIDE, which is what makes this free: icons
-\ live in units 4-16 and every text line starts at CON_COL_TEXT, unit
-\ 24. Only the unit-type line at CON_COL_UNIT crosses the icon columns,
-\ which is why it has two rows to itself.
+\ THE ICONS AND THE TEXT ARE ON SEPARATE LADDERS, and that is a
+\ decision rather than a drift (KC, 2026-08-31: "it's OK for the icons
+\ and the text lines to be offset"). They CANNOT share one: an entry
+\ that carries two text lines needs a four-row pitch, an icon is three
+\ rows, and four icons on a four-row pitch from row 2 would put the
+\ last at 14 and run three rows off the end of a sixteen-row buffer.
+\ So the text keeps the pitch it needs and the icons keep the even
+\ spacing they had before the count lines went in.
+\ THEY NEVER COLLIDE, which is what makes two ladders legal: icons live
+\ in units 4-18 and every text line starts at CON_COL_TEXT, unit 24.
+\ Only the unit-type line at CON_COL_UNIT crosses the icon columns,
+\ which is why it has rows 0-1 to itself and the first icon starts at 3.
+\ ---- the text ladder ----------------------------------------
+\ THE ALERT LINE IS AT THE TOP, with the unit type, because the alert
+\ reads as status and belongs with it (KC, 2026-08-31).
 CON_ROW_UNIT  = 0
-CON_ROW_ALERT = 2               \ the LINE. Its icon is CON_ROW_ALERTI
-CON_ROW_ACC   = 2               \ entry 0: the droid icon, no text
+CON_ROW_ALERT = 2               \ the LINE; entry 3's icon is elsewhere
 CON_ROW_SHIP  = 5
 CON_ROW_SHIPN = 7               \ "NN droids", under the ship
-CON_ROW_DECK  = 10              \ a row lower than the icons alone need,
-CON_ROW_DECKN = 12              \ which is the blank row 9 (KC 2026-08-31)
-CON_ROW_ALERTI = 13             \ entry 3's icon, and no text beside it
+CON_ROW_DECK  = 10              \ a row lower than it needs to be: that
+CON_ROW_DECKN = 12              \ is the blank row 9 (KC 2026-08-31)
 
-\ ---- and why row 9 can be blank at all ----------------------
-\ It was called impossible once, on the arithmetic that entry 0's icon
-\ ends at 4, the ship wants four rows, so does the deck, and the alert
-\ icon then has to clear the deck's count. THE LAST STEP IS WRONG: only
-\ ICONS have to keep clear of each other, because they share the units
-\ 4-18 column, and only TEXT LINES have to keep clear of each other,
-\ because they share unit 24 up. An icon and a text line never collide,
-\ so the alert icon at 13-15 sits happily beside the deck's count at
-\ 12-13. That is what pays for the gap. KC spotted it; the ASSERTs
-\ below are the rule written down so it is not re-derived wrongly.
-\ THE ICONS, three rows each and never overlapping:
-ASSERT CON_ROW_ACC  + CON_ICON_ROWS <= CON_ROW_SHIP
-ASSERT CON_ROW_SHIP + CON_ICON_ROWS <= CON_ROW_DECK
-ASSERT CON_ROW_DECK + CON_ICON_ROWS <= CON_ROW_ALERTI
-ASSERT CON_ROW_ALERTI + CON_ICON_ROWS <= PLAY_ROWS
+\ ---- the icon ladder, evenly spaced -------------------------
+\ Three rows each and touching, which is what "evenly spaced" comes to
+\ when an icon is exactly the pitch. These are the rows the icons had
+\ before the count lines, restored.
+\ THEIR ORDER IS LOAD-BEARING. They are the menu's selection targets
+\ and ConMenu4 walks conSel 0-3 with up and down, so the rows have to
+\ ASCEND with conSel or the marker jumps about. conSel 0 is "leave the
+\ console", which the C64 puts at the top, and conSel 3 is the ship's
+\ side view -- which is why the alert LINE could go to the top and its
+\ icon could not follow it.
+CON_ROW_ICON0 = 3               \ conSel 0: the player's own droid, exit
+CON_ROW_ICON1 = 6               \ conSel 1: the droid database
+CON_ROW_ICON2 = 9               \ conSel 2: the deck plan
+CON_ROW_ICON3 = 12              \ conSel 3: the ship's side view
+
+\ THE ICONS, three rows each, touching and never overlapping:
+ASSERT CON_ROW_ICON0 + CON_ICON_ROWS <= CON_ROW_ICON1
+ASSERT CON_ROW_ICON1 + CON_ICON_ROWS <= CON_ROW_ICON2
+ASSERT CON_ROW_ICON2 + CON_ICON_ROWS <= CON_ROW_ICON3
+ASSERT CON_ROW_ICON3 + CON_ICON_ROWS <= PLAY_ROWS
+\ evenly, which is the point of them:
+ASSERT CON_ROW_ICON1 - CON_ROW_ICON0 == CON_ROW_ICON2 - CON_ROW_ICON1
+ASSERT CON_ROW_ICON2 - CON_ROW_ICON1 == CON_ROW_ICON3 - CON_ROW_ICON2
+\ and clear of the unit-type line, the one text that crosses their column:
+ASSERT CON_ROW_UNIT + 2 <= CON_ROW_ICON0
 \ THE TEXT LINES, two rows each and likewise:
 ASSERT CON_ROW_ALERT + 2 <= CON_ROW_SHIP
 ASSERT CON_ROW_SHIP  + 2 <= CON_ROW_SHIPN
 ASSERT CON_ROW_SHIPN + 2 <= CON_ROW_DECK
 ASSERT CON_ROW_DECK  + 2 <= CON_ROW_DECKN
 ASSERT CON_ROW_DECKN + 2 <= PLAY_ROWS
-\ and the menu's four rows still ascend with conSel, which is what
-\ makes up and down move the marker the way they look like they should
-ASSERT CON_ROW_ACC < CON_ROW_SHIP
-ASSERT CON_ROW_SHIP < CON_ROW_DECK
-ASSERT CON_ROW_DECK < CON_ROW_ALERTI
 
 
 
@@ -203,13 +206,13 @@ CON_TOK_ALERT  = 208            \ green, yellow, amber, red
 CON_ICON_COUNT = 3              \ of four — see conicons.asm
 CON_ICON_ROWS  = 3              \ 21 scanlines, so three character rows
 CON_ICON_LINES = 21             \ scanlines: a C64 sprite is 21 tall
-ASSERT CON_ROW_ALERTI + CON_ICON_ROWS <= PLAY_ROWS \ and its icon, three
+ASSERT CON_ROW_ICON3 + CON_ICON_ROWS <= PLAY_ROWS  \ and its icon, three
 
 \ The FIRST icon is the player's own droid and is composed, not copied —
 \ see droidicon.asm. Same 24 x 21 as the rest, in the slot the other
 \ three leave empty: row 2, unit 7.
 CON_DRICON_W = 3                \ C64 sprite bytes a row
-CON_DROID_D  = BUF_BASE + CON_ROW_ACC   * ROW_BYTES + 7 * UNIT_BYTES
+CON_DROID_D  = BUF_BASE + CON_ROW_ICON0 * ROW_BYTES + 7 * UNIT_BYTES
 
 \ ============================================================
 \ ConAt — point pnDst at console text cell (conRow, pnCol)
@@ -735,16 +738,16 @@ CON_DROID_D  = BUF_BASE + CON_ROW_ACC   * ROW_BYTES + 7 * UNIT_BYTES
   EQUB %00000000, %00000011, %00001100, %00001111
   EQUB %00000000, %00000011, %00001100, %00001111
 
-\ One icon per menu entry - so these are CON_ROW_SHIP/DECK/ALERTI, not
-\ literals, and the droid is CON_ROW_ACC. ALERTI, not ALERT: the alert
-\ LINE moved to the top and its icon did not, for the reason in the
-\ CON_ROW_* block.
+\ One icon per menu entry, off the ICON ladder and not the text one -
+\ the two are deliberately offset, see the CON_ROW_* block. Derived
+\ rather than written as literals: they drifted from the text once, and
+\ deriving them is what stops it.
 \ They drifted from the text once; deriving them is what stops it.
 \ Held as whole addresses because the row multiply would otherwise be
 \ three 16-bit shifts for a table that never changes.
-CON_ICON_D0 = BUF_BASE + CON_ROW_SHIP  * ROW_BYTES + 7 * UNIT_BYTES
-CON_ICON_D1 = BUF_BASE + CON_ROW_DECK  * ROW_BYTES + 4 * UNIT_BYTES
-CON_ICON_D2 = BUF_BASE + CON_ROW_ALERTI * ROW_BYTES + 4 * UNIT_BYTES
+CON_ICON_D0 = BUF_BASE + CON_ROW_ICON1 * ROW_BYTES + 7 * UNIT_BYTES
+CON_ICON_D1 = BUF_BASE + CON_ROW_ICON2 * ROW_BYTES + 4 * UNIT_BYTES
+CON_ICON_D2 = BUF_BASE + CON_ROW_ICON3 * ROW_BYTES + 4 * UNIT_BYTES
 
 \ ConIconSel4 (src/consolesel.asm) recolours these four in place. It is
 \ assembled into bank 4 long BEFORE this file, so it cannot see the
