@@ -205,7 +205,7 @@ addresses from the `beebasm` output rather than from any document.** In outline:
 | `&3E00–&45FF` | Sprite background save areas, one page per each of the eight slots; doubles as depack/staging scratch |
 | `&4600–&49FF` | Tile map |
 | `&4A00–&53FF` | Panel — 4 rows × 640, displayed by rupture cycle 1 |
-| `&5400–&57FF` | Row/unit multiply, character-address and sprite-mask tables, built at startup — packed exactly, no slack |
+| `&5400–&57FF` | Row/unit multiply (`&5400`), **`LUTs` — `BuildCharset`'s four nibble tables at `&54C0`** — character-address and sprite-mask tables, built at startup. **Packed exactly, no slack**: the 64 bytes that look free below `CHAR_PTR_LO` are `LUTs`, and the `ASSERT` that seems to permit a gap does not |
 | `&5800–&7FFF` | Play buffer: circular strip, 16 rows × 640 |
 | SWRAM bank 4 | `PARADAT` — tiles, levels, palettes, droid game data, **the level-draw code, the droid AI, Layer 10's entry/exit and Layer 11e's sound driver**. The char bitmaps ship ZX0-packed; `BuildCharset` unpacks them into the idle sprite save areas at deck load |
 | SWRAM bank 5 | `PARASPR` — the blitter, shifts 0 and 1 px, **and the effect blitter (`src/sprfx.asm`, RAM pass DECISION 2)**. **Evicted for the briefing**, which loads `PARMAN` over it: the manual's text, `briefman.asm`, `keyredef.asm` (the CTRL+R key redefinition, Layer 11f) and the chatter's effect records. Both exits reload the blitter |
@@ -220,15 +220,24 @@ paragraph:
 | Region | Free (measured 2026-08-30) |
 |---|---|
 | Main RAM code image | **7 B** — `code_end` `&2FF9`. `keyTab` took the last six on 2026-08-30 and left it at zero; moving the debug redraw's key test into bank 4 (`DbgRedrawKey`) gave seven back on 2026-08-31. It was 48 B after the RAM pass; Layer 13b's `swBank` reads and handover copy took 37, and `TitleSeq`'s early `disrFlash` clear 5. **This is the binding constraint again** |
-| Bank 4 | **143 B** on the gauge (2026-08-31: -32 for `DbgRedrawKey` and the debug keys' CTRL tests; 175 B before that) (2026-08-29: +206 from losing its depacker copy, −56 taking `DoorTdp` in), + `colourMap` `ALIGN` pad |
+| Bank 4 | **11 B** on the gauge (2026-08-31: −105 for layer-12 DECISION 5's droid counting and conversion, −3 for BUGS #12's `sprSplit` clear; 143 B before those) + `colourMap` `ALIGN` pad, **which is SPENT** — 200 B put in front of it cost the bank 259, measured. **Now as tight as the code image** |
 | Bank 5 | **602 B** |
-| Bank 6 | **39 B** (the 114 B in this table before 2026-08-30 was stale) |
-| Bank 7 | 7 B tail + **~176 B** of `planInk` `ALIGN` pad |
+| Bank 6 | **7 B** (2026-08-31: −32 for DECISION 5's `ConCount` and the count lines; 39 B before that. The 114 B here before 2026-08-30 was stale) |
+| Bank 7 | 7 B tail + the `planInk` pad — **~100-105 B all in, MEASURED 2026-08-31** by bisecting a `SKIP` in `liftview.asm`. The "~176 B of pad" this table and `memory-map.md` used to quote was stale. **No held reserve frees bank 7**, which is what parked layer-12 DECISION 6 |
 | `PARBRF` (`&0400`, hard ceiling `&0800`) | **36 B** (56 B before the CTRL+R hook) |
-| `PARAFNT` block | **26 B** before `SPR_SAVE` (`KeyDownIx` took 7) |
+| `PARAFNT` block | **16 B** before `SPR_SAVE` (`KeyDownIx` took 7, DECISION 5's `CN_STRS` 10) |
 | `PARMAN` (bank 5's briefing load; the bound is `DEPK_STREAM + size <= PANEL_ADDR`) | **225 B** — the redefine screen took 893 |
 | Low overlay | `lowcode` **9 B** (its two raw `PAGEBANK`s became `JSR Pg*`), `lowcode2` 3 B, `lowbss` 8 B |
 | `PINTRO` (`pdloader/`, `-Intro` builds) | **0 B** — it fills to `&3000` exactly, where the picture lands. It starts at `&2700` and `&2500–&26FF` is free below it, so it can move down if it needs to grow |
+
+**THE STACK PAGE HAS 128 FREE BYTES AND NOTHING IS IN THEM YET.** `&0100-&017F` was measured
+untouched on 2026-08-31 — `&A5` seeded with the game running, then play, a deck load, the console
+and its pages, and the whole game over including `GoTitle`'s `*LOAD`s, which is the deepest path
+there is because the MOS and DFS are heavy stack users. It is the only contiguous main-RAM space
+left bigger than the `PARAFNT` block's 16 bytes. **Read `docs/ram-pass.md`'s section before using
+it**: it lists the paths NOT exercised (the transfer game, the lift, the briefing), and anything
+that deepens the call graph invalidates the measurement. Code cannot simply live there — page 1 is
+not loadable from disc, so it would have to be copied down at boot.
 
 Two standing rules about the `ALIGN` pads: **anything — CODE or data — assembled before bank 4's
 `colourMap` `ALIGN` or bank 7's `plandata.asm` `ALIGN` rides in that pad for nothing**

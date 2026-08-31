@@ -20,7 +20,8 @@ Regenerate it after any change that moves a region:
 |---|---|---|
 | `&0000–&008F` | 144 B | Zero page — **all of it used**. Breakdown below; the authority is the map in `main.asm` |
 | `&0090–&00FF` | 112 B | OS zero page |
-| `&0100–&01FF` | 256 B | Stack |
+| `&0100–&017F` | 128 B | Stack — **and MEASURED FREE, 2026-08-31**. `&A5` seeded with the game running, then play, a deck load, the console and its pages, and the whole game over including `GoTitle`'s `*LOAD`s; all 128 survived, so the stack has never been seen below `&0180`. **The only contiguous main-RAM space left bigger than 16 B.** Nothing is in it yet. Read [`ram-pass.md`](ram-pass.md)'s section first — it lists the paths NOT exercised, and code cannot simply live here because page 1 is not loadable from disc |
+| `&0180–&01FF` | 128 B | Stack, the part that is actually used |
 | `&0200–&03FF` | 512 B | OS vectors and workspace. We own `IRQ1V` at `&0204` outright |
 | `&0400–&0C8F` | 2,192 B | MODE 1 charset, rebuilt at every deck load — reclaimed OS workspace. **Two boot-time tenants get here first:** `PARSWR` leaves the four sideways-bank numbers at `&0A00` (magic `&A5`, then DATA/SPR/SPR2/XFER) for `.start` to copy into `swBank`, and on an intro build `PINTRO` unpacks its advance tables over `&0400–&1BFF`. Both are finished long before the charset is built |
 | `&0C90–&0CF8` | 105 B | `lowbss` — the low overlay's state. `SKIP`ped, not shipped. **"Everything in it is written before it is read" is only true INSIDE a game**: `disrFlash` is read by `SetPalPlay` from the first title onwards and cost two white-screen bugs (2026-08-28, 2026-08-30). Read `src/lowbss.asm`'s header before adding a byte |
@@ -39,7 +40,8 @@ Regenerate it after any change that moves a region:
 | `&36D0–&3CD5` | 1,542 B | `constrings` — the `$C000` string table, **one copy**, read by the console in bank 6 and the droid database in bank 7 alike. Same `PARAFNT` file. Layer 13a TASK 7 |
 | `&3CED–&3DB5` | 201 B | `FontCell`, `fontExpand`, `fontMask` — the 1bpp decoder — `DoScore` (2026-08-20) and `KeyDownIx` (2026-08-30). Main RAM that does not have to be the code image. Layer 13a TASK 8; take the exact addresses from the symbol dump, this row has been stale before |
 | `&3DB6–&3DE5` | 48 B | `PN_TABS` — **two** droid tables (`pnTabCent`, `pnTabNum`), mirrored out of bank 4 for banks 6 and 7. The other two mirrors were never read and were deleted (RAM pass 1) |
-| `&3DE6–&3DFF` | **26 B free** | Was ~49 before `KeyDownIx`, and 8 when `PN_TABS` was 96 B — `BUGS.md` #18's "check `PN_TABS` first" lesson still applies, with the new sizes |
+| `&3DE6–&3DEF` | 10 B | `CN_STRS` — the console's two droid-count strings, five bytes each: up to three ASCII digits, a terminator, and the plural suffix character. Bank 4 writes them, bank 6 draws them; layer-12 [DECISION 5] |
+| `&3DF0–&3DFF` | **16 B free** | Was 26 before `CN_STRS`, ~49 before `KeyDownIx`, and 8 when `PN_TABS` was 96 B — `BUGS.md` #18's "check `PN_TABS` first" lesson still applies, with the new sizes |
 | `&3E00–&45FF` | 2,048 B | Sprite background save areas, 8 slots × 256 — slot 7 (`&4500`) is the player's bullet. Ends exactly at the tile map. **Doubles as `UnpackChars`' depack scratch** (Layer 11e): the 1,352 B of char bitmaps + `charRemap` land here at `LoadDeck`, boot and the GoTitle rebuild — dead space at all three moments because every slot is re-dealt before anything restores |
 | `&4600–&49FF` | 1,024 B | Tile map, 64 × 16, page-aligned, fixed home. Ends exactly at the panel |
 
@@ -125,7 +127,12 @@ staged on the panel and copied down last — see the boot code and `layer-11-sou
 
 ## SWRAM bank 4 — `PARADAT`
 
-`&8000–&BFCC`, **51 free** (2026-08-25, after the RAM recovery pass deleted `drSpeedF`/`drSpeedFHi`
+`&8000–&BFF4`, **11 free** (2026-08-31: layer-12 [DECISION 5]'s droid counting and conversion
+took ~105 and BUGS #12's `sprSplit` clear 3, out of the 143 that were there. **`colourMap`'s
+`ALIGN` pad is SPENT** — 200 bytes put in front of it cost the bank 259, because past the pad the
+ALIGN rolls a whole page; `consolesel.asm`'s header warns of exactly this and it is now measured.
+This bank is as tight as the code image. Earlier: 51 free 2026-08-25, after the RAM recovery pass
+deleted `drSpeedF`/`drSpeedFHi`
 — 48 B nothing read; before that 3, after Layer 15's endgame spent the space pass's 105 and DECISION 6's cleared-deck fix took the rest — the
 deck and ship payouts, the `shipClear` flag, the `GameStart`/`EnterShip4` split, and `DEBUG_DECK`'s
 69-byte arm moved in from main RAM. The space pass itself — see §"Layer 15 space pass" below.
@@ -243,7 +250,9 @@ briefing's `PARMAN` occupies this bank.
 
 ## SWRAM bank 6 — `PARSPR2` (shifts 2 and 3 px)
 
-`&8000–&BF8D`, **114 free** (2026-08-25; the RAM pass's icon dedup returned 110 — before it 4,
+`&8000–&BFF8`, **7 free** (2026-08-31: layer-12 [DECISION 5]'s `ConCount` and the two count
+lines took 32 of the 39 that were left; the 114 this line quoted from 2026-08-25 was two
+generations stale. The RAM pass's icon dedup returned 110 — before it 4,
 and the history back through `dfsSave` moving in, `sprsplit.asm` arriving and TASKs 3/6/7 is in
 the layer docs). The other two shifts, laid out identically, plus Layer 9's panel engine, HUD and
 console. The strings left with TASK 7 and the droid icon data with RAM pass 3b — `console.asm`
@@ -275,8 +284,13 @@ reads none of the artwork, and the wrap fallback is the only thing that does.
 
 ## SWRAM bank 7 — `PARXFER`
 
-`&8000–&BFF8`, **7 B of tail + ~176 B of `planInk` `ALIGN` pad, ~183 B real** (2026-08-25 —
-quote the pair, never the tail alone). The history: 826 free on 2026-08-20, spent by Layer 10's
+`&8000–&BFF8`, **7 B of tail + the `planInk` `ALIGN` pad — ~100-105 B all in, MEASURED
+2026-08-31** by bisecting a `SKIP` in `liftview.asm` (100 assembles, 110 does not). **The
+"~176 B of pad, ~183 B real" this line quoted from 2026-08-25 was stale**, and it cost layer-12
+DECISION 6 a build to find out — quote the measurement, and re-measure rather than trusting this
+line. **Nothing in `ram-pass.md`'s reserve list frees this bank**, which is the finding that
+parked that decision: bank 7 carries the transfer game, the lift screen, three console pages and
+the game over, and the next squeeze has no candidate here. The history: 826 free on 2026-08-20, spent by Layer 10's
 tuning and DECISION 14, then the RAM pass's icon dedup grew the pad by 110. 2026-08-20 took the title
 OUT (1,345 B — it is the `PARTITL` disc overlay at `&3000` again, [DECISION 6] restored) and spent
 the room on what it was freed for: **the droid portrait** — `portraits.asm` (the 63-image pool,

@@ -121,6 +121,11 @@ made quiet.
 contiguous main-RAM space left larger than the 16-byte fragment in the `PARAFNT` block. Found
 while looking for 16 bytes for the lift's cleared-deck table (layer-12 DECISION 6).
 
+**NOTHING IS IN IT.** That feature was built on it, measured, and then reverted whole when the
+drawing half would not fit bank 7 — so this is a reserve, not a tenant. If that ever changes, say
+so here and in `CLAUDE.md`, because the next person to chase a corruption bug needs to know
+whether the stack page is carrying anything.
+
 *How it was measured, and it is the seed-and-check the jsbeeb notes prescribe:* `&A5` written over
 `&0100-&017F` from the emulator once the game was running, then play, a `CTRL+]` deck load, the
 console main page and the droid database page, then read back. **All 128 bytes survived**, so the

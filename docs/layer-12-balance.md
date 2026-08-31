@@ -1,6 +1,15 @@
 # Layer 12 — Balance, fidelity and feel
 
-**Status: planned, not started.** `PLAN.md` carries the one-paragraph summary; this is the detail.
+**Status: 12b DONE (2026-08-31); 12a, 12c and 12d not started.** `PLAN.md` carries the
+one-paragraph summary; this is the detail.
+
+**The six Redux adoptions are all closed**, as the numbered DECISIONS 1-6 below: (4) the
+high-score initials and (5) the console's droid counts are **built and verified**; (1) the
+explosion restart is **already satisfied by the port** and needed no code; (2) the deadlock, (3)
+the lift-adjacent waypoints and (6) the cleared-deck stipple are **parked**, each with its
+measurements so a future attempt is a re-apply rather than a re-think. Two things came out of the
+work that are not Redux's: **BUGS.md #12 fixed**, and **128 measured-free bytes found in the stack
+page** (`ram-pass.md`).
 
 **Entry condition:** Layer 11 done, so the pass measures the finished game.
 **Exit condition:** the fidelity table complete, the Redux list triaged, and a build KC is happy to
