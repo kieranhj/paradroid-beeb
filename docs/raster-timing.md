@@ -717,3 +717,43 @@ screens, the transfer board, the briefing, the wash — runs under the rupture.
 Checked in jsbeeb: cold-boot title on its random deck palette, the 001 screen, a deck, the wash's
 black-and-white, and the wash → 999 transition stepped a field at a time, with the panel intact in
 the field the palette changes in.
+
+## Round three: the handover keeps a 312-line field — 2026-08-31
+
+KC caught it on b2 and photographed it: `ref/beeb-paradroid-to-001-resync.png` (mid-transition,
+the picture displaced downward, the panel a bare white band low on the screen) and
+`ref/beeb-paradroid-to-001-resync2.png` (settled). That is a **misplaced field**, not a
+wrong-length one — which is exactly what the frame-length instrument here cannot see, and why
+jsbeeb reported 39,93x throughout while b2 rolled.
+
+The arithmetic says the same thing once you look at where the first VSync lands rather than how
+long the fields are. The rupture's frame is three cycles and VSync is 5 rows into the 13-row tail;
+a CRTC left free-running in the tail's shape VSyncs **every 104 lines**. So round two's aligned
+write — tail shape at row 0, i.e. 64 lines after the last VSync — produced a first VSync at line
+104 instead of 312. One short field, one roll, invisible to jsbeeb.
+
+`src/ruptalign.asm` (bank 5, for want of room anywhere else) now suppresses VSync across the
+intermediate cycles and lets the first one the handler sees arrive exactly one frame after the
+last one:
+
+```
+   0      VSync of the last plain frame (row PLAIN_R7 = 31 of 39)
+  64      that frame ends; a fresh one starts
+ ~80      OSBYTE 19 + an 8-row spin lands here; SetupRupture writes the tail shape and
+          R7 = 255 goes straight over its R7, so cycles A and B fire no VSync
+  64-168  cycle A          168-272  cycle B, R7 = TAIL_R7 written inside it at ~180
+ 272-376  cycle C — its row 5 is line 312, one frame exactly. InstallIrq is armed by ~211.
+```
+
+The handler then inherits the phase its own header assumes (C4 = 5 in a 13-row cycle), the display
+sees one unbroken 312-line field across the handover, and the intermediate cycles show nothing
+because the frame is blanked (R6 = 0 and R8_BLANK).
+
+Margins are rows, not cycles: ~20 lines for the R7 = 255 write to beat the row-5 compare, the whole
+104 lines of cycle B for the R7 = TAIL_R7 write, and 130 lines for `InstallIrq` to arm. Costs
+nothing in the code image — `ts_loads` swapped `JSR RuptAlign` + `JSR SetupRupture` for `JSR PgSpr`
++ `JSR RuptAlign`, and the routine calls `SetupRupture` itself and ends `JMP PgData`. PARBRF is
+back to 18 bytes free.
+
+**jsbeeb cannot confirm this one** — it showed no fault before the change either. b2 is the
+instrument for it.

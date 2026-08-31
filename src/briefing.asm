@@ -105,53 +105,6 @@ BR_EXIT_OFF   = 1               \ off the end of the last page: the title
   JMP BmPatch                   \ bank 5's, now paged — and its RTS
 
 \ ============================================================
-\ RuptAlign — put the frame boundary under SetupRupture's writes
-\ ============================================================
-\ MEASURED 2026-08-31: establishing the rupture costs THREE malformed
-\ fields, and they are a phase problem. Frame lengths in cycles across
-\ the briefing exit, stepped one field at a time:
-\
-\   39,936  39,936 | 38,378  49,154  6,168 | 39,938  39,936
-\   plain, blanked   300 ln  384 ln  48 ln   rupture, locked
-\
-\ The 384-line field is the diagnosis: SetupRupture writes R4 = TAIL_R4
-\ = 12 wherever the main loop happens to be, and the plain frame is 39
-\ rows, so the row counter is usually PAST 12 -- the 6845 then runs on
-\ toward its wrap before the compare matches.
-\
-\ So: wait for VSync, then wait out the rest of the frame, and let the
-\ writes land in rows 0-1 of a fresh one, where R4 = 12 is AHEAD of the
-\ counter and matches at row 12 like any other cycle. VSync is at
-\ PLAIN_R7 = 31 of the 39, so 8 rows = 8,192 cycles remain, and the
-\ landing window runs from there to row 12, another 11,264 -- nowhere
-\ near a knife edge. 8 x 256 x ~5 = ~10,250 lands about two rows in.
-\
-\ IT WAS TRIED, REVERTED AND TRIED AGAIN. First time (this same code)
-\ KC judged it worse by eye -- but the blanks still leaked a row then,
-\ so a stripe of the play buffer sat on screen through the whole seam
-\ and swamped it. With every blank on R8 the alignment stands on its
-\ own. docs/raster-timing.md has both rounds.
-\
-\ WHY IT IS HERE: it wants ~16 bytes of main RAM that need no paging,
-\ and the code image has seven. PARBRF is resident and valid on every
-\ route into ts_loads -- TiShow loads it before each title, and
-\ BrDispatch's own fire exit is in this file. It is NOT valid at
-\ HsEntry (a game has rebuilt the charset over &0400 by then), which is
-\ why the call is in ts_loads and not inside SetupRupture.
-.RuptAlign
-  LDA #19
-  JSR OSBYTE                    \ returns just after the VSync at row 31
-  LDX #8
-.ra_out
-  LDY #0
-.ra_in
-  DEY
-  BNE ra_in
-  DEX
-  BNE ra_out
-  RTS
-
-\ ============================================================
 \ BrDispatch — where TitleSeq's callers land instead of the game
 \ ============================================================
 \ Both post-title sites (boot's JSR and GoTitle's JMP) come here in

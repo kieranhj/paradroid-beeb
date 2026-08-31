@@ -2569,9 +2569,10 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
 \ So the title's ordinary 39-row, 312-line, 50 Hz frame stands until
 \ the IRQ is ready to drive the replacement, one instruction later.
 \ KC, 2026-08-31. docs/raster-timing.md has the window either side.
-  JSR RuptAlign                 \ and land those writes on a frame
-  JSR SetupRupture              \ boundary -- briefing.asm has the
-                                \ measurement and why it lives there
+  JSR PgSpr                     \ the handover is bank 5's now, and it
+  JSR RuptAlign                 \ calls SetupRupture itself and pages
+                                \ the data bank back -- ruptalign.asm
+                                \ has the line-by-line arithmetic
 
   JMP InstallIrq                \ take the IRQ back, and its RTS
 
@@ -3812,6 +3813,10 @@ ASSERT EF_SPRITE_ROWS == SPR_H
 \ image in RAM pass 2. Read src/sprfx.asm's header before touching it:
 \ every entry relies on this bank being paged in already.
 INCLUDE "src/sprfx.asm"
+
+\ Layer 3's rupture handover, here for want of room anywhere else --
+\ read its header, and note that ts_loads pages this bank in for it.
+INCLUDE "src/ruptalign.asm"
 .spr_end
 SAVE "PARASPR", spr_start, spr_end, DATA_LOAD, DATA_LOAD
 
