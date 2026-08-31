@@ -742,15 +742,23 @@ pnTabNum    = PN_TABS + 24
 \ for the same reason: it must be main RAM, it need not be the code
 \ image, and the code image is the region with nothing to spare.
 \ THEY ARE FINISHED ASCII STRINGS, not numbers, and that is what keeps
-\ bank 6 affordable: the reader is one ConLine call, no digit loop and
-\ no divide. Up to three digits and a terminator each; PnAscii maps
-\ '0'-'9' to PN_DIGIT0 already, so nothing else was needed to print
-\ them. Leading zeros are dropped by the writer, so "7" is one byte.
+\ bank 6 affordable: the reader is one ConStr call, no digit loop and
+\ no divide. Up to three digits and a terminator; PnAscii maps '0'-'9'
+\ to PN_DIGIT0 already, so nothing else was needed to print them.
+\ LEFT-JUSTIFIED, so "9" is one character and the line starts under the
+\ ship or deck NAME rather than under its label (KC, 2026-08-31). That
+\ is why the leading zeros are dropped rather than blanked.
+\ FIVE BYTES EACH, not four: the fifth is the PLURAL FLAG, zero when
+\ the count is 1 so the line reads "1 droid" and not "1 droids". The
+\ writer knows the value and the reader does not, and testing the
+\ string for it in bank 6 costs more than the byte does here.
 CN_STRS     = PN_TABS + 48
 cnDeckStr   = CN_STRS + 0
-cnShipStr   = CN_STRS + 4
-ASSERT PN_TABS + 56 <= PANEL_ADDR
-ASSERT PN_TABS + 56 <= SPR_SAVE  \ the whole PARAFNT block sits below
+cnDeckPl    = CN_STRS + 4
+cnShipStr   = CN_STRS + 5
+cnShipPl    = CN_STRS + 9
+ASSERT PN_TABS + 58 <= PANEL_ADDR
+ASSERT PN_TABS + 58 <= SPR_SAVE  \ the whole PARAFNT block sits below
                                  \ the save areas now, not above the map
 
 \ ---- the panel is FOUR rows, because the C64's box is 32 scanlines ----

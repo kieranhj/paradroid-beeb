@@ -3342,60 +3342,74 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
   LDX #0                        \ cnDeckStr
   JSR CnDigits4
   LDA shipNumDroids
-  LDX #4                        \ cnShipStr
+  LDX #5                        \ cnShipStr
 \ falls into CnDigits4
 
 \ ---- A = the value, X = the offset into CN_STRS -------------
-\ THREE DIGITS AND A TERMINATOR, ALWAYS, right-justified with spaces
-\ rather than left-justified with the leading zeros dropped. It is the
-\ cheaper of the two - the digits go down unconditionally and a second
-\ pass blanks the leading zeros, where suppressing them on the way out
-\ needs a flag carried between the two divides - and it also lines the
-\ deck's count up under the ship's, which left-justified does not.
+\ Up to three ASCII digits and a terminator, LEFT-JUSTIFIED with the
+\ leading zeros dropped, plus the plural flag at +4. Left-justified
+\ because the line is drawn at the column the ship and deck NAMES start
+\ at, so "9 droids" and "120 droids" both begin under the name (KC,
+\ 2026-08-31). An earlier version right-justified into a fixed three
+\ characters, which lined the two counts up with each other instead.
 \ Repeated subtraction rather than a divide: it runs twice per console
-\ and the 6502 has no divide worth the bytes. X is untouched throughout,
-\ so the offset needs no temporary of its own. ORA #'0' rather than an
+\ and the 6502 has no divide worth the bytes. ORA #'0' rather than an
 \ ADC because a digit is 0-9 and '0' is &30: the bits do not overlap.
+\ X walks along the string as the digits go down, so the flag is
+\ written FIRST, while X is still the base.
 .CnDigits4
+  PHA                           \ the plural suffix, before the divides
+  LDY #'s'                      \ eat the value. IT IS THE CHARACTER,
+  CMP #1                        \ not a flag: bank 6 then prints it
+  BNE cnd_pl                    \ unconditionally, and a space costs it
+  LDY #' '                      \ a branch it does not have the room for
+.cnd_pl                         \ -- PnAscii maps ' ' to PN_SPACE and
+  TYA                           \ nothing follows it on the line anyway
+  STA CN_STRS+4,X
+  PLA
+
   LDY #'0'-1
 .cnd_h
   INY
   SEC : SBC #100
   BCS cnd_h
   ADC #100                      \ carry is clear, so this puts back the
-  STY cnHund                    \ hundred the last subtract borrowed.
-                                \ PARKED, not stored to the string: A is
-                                \ the running value and the tens loop
-                                \ still needs it, and there is no
-                                \ STY abs,X on a 6502 to spend it into
+  STY cnHund                    \ hundred the last subtract borrowed
+
   LDY #'0'-1
 .cnd_t
   INY
   SEC : SBC #10
   BCS cnd_t
   ADC #10
-  ORA #'0'                      \ what is left of A is the units, and A
-  STA CN_STRS+2,X               \ is free from here
-  TYA
-  STA CN_STRS+1,X
+  ORA #'0'                      \ what is left of A is the units
+  STA cnUnit
+
   LDA cnHund
+  CMP #'0'
+  BEQ cnd_noh
+  STA CN_STRS,X                 \ hundreds, and then the tens must go
+  INX                           \ down whether they are zero or not
+  TYA
+  STA CN_STRS,X
+  INX
+  BNE cnd_u                     \ always: X is an offset, never 0 here
+.cnd_noh
+  TYA
+  CMP #'0'
+  BEQ cnd_u                     \ under ten: the units alone
+  STA CN_STRS,X
+  INX
+.cnd_u
+  LDA cnUnit
   STA CN_STRS,X
   LDA #0
-  STA CN_STRS+3,X
-
-  LDA CN_STRS,X                 \ and blank the leading zeros
-  CMP #'0'
-  BNE cnd_x
-  LDA #' ' : STA CN_STRS,X
-  LDA CN_STRS+1,X
-  CMP #'0'
-  BNE cnd_x
-  LDA #' ' : STA CN_STRS+1,X
-.cnd_x
+  STA CN_STRS+1,X
   RTS
 
 .cnTmp   EQUB 0
 .cnHund  EQUB 0
+.cnUnit  EQUB 0
 
 .ConMenu4
   LDX #CTL_UP                    \ up the menu

@@ -194,19 +194,53 @@ the overlay being reloaded from disc in between, which is the whole point of it 
 2026-08-31.**
 
 *The layout, and what it cost.* KC, 2026-08-31: "Redux removes the 'Access Granted' line in the
-console menu and adds 'N droids' underneath the Ship name and Deck name lines." A text line is
-**two** buffer rows, so two new lines want four rows out of a sixteen-row area that had none
-spare. Deleting "Access granted." gives two; the other two are the blank rows the layout carried.
-The arithmetic then leaves nothing over — 2 (unit) + 3 (droid icon) + 4 (ship + count) + 4 (deck +
-count) + 3 (alert + icon) is exactly 16 — so **the unit line goes back to row 0 and layer-9
-DECISION 17's row is spent again**. The alternative costed with KC put the droid icon beside the
-unit line it depicts, keeping two blanks and that row; it is a bigger move than the one asked for
-and is still available if the top row matters more. Rows are now 0 / 2 / 5+7 / 9+11 / 13, and
-`consolesel.asm`'s `CON_SEL*` literals moved with them — the `ASSERT`s in `console.asm` that tie
+console menu and adds 'N droids' underneath the Ship name and Deck name lines", then, on seeing
+it: put the Alert line at the top, align the counts with the ship and deck NAMES, and say "droid"
+when there is one. A text line is **two** buffer rows, so two new lines want four rows out of a
+sixteen-row area that had none spare. Deleting "Access granted." gives two; the other two are the
+blank rows the layout carried. The final rows are
+
+    0-1    Unit type 001 - Influence device
+    2-4    [droid icon]  Alert : Green            text 2-3
+    5-8    [ship icon]   Ship  : Paradroid        5-6
+                         120 droids               7-8
+    9-12   [deck icon]   Deck  : Repairs          9-10
+                         9 droids                 11-12
+    13-15  [alert icon]                           no text
+
+and `consolesel.asm`'s `CON_SEL*` literals moved with them — the `ASSERT`s in `console.asm` tying
 the two together are what caught them, which is what they are for.
 
-Entry 0 of the menu has no label now. It is the "leave the console" entry, "Access granted." was
-its text, and its icon — the player's own droid — is what marks it.
+**The unit line goes back to row 0, spending layer-9 DECISION 17's row again.** The arithmetic
+leaves nothing over: 2 + 3 + 4 + 4 + 3 is exactly 16.
+
+**THE ALERT LINE MOVED TO THE TOP; ITS ICON COULD NOT COME WITH IT.** The four icons are the
+menu's selection targets and `ConMenu4` walks `conSel` 0-3 with up and down, so their rows must
+ASCEND with `conSel` or the marker jumps about — and `conSel` 0 is "leave the console", which the
+C64 puts at the top. The alert's icon is `conSel` 3, the ship's side view, and is therefore
+necessarily the bottom one. The text is free and went; what that leaves is entry 0's icon with the
+alert line beside it and entry 3's with nothing, where before it was entry 0 that had no label.
+The three `ASSERT`s on the ascending rows are there so this cannot be undone by accident.
+
+Text and icons never collide, which is what makes the move free: icons live in units 4-18 and
+every text line starts at `CON_COL_TEXT`, unit 24. Only the unit-type line at `CON_COL_UNIT`
+crosses the icon columns, which is why it has two rows to itself.
+
+**BLANK ROWS BETWEEN THE SHIP AND DECK GROUPS WERE ASKED FOR AND ARE NOT POSSIBLE**, and the
+arithmetic above is why: entry 0's icon ends at row 4, so the ship cannot start before 5; the ship
+needs four rows for two text lines, so the deck cannot start before 9; the same again puts the
+alert icon at 13, and 13 + 3 is 16. Every row is spoken for. A gap needs one of: the counts moved
+onto the name's own line (3 rows an entry, freeing two rows, but no longer *underneath*); one of
+the four icons dropped, which costs a menu entry its marker; or the unit-type line shortened and
+moved right so an icon can share rows 0-2, which changes the original's own text. **Not built —
+KC's call.**
+
+*Alignment and the plural.* The count lines start at `CON_COL_TEXT + 9`, which is where the names
+begin: "Ship  :" is eight cells from the label column — a capital is two cells and everything in
+"hip  :" is one — and `ConTok`'s leading space is the ninth. "Deck  :" and "Alert :" are padded to
+the same width by the original, which is what lets one constant serve all three. The digits are
+therefore **left**-justified, not blank-padded to three; an earlier version right-justified them,
+which lined the two counts up with each other instead of with the names.
 
 *Neither count was available as-is.* The deck count is **not** `drCount`: that is the table's
 high-water mark and it counts bullets and explosions too, so it would tick up when something
@@ -222,10 +256,10 @@ numbers**, because bank 6 is the region with 39 bytes free: the conversion belon
 with room, and the reader is then one `ConLine` call. `PnAscii` already maps `'0'`-`'9'`, so
 nothing was needed to print them, and the word is the game's own token 11, "droid", plus an `s`.
 
-Three digits and a terminator always, **right-justified with spaces** rather than left-justified
-with leading zeros dropped: the digits then go down unconditionally and a second pass blanks the
-leading zeros, where suppressing on the way out needs a flag carried between the two divides. It
-also lines the deck's count up under the ship's.
+The fifth byte of each five-byte block is the **plural suffix, and it is the character rather than
+a flag**: `'s'`, or a space when the count is 1 so the line reads "1 droid". Bank 6 prints it
+unconditionally — `PnAscii` maps `' '` to `PN_SPACE` and nothing follows it on the line — because a
+branch is three bytes that bank did not have.
 
 **`CnCounts4` was written into `consolesel.asm` first and had to be moved out.** That file sits in
 front of `colourMap`'s `ALIGN` on the reasoning that the pad takes anything assembled there for
@@ -237,15 +271,19 @@ measured — treat the pad as full.
 
 | Region | Before | After |
 |---|---|---|
-| Bank 4 | 143 B | **28 B** |
-| Bank 6 | 39 B | **22 B** |
-| `PARAFNT` block | 26 B | 18 B |
+| Bank 4 | 143 B | **14 B** |
+| Bank 6 | 39 B | **7 B** |
+| `PARAFNT` block | 26 B | 16 B |
 | Code image | 7 B | 7 B — untouched |
+
+**Both banks are now as tight as the code image.** Anything further in either needs one of
+`ram-pass.md`'s held reserves cashed in first — `sprsplit.asm` to bank 5 is the cheapest.
 
 *Verified in jsbeeb.* On a deck of nine droids the console read `Ship : Paradroid / 120 droids /
 Deck : Repairs / 9 droids`. **CTRL+C** (`DEBUG_KILL`) then cleared the deck and the same console
 read **111** and **0** — nine off both, the deck bonus in the score. Three-digit, two-digit and
-one-digit cases all rendered and stayed aligned. (The console was reached by poking `DoCharUnder`'s
+one-digit cases all rendered and stayed aligned under the names. The singular was checked by
+poking `shipNumDroids` to 1 and reopening: "1 droid" above "9 droids" on the same screen. (The console was reached by poking `DoCharUnder`'s
 `CMP #CHAR_CONSOLE` to `LDA #0` in the running machine so fire opens it anywhere; a runtime patch
 only, and a useful one to know for any future console work.)
 
