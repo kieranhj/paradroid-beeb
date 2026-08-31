@@ -335,6 +335,11 @@ CON_DROID_D  = BUF_BASE + CON_ROW_ACC   * ROW_BYTES + 7 * UNIT_BYTES
   STA ySpd : STA ySpd+1
   STA bandDo                    \ nothing the last move exposed is wanted
   STA colCount
+                                \ sprSplit is cleared too, and in
+                                \ ConMenuInit4 rather than here -- read the
+                                \ comment there. It is what stops tranche B
+                                \ redrawing droids over this page on the
+                                \ pass the console opens.
   JSR SetCRTCStart
 
 \ SIXTEEN ROWS FOR THE WHOLE SESSION. The play area displays 16 and the

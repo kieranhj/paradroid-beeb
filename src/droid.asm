@@ -3274,6 +3274,25 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
   STA conShipReq
   STA conDeckReq
   STA conDbReq
+
+\ AND TRANCHE B IS CANCELLED FOR THIS PASS, which is not bookkeeping:
+\ it is the fix for droid-shaped rubbish left on the console page.
+\ THE CONSOLE OPENS FROM THE MIDDLE OF A PASS. DoCharUnder calls
+\ ConsoleEnter from BELOW the main sprite draw but ABOVE the second
+\ window's SprRestoreTr/SprDrawTr, so ConDraw wipes the buffer, paints
+\ the console -- and then tranche B stamps the saved backgrounds and
+\ the droids straight back over it. The modal arm that stops all sprite
+\ work only takes effect from the NEXT pass, which is too late.
+\ IT NEEDS A DROID OR A BULLET ON SCREEN to show, because the pool is
+\ only split into two tranches when there is enough in it -- which is
+\ why the console looked clean on an empty deck and filthy on a busy
+\ one. Reported by KC 2026-08-31; it predates the count lines.
+\ Clearing sprSplit is the whole fix: main.asm's second-window arm is
+\ gated on it, and SprSplitOK writes it fresh on every pass that
+\ reaches the draw, so nothing carries over. The lift and the transfer
+\ never had this because they enter at the hook after DroidsUpdate and
+\ short-circuit the pass; the game over clears sprActive instead.
+  STA sprSplit
   LDA #1
   STA conMPrevL
   STA conPrevU
