@@ -795,3 +795,202 @@ chatter was deferred, on the grounds that nothing had sounded; now something has
 The briefing — the largest piece of work here — is the one that costs no resident RAM at all.
 `DoHighScore` and the chatter's shim are the two that need space in a machine that has none, and
 `docs/memory-map.md`'s free-RAM section is the place to go before either.
+
+## 8. Key redefinition — CTRL+R on the briefing, 2026-08-30
+
+**The port's own feature; the C64 has nothing like it.** The original reads a joystick, so the six
+things a player does — left, right, up, down, fire, transfer — are a stick and a button there and
+were six assembled constants here (`Z X K M L SPACE`). They are six *bytes* now, and the briefing
+will ask for new ones.
+
+### 8a. The mechanism — `keyTab` and `KeyDownIx`
+
+`keyTab` is six INKEY bytes in `CTL_*` order. Every one of the **36 call sites** that used to say
+
+```
+  LDX #KEY_K
+  JSR keydown
+```
+
+now says
+
+```
+  LDX #CTL_UP
+  JSR KeyDownIx
+```
+
+which is **the same two bytes**, and that was the whole design constraint: six of those sites are
+in the code image, and the code image had six bytes left in the machine. `KeyDownIx` loads
+`keyTab,X`, transfers to X and falls into `keydown` unchanged, so `keydown`'s contract — X = INKEY
+byte, Z set if down — is untouched and the keys that are *not* redefinable (CTRL, P, Q, the
+cursors, ESCAPE, the debug keys) still call it directly with an immediate.
+
+**Where the two pieces live, and why neither could go anywhere roomier:**
+
+| | |
+|---|---|
+| `keyTab` (6 B) | **the code image**, its last six bytes. It is the only main-RAM region resident at all six of the moments a control is tested. The font block is reloaded at every title seam *and is not resident at all during the first title of a cold boot*, which is exactly where `TiWait` tests fire; `&0400` is `PARBRF`'s at a title and the charset's in a game; the `&5480` scratch is inside the title's own framebuffer; `lowbss` would need seeding before the first key is read, and nothing but the code image exists to seed it. In the image it is initialised by the `*LOAD` that brings `PARA` in, and there is no seeding code at all |
+| `KeyDownIx` (7 B) | **the `PARAFNT` block**, beside `FontCell` and for the same reason — it must be main RAM because banks 4, 5 and 7 call it, but it need not be the code image. Its callers all run inside a game or on the briefing, when the font block is up |
+
+**`PARTITL` is the exception and reads the table directly** — `LDX keyTab+CTL_FIRE : JSR keydown`,
+one byte more per site — because `title.asm` and `highscore.asm` can be running when the font
+block is not. Five sites, in an overlay with 59 bytes spare. It costs `TiWait`'s loop two cycles a
+turn: 89 against 87, an 11.0 Hz volume repeat and a 5.8 s timeout, and the numbers in that
+routine's header are annotated with it.
+
+### 8b. The screen
+
+`src/keyredef.asm`, bank 5, beside the briefing's other bank half — `PARBRF` has 36 bytes left and
+this is a screen's worth of code and text. It draws through **the briefing's own engine**
+(`BrChar` → `BrCell` → `FontCell`) into the parked strip, under the deck palette the briefing
+already inherited, with the panel left exactly as it is. The one thing it adds is a transcription
+of `PnAscii`, because that lives in bank 6 and only one bank is visible at a time — the same
+duplication `condb.asm`'s `DbGlyph` is, and it buys `EQUS` prompts instead of glyph-number tables.
+
+`BrWaitField` — the one hook every loop in `BrRun` passes through — tests CTRL+R and calls it.
+Afterwards the page is simply **painted again from the top** (`BrPagePaint`, which is `br_page`'s
+own prologue made callable) and whichever loop was running carries on; that is what a restart
+would have done, without four tests in `BrRun` and without a branch that has to reach `br_page`
+from all of them. `brRedef` keeps the hook out of its own way, because the screen waits on fields
+through `BrWaitField` too.
+
+**Reading an arbitrary key** is `BmKrScan`: internal numbers `&10`-`&7F` through `keydown`, ~6,200
+cycles a field on a screen with no draw budget to protect. **It starts at `&10`, not 0** — `&02`-
+`&09` are the keyboard DIP links, which read as pressed or not according to how the machine is
+strapped, and 0 and 1 are SHIFT and CTRL. The MOS's own `OSBYTE &7A` scans from 16 for the same
+reason, and it is also what makes the modifiers unbindable.
+
+**Naming the key** is `bmKeyChar`, a 112-byte table indexed by internal key number: a printable
+ASCII code, 1-10 for f0-f9, 11 and up for a name in `bmKrNames`, or **0 for "cannot be bound"**.
+The matrix layout in it is not recalled — `KEY_Z`, `KEY_X`, `KEY_K`, `KEY_M`, `KEY_L`, `KEY_SPACE`,
+`KEY_P`, `KEY_Q`, `KEY_R`, `KEY_C`, `KEY_W`, `KEY_LBRK`, `KEY_RBRK`, `KEY_UP`, `KEY_DOWN` and
+`KEY_ESCAPE` all `EOR &FF` onto it, fifteen independent confirmations from our own constants.
+
+### 8c. Decisions, taken with KC on 2026-08-30
+
+**[DECISION 15]** **Key redefinition exists, on CTRL+R, on the briefing screen only**, and covers
+six controls in the order LEFT, RIGHT, UP, DOWN, FIRE, TRANSFER. Five things were settled with it:
+
+1. **All 36 sites follow the table**, not just the eight in the play loop. The console menus, the
+   briefing scroller, the high-score entry and the title's fire are the *same* controls; rebinding
+   LEFT and still having to press K in the droid database would be half a feature. It costs nothing
+   extra under the indexed design.
+2. **A redefinition lasts until it is redefined**, across a game over, the title and the next game
+   — which is what put `keyTab` in the code image. It is lost on BREAK; nothing is written to disc.
+3. **ESCAPE and the modifiers are refused.** SHIFT and CTRL are unreachable by construction (the
+   scan starts at `&10`); ESCAPE is never accepted as a binding and **abandons the run instead**,
+   putting all six back as they were. A key already chosen *earlier in the same run* is refused
+   with "Already used" — the ones still on their defaults are fair game, because they may be about
+   to change. A key the font cannot name is refused with "Not usable"; that is the whole rule for
+   what is bindable, and it is a display rule, not a keyboard one.
+4. **The chatter is off while the screen is up** and every press answers with a beep — the menu
+   step beep for a key taken, the collision bump for one refused. §8e has the effects, why those
+   two, and the measurements.
+5. **Nothing on the briefing says CTRL+R exists** — KC is putting it in the briefing text, which is
+   `briefing.txt` and a rebuild of `src/data/briefing.asm`.
+
+### 8d. Verified in jsbeeb, 2026-08-30
+
+Boot, title timeout, CTRL+R, then: LEFT <- A, a duplicate A refused with "Already used",
+RIGHT <- S, UP <- RETURN, DOWN <- f2, FIRE <- TAB, TRANSFER <- SPACE, "Keys set", and the briefing
+page painted again from the top. Then, with `keyTab` read back at each step: fire on TAB starts the
+game; A and S move the player left and right (`posX`/`plyX`); RETURN and f2 move it up and down;
+**Z does nothing**. ESCAPE self-destructs, the high-score entry steps its initial on f2 and commits
+on TAB — which is `PARTITL`'s direct-read path — and after the seam back to the title and into a
+second briefing the six bytes are still there. A second CTRL+R, one key set and then ESCAPE, put
+all six back byte for byte.
+
+**One bug was found and fixed by doing this**: `BmKrMsg` held the message pointer in A/Y across
+`BmKrClrMsg`, and `BrClearRow` walks Y from 0 to `&80`. The high byte was gone by the time the
+string was drawn and it scribbled four rows from a wild address. The pointer is stashed before the
+clear now, and the note is at the routine.
+
+### 8e. The sound of it, 2026-08-30
+
+**The chatter stops while the screen is up.** KC's call, and the reason is that the two would be
+on the same voice: the briefing's burble would swallow the short beeps that answer key presses.
+`BrWaitField` tests `brRedef` and skips `BrChatter` — the blip already sounding when CTRL+R lands
+plays itself out, because `SndTick` is still running and only the *requests* stop, and the burble
+comes back with the page when `BrKeyRedef` clears the flag.
+
+**A press gets a beep, and both beeps are the game's own effects.** `sndFx1` is main RAM, so
+`keyredef.asm` posts them from bank 5 with no paging at all and the driver walks to the record in
+bank 4 for itself:
+
+| | |
+|---|---|
+| Key taken | **effect 21**, the console menu's step beep — `$2CF6`'s own, the sound the droid database makes moving down a list, which is what taking a key here is. One segment, 8 ticks, 0.16 s |
+| Key refused — a duplicate, a key the font cannot name, or ESCAPE | **effect 26**, the collision bump. Four segments of four, about a third of a second |
+
+**Effect 14, the transfer's failure buzz, was tried for the refusal first and rejected**: its
+record is 4 × 32 ticks — *two and a half seconds* of warbling for a mistyped key. A record's length
+is its segment timer, reload and count at offsets +5/+6/+7, and that is the field to check before
+borrowing an effect for a UI sound.
+
+Measured in jsbeeb, 150 frames a sample, by capturing SN76489 writes rather than by ear:
+
+| | |
+|---|---|
+| Briefing, chatter running | 491 writes |
+| Redefine screen, idle | **0 writes** — silent, and there is no bass bed under the briefing to lose |
+| A key taken | 20 writes, ending `atten=15`, ~0.16 s |
+| A key refused | 45 writes on CH2 + noise, ~0.42 s |
+| Briefing again, after ESCAPE | 535 writes — the chatter is back |
+
+### 8f. RAM
+
+| Region | Before | After |
+|---|---|---|
+| Code image | 6 B free | **0 B free** — `keyTab` took the last six. `code_end` was `&3000` exactly; §8g gave 7 B back the next day |
+| `PARAFNT` block (below `SPR_SAVE`) | 33 B | 26 B — `KeyDownIx` |
+| `PARBRF` | 77 B | 36 B — the hook, `BrPagePaint`'s call and `brRedef` |
+| `PARTITL` | 64 B | 59 B — five sites at one byte each |
+| `PARMAN` (the bound is the `DEPK_STREAM` assert) | 1,128 B | 225 B — the screen, 893 B |
+| Banks 4, 5, 6, 7 | — | unchanged; every site in them stayed two bytes |
+
+**The code image went to zero here and that is the number to watch** — §8g took the forced redraw
+out of it and it stands at 7 B. `docs/ram-pass.md`'s reserve list is what pays for the next thing
+that needs main RAM; `door.asm` -> bank 4 is the item there, and it wants bank 4 room first.
+
+### 8g. The debug keys took CTRL too, 2026-08-31
+
+**Redefinable controls made the debug keys a hazard.** R, C, W, `[` and `]` were bare keys, and
+nothing stopped a player binding LEFT to R — every step left would then repaint the whole viewport,
+and C would clear the deck. All five now want CTRL, which costs nothing to test: `keydown` asks the
+matrix about one key at a time, so a modifier is just another query.
+
+| Key | Where | The not-held exit |
+|---|---|---|
+| **CTRL+R** forced redraw | `DbgRedrawKey`, bank 4 | — |
+| **CTRL+C** clear the deck (`DEBUG_KILL`) | `dbgkill.asm`, bank 4 | `dk_off`, which clears `dkPrev` |
+| **CTRL+`[`** / **CTRL+`]`** deck hop (`DEBUG_DECK`) | `dbgdeck.asm`, bank 4 | `dd_upOff` / `dd_dnOff` |
+| **CTRL+W** win the transfer (`DEBUG_XFERWIN`) | `xfer.asm`, bank 7 | `xpl_nowin` |
+
+**The not-held exit is the key-UP path in every case, not a plain skip**, so the press edge rearms:
+these keys latch a `prev` byte on the press and clear it on the release, and jumping past the
+release handler would leave the latch set and eat the next CTRL+key.
+
+**It paid for itself in the region that needed it.** The forced redraw was ten bytes of *code image*
+— `LDX #KEY_R`, `JSR keydown`, `BNE`, `JSR RedrawAll` — for a debug key. It moved into bank 4 beside
+the `RedrawAll` it calls (the data bank is the resting state at that point in the pass, so the call
+is legal), leaving `JSR DbgRedrawKey` behind:
+
+| Region | Before | After |
+|---|---|---|
+| Code image | 0 B free | **7 B free** — `code_end` `&2FF9` |
+| Bank 4 | 175 B | 143 B — `DbgRedrawKey` 14 B, the two hop tests 14 B, the kill test 7 B (which rides `colourMap`'s ALIGN pad) |
+| Bank 7 | 7 B tail + pad | unchanged — `xfer.asm` is in front of `plandata.asm`'s ALIGN, so its 7 B ride the padding |
+
+`DbgRedrawKey` is **not** inside an `IF DEBUG_`, which it never has been: R is the oracle every
+scrolling bug so far has been found with and it is wanted on the ordinary build, so it ships in
+RELEASE too, at 14 bytes of a bank with room. Gating it would be a decision, not a tidy-up.
+
+**Verified in jsbeeb**, in a game, by the panel score rather than by reading bank-4 bytes:
+plain C held 120 frames — score **0**, deck unchanged; CTRL added, same key still down — score
+**1315** and the cleared-deck colour change. CTRL+R repaints the viewport without sprites every
+pass while it is held (the oracle's own behaviour, and proof the bank-4 call is sound); release
+CTRL with R still down and the player is drawn again.
+
+*Reading bank-4 state from the emulator during play is not reliable* — `read_memory` sees whichever
+bank is paged at that instant, and the blitter pages 5 and 6 mid-frame. `drCount` read 10 through a
+kill that had plainly happened. Use something main-RAM, or the screen.

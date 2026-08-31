@@ -39,13 +39,19 @@ every `DEBUG_` flag forced off through the command-line `RELEASE` symbol that ev
 passes.
 
 **Keys:** Z/X left/right, K/M up/down, L fire — and, through the original's own `moveMode`
-machine, the lift, console and transfer trigger. **ESCAPE self-destructs and ends the game.**
+machine, the lift, console and transfer trigger. **Those six are DEFAULTS since 2026-08-30**:
+**CTRL+R on the briefing screen redefines all six** (left, right, up, down, fire, transfer), the
+new ones hold everywhere the old ones were read — play, the console menus, the transfer game, the
+briefing, the high-score entry and the title — and they last until they are redefined or the
+machine is BREAKed. ESCAPE abandons the redefine and the modifiers cannot be bound;
+[`docs/layer-11f-frontend.md`](docs/layer-11f-frontend.md) §8 and its DECISION 15. **ESCAPE self-destructs and ends the game.**
 **SPACE is a second transfer button** — hold it and moveMode goes straight to Transfer, direction
 or no direction, which the fire route cannot do (it needs you stopped and 8 passes of settle).
 **Cursor up/down are the master volume, CTRL+Q mutes and CTRL+P pauses** (plain P unpauses), everywhere the game has a loop:
-play, the modal screens, the briefing and the title (P in play and the modal screens). `[` and `]` are `DEBUG_DECK`'s deck hop, C is
-`DEBUG_KILL`'s clear-the-deck, W wins a transfer (`DEBUG_XFERWIN`), R a forced redraw — all
-three flags ship ON.
+play, the modal screens, the briefing and the title (P in play and the modal screens). **Every debug key takes CTRL too** (2026-08-31, because the six
+controls are redefinable and R, C, W, `[` and `]` are keys like any other): **CTRL+`[`** and
+**CTRL+`]`** are `DEBUG_DECK`'s deck hop, **CTRL+C** is `DEBUG_KILL`'s clear-the-deck, **CTRL+W**
+wins a transfer (`DEBUG_XFERWIN`), **CTRL+R** a forced redraw — all three flags ship ON.
 
 **The frame budget:** the eight sprite slots cost ~36,000 cycles of the 79,872 in a pass and the
 droid AI another ~17,000, so the loop keeps roughly a third spare. The RAM squeeze that shaped
@@ -170,7 +176,7 @@ home and the note is cross-referenced.
 
 | | |
 |---|---|
-| **RAM** | **The squeeze is over but the discipline stays — and main RAM is tight again.** Measured 2026-08-30: main RAM **6 B** (`code_end` `&2FFA`), bank 4 **175 B**, bank 5 **602 B**, bank 6 **39 B**, bank 7 **7 B** + ~176 B pad, `PARBRF` 56 B, `PINTRO` **0 B** (it fills to `&3000` exactly; it starts at `&2700` and `&2500-&26FF` is free below it). The RAM pass left 639 B of main RAM; Layer 13b's `swBank` reads, the handover copy and the early `disrFlash` clear have spent most of it. Take live numbers from the build output; spending rules and reserves in [`docs/ram-pass.md`](docs/ram-pass.md) and `CLAUDE.md` |
+| **RAM** | **The squeeze is over but the discipline stays — and main RAM is tight again.** Measured 2026-08-30, after the CTRL+R key redefinition: main RAM **7 B** (`code_end` `&2FF9`: `keyTab` took the last six on 2026-08-30 and `DbgRedrawKey` gave seven back on 2026-08-31), bank 4 **143 B**, bank 5 **602 B**, bank 6 **39 B**, bank 7 **7 B** + ~176 B pad, `PARBRF` 36 B, `PARAFNT` tail 26 B, `PARMAN` 225 B, `PINTRO` **0 B** (it fills to `&3000` exactly; it starts at `&2700` and `&2500-&26FF` is free below it). The RAM pass left 639 B of main RAM; Layer 13b's `swBank` reads, the handover copy and the early `disrFlash` clear have spent most of it. Take live numbers from the build output; spending rules and reserves in [`docs/ram-pass.md`](docs/ram-pass.md) and `CLAUDE.md` |
 | **Some debug builds may still fail to assemble** | Pre-pass, every flag except `DEBUG_INVULN` broke the build on space (`GUARD` / `spr2_end` / `sound.asm` asserts). KC 2026-08-21: accepted. The pass's headroom may have brought some back — try the flag before assuming. `BUGS.md` #17 |
 | Droid worst case unmeasured | 8 slots (~36,000) + droids (17,000) + full-diagonal level draw (19,172) is ~72,000 of 79,872 before the rest of the loop. It never arose by chance; it wants a rig on a deck with a long open corridor. `docs/raster-timing.md` Step 3 is the planned relief |
 | **The rupture goes up mid-frame, and the TV loses lock** | `SetupRupture` switches the CRTC shape wherever the CPU happens to be; a television needs several fields to pull sync back — a roll or tear into a game and after a game over. Candidates: switch on a field boundary, order the writes so the frame stays legal at every step, blank across the change. Mind the R5/R6/R7 write-window rules in `CLAUDE.md`; nothing here is measured yet | 

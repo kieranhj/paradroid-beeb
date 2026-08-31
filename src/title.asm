@@ -272,7 +272,7 @@ ASSERT TITLE_R7 >= TITLE_ROWS   \ VSync must fall after the last row shown
   STA tiLo
   STA tiHi
 .tiw_loop
-  LDX #KEY_L
+  LDX keyTab+CTL_FIRE
   JSR keydown
   BEQ tiw_done                  \ Z set: fire is down
   INC tiLo
@@ -306,6 +306,12 @@ ASSERT TITLE_R7 >= TITLE_ROWS   \ VSync must fall after the last row shown
 \ now lands at 11.2 Hz — which is where the other two call sites sit
 \ and what $0CB4's every-fourth-frame comes to. Retune this if keydown
 \ ever changes cost again.
+\ IT CHANGED BY TWO CYCLES ON 2026-08-30, and the numbers above are the
+\ ones before it: fire is a redefinable control now, so the test reads
+\ `LDX keyTab+CTL_FIRE` (4 cycles) where it read `LDX #KEY_L` (2). 89
+\ cycles a turn, 11.0 Hz and a 5.8 s timeout. IT READS THE TABLE RATHER
+\ THAN CALLING KeyDownIx because this overlay can be up when the font
+\ block is not — see keyTab in main.asm.
 \
 \ AND THE TIMEOUT MOVED WITH IT: 65,536 turns is 5.7 s now, where it
 \ was 17.9 s. That is NOT a regression — the C64's own timeout is 256

@@ -31,14 +31,15 @@ Regenerate it after any change that moves a region:
 | `&0DF0–&0DFF` | 16 B | **The sideways ROMs' private-workspace page bytes. NOT OURS**, and the reason `PageLowIn` copies in two pieces rather than one |
 | `&0E00–&10FE` | 766 B | `lowcode` — `DrawTileCells`, the animated-tile scan and repaint, the alert lamp, the `CollisionType` table. Staged through `LOW_STAGE` and copied down **after the last `*LOAD`**: this is DFS's own workspace while the filing system is running |
 | `&10FF` | **1 B free** | (2026-08-25) |
-| `&1100–&2D80` | 7,297 B | Code (`PARA`), starting below DFS's `PAGE` of `&1900`. The level draw and droid AI are in bank 4; the RAM recovery pass then moved the effect blitter to bank 5, the boot loop to `PARDEPK` and pulled the `PAGEBANK`/`PNMIRROR` expansions into subroutines. Also carries the one copy of the droid icon data (`droidicon.asm`), read from banks 6 and 7 |
-| `&2D81–&2FFF` | **639 B free** | The RAM recovery pass of 2026-08-25 ([`ram-pass.md`](ram-pass.md)) took this from 2 B — the long squeeze history that used to fill this cell is in that doc and the layer docs |
+| `&1100–&2FF9` | 7,930 B | Code (`PARA`), starting below DFS's `PAGE` of `&1900`. The level draw and droid AI are in bank 4; the RAM recovery pass then moved the effect blitter to bank 5, the boot loop to `PARDEPK` and pulled the `PAGEBANK`/`PNMIRROR` expansions into subroutines. Also carries the one copy of the droid icon data (`droidicon.asm`), read from banks 6 and 7 |
+| `&2FFA–&2FFF` | 6 B | `keyTab` — the six redefinable controls, as INKEY bytes, in `CTL_*` order. **The last six bytes of the image, and the only main-RAM home that is resident at every moment a control is tested** — see [`layer-11f-frontend.md`](layer-11f-frontend.md) §8a |
+| — | **0 B free** | `code_end` is `&3000` exactly. The RAM recovery pass of 2026-08-25 ([`ram-pass.md`](ram-pass.md)) had taken this to 639 B; Layer 13b and Layer 11f's `keyTab` spent all of it. **`ram-pass.md`'s reserve list is what pays for the next thing that needs main RAM** |
 | `&3000–&366F` | 1,648 B | Layer 9's text font, `PARAFNT` — 103 glyphs × **16 B, 1bpp**, the C64's own bytes, expanded by `FontCell` as it draws. Layer 13a TASK 3 |
 | `&3670–&36CF` | 96 B | The status box's twelve border cells, same file, also 1bpp |
 | `&36D0–&3CD5` | 1,542 B | `constrings` — the `$C000` string table, **one copy**, read by the console in bank 6 and the droid database in bank 7 alike. Same `PARAFNT` file. Layer 13a TASK 7 |
-| `&3CD6–&3D97` | 194 B | `FontCell`, `fontExpand`, `fontMask` — the 1bpp decoder — and, since 2026-08-20, `DoScore`. Main RAM that does not have to be the code image. Layer 13a TASK 8 |
-| `&3D9F–&3DCE` | 48 B | `PN_TABS` — **two** droid tables (`pnTabCent`, `pnTabNum`), mirrored out of bank 4 for banks 6 and 7. The other two mirrors were never read and were deleted (RAM pass 1) |
-| `&3DCF–&3DFF` | **~49 B free** | Was 8 when `PN_TABS` was 96 B — `BUGS.md` #18's "check `PN_TABS` first" lesson still applies, with the new sizes |
+| `&3CED–&3DB5` | 201 B | `FontCell`, `fontExpand`, `fontMask` — the 1bpp decoder — `DoScore` (2026-08-20) and `KeyDownIx` (2026-08-30). Main RAM that does not have to be the code image. Layer 13a TASK 8; take the exact addresses from the symbol dump, this row has been stale before |
+| `&3DB6–&3DE5` | 48 B | `PN_TABS` — **two** droid tables (`pnTabCent`, `pnTabNum`), mirrored out of bank 4 for banks 6 and 7. The other two mirrors were never read and were deleted (RAM pass 1) |
+| `&3DE6–&3DFF` | **26 B free** | Was ~49 before `KeyDownIx`, and 8 when `PN_TABS` was 96 B — `BUGS.md` #18's "check `PN_TABS` first" lesson still applies, with the new sizes |
 | `&3E00–&45FF` | 2,048 B | Sprite background save areas, 8 slots × 256 — slot 7 (`&4500`) is the player's bullet. Ends exactly at the tile map. **Doubles as `UnpackChars`' depack scratch** (Layer 11e): the 1,352 B of char bitmaps + `charRemap` land here at `LoadDeck`, boot and the GoTitle rebuild — dead space at all three moments because every slot is re-dealt before anything restores |
 | `&4600–&49FF` | 1,024 B | Tile map, 64 × 16, page-aligned, fixed home. Ends exactly at the panel |
 
@@ -62,9 +63,10 @@ Regenerate it after any change that moves a region:
 | `&8000–&BFFF` | 16 K | Sideways bank window — one of the FOUR banks below, never more |
 | `&C000–&FFFF` | 16 K | MOS |
 
-Free main RAM (2026-08-25, post-recovery): **639 B below `&3000`** (`code_end` = `&2D81`),
-~49 in the `PARAFNT` tail, 1 at the top of `lowcode`, 6 in `lowcode2`, 8 after `lowbss` —
-roughly 700 B in five pieces, of which the code image's block is the one that matters.
+Free main RAM (2026-08-30): **0 B below `&3000`** — `code_end` is `&3000` exactly — 26 in the
+`PARAFNT` tail, 1 at the top of `lowcode`, 6 in `lowcode2`, 8 after `lowbss`: about 40 B in four
+pieces, none of them the one that matters. The 639 B this line quoted after the 2026-08-25
+recovery pass went to Layer 13b's bank probe and Layer 11f's `keyTab`.
 The seam code (`TitleSeq`, `GoTitle`, `UninstallIrq`, `SaveDfsWs`/`RestoreDfsWs`) stays resident
 of necessity, because it pages banks and runs while the MOS owns the machine.
 

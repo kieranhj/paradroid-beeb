@@ -449,6 +449,32 @@
   RTS
 
 \ ============================================================
+\ DbgRedrawKey — CTRL+R: the oracle redraw
+\ ============================================================
+\ The main loop's debug redraw, moved out of the code image on
+\ 2026-08-31 and given a CTRL. Both halves matter:
+\ IT NEEDS CTRL because the six play controls are redefinable now
+\ (Layer 11f) and R is a key like any other: bind LEFT to R and every
+\ step left would repaint the whole viewport. Every debug key took the
+\ same treatment — C, [, ] and W — and CTRL costs nothing to test,
+\ keydown asking the matrix about one key at a time.
+\ IT IS NOT INSIDE AN `IF DEBUG_`, which it never has been: R is the
+\ oracle every scrolling bug so far has been found with, and it is
+\ wanted on the ordinary build. It ships in RELEASE too, at 14 bytes
+\ of a bank with room; gating it would take an agreed decision, not a
+\ tidy-up.
+.DbgRedrawKey
+  LDX #KEY_CTRL
+  JSR keydown
+  BNE dbr_x
+  LDX #KEY_R
+  JSR keydown
+  BNE dbr_x
+  JMP RedrawAll                 \ and its RTS
+.dbr_x
+  RTS
+
+\ ============================================================
 \ RedrawAll — fill the whole viewport from the current position
 \ ============================================================
 .RedrawAll

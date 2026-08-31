@@ -118,8 +118,8 @@ DB_IMG_UNIT = 4
   BNE db_running
   JSR DbEnter
 .db_running
-  LDX #KEY_L                    \ fire: back to the console main screen
-  JSR keydown
+  LDX #CTL_FIRE                    \ fire: back to the console main screen
+  JSR KeyDownIx
   BNE db_fireUp
   LDA dbPrevF
   BNE db_page
@@ -195,8 +195,8 @@ DB_IMG_UNIT = 4
 \ decrements and jumps to droidType at 0. The image and the name are
 \ redrawn every pass, as the C64 redraws its sprites and ShowRobotType.
 .DbPage1
-  LDX #KEY_K                    \ up
-  JSR keydown
+  LDX #CTL_UP                    \ up
+  JSR KeyDownIx
   BNE db_p1_upOff
   LDA dbPrevU
   BNE db_p1_notUp
@@ -215,8 +215,8 @@ DB_IMG_UNIT = 4
   STA dbPrevU
 .db_p1_notUp
 
-  LDX #KEY_M                    \ down
-  JSR keydown
+  LDX #CTL_DOWN                    \ down
+  JSR KeyDownIx
   BNE db_p1_dnOff
   LDA dbPrevD
   BNE db_p1_notDn
@@ -393,11 +393,11 @@ DB_DESC_MAX = &38 - &10         \ sub_0_2DCD's own bound, rebased to 0
 .DbPage4
   JSR DbSideways
   BCS db_p4_go
-  LDX #KEY_K
-  JSR keydown
+  LDX #CTL_UP
+  JSR KeyDownIx
   BEQ db_p4_go
-  LDX #KEY_M
-  JSR keydown
+  LDX #CTL_DOWN
+  JSR KeyDownIx
   BEQ db_p4_go
   RTS
 .db_p4_go
@@ -411,8 +411,8 @@ DB_DESC_MAX = &38 - &10         \ sub_0_2DCD's own bound, rebased to 0
 \ ---- left or right, edge triggered --------------------------
 \ joyXDir's two keys. Carry set if either has just gone down.
 .DbSideways
-  LDX #KEY_Z
-  JSR keydown
+  LDX #CTL_LEFT
+  JSR KeyDownIx
   BNE db_sw_lUp
   LDA dbPrevL
   BNE db_sw_tryR
@@ -424,8 +424,8 @@ DB_DESC_MAX = &38 - &10         \ sub_0_2DCD's own bound, rebased to 0
   LDA #0
   STA dbPrevL
 .db_sw_tryR
-  LDX #KEY_X
-  JSR keydown
+  LDX #CTL_RIGHT
+  JSR KeyDownIx
   BNE db_sw_rUp
   LDA dbPrevR
   BNE db_sw_no

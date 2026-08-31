@@ -60,8 +60,8 @@ emulator` comments and a half-finished derivation in the middle of it. It surviv
 months looking like working code.
 
 **Verify against the buffer, not the screenshot.** Screenshots have repeatedly said "fine" when it
-was not. Diff the play buffer against `RedrawAll` at the same position (**R** — it was SPACE
-until 2026-08-26, when the second transfer button took that key) byte for byte, over
+was not. Diff the play buffer against `RedrawAll` at the same position (**CTRL+R** — plain R
+until 2026-08-31, when every debug key gained the modifier, and SPACE before 2026-08-26) byte for byte, over
 **odd and even** `mapHX`, **non-zero `line`** and **diagonals** — every scrolling bug so far has
 hidden in one of those. Let the view settle ~1,500,000 cycles first, and poke **all three** draw
 call sites to NOPs — the `JSR SprDrawAll` **and both `JSR SprDrawTr`s** near the top of the main
@@ -207,7 +207,7 @@ addresses from the `beebasm` output rather than from any document.** In outline:
 | `&5400–&57FF` | Row/unit multiply, character-address and sprite-mask tables, built at startup — packed exactly, no slack |
 | `&5800–&7FFF` | Play buffer: circular strip, 16 rows × 640 |
 | SWRAM bank 4 | `PARADAT` — tiles, levels, palettes, droid game data, **the level-draw code, the droid AI, Layer 10's entry/exit and Layer 11e's sound driver**. The char bitmaps ship ZX0-packed; `BuildCharset` unpacks them into the idle sprite save areas at deck load |
-| SWRAM bank 5 | `PARASPR` — the blitter, shifts 0 and 1 px, **and the effect blitter (`src/sprfx.asm`, RAM pass DECISION 2)**. **Evicted for the briefing**, which loads `PARMAN` over it: the manual's text, `briefman.asm` and the chatter's effect records. Both exits reload the blitter |
+| SWRAM bank 5 | `PARASPR` — the blitter, shifts 0 and 1 px, **and the effect blitter (`src/sprfx.asm`, RAM pass DECISION 2)**. **Evicted for the briefing**, which loads `PARMAN` over it: the manual's text, `briefman.asm`, `keyredef.asm` (the CTRL+R key redefinition, Layer 11f) and the chatter's effect records. Both exits reload the blitter |
 | SWRAM bank 6 | `PARSPR2` — shifts 2 and 3 px, same layout, plus Layer 9's panel/console, Layer 11f's `PnBriefing` and the 912 B `dfsSave` snapshot |
 | SWRAM bank 7 | `PARXFER` — Layer 10's transfer minigame, Layer 8b's lift screen, the console's ship, deck-plan and droid-database pages, and Layer 11's game over. The title is the `PARTITL` disc overlay, and the droid icons are main RAM's now |
 
@@ -218,13 +218,14 @@ paragraph:
 
 | Region | Free (measured 2026-08-30) |
 |---|---|
-| Main RAM code image | **6 B** — `code_end` `&2FFA`. It was 48 B after the RAM pass; Layer 13b's `swBank` reads and handover copy took 37, and `TitleSeq`'s early `disrFlash` clear 5. **This is the binding constraint again** |
-| Bank 4 | **175 B** on the gauge (2026-08-29: +206 from losing its depacker copy, −56 taking `DoorTdp` in), + `colourMap` `ALIGN` pad |
+| Main RAM code image | **7 B** — `code_end` `&2FF9`. `keyTab` took the last six on 2026-08-30 and left it at zero; moving the debug redraw's key test into bank 4 (`DbgRedrawKey`) gave seven back on 2026-08-31. It was 48 B after the RAM pass; Layer 13b's `swBank` reads and handover copy took 37, and `TitleSeq`'s early `disrFlash` clear 5. **This is the binding constraint again** |
+| Bank 4 | **143 B** on the gauge (2026-08-31: -32 for `DbgRedrawKey` and the debug keys' CTRL tests; 175 B before that) (2026-08-29: +206 from losing its depacker copy, −56 taking `DoorTdp` in), + `colourMap` `ALIGN` pad |
 | Bank 5 | **602 B** |
 | Bank 6 | **39 B** (the 114 B in this table before 2026-08-30 was stale) |
 | Bank 7 | 7 B tail + **~176 B** of `planInk` `ALIGN` pad |
-| `PARBRF` (`&0400`, hard ceiling `&0800`) | **56 B** |
-| `PARAFNT` block | ~49 B before `SPR_SAVE` |
+| `PARBRF` (`&0400`, hard ceiling `&0800`) | **36 B** (56 B before the CTRL+R hook) |
+| `PARAFNT` block | **26 B** before `SPR_SAVE` (`KeyDownIx` took 7) |
+| `PARMAN` (bank 5's briefing load; the bound is `DEPK_STREAM + size <= PANEL_ADDR`) | **225 B** — the redefine screen took 893 |
 | Low overlay | `lowcode` **9 B** (its two raw `PAGEBANK`s became `JSR Pg*`), `lowcode2` 3 B, `lowbss` 8 B |
 | `PINTRO` (`pdloader/`, `-Intro` builds) | **0 B** — it fills to `&3000` exactly, where the picture lands. It starts at `&2700` and `&2500–&26FF` is free below it, so it can move down if it needs to grow |
 
@@ -395,10 +396,12 @@ Both worked around locally; extending the shared set is the better fix and moves
   `DEBUG_INVULN`, `DEBUG_DECK`, `DEBUG_KILL`. Each carries a header explaining what it shows and
   how to read it; `DEBUG_TIME` in particular documents how to take a cycle measurement that means
   something, including why only one call site may be instrumented at a time. **Three change what the
-  GAME does rather than what it draws**. `DEBUG_XFERWIN`: W wins the transfer minigame outright, so
-  droid behaviour after a capture can be reached without playing it. `DEBUG_KILL`: **C** kills every droid on the deck, through the real `DrKillDroid` path, to
+  GAME does rather than what it draws**. **EVERY DEBUG KEY NEEDS CTRL** since
+  2026-08-31: the six play controls are redefinable (Layer 11f) and a player who bound one to R, C,
+  W, `[` or `]` would otherwise be firing a debug function with it. `DEBUG_XFERWIN`: **CTRL+W** wins the transfer minigame outright, so
+  droid behaviour after a capture can be reached without playing it. `DEBUG_KILL`: **CTRL+C** kills every droid on the deck, through the real `DrKillDroid` path, to
   reach the cleared-deck floor without shooting one empty (layer-14 DECISION 6).
-  `DEBUG_DECK`: `[` and `]` hop the player one
+  `DEBUG_DECK`: **CTRL+`[`** and **CTRL+`]`** hop the player one
   deck at a time with no lift — the ship is walkable without it, but reaching deck 11 by lift to
   look at one tile costs minutes a time.
   `DEBUG_RESTART` was removed 2026-08-21: **ESCAPE** is a real game feature that ends the game

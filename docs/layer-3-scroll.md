@@ -190,7 +190,8 @@ edges and never repairs the interior. Scrolling exposed it rather than caused it
 
 Triggers when `mapHX + 79` crosses 256 — **decks 2 and 14**, both centring at `mapHX` = 180.
 
-*Diagnostic worth keeping:* a debug key (**R**; SPACE until 2026-08-26) forces `RedrawAll`, so the incremental buffer can be
+*Diagnostic worth keeping:* a debug key (**CTRL+R**; plain R until 2026-08-31, SPACE until
+2026-08-26) forces `RedrawAll`, so the incremental buffer can be
 diffed against a full redraw at the same position. Both then matched byte-for-byte — after
 right/down/left, and after scrolling to the extremes with the buffer wrapping repeatedly — which
 proved the scroll logic correct and pointed at the load-time draw instead.

@@ -238,7 +238,7 @@ HS_COL_INI    = 31              \ $E6E8's
   JSR HsWait
 
 \ The index is carried in A through both arms and stored once.
-  LDX #KEY_M                    \ down: $0954's +1, on through the alphabet
+  LDX keyTab+CTL_DOWN                    \ down: $0954's +1, on through the alphabet
   JSR keydown                   \ Z set = the key is DOWN
   BNE hs_g_up
   LDX hsIdx
@@ -251,7 +251,7 @@ HS_COL_INI    = 31              \ $E6E8's
   BEQ hs_g_set                  \ always
 
 .hs_g_up
-  LDX #KEY_K                    \ up: $094D's -1, backwards
+  LDX keyTab+CTL_UP                    \ up: $094D's -1, backwards
   JSR keydown
   BNE hs_g_fire
   LDX hsIdx
@@ -267,11 +267,11 @@ HS_COL_INI    = 31              \ $E6E8's
   JSR HsPut
 
 .hs_g_fire
-  LDX #KEY_L                    \ $E59E: fire commits this initial
+  LDX keyTab+CTL_FIRE                    \ $E59E: fire commits this initial
   JSR keydown
   BNE hs_g_loop
 .hs_g_rel
-  LDX #KEY_L                    \ $E5A2: and then wait for the release
+  LDX keyTab+CTL_FIRE                    \ $E5A2: and then wait for the release
   JSR keydown
   BEQ hs_g_rel
   RTS

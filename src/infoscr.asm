@@ -360,8 +360,8 @@ IS_BLANK = &FF                  \ IsEntry's third door, and not a screen
 \ ReadJoystick — and no debounce count, because the port's pages are
 \ edge triggered and every one of them reads the release this way.
 .IsTick
-  LDX #KEY_L
-  JSR keydown                   \ Z set = the key is DOWN
+  LDX #CTL_FIRE
+  JSR KeyDownIx                   \ Z set = the key is DOWN
   PHP
   LDA isPhase
   BNE is_tk_armed

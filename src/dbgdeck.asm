@@ -48,7 +48,10 @@ IF DEBUG_DECK
   LDA liftMode                  \ entering the lift: the debug hop keeps
   BNE dd_notDn                  \ its hands off the deck this pass
 
-  LDX #KEY_LBRK
+  LDX #KEY_CTRL                 \ CTRL+[, 2026-08-31: a redefined control
+  JSR keydown                   \ must not be able to hop decks. The
+  BNE dd_upOff                  \ not-held exit is the key-up one, so the
+  LDX #KEY_LBRK                 \ press edge rearms either way
   JSR keydown
   BNE dd_upOff
   LDA prevUp
@@ -63,6 +66,9 @@ IF DEBUG_DECK
   LDA #0 : STA prevUp
 .dd_notUp
 
+  LDX #KEY_CTRL                 \ CTRL+], as above
+  JSR keydown
+  BNE dd_dnOff
   LDX #KEY_RBRK
   JSR keydown
   BNE dd_dnOff

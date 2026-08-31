@@ -182,7 +182,9 @@ BR_EXIT_OFF   = 1               \ off the end of the last page: the title
 \   _12        next page; page 6 is the way out to the title
 \   any fire   the game, from anywhere in all of that
 \
-\ K and M are the port's up and down, L is fire — the game's own keys.
+\ Up, down and fire are the GAME's controls, through keyTab and
+\ KeyDownIx — so a briefing scrolled after a CTRL+R uses whatever was
+\ just set, which is the cheapest possible way to try them out.
 \ One field here is one C64 field: the step waits on fieldCount, which
 \ the rupture IRQ bumps at fire 3.
 BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
@@ -247,31 +249,23 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
   STA brChSeed
 
 \ ---- per page: $1184's block --------------------------------
+\ THE BODY IS A ROUTINE because the redefine screen has to undo itself:
+\ BrKeyRedef paints the page again when CTRL+R's screen is done, and
+\ the four loops below simply carry on with the page back under them
+\ and the travel started again from the top. See BrKeyRedef.
 .br_page
-  LDA #0
-  STA scrollS
-  STA scrollS+1
-  STA line
-  STA brTop
-  STA brBufRow
-  JSR SetCRTCStart
-  LDA brPage                    \ $119A: the last page gets the droid
-  CMP #BR_PAGES-1               \ portrait, rendered before the paint
-  BNE br_pg_nopo                \ so the first window composites it
-  JSR BrPortrait
-.br_pg_nopo
-  JSR BrDrawPage
+  JSR BrPagePaint
 
 \ the _4/_5 release wait: a held M must not eat the next page too
 .br_deb
   JSR BrWaitField
-  LDX #KEY_L
-  JSR keydown
+  LDX #CTL_FIRE
+  JSR KeyDownIx
   BNE br_nofire                 \ br_fire is past a branch's reach here
   JMP br_fire
 .br_nofire
-  LDX #KEY_M
-  JSR keydown
+  LDX #CTL_DOWN
+  JSR KeyDownIx
   BEQ br_deb
 
 \ ---- the top dwell: _6/_7, 256 fields, down skips it --------
@@ -279,11 +273,11 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
   STA brDwell
 .br_dw1
   JSR BrWaitField
-  LDX #KEY_L
-  JSR keydown
+  LDX #CTL_FIRE
+  JSR KeyDownIx
   BEQ br_fire
-  LDX #KEY_M
-  JSR keydown
+  LDX #CTL_DOWN
+  JSR KeyDownIx
   BEQ br_scroll
   INC brDwell
   BNE br_dw1
@@ -291,15 +285,15 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
 \ ---- the scroll: _8 to $1208 --------------------------------
 .br_scroll
   JSR BrWaitField
-  LDX #KEY_L
-  JSR keydown
+  LDX #CTL_FIRE
+  JSR KeyDownIx
   BEQ br_fire
-  LDX #KEY_K                    \ up: ySpd+1 becomes 0 — hold still
-  JSR keydown
+  LDX #CTL_UP                    \ up: ySpd+1 becomes 0 — hold still
+  JSR KeyDownIx
   BEQ br_scroll
   JSR BrStep
-  LDX #KEY_M                    \ down: $FF - 1 = -2 — a second step
-  JSR keydown
+  LDX #CTL_DOWN                    \ down: $FF - 1 = -2 — a second step
+  JSR KeyDownIx
   BNE br_moved
   JSR BrStep
 .br_moved
@@ -315,11 +309,11 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
   STA brDwell
 .br_dw2
   JSR BrWaitField
-  LDX #KEY_L
-  JSR keydown
+  LDX #CTL_FIRE
+  JSR KeyDownIx
   BEQ br_fire
-  LDX #KEY_M
-  JSR keydown
+  LDX #CTL_DOWN
+  JSR KeyDownIx
   BEQ br_turn
   INC brDwell
   BNE br_dw2
@@ -438,6 +432,17 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
 \ and touches only main RAM, so the text bank stays paged across it and
 \ the bank-5-in-bank-5-out contract below is untouched.
   JSR VolKeysBrf
+  JSR BrKeyRedef                \ CTRL+R: the redefine screen
+\ THE CHATTER STOPS WHILE THAT SCREEN IS UP (KC, 2026-08-30). It is the
+\ briefing's burble, not the machine's, and it has no business under a
+\ screen whose whole content is short beeps that answer key presses —
+\ they would land on the same voice and be swallowed. The blip already
+\ sounding when CTRL+R lands plays itself out: SndTick is still running,
+\ nothing new is requested, and BmKrRun's own beeps take voice 1 from
+\ there. brRedef is clear again by the time BrKeyRedef returns at the
+\ outer level, so the burble resumes with the page.
+  LDA brRedef
+  BNE brch_x
 \ fall through into the chatter, and its RTS
 
 \ ============================================================
@@ -492,6 +497,60 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
 .BrChBack
   JSR PgSpr   
 .brch_x
+  RTS
+
+\ ============================================================
+\ BrPagePaint — the current page, from the top
+\ ============================================================
+\ br_page's own prologue, called from there and from BrKeyRedef.
+.BrPagePaint
+  LDA #0
+  STA scrollS
+  STA scrollS+1
+  STA line
+  STA brTop
+  STA brBufRow
+  JSR SetCRTCStart
+  LDA brPage                    \ $119A: the last page gets the droid
+  CMP #BR_PAGES-1               \ portrait, rendered before the paint
+  BNE br_pg_nopo                \ so the first window composites it
+  JSR BrPortrait
+.br_pg_nopo
+  JMP BrDrawPage                \ and its RTS
+
+\ ============================================================
+\ BrKeyRedef — CTRL+R: the redefine screen, and the page back
+\ ============================================================
+\ Layer 11f's key redefinition [11f DECISION 15, KC 2026-08-30]. This
+\ is only the trigger; the screen is BmKrRun, bank 5, src/keyredef.asm
+\ — this overlay's &0800 ceiling again.
+\ ON BrWaitField, so it is live in all four of BrRun's loops: the page
+\ debounce, both dwells and the scroll. brRedef keeps it out of its own
+\ way, because BmKrRun waits on fields through BrWaitField too and
+\ would otherwise re-enter itself on the CTRL+R still being held.
+\ NOTHING IS RESTARTED AFTERWARDS. The page is simply painted again
+\ with the travel back at row 0, and whichever loop was running carries
+\ on — a dwell counts out, the scroll scrolls the page again. That is
+\ what a restart would have done, without four tests in BrRun and
+\ without a branch that has to reach br_page from all of them.
+\ CTRL NEEDS NOTHING SPECIAL: keydown asks the matrix about one key at
+\ a time, so a modifier is just another query and there is no ghosting.
+\ See the note by KEY_CTRL in main.asm.
+.BrKeyRedef
+  LDA brRedef
+  BNE brkr_x                    \ the screen is up: this IS its field wait
+  LDX #KEY_CTRL
+  JSR keydown
+  BNE brkr_x
+  LDX #KEY_R
+  JSR keydown
+  BNE brkr_x
+  INC brRedef
+  JSR BmKrRun                   \ bank 5, and it is already paged
+  JSR BrPagePaint
+  LDA #0
+  STA brRedef
+.brkr_x
   RTS
 
 \ ============================================================
@@ -724,6 +783,8 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
 \ ---- state, all of it this overlay's ------------------------
 .brFlag  EQUB 0                 \ 0 the title fired; 1 it timed out and
                                 \ PARMAN is in bank 5
+.brRedef EQUB 0                 \ non-zero while the redefine screen owns
+                                \ the strip: BrKeyRedef's re-entry guard
 .brPage  EQUB 0                 \ 0-4: which page is up
 .brRow   EQUB 0                 \ the CANVAS row being painted
 .brStrip EQUB 0                 \ the BUFFER row (0-15) it lands in

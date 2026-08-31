@@ -3111,8 +3111,8 @@ XF_PHYS_NEUT = 0                \ black   — logical 3, structure/unclaimed
 \ the fire edge that commits. ChangeDeck ($2705) is the model: step the
 \ index, and the shaft-sentinel mismatch is the whole bounds test.
 .LvTick4
-  LDX #KEY_K
-  JSR keydown
+  LDX #CTL_UP
+  JSR KeyDownIx
   BNE lvt4_upOff
   LDA prevLU
   BNE lvt4_notUp
@@ -3125,8 +3125,8 @@ XF_PHYS_NEUT = 0                \ black   — logical 3, structure/unclaimed
   LDA #0
   STA prevLU
 .lvt4_notUp
-  LDX #KEY_M
-  JSR keydown
+  LDX #CTL_DOWN
+  JSR KeyDownIx
   BNE lvt4_dnOff
   LDA prevLD
   BNE lvt4_notDn
@@ -3139,8 +3139,8 @@ XF_PHYS_NEUT = 0                \ black   — logical 3, structure/unclaimed
   LDA #0
   STA prevLD
 .lvt4_notDn
-  LDX #KEY_L                    \ fire commits — an unmoved selection is
-  JSR keydown                   \ the cancel, exactly the C64's shape
+  LDX #CTL_FIRE                    \ fire commits — an unmoved selection is
+  JSR KeyDownIx                   \ the cancel, exactly the C64's shape
   BNE lvt4_fireOff
   LDA lvPrevFire
   BNE lvt4_x
@@ -3289,8 +3289,8 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
   JMP SetTextPal                \ and its RTS
 
 .ConMenu4
-  LDX #KEY_K                    \ up the menu
-  JSR keydown
+  LDX #CTL_UP                    \ up the menu
+  JSR KeyDownIx
   BNE cm4_upOff
   LDA conPrevU
   BNE cm4_notUp
@@ -3307,8 +3307,8 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
   LDA #0
   STA conPrevU
 .cm4_notUp
-  LDX #KEY_M                    \ down the menu
-  JSR keydown
+  LDX #CTL_DOWN                    \ down the menu
+  JSR KeyDownIx
   BNE cm4_dnOff
   LDA conPrevD
   BNE cm4_notDn
@@ -3326,8 +3326,8 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
   LDA #0
   STA conPrevD
 .cm4_notDn
-  LDX #KEY_L                    \ fire: the conJump_t dispatch
-  JSR keydown
+  LDX #CTL_FIRE                    \ fire: the conJump_t dispatch
+  JSR KeyDownIx
   BNE cm4_lUp
   LDA conMPrevL
   BNE cm4_x
@@ -3374,8 +3374,8 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
 \ routine for both pages: only one flag is ever set, so clearing the
 \ pair is which-page-agnostic and ConsoleTick keeps the distinction.
 .ConPageKeys4
-  LDX #KEY_L
-  JSR keydown
+  LDX #CTL_FIRE
+  JSR KeyDownIx
   BNE csk_lUp
   LDA conMPrevL
   BNE csk_x

@@ -144,8 +144,8 @@ ASSERT PLAY_VIS_ROWS + 1 == 16  \ the board needs all 16 rows
 \ and xfFire — exactly why the original re-reads at $214F.
 .XfReadInput
   JSR ReadKeys                  \ joyXDir/joyYDir, main RAM
-  LDX #KEY_L                    \ joyFire, IN THE C64'S SENSE: the CIA is
-  JSR keydown                   \ active low, so 0 means PRESSED and the
+  LDX #CTL_FIRE                    \ joyFire, IN THE C64'S SENSE: the CIA is
+  JSR KeyDownIx                   \ active low, so 0 means PRESSED and the
   BEQ xri_down                  \ transliterated tests below are verbatim
   LDA #&10
   BNE xri_fire
@@ -362,6 +362,9 @@ IF DEBUG_XFERWIN
 \ writes the same two things a won game leaves behind and the verdict
 \ below cannot tell the difference: the human's colour won, and the game
 \ is over. xfLeftColor is the human's, which is $21CF's own test.
+  LDX #KEY_CTRL                 \ CTRL+W, 2026-08-31: see DbgRedrawKey
+  JSR keydown
+  BNE xpl_nowin
   LDX #KEY_W
   JSR keydown
   BNE xpl_nowin

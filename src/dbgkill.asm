@@ -30,6 +30,9 @@ IF DEBUG_KILL
 \ SLOT 0 IS THE PLAYER and the loop stops above it. keydown is main
 \ RAM and this is bank 4, which is the legal direction.
 .DbgKill4
+  LDX #KEY_CTRL                 \ CTRL+C, 2026-08-31: see DbgRedrawKey.
+  JSR keydown                   \ dk_off is the key-up path and clears
+  BNE dk_off                    \ dkPrev, so the press edge rearms
   LDX #KEY_C
   JSR keydown
   BNE dk_off

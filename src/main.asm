@@ -702,7 +702,8 @@ CON_STR_ADDR  = PN_FRAME_ADDR + PN_FRAME_BYTES
 \ here for the reason FONT_BYTES is, and ASSERTed against the real one
 \ where it is assembled — if it grows, this is the number to bump.
 FONTCODE_ADDR  = CON_STR_ADDR + CON_STR_BYTES
-FONTCODE_BYTES = 194            \ FontCell, its table, and DoScore
+FONTCODE_BYTES = 201            \ FontCell, its table, DoScore and
+                                \ KeyDownIx
 
 
 PN_TABS     = FONTCODE_ADDR + FONTCODE_BYTES
@@ -1037,6 +1038,13 @@ SHIP_CAP   = 8                  \ $15F5: NextLevel INCs shipLevel and DECs
 REC_LEN     = 12                \ colour slots per scheme record
 
 \ ---- negative INKEY codes, as unsigned bytes ---------------
+\ THE SIX PLAY CONTROLS ARE DEFAULTS, NOT THE KEYS. Z/X/K/M/L/SPACE are
+\ what keyTab is assembled with and what the game runs on until the
+\ briefing's CTRL+R screen writes something else over them; every test
+\ of a control goes through KeyDownIx and the table, and only the keys
+\ BELOW the six -- the modifiers, pause, mute, volume, ESCAPE and the
+\ debug keys -- are still tested as immediates. See KeyDownIx and
+\ docs/layer-11f-frontend.md.
 KEY_Z      = &9E                \ -98
 KEY_X      = &BD                \ -67
 KEY_K      = &B9                \ -71
@@ -1044,7 +1052,10 @@ KEY_M      = &9A                \ -102
 KEY_UP     = &C6                \ -58, volume up
 KEY_DOWN   = &D6                \ -42, volume down
 KEY_SPACE  = &9D                \ -99, the second transfer button
-KEY_R      = &CC                \ -52, DEBUG: the forced redraw. IT WAS
+KEY_R      = &CC                \ -52, DEBUG: the forced redraw, WITH CTRL
+                                \ since 2026-08-31 like every other debug
+                                \ key -- the six controls are redefinable
+                                \ and R is a key like any other. IT WAS
                                 \ SPACE until 2026-08-26, when the transfer
                                 \ button took that; every diff recipe in
                                 \ CLAUDE.md and docs/layer-3-scroll.md that
@@ -1070,6 +1081,18 @@ KEY_ESCAPE = &8F                \ -113, the self-destruct
 ENTRY_PASSES = 32               \ $1343's loop: 32 iterations of _es_2
 KEY_LBRK   = &C7                \ -57
 KEY_RBRK   = &A7                \ -89
+
+\ ---- the six controls, as indices into keyTab ---------------
+\ The order is the redefine screen's order and the briefing prompts
+\ read from it, so it is not free to change: BmKrLabel and bmKrLabels
+\ in briefman.asm are the same six in the same sequence.
+CTL_LEFT   = 0
+CTL_RIGHT  = 1
+CTL_UP     = 2
+CTL_DOWN   = 3
+CTL_FIRE   = 4
+CTL_XFER   = 5
+CTL_COUNT  = 6
 
 \ ---- zero page ---------------------------------------------
 \ &70-&8F was the original allocation and is full. With BASIC not
@@ -1563,8 +1586,8 @@ ENDIF
                                 \ slot out again on the next pass
   LDA #0
   STA fireDown
-  LDX #KEY_L
-  JSR keydown
+  LDX #CTL_FIRE
+  JSR KeyDownIx
   BNE ml_lUp
   LDA #1 : STA lDown
   LDA prevRet
@@ -1606,7 +1629,9 @@ ENDIF
 \ a third of a second before touching a droid means anything.
 \
 \ So a second button, KC 2026-08-26: SPACE goes STRAIGHT to transfer
-\ mode and holds it, direction or no direction. The settle delay exists
+\ mode and holds it, direction or no direction. SPACE is only its
+\ DEFAULT since 2026-08-30 — this is CTL_XFER, the sixth redefinable
+\ control, and the briefing's CTRL+R screen can move it. The settle delay exists
 \ only to disambiguate a single button and a dedicated one has nothing
 \ to disambiguate, so it is skipped rather than reproduced — see
 \ docs/layer-7-combat.md [DECISION 12].
@@ -1627,8 +1652,8 @@ ENDIF
 \ The movement is untouched. ReadKeys/CalcSpeed/ApplyMove have already
 \ run by here, so ignoring the direction costs the player nothing this
 \ pass; he keeps walking and simply enters transfer mode while doing it.
-  LDX #KEY_SPACE
-  JSR keydown
+  LDX #CTL_XFER
+  JSR KeyDownIx
   BNE ml_noxfb
   LDA #0                        \ MM_TRANSFER, spelled out: combat.asm's
   STA moveMode                  \ constants are assembled after this point
@@ -1723,11 +1748,13 @@ IF DEBUG_DRAW
   JSR DbgDeckBg                 \ back to the deck's real background
 ENDIF
 
-  LDX #KEY_R                    \ DEBUG: force a full redraw, to compare
-  JSR keydown                   \ the incremental edge draws against it
-  BNE ml_notSpc                 \ (SPACE until 2026-08-26 — see KEY_R)
-  JSR RedrawAll
-.ml_notSpc
+\ DEBUG: CTRL+R forces a full redraw, to compare the incremental edge
+\ draws against it. THE KEY TEST IS IN BANK 4 NOW (2026-08-31), beside
+\ the RedrawAll it calls: it was ten bytes of code image for a debug
+\ key, the data bank is the resting state here so the call is legal,
+\ and the seven bytes it gives back are what paid for the CTRL on all
+\ five debug keys. See DbgRedrawKey in screen.asm.
+  JSR DbgRedrawKey
 
 
 IF DEBUG_DRAW
@@ -3484,6 +3511,33 @@ INCLUDE "src/zx0depack.asm"
   EQUS "LOAD PARXFER"
   EQUB 13
 
+\ ============================================================
+\ keyTab -- the six play controls, as INKEY bytes
+\ ============================================================
+\ THE LAST SIX BYTES OF THE CODE IMAGE, and they are here rather than
+\ anywhere roomier because no other main-RAM region is resident at all
+\ six of the moments a control is tested. The font block is reloaded at
+\ every title seam and is not resident at all during the FIRST title of
+\ a cold boot -- which is exactly where TiWait tests fire; the charset
+\ ground at &0400 is PARBRF's during a title and the charset's during a
+\ game; the &5480 scratch is inside the title's own framebuffer; and
+\ lowbss would need seeding before the first key is read, which is
+\ before anything but the code image exists to seed it. So it lives in
+\ the one region that is always there, is initialised by the *LOAD that
+\ brings PARA in, and survives every screen, seam and deck load until
+\ the next BREAK. Layer 11f's redefine screen writes it; KeyDownIx and
+\ PARTITL's own two files read it.
+\ Redefinitions therefore last the whole session and are lost on BREAK.
+\ There is no save: the disc is not written and the briefing is where
+\ they are set. [11f DECISION 15]
+.keyTab
+  EQUB KEY_Z                    \ CTL_LEFT
+  EQUB KEY_X                    \ CTL_RIGHT
+  EQUB KEY_K                    \ CTL_UP
+  EQUB KEY_M                    \ CTL_DOWN
+  EQUB KEY_L                    \ CTL_FIRE
+  EQUB KEY_SPACE                \ CTL_XFER
+
 .code_end
 
 \ ---- MODE 1 charset, built at deck-load time ----------------
@@ -3947,6 +4001,25 @@ INCLUDE "src/data/strings.asm"
 .ds_none
   RTS
 
+\ ============================================================
+\ KeyDownIx -- keydown, but for one of the six redefinable controls
+\ ============================================================
+\   X = CTL_*, Z set on return if that control's key is down.
+\ Every test of a control goes through here, so a rebind takes effect
+\ everywhere at once and no call site grew by a byte -- `LDX #CTL_UP`
+\ is the two bytes `LDX #KEY_K` was, which is what the code image's
+\ last six sites needed.
+\ IN THE PARAFNT BLOCK, WITH FontCell, and for the same reason: it has
+\ to be main RAM, because bank 4, bank 5 and bank 7 all call it, but it
+\ does not have to be the code image. THE ONE PLACE IT CANNOT BE USED
+\ IS PARTITL: the font block is not resident at the first title of a
+\ cold boot -- ts_loads has not run yet -- so title.asm and
+\ highscore.asm read keyTab directly instead. See keyTab.
+.KeyDownIx
+  LDA keyTab,X
+  TAX
+  JMP keydown                   \ and its RTS, with its Z
+
 .fontcode_end
 .font_end
 ASSERT textfont_end - font_start == FONT_BYTES
@@ -4011,6 +4084,7 @@ INCLUDE "src/data/briefing.asm"
 INCLUDE "src/data/sndchat.asm" \ the chatter's three records: 33 B, and
                                \ bank 4 had 15 — see BmChatter's header
 INCLUDE "src/briefman.asm"
+INCLUDE "src/keyredef.asm"     \ Layer 11f: CTRL+R, the redefine screen
 .man_end
 SAVE "PARMAN", man_start, man_end, DEPK_STREAM, DEPK_STREAM
 PARMAN_PAGES = (man_end - man_start + &FF) DIV &100

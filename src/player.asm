@@ -156,6 +156,9 @@ PLY_DZ_MAX   = PLY_HOME_X + PLY_DEADZONE
 \ ============================================================
 \ ReadKeys — joyXDir / joyYDir, each -1, 0 or +1
 \ ============================================================
+\ THE FOUR KEYS ARE keyTab's, not Z/X/K/M: every control goes through
+\ KeyDownIx and an index, so the briefing's CTRL+R screen can rebind
+\ them. Layer 11f [DECISION 15]; the defaults are still Z/X/K/M.
 \ Opposite keys cancel, which falls out of the DEC/INC pair rather
 \ than needing a test. That matters: the previous build had to make
 \ up and down mutually exclusive by hand because both recorded into
@@ -165,24 +168,24 @@ PLY_DZ_MAX   = PLY_HOME_X + PLY_DEADZONE
   STA joyXDir
   STA joyYDir
 
-  LDX #KEY_Z
-  JSR keydown
+  LDX #CTL_LEFT
+  JSR KeyDownIx
   BNE rk_notZ
   DEC joyXDir
 .rk_notZ
-  LDX #KEY_X
-  JSR keydown
+  LDX #CTL_RIGHT
+  JSR KeyDownIx
   BNE rk_notX
   INC joyXDir
 .rk_notX
 
-  LDX #KEY_K
-  JSR keydown
+  LDX #CTL_UP
+  JSR KeyDownIx
   BNE rk_notK
   DEC joyYDir
 .rk_notK
-  LDX #KEY_M
-  JSR keydown
+  LDX #CTL_DOWN
+  JSR KeyDownIx
   BNE rk_notM
   INC joyYDir
 .rk_notM
