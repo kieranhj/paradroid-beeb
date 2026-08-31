@@ -211,6 +211,14 @@ HS_COL_INI    = 31              \ $E6E8's
 \ briefing text. The port's briefing does not exist yet and its text
 \ will be an overlay reloaded every time, so the table is written here
 \ and the briefing's score page will read it. [11f DECISION 7]
+\ REMEMBERED BEFORE THEY ARE FILED, and for both ends of the table:
+\ what the next entry starts from is what you last typed, not what the
+\ high score happens to hold. [DECISION 4]
+  LDX #2
+.hs_c_prev
+  LDA hsSelFor,X : STA hsPrev,X
+  DEX : BPL hs_c_prev
+
   LDX #2
   LDA hsWhich
   BNE hs_c_low
@@ -228,10 +236,11 @@ HS_COL_INI    = 31              \ $E6E8's
 \ ============================================================
 \ $E571-$E5A0 is the walk and $E5A2-$E5A8 the release.
 .HsGet
-  LDX hsIdx                     \ $E56F: every initial starts at 'A'
-  LDA #0
-  STA hsSelFor,X
-  JSR HsPut
+  LDX hsIdx                     \ $E56F starts every initial at 'A'; Redux
+  LDA hsPrev,X                  \ starts it at the one you typed last time,
+  STA hsSelFor,X                \ layer-12 [DECISION 4]. hsPrev is bank 7's
+  JSR HsPut                     \ and assembles as zero, so the first entry
+                                \ of a session is still 'A' -- see hstable.asm
 
 .hs_g_loop
   JSR HsShow

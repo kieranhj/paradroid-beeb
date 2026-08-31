@@ -3274,6 +3274,25 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
   STA conShipReq
   STA conDeckReq
   STA conDbReq
+
+\ AND TRANCHE B IS CANCELLED FOR THIS PASS, which is not bookkeeping:
+\ it is the fix for droid-shaped rubbish left on the console page.
+\ THE CONSOLE OPENS FROM THE MIDDLE OF A PASS. DoCharUnder calls
+\ ConsoleEnter from BELOW the main sprite draw but ABOVE the second
+\ window's SprRestoreTr/SprDrawTr, so ConDraw wipes the buffer, paints
+\ the console -- and then tranche B stamps the saved backgrounds and
+\ the droids straight back over it. The modal arm that stops all sprite
+\ work only takes effect from the NEXT pass, which is too late.
+\ IT NEEDS A DROID OR A BULLET ON SCREEN to show, because the pool is
+\ only split into two tranches when there is enough in it -- which is
+\ why the console looked clean on an empty deck and filthy on a busy
+\ one. Reported by KC 2026-08-31; it predates the count lines.
+\ Clearing sprSplit is the whole fix: main.asm's second-window arm is
+\ gated on it, and SprSplitOK writes it fresh on every pass that
+\ reaches the draw, so nothing carries over. The lift and the transfer
+\ never had this because they enter at the hook after DroidsUpdate and
+\ short-circuit the pass; the game over clears sprActive instead.
+  STA sprSplit
   LDA #1
   STA conMPrevL
   STA conPrevU
@@ -3286,7 +3305,130 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
 \ KC, 2026-08-24.
   JSR ConIconInk4               \ the icon colours BEFORE ConsoleOpen
                                 \ draws them - KC 2026-08-24
+  JSR CnCounts4                 \ and Redux's two droid counts, for the
+                                \ same reason: this is the last bank-4
+                                \ code before ConsoleEnter pages bank 6
   JMP SetTextPal                \ and its RTS
+
+
+
+\ ============================================================
+\ CnCounts4 - the droids left, on this deck and on the ship
+\ ============================================================
+\ Redux's console shows both; layer-12 [DECISION 5]. Called from
+\ ConMenuInit4, the last bank-4 code to run before ConsoleEnter pages
+\ bank 6 for the draw.
+\ IT WRITES FINISHED ASCII STRINGS into the PARAFNT block rather than
+\ numbers, and that is not tidiness: bank 6 is the region with 39 bytes
+\ free, so the expensive half - the conversion - has to be on this side
+\ of the handover, and the reader is then one ConLine call with no
+\ digit loop and no divide. See CN_STRS in main.asm.
+\ AND IT IS IN THIS FILE, NOT consolesel.asm, which was tried first on
+\ the reasoning that colourMap's ALIGN pad takes anything assembled in
+\ front of it for nothing. THE PAD IS SPENT: 200 bytes put there cost
+\ the bank 259, because past the pad the ALIGN rolls a whole page. That
+\ is the trap consolesel.asm's own header warns about, measured.
+\ THE DECK COUNT IS NOT drCount. That is the table's high-water mark
+\ and it counts BULLETS AND EXPLOSIONS as well as droids - a count that
+\ went up when something fired would be worse than none - so the table
+\ is walked and only real droids, type below DR_TYPE_BULLET with energy
+\ left, are counted. drCount still bounds the walk: entries above it are
+\ stale, and DroidsUpdate's compaction keeps the live ones below it.
+\ THE SHIP COUNT IS shipNumDroids AS IT STANDS, with nothing taken off.
+\ It looks like it should be one too many - NewShipDroids seeds it with
+\ 1 - but that 1 is not the player: it pre-counts the 999 that $1D of
+\ the roster is given after the placing loop, without an INC of its own.
+\ The player is entry 0 of the DECK table and was never in this total,
+\ and the ship-clear test at $17ED reading zero is the proof.
+.CnCounts4
+  LDA #0
+  STA cnTmp
+  LDX drCount
+  DEX
+  BEQ cnc_deck                  \ the deck is empty
+.cnc_loop
+  LDA drEnergy,X
+  BEQ cnc_next                  \ a hole the compaction has not squeezed
+  LDA drType,X
+  CMP #DR_TYPE_BULLET
+  BCS cnc_next                  \ a bullet or an explosion, not a droid
+  INC cnTmp
+.cnc_next
+  DEX
+  BNE cnc_loop
+.cnc_deck
+  LDA cnTmp
+  LDX #0                        \ cnDeckStr
+  JSR CnDigits4
+  LDA shipNumDroids
+  LDX #5                        \ cnShipStr
+\ falls into CnDigits4
+
+\ ---- A = the value, X = the offset into CN_STRS -------------
+\ Up to three ASCII digits and a terminator, LEFT-JUSTIFIED with the
+\ leading zeros dropped, plus the plural flag at +4. Left-justified
+\ because the line is drawn at the column the ship and deck NAMES start
+\ at, so "9 droids" and "120 droids" both begin under the name (KC,
+\ 2026-08-31). An earlier version right-justified into a fixed three
+\ characters, which lined the two counts up with each other instead.
+\ Repeated subtraction rather than a divide: it runs twice per console
+\ and the 6502 has no divide worth the bytes. ORA #'0' rather than an
+\ ADC because a digit is 0-9 and '0' is &30: the bits do not overlap.
+\ X walks along the string as the digits go down, so the flag is
+\ written FIRST, while X is still the base.
+.CnDigits4
+  PHA                           \ the plural suffix, before the divides
+  LDY #'s'                      \ eat the value. IT IS THE CHARACTER,
+  CMP #1                        \ not a flag: bank 6 then prints it
+  BNE cnd_pl                    \ unconditionally, and a space costs it
+  LDY #' '                      \ a branch it does not have the room for
+.cnd_pl                         \ -- PnAscii maps ' ' to PN_SPACE and
+  TYA                           \ nothing follows it on the line anyway
+  STA CN_STRS+4,X
+  PLA
+
+  LDY #'0'-1
+.cnd_h
+  INY
+  SEC : SBC #100
+  BCS cnd_h
+  ADC #100                      \ carry is clear, so this puts back the
+  STY cnHund                    \ hundred the last subtract borrowed
+
+  LDY #'0'-1
+.cnd_t
+  INY
+  SEC : SBC #10
+  BCS cnd_t
+  ADC #10
+  ORA #'0'                      \ what is left of A is the units
+  STA cnUnit
+
+  LDA cnHund
+  CMP #'0'
+  BEQ cnd_noh
+  STA CN_STRS,X                 \ hundreds, and then the tens must go
+  INX                           \ down whether they are zero or not
+  TYA
+  STA CN_STRS,X
+  INX
+  BNE cnd_u                     \ always: X is an offset, never 0 here
+.cnd_noh
+  TYA
+  CMP #'0'
+  BEQ cnd_u                     \ under ten: the units alone
+  STA CN_STRS,X
+  INX
+.cnd_u
+  LDA cnUnit
+  STA CN_STRS,X
+  LDA #0
+  STA CN_STRS+1,X
+  RTS
+
+.cnTmp   EQUB 0
+.cnHund  EQUB 0
+.cnUnit  EQUB 0
 
 .ConMenu4
   LDX #CTL_UP                    \ up the menu

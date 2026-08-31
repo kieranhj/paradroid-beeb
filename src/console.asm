@@ -64,15 +64,108 @@ CON_TYPES = 24
 \ ported ones — the database, the information screens and the game over
 \ — because sixteen rows is what the C64 lays them out in. See
 \ condb.asm's geometry block.
-CON_ROW_UNIT  = 1
-CON_ROW_ACC   = 3
-CON_ROW_SHIP  = 6
-CON_ROW_DECK  = 9
-CON_ROW_ALERT = 12
-ASSERT CON_ROW_ALERT + 2 <= PLAY_ROWS         \ the alert glyph, two rows
+\ ---- and Redux's droid counts moved every one of them --------
+\ Layer-12 [DECISION 5]. Two more lines have to fit -- the droids left
+\ on this deck under the Deck line, and the droids left on the ship
+\ under the Ship line -- and a text line is TWO rows, so that is four
+\ rows wanted out of a sixteen-row area that had none spare.
+\ THE ROOM COMES FROM "Access granted.", which Redux deletes and KC
+\ agreed to delete here (2026-08-31). That is two of the four rows; the
+\ other two are the blank rows the layout used to carry.
+\ WHAT IT COSTS: the unit line goes back to ROW 0. Layer-9 DECISION 17
+\ spent the sixteenth row moving everything DOWN one, and this spends it
+\ again -- the arithmetic leaves nothing over. 2 (unit) + 3 (the droid
+\ icon) + 4 (ship and its count) + 4 (deck and its count) + 3 (alert and
+\ its icon) is exactly 16, with no blank rows anywhere. The alternative
+\ costed with KC was to put the droid icon BESIDE the unit line it
+\ depicts, which keeps two blanks and DECISION 17's row; it is a bigger
+\ move than the one asked for, and it is still there if the top row
+\ turns out to matter more than the icon's own block.
+\ ENTRY 0 HAS NO LABEL NOW. It is the "leave the console" entry and
+\ "Access granted." was its text; the icon -- the player's own droid --
+\ is what marks it, and the selection transform still lights it.
+\ THE ICONS AND THE TEXT ARE ON SEPARATE LADDERS, and that is a
+\ decision rather than a drift (KC, 2026-08-31: "it's OK for the icons
+\ and the text lines to be offset"). They CANNOT share one: an entry
+\ that carries two text lines needs a four-row pitch, an icon is three
+\ rows, and four icons on a four-row pitch from row 2 would put the
+\ last at 14 and run three rows off the end of a sixteen-row buffer.
+\ So the text keeps the pitch it needs and the icons keep the even
+\ spacing they had before the count lines went in.
+\ THEY NEVER COLLIDE, which is what makes two ladders legal: icons live
+\ in units 4-18 and every text line starts at CON_COL_TEXT, unit 24.
+\ Only the unit-type line at CON_COL_UNIT crosses the icon columns,
+\ which is why it has rows 0-1 to itself and the first icon starts at 3.
+\ ---- the text ladder ----------------------------------------
+\ THE ALERT LINE IS AT THE TOP, with the unit type, because the alert
+\ reads as status and belongs with it (KC, 2026-08-31).
+CON_ROW_UNIT  = 0
+CON_ROW_ALERT = 2               \ the LINE; entry 3's icon is elsewhere
+CON_ROW_SHIP  = 5
+CON_ROW_SHIPN = 7               \ "NN droids", under the ship
+CON_ROW_DECK  = 10              \ a row lower than it needs to be: that
+CON_ROW_DECKN = 12              \ is the blank row 9 (KC 2026-08-31)
+
+\ ---- the icon ladder, evenly spaced -------------------------
+\ Three rows each and touching, which is what "evenly spaced" comes to
+\ when an icon is exactly the pitch. These are the rows the icons had
+\ before the count lines, restored.
+\ THEIR ORDER IS LOAD-BEARING. They are the menu's selection targets
+\ and ConMenu4 walks conSel 0-3 with up and down, so the rows have to
+\ ASCEND with conSel or the marker jumps about. conSel 0 is "leave the
+\ console", which the C64 puts at the top, and conSel 3 is the ship's
+\ side view -- which is why the alert LINE could go to the top and its
+\ icon could not follow it.
+CON_ROW_ICON0 = 3               \ conSel 0: the player's own droid, exit
+CON_ROW_ICON1 = 6               \ conSel 1: the droid database
+CON_ROW_ICON2 = 9               \ conSel 2: the deck plan
+CON_ROW_ICON3 = 12              \ conSel 3: the ship's side view
+
+\ THE ICONS, three rows each, touching and never overlapping:
+ASSERT CON_ROW_ICON0 + CON_ICON_ROWS <= CON_ROW_ICON1
+ASSERT CON_ROW_ICON1 + CON_ICON_ROWS <= CON_ROW_ICON2
+ASSERT CON_ROW_ICON2 + CON_ICON_ROWS <= CON_ROW_ICON3
+ASSERT CON_ROW_ICON3 + CON_ICON_ROWS <= PLAY_ROWS
+\ evenly, which is the point of them:
+ASSERT CON_ROW_ICON1 - CON_ROW_ICON0 == CON_ROW_ICON2 - CON_ROW_ICON1
+ASSERT CON_ROW_ICON2 - CON_ROW_ICON1 == CON_ROW_ICON3 - CON_ROW_ICON2
+\ and clear of the unit-type line, the one text that crosses their column:
+ASSERT CON_ROW_UNIT + 2 <= CON_ROW_ICON0
+\ THE TEXT LINES, two rows each and likewise:
+ASSERT CON_ROW_ALERT + 2 <= CON_ROW_SHIP
+ASSERT CON_ROW_SHIP  + 2 <= CON_ROW_SHIPN
+ASSERT CON_ROW_SHIPN + 2 <= CON_ROW_DECK
+ASSERT CON_ROW_DECK  + 2 <= CON_ROW_DECKN
+ASSERT CON_ROW_DECKN + 2 <= PLAY_ROWS
+
+
 
 CON_COL_UNIT  = 2               \ UnitType_txt's own prntX
 CON_COL_TEXT  = 12              \ and $6E00's
+
+\\ ---- and the count lines' own column ------------------------
+\ THEY SIT UNDER THE NAME, not under the label (KC, 2026-08-31).
+\ "Ship  :" is eight cells from the label column - a capital is two
+\ cells and everything in "hip  :" is one - and ConTok's leading space
+\ is a ninth, so the NAME begins at CON_COL_TEXT + 9. "Deck  :" and
+\ "Alert :" are padded to the same width by the original, which is what
+\ makes one constant serve all three.
+\ SO WHY + 10, AND NOT + 9? Because the same column does not look like
+\ the same column. Read out of the buffer: at CON_COL_TEXT + 9 the
+\ digits and the names start on exactly the same character, but a
+\ CAPITAL IN THIS FONT IS INSET FOUR PIXELS - "Research"'s R has no ink
+\ in the left unit of its first cell, and neither does "Deck"'s D -
+\ while a digit starts hard against the left of its own. The count
+\ therefore READ four pixels left of the name, which is what KC saw.
+\ Half a character is what would line the ink up exactly, and pnCol
+\ cannot express it: ConAt multiplies it by 16 and a unit is 8. Nudging
+\ pnDst by 8 after ConAt would do it, but that needs an entry into
+\ ConStr past its own ConAt and about a dozen bytes this bank has not
+\ got. A whole character is the nearest it can get and lands the digits
+\ four pixels the other way, reading as a slight indent under the name.
+\ If the exact half is ever wanted, ram-pass.md's sprsplit-to-bank-5
+\ reserve is what pays for it.
+CON_COL_COUNT = CON_COL_TEXT + 10
 
 \ ---- token numbers into the $C000 string table ---------------
 \ ShowRobotType ($3149) and ConsoleMain ($2955) index it with these.
@@ -113,13 +206,13 @@ CON_TOK_ALERT  = 208            \ green, yellow, amber, red
 CON_ICON_COUNT = 3              \ of four — see conicons.asm
 CON_ICON_ROWS  = 3              \ 21 scanlines, so three character rows
 CON_ICON_LINES = 21             \ scanlines: a C64 sprite is 21 tall
-ASSERT CON_ROW_ALERT + CON_ICON_ROWS <= PLAY_ROWS  \ and its icon, three
+ASSERT CON_ROW_ICON3 + CON_ICON_ROWS <= PLAY_ROWS  \ and its icon, three
 
 \ The FIRST icon is the player's own droid and is composed, not copied —
 \ see droidicon.asm. Same 24 x 21 as the rest, in the slot the other
 \ three leave empty: row 2, unit 7.
 CON_DRICON_W = 3                \ C64 sprite bytes a row
-CON_DROID_D  = BUF_BASE + CON_ROW_ACC   * ROW_BYTES + 7 * UNIT_BYTES
+CON_DROID_D  = BUF_BASE + CON_ROW_ICON0 * ROW_BYTES + 7 * UNIT_BYTES
 
 \ ============================================================
 \ ConAt — point pnDst at console text cell (conRow, pnCol)
@@ -245,6 +338,11 @@ CON_DROID_D  = BUF_BASE + CON_ROW_ACC   * ROW_BYTES + 7 * UNIT_BYTES
   STA ySpd : STA ySpd+1
   STA bandDo                    \ nothing the last move exposed is wanted
   STA colCount
+                                \ sprSplit is cleared too, and in
+                                \ ConMenuInit4 rather than here -- read the
+                                \ comment there. It is what stops tranche B
+                                \ redrawing droids over this page on the
+                                \ pass the console opens.
   JSR SetCRTCStart
 
 \ SIXTEEN ROWS FOR THE WHOLE SESSION. The play area displays 16 and the
@@ -640,14 +738,16 @@ CON_DROID_D  = BUF_BASE + CON_ROW_ACC   * ROW_BYTES + 7 * UNIT_BYTES
   EQUB %00000000, %00000011, %00001100, %00001111
   EQUB %00000000, %00000011, %00001100, %00001111
 
-\ One icon per line, on the SAME rows as the lower four - so these are
-\ CON_ROW_SHIP/DECK/ALERT, not literals, and the droid is CON_ROW_ACC.
+\ One icon per menu entry, off the ICON ladder and not the text one -
+\ the two are deliberately offset, see the CON_ROW_* block. Derived
+\ rather than written as literals: they drifted from the text once, and
+\ deriving them is what stops it.
 \ They drifted from the text once; deriving them is what stops it.
 \ Held as whole addresses because the row multiply would otherwise be
 \ three 16-bit shifts for a table that never changes.
-CON_ICON_D0 = BUF_BASE + CON_ROW_SHIP  * ROW_BYTES + 7 * UNIT_BYTES
-CON_ICON_D1 = BUF_BASE + CON_ROW_DECK  * ROW_BYTES + 4 * UNIT_BYTES
-CON_ICON_D2 = BUF_BASE + CON_ROW_ALERT * ROW_BYTES + 4 * UNIT_BYTES
+CON_ICON_D0 = BUF_BASE + CON_ROW_ICON1 * ROW_BYTES + 7 * UNIT_BYTES
+CON_ICON_D1 = BUF_BASE + CON_ROW_ICON2 * ROW_BYTES + 4 * UNIT_BYTES
+CON_ICON_D2 = BUF_BASE + CON_ROW_ICON3 * ROW_BYTES + 4 * UNIT_BYTES
 
 \ ConIconSel4 (src/consolesel.asm) recolours these four in place. It is
 \ assembled into bank 4 long BEFORE this file, so it cannot see the
@@ -744,9 +844,21 @@ ASSERT 4 + CON_SEL_UNITS <= CON_COL_TEXT * 2
   JSR ConDroid
   JSR ConUnitType
 
-  LDA #CON_ROW_ACC : STA conRow
-  LDA #LO(conTxtAccess) : LDY #HI(conTxtAccess)
+\ NO "Access granted." LINE. Redux drops it and its two rows are what
+\ pay for the droid counts below -- layer-12 [DECISION 5]. Entry 0 of
+\ the menu is marked by its icon alone now.
+
+\ ---- the alert level, its top two bits ---------------------
+\ $298C's own arithmetic: three ROLs and AND 3. FIRST now, because the
+\ line sits at the top with the unit type — see the CON_ROW_* block.
+  LDA #CON_ROW_ALERT : STA conRow
+  LDA #LO(conTxtAlert) : LDY #HI(conTxtAlert)
   JSR ConLine
+  LDA alertLvl
+  ROL A : ROL A : ROL A
+  AND #3
+  CLC : ADC #CON_TOK_ALERT
+  JSR ConTok
 
 \ ---- the ship, by shipLevel --------------------------------
   LDA #CON_ROW_SHIP : STA conRow
@@ -758,6 +870,11 @@ ASSERT 4 + CON_SEL_UNITS <= CON_COL_TEXT * 2
   CLC : ADC #CON_TOK_SHIP
   JSR ConTok
 
+  LDA #CON_ROW_SHIPN : STA conRow
+  LDX cnShipPl                  \ 's' or ' '
+  LDA #LO(cnShipStr) : LDY #HI(cnShipStr)
+  JSR ConCount
+
 \ ---- the deck ----------------------------------------------
   LDA #CON_ROW_DECK : STA conRow
   LDA #LO(conTxtDeck) : LDY #HI(conTxtDeck)
@@ -766,24 +883,49 @@ ASSERT 4 + CON_SEL_UNITS <= CON_COL_TEXT * 2
   CLC : ADC #CON_TOK_DECK
   JSR ConTok
 
-\ ---- the alert level, its top two bits ---------------------
-\ $298C's own arithmetic: three ROLs and AND 3.
-  LDA #CON_ROW_ALERT : STA conRow
-  LDA #LO(conTxtAlert) : LDY #HI(conTxtAlert)
-  JSR ConLine
-  LDA alertLvl
-  ROL A : ROL A : ROL A
-  AND #3
-  CLC : ADC #CON_TOK_ALERT
-  JMP ConTok                    \ and its RTS
+  LDA #CON_ROW_DECKN : STA conRow
+  LDX cnDeckPl                  \ 's' or ' '
+  LDA #LO(cnDeckStr) : LDY #HI(cnDeckStr)
+  JMP ConCount                  \ and its RTS: the last line drawn
 
 \ A/Y = the label, conRow already set. Leaves pnDst after it, so the
 \ token that follows continues on the same line, and sets conCap because
 \ every name after a label is capitalised.
+\ ---- ConCount — "N droids", one of Redux's two -------------
+\ conRow set, A/Y = the digit string in the PARAFNT block, X = its
+\ plural suffix character. Layer-12 [DECISION 5].
+\ THE DIGITS ARRIVE READY. consolesel.asm's neighbour in bank 4 counted
+\ and converted them, because that side had the room and this one has
+\ tens of bytes; all that is left here is the draw and the word.
+\ THE WORD IS THE GAME'S OWN TOKEN, not a string of ours. Token 11 of
+\ the $C000 table is "droid" — CON_TOK_CLASS + 1, the one ShowRobotType
+\ prints for a hundreds digit of 5 to 8 — and every token carries its
+\ own leading space, so the digits and the word space themselves. Only
+\ the plural is ours, one character through the same pair ConStr uses,
+\ and it is a SPACE when the count is 1, so "1 droid" reads as it
+\ should and this side needs no test.
+\ conCap is cleared after ConLineHere set it: this is a word, not a name.
+.ConCount
+  STX conTmp2
+  LDX #CON_COL_COUNT            \ under the NAME, not the label
+  STX pnCol
+  JSR ConLineHere
+  LDA #0 : STA conCap
+  LDA #CON_TOK_CLASS + 1        \ "droid"
+  JSR ConTok
+  LDA conTmp2                   \ 's', or a space when the count is 1
+  JSR PnAscii
+  JMP PnWide                    \ and its RTS
+
 .ConLine
+  LDX #CON_COL_TEXT             \ X, not A: A is half the string pointer
+  STX pnCol
+\ ConLineHere — the same, with pnCol already chosen. ConCount is the
+\ one caller that wants a column of its own, and this is five bytes
+\ cheaper than giving it a copy of the four stores below.
+.ConLineHere
   STA pnStrLo
   STY pnStrHi
-  LDA #CON_COL_TEXT : STA pnCol
   JSR ConStr
   LDA #1 : STA conCap
   RTS
@@ -793,7 +935,6 @@ ASSERT 4 + CON_SEL_UNITS <= CON_COL_TEXT * 2
 \ "Deck" are padded to the width of "Alert" so the colons line up, which
 \ is the original's doing and not ours.
 .conTxtUnit   EQUS " Unit type "  : EQUB 0
-.conTxtAccess EQUS "Access granted." : EQUB 0
 .conTxtShip   EQUS "Ship  :"      : EQUB 0
 .conTxtDeck   EQUS "Deck  :"      : EQUB 0
 .conTxtAlert  EQUS "Alert :"      : EQUB 0

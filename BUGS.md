@@ -24,7 +24,7 @@ sections below are in neither. **The table is the index; read it first.**
 | **9** | [One 4-pixel column is wrong down most of the strip after horizontal scrolling](#9-one-4-pixel-column-is-wrong-down-most-of-the-strip-after-horizontal-scrolling--2026-08-15) | **Open** | 58-62 bytes of 10,240, all in CRTC unit 0. Sprites ruled out; it is in the incremental column draw |
 | **10** | [The level is corrupted when a droid's shot kills you](#10-the-level-is-corrupted-when-a-droids-shot-kills-you--fixed-2026-08-16) | **Fixed** 2026-08-16 | a teleport broke `COPYCHAR`'s parity rule |
 | **11** | [Enemy lasers crawl, and the player can walk through them](#11-enemy-lasers-crawl-and-the-player-can-walk-through-them--fixed-2026-08-16) | **Fixed** 2026-08-16 | a direction was being read as a distance |
-| **12** | [Lasers on screen when a console opens stay drawn over the console text](#12-lasers-on-screen-when-a-console-is-activated-stay-there-and-corrupt-the-console-text--2026-08-16) | **Open** | filed, not investigated. A missing pool teardown on modal entry — same shape as #15 |
+| **12** | [Lasers on screen when a console opens stay drawn over the console text](#12-lasers-on-screen-when-a-console-is-activated-stay-there-and-corrupt-the-console-text--fixed-2026-08-31) | **Fixed** 2026-08-31 | NOT a missing teardown: the console opens mid-pass, above tranche B, which redraws over it. `ConMenuInit4` clears `sprSplit`. Repro needs a BULLET — a droid beside the player merges into its component and never reaches tranche B |
 | **13** | [The ALERT sign's lamp is dead; it should track the alert level](#13-the-alert-signs-lamp-is-dead--it-should-track-the-alert-level--2026-08-17) | **Fixed** 2026-08-20 | one character rebuilt when `Alert` crosses a threshold, and the sign repainted. The ramp is four *states*, not four colours — [DECISION 11] in `docs/layer-7-combat.md`, **not yet ratified** |
 | **14** | [`XfRand` is not a maximal LFSR — its low two bits are always zero](#14-xfrand-is-not-a-maximal-lfsr--its-low-two-bits-are-always-zero--fixed-2026-08-19) | **Fixed** 2026-08-19 |  |
 | **15** | [Incremental draw disagrees with `RedrawAll` beside an animating door](#15-incremental-draw-disagrees-with-redrawall-beside-an-animating-door--2026-08-19-unconfirmed) | **Open, unconfirmed** | did not reproduce in five clean runs. Correlates with poking a modal flag, not with the level draw |
@@ -255,20 +255,53 @@ original's appearance — **KC's call**, not a bug fix.
 
 ---
 
-## 12. Lasers on screen when a console is activated stay there and corrupt the console text — **2026-08-16**
+## 12. Lasers on screen when a console is activated stay there and corrupt the console text — **FIXED 2026-08-31**
 
-Reported by KC from play. Activate a console while enemy (or player) laser sprites are live on
-screen, and the laser sprites remain drawn over the console display, breaking up the text.
+Reported by KC from play, 2026-08-16, and again 2026-08-31. Activate a console while enemy (or
+player) laser sprites are live on screen, and sprite-shaped rubbish is left over the console
+display, breaking up the text.
 
-**Not investigated — filed only.** The likely shape: the console takes over the screen without
-tearing down the sprite pool, so the bullets' already-drawn pixels are left in the buffer, and
-whatever restore/draw state they hold is stale against the console's own drawing. Compare with
-the entry-path teardown `LoadDeck`/`ReframeView` does — dropping every `sprSaved` and redrawing —
-which the console entry may not be doing.
+### The cause: the console opens from the MIDDLE of a pass
 
-Whether the bullets keep *updating* behind the console (i.e. moving, and writing more pixels) or
-are simply frozen where they were is the first thing to establish; it decides between "clear the
-pool on console entry" and "also stop the bullet update".
+Not a missing pool teardown, which is what the original filing guessed. **`DoCharUnder` calls
+`ConsoleEnter` from below the main sprite draw and above the second window's tranche B.** The
+order in the pass is
+
+    SprDrawTr / SprDrawAll        tranche A, and the whole pool on an unsplit pass
+    ...
+    DoCharUnder -> ConsoleEnter   ConClear wipes the strip, ConDraw paints the console
+    WaitWindowB
+    LDA sprSplit / SprRestoreTr 1 / SprDrawTr 1    <-- tranche B, straight over it
+
+so the console page is finished and then tranche B stamps the saved deck backgrounds and the
+droids back on top of it. The modal arm that stops all sprite work is only reached on the NEXT
+pass, which is too late. **The bullets do not keep updating behind the console** — that was the
+open question here, and the answer is no: it is one pass's damage, left standing.
+
+### Why it needs a LASER and not just any droid
+
+The pool is only handed out in two tranches when there is more than one connected component of
+the overlap graph (`SprAssignTr`); one component goes to A whole, and tranche B is empty. **A
+droid standing next to the player merges into the player's component and lands in A**, which is
+why the console looks clean on a quiet deck and why four attempts to reproduce this with droids
+alongside the player all came out clean. A bullet is different: it travels *away* from whatever
+fired it, so it is its own component and it is exactly what puts something in tranche B. The
+original report naming lasers is the tell.
+
+### The fix
+
+`ConMenuInit4` (`src/droid.asm`) clears `sprSplit`, three bytes, which is the flag main.asm's
+tranche B arm is gated on. `SprSplitOK` writes it fresh on every pass that reaches the draw, so
+nothing carries over, and the console arm never reaches that code. The lift and the transfer
+game never had this because they enter at the hook after `DroidsUpdate` and short-circuit the
+pass; the game over clears `sprActive` instead. Those three are the precedent for it being the
+*entry point*, not the pool, that differs.
+
+**Honesty note: the visual reproduction was not reconstructed in the emulator.** The mechanism is
+read out of the pass order and the tranche assignment, and it matches the report's own specificity
+about lasers; but every scripted attempt produced a single component and therefore an empty
+tranche B. If rubbish is still seen on the console page after this, the diagnosis is incomplete —
+say so and the next step is a forced harness that pins a slot into tranche 1.
 
 ---
 
