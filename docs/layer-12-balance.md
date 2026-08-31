@@ -319,8 +319,14 @@ poking `shipNumDroids` to 1 and reopening: "1 droid" above "9 droids" on the sam
 `CMP #CHAR_CONSOLE` to `LDA #0` in the running machine so fire opens it anywhere; a runtime patch
 only, and a useful one to know for any future console work.)
 
-**[DECISION 6] — (6) the lift's deck-selection screen colours cleared decks: DESIGNED, COSTED,
-NOT BUILT. It does not fit in the RAM that is free. 2026-08-31.**
+**[DECISION 6] — (6) the lift's deck-selection screen colours cleared decks: PARKED. Designed,
+costed and attempted; it does not fit, and KC closed it rather than pay for it. 2026-08-31.**
+
+**KC, 2026-08-31, closing it: "it's easy enough to skip up and down the lift to check which decks
+have been cleared."** The information is already available — a cleared deck's floor is blue
+(layer-14 DECISION 6) — so this is a convenience, not a capability, and it is not worth a bank-7
+squeeze that nothing on the reserve list can pay for. Everything below is kept so that if bank 7
+ever gains room the work is a re-apply and not a re-think.
 
 KC asked for a magenta/blue stipple. The rendering half is cheap and is worked out below; what
 stops it is the *state*, and the numbers are worth keeping so this is not re-derived.
