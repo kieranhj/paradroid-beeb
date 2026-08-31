@@ -538,3 +538,44 @@ random — which is why one run was clean and the next was not.
 **jsbeeb breakpoints fire now**, whatever `DEBUG_TIME`'s header used to say, so for anything short
 the honest tool is a breakpoint pair and an `elapsed_cycles` difference. The bracket is still right
 for per-pass totals. Both notes are now in the header itself.
+
+# The rupture is switched on next to the IRQ that drives it — 2026-08-31
+
+KC, on the flicker a TV shows when the game takes the display over. `ts_loads` called
+`SetupRupture` early — right after the `IS_BLANK` — and then ran `FillPanel`, `BuildMulTabs`,
+`BuildCharPtrs` and `SprBuildMask` before `InstallIrq`. For all of that the CRTC sat in the
+tail cycle's shape (R4 = 12, a 13-row cycle) with **nobody servicing it**: the picture runs at
+roughly double rate with no stable 50 Hz sync, and the tube has to fall out of lock and come
+back.
+
+## Measured, boot path, breakpoints on `SetupRupture` and `IrqHandler`
+
+| | Before | After |
+|---|---|---|
+| `SetupRupture` → `InstallIrq` | 258,364 cycles (129 ms) | ~3,600 |
+| `SetupRupture` → first serviced IRQ | 262,274 cycles | **7,489 cycles (3.7 ms)** |
+| Display frames painted in the window | **14**, ~18,500 cycles each | **1** |
+
+`elapsed_cycles` from `read_registers` either side, and jsbeeb's `frame_count` for the frames —
+which is the CRTC's own frames, not 50 Hz ones, which is exactly why it climbs 14 in 258k cycles.
+
+## The fix is a reorder and costs nothing
+
+`JSR SetupRupture` moved to sit immediately before `JMP InstallIrq`. Nothing in between needs
+it: `FillPanel` writes the panel at &4A00, the other three write tables at &5400 and up, and
+none of it is displayed while the frame is blank (`tiw_done`'s R6 = 0 from the title, or
+`BrTimeout`'s). Until the move the title's ordinary 39-row, 312-line, 50 Hz frame stands, so
+the display keeps its sync right up to the instruction that hands it to the IRQ.
+
+## What was NOT done, and why
+
+**Waiting for VSync before the switch** was the other candidate (KC asked). It aligns the first
+rupture field with what `RuptVSync` expects, but it does nothing about the length of the window
+— which was fourteen bad frames against the one an alignment saves — and polling the System VIA
+CA1 flag with interrupts off costs ~15 bytes of a code image with seven. Worth revisiting only
+if a real TV still objects to the single frame that is left; the room would have to come from a
+bank, as a call rather than inline.
+
+Two related seams: `HsEntry` already calls `SetupRupture` and `InstallIrq` back to back, so it
+was never in this class; and the reverse transition (`UninstallIrq` then `SetupPlain`) rewrites
+R4-R7 mid-frame and costs at most one field, unmeasured.

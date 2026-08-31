@@ -2518,10 +2518,6 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
                                 \ LoadDeck's redraw back nothing else
                                 \ writes there until the page prints
 
-  JSR SetupRupture              \ NOW the CRTC goes into the rupture's
-                                \ shape: it stops VSync, so it has to be
-                                \ after the last filing-system call
-
   JSR FillPanel                 \ after the staging area is done with: it
                                 \ reaches past &4800, over the panel
 
@@ -2553,6 +2549,27 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
 \ GameStart clears them before it can run.
   LDA #0
   STA disrFlash
+
+\ ---- and ONLY NOW does the CRTC change shape ----------------
+\ It has to be after the last filing-system call, because R7 =
+\ TAIL_R7 stops VSync and the MOS's disc code needs it. It does NOT
+\ have to be before the four rebuilds above, and it used to be
+\ (immediately after the IS_BLANK), which cost the display its sync
+\ for the whole of them. MEASURED in jsbeeb on the boot path, 2026-08-31:
+\
+\   SetupRupture -> InstallIrq      258,364 cycles, 129 ms
+\   frames painted in that window   14, ~18,500 cycles each
+\   InstallIrq -> first IRQ         3,910 cycles
+\
+\ 130 ms of a 13-row cycle nobody services is a picture running at
+\ roughly double rate with no stable 50 Hz sync, and a TV takes that
+\ badly on the way in AND on the way out. Nothing above needs the
+\ rupture: FillPanel writes &4A00, the other three write tables at
+\ &5400 and up, and none of it is displayed while the frame is blank.
+\ So the title's ordinary 39-row, 312-line, 50 Hz frame stands until
+\ the IRQ is ready to drive the replacement, one instruction later.
+\ KC, 2026-08-31. docs/raster-timing.md has the window either side.
+  JSR SetupRupture
 
   JMP InstallIrq                \ take the IRQ back, and its RTS
 
