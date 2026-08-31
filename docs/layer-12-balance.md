@@ -361,6 +361,32 @@ side and handed over in main RAM. The cheapest channel found:
 So it would take bank 4 past zero, the `PARAFNT` block exactly to zero, and bank 7 to nearly zero
 — three regions spent for one cosmetic feature. **Not built without KC's word on the budget.**
 
+### The main RAM was found; bank 4 is what is left
+
+KC, 2026-08-31: "find the 16 bytes in main RAM." **`&0100-&017F` — 128 bytes of the stack page,
+measured untouched** by play, a deck load and two console pages. `ram-pass.md` has the method and,
+more importantly, the paths that were NOT exercised. That removes the `PARAFNT`-block problem
+entirely and leaves room over.
+
+**It also all but removes the bank-4 problem, by moving the code and not just the table.** With the
+table in page 1, the two routines that maintain it can go there too, and bank 4 pays only for the
+calls:
+
+| | before | with page 1 |
+|---|---|---|
+| set, at `DroidsUpdate`'s deck-clear arm | 8 B in bank 4 | `JSR` = 3 B |
+| clear, at `NewShipDroids` | 8 B in bank 4 | `JSR` = 3 B |
+| the table | 16 B of the `PARAFNT` block | 16 B of page 1 |
+| the two routines | — | ~20 B of page 1 |
+
+**Bank 4: 6 B of its 11.** Bank 7's ~107 B still has to hold the rendering, which is the part that
+was always going to be tight.
+
+**What needs agreeing before this is built** is not the byte count any more, it is *putting game
+state and game code in the stack page*. That is a deviation of the kind this project writes down
+before building, and it wants the transfer game, the lift, the game over and the briefing seeded
+and checked first — the lift especially, since it is this feature's own screen.
+
 *Note the bank-7 figure is not the ~176 B the memory map claims.* That number is stale: the
 `plandata` `ALIGN` pad has been eaten. `CLAUDE.md` and `docs/memory-map.md` should be corrected
 from the measurement, not the other way round.

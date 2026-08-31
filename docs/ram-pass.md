@@ -115,6 +115,31 @@ made quiet.
   `deckDroids` runs straight into `deckPackHi`; the memory-map entry
   claiming it was stale.
 
+## The stack page has 128 bytes free — measured 2026-08-31
+
+**`&0100-&017F` was not written by anything in a 40-second play session**, and it is the only
+contiguous main-RAM space left larger than the 16-byte fragment in the `PARAFNT` block. Found
+while looking for 16 bytes for the lift's cleared-deck table (layer-12 DECISION 6).
+
+*How it was measured, and it is the seed-and-check the jsbeeb notes prescribe:* `&A5` written over
+`&0100-&017F` from the emulator once the game was running, then play, a `CTRL+]` deck load, the
+console main page and the droid database page, then read back. **All 128 bytes survived**, so the
+stack never descended below `&0180` and the deepest push used at most 128 of the page.
+
+*What was NOT exercised, and must be before anything relies on this:* the transfer minigame, the
+lift's deck-selection screen, the game over, and the briefing. **Boot is a separate question** —
+the loader's `*LOAD`s go through the MOS and DFS, which are heavy stack users, and the seed was
+written after boot so that depth is unmeasured. `GoTitle`'s reloads make filing-system calls
+mid-session for the same reason.
+
+*So what it is safe for today:* state that is (re)initialised after boot and does not have to
+survive a filing-system call — which is most per-game state, including anything cleared at
+`StartGame` or on a new ship. Take it from the BOTTOM, `&0100` upward, which is 128 bytes away
+from the deepest use ever observed.
+
+*And what it is not:* a general-purpose region. Nothing should go here until its own path has been
+seeded and checked, and a comment at the site should say which paths were.
+
 ## Held in reserve (next time RAM runs out)
 
 - **`sprsplit.asm` → bank 5** (634 B out of bank 6, zero cycles): one
