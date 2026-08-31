@@ -232,7 +232,7 @@ paragraph:
 | `PARAFNT` block | **16 B** before `SPR_SAVE` (`KeyDownIx` took 7, DECISION 5's `CN_STRS` 10) |
 | `PARMAN` (bank 5's briefing load; the bound is `DEPK_STREAM + size <= PANEL_ADDR`) | **225 B** — the redefine screen took 893 |
 | Low overlay | `lowcode` **9 B** (its two raw `PAGEBANK`s became `JSR Pg*`), `lowcode2` 3 B, `lowbss` 8 B |
-| `PINTRO` (`pdloader/`, `-Intro` builds) | **0 B** — it fills to `&3000` exactly, where the picture lands. It starts at `&2700` and `&2500–&26FF` is free below it, so it can move down if it needs to grow |
+| `PINTRO` (`pdloader/`, `-Intro` builds) | **0 B** — it fills to `&3000` exactly, where the picture lands. **It starts at `&2600` since 2026-08-31** (PORT 7's MODE 7 "Loading..." screen took the page it moved down for) and `&2500–&25FF` is what is left below it |
 
 **THE STACK PAGE HAS 128 FREE BYTES AND NOTHING IS IN THEM YET.** `&0100-&017F` was measured
 untouched on 2026-08-31 — `&A5` seeded with the game running, then play, a deck load, the console

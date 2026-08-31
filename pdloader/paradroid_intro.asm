@@ -4,7 +4,7 @@
 \ ==========================================================================
 \ This file is HIS, kept in his style and his layout so that the next drop
 \ from him is a clean diff. Everything below this header is as delivered
-\ except for the six changes listed here, each marked `\ PORT:` at the
+\ except for the seven changes listed here, each marked `\ PORT:` at the
 \ site. Do not tidy it, do not restyle it, and add nothing that could
 \ instead live in the game.
 \\
@@ -28,6 +28,9 @@
 \   the bank image depacks straight into the bank. tools/make_intro_data.py
 \   builds them; ../src/zx0depack.asm is INCLUDEd rather than copied.
 \ PORT 6 -- it puts the VIAs back; see PortSaveVia at the end of the file.
+\ PORT 7 -- it hands the game a MODE 7 screen with "Loading..." on it in
+\   place of the abandoned picture, and starts a page lower (&2600) to pay
+\   for it. KC, 2026-08-31.
 \ PORT 3 -- it closes the *EXEC file first. !BOOT is still open as an exec
 \   file when this runs, and *TAPE below unloads the filing system out from
 \   under it; closing it first means the boot cannot resume into a half-
@@ -184,10 +187,46 @@ GUARD &100
 
 zero_page_play_length = (zero_page_play_end - zero_page_play_start)
 
-ORG &2700
-GUARD &2800
+\ PORT 7: our own block, BELOW his first one, and binary_start moved into
+\ it -- his ran &2700-&3000 with not one byte left (the picture lands on
+\ &3000 and the GUARD at the end of the file says so). &2500-&26FF is free
+\ at load time: ADVTAB is &1C00-&21FF and the zero page and &0D00 backups
+\ are &2200-&23FF, so PINTRO simply starts a page lower now.
+ORG &2600
+GUARD &2700
 
 .binary_start
+
+\\ PORT 7: the screen the GAME boots behind. Any key exits the intro, and
+\\ what used to happen next was that PARA's own VDU 22 blanked the picture
+\\ and the four bank loads ran for ten seconds against nothing. MODE 7 with
+\\ a message costs a page of a file that had to move anyway, and the game's
+\\ own mode change is the last thing it does before the title now
+\\ (2026-08-31, ../docs/loader-compression.md), so this stays up for the
+\\ whole load. Printed through OSWRCH, after restore_os has put the machine
+\\ back and before the *DISC, so the MOS's own VDU driver does all of it.
+.PortLoading
+  LDX #0
+  .pl_loop
+  LDA port_loading_msg,X
+  JSR OSWRCH
+  INX
+  CPX #port_loading_len
+  BNE pl_loop
+  RTS
+
+.port_loading_msg
+  EQUB 22, 7                          \\ MODE 7, which clears its own screen
+  EQUB 23, 1, 0, 0, 0, 0, 0, 0, 0, 0  \\ and no cursor blinking at the end
+  EQUB 31, 14, 11, 141                \\ TAB(14,11) then double height: the
+  EQUS "Loading..."                   \\ control code takes a cell of its
+  EQUB 31, 14, 12, 141                \\ own, so ten characters from column
+  EQUS "Loading..."                   \\ 15 sit centred in the forty
+port_loading_len = P% - port_loading_msg
+
+CLEAR P%, &8000
+ORG &2700
+GUARD &2800
 
  \\ Put here first to align to $100.
 .cwSteps
@@ -1279,6 +1318,9 @@ CLEAR P%, &8000
   JSR sound_write
 
   JSR restore_os
+
+  \ PORT 7: MODE 7 and "Loading..." for the game to come up behind.
+  JSR PortLoading
 
   LDX #LO(oscli_disc)
   LDY #HI(oscli_disc)

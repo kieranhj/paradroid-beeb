@@ -291,9 +291,9 @@ whole reason generated data is committed (KC, 2026-08-27). A picture change star
 | The machine | politely borrowed | taken: `*TAPE`, System VIA interrupts off, zero page and `&0D00` saved and restored |
 | Exit | any key, `RTS` into `!BOOT`'s exec | any key, then it silences the chip, `*DISC`s and chains to `PARA` itself |
 | Screen | 1,256 B ZX0, depacked in place | 20,480 B raw — see §8's open items |
-| RAM | `&1900`, ~4K | `&2700-&2AFF`, all of zero page, `&0100-&016F`, `&0400-&09FF`, and a sideways bank |
+| RAM | `&1900`, ~4K | `&2600-&2AFF` (`&2700` before PORT 7), all of zero page, `&0100-&016F`, `&0400-&09FF`, and a sideways bank |
 
-### The six port changes
+### The seven port changes
 
 His file is vendored **verbatim** (KC, 2026-08-29) so his next drop is a clean diff; ours are
 marked `\ PORT:` at the site and listed in its header and in `pdloader/README.md`:
@@ -407,6 +407,12 @@ logical 0 RED. The screen showed white. One entry wrong, and only logical 0, whi
 ### Open items
 
 
+- **The gap is not blank any more, and is still silent.** PORT 7 (KC, 2026-08-31) makes the
+  exit switch to MODE 7 and print "Loading..." in double height in the middle of the screen,
+  so the 10.4 s of bank loading has something on it: the keypress used to hand the game the
+  abandoned picture and `PARA`'s `VDU 22` blanked it immediately. It cost the intro a page —
+  it starts at `&2600` now — and the message survives all the way to the title, because the
+  game's own mode change is the last thing it does before painting one (`loader-compression.md`).
 - **The gap is silent.** The music stops at the keypress and the game then loads for 10.4 s with
   nothing playing. Nothing can be done about it with this player — it owns the CPU with
   interrupts off, so no disc access can happen underneath it. Accepted by KC, 2026-08-29.

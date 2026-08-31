@@ -25,7 +25,7 @@ zero page and `&0D00` are backed up and put back. The tune loops until a key is 
 
 ## Our changes to his file
 
-Six, each marked `\ PORT:` at the site and listed in the file's own header:
+Seven, each marked `\ PORT:` at the site and listed in the file's own header:
 
 1. **The sideways bank is `PARSWR`'s answer, not 4.** `src/swram.asm` probes the machine before
    any of this runs and leaves the four banks it found at `&0A00`. We borrow the first.
@@ -36,6 +36,15 @@ Six, each marked `\ PORT:` at the site and listed in the file's own header:
 5. **Its data is compressed**: two ZX0 streams instead of eleven loose files, and the bank
    image depacks straight into the bank — see below.
 6. **It puts the VIAs back** — see below.
+7. **It leaves a MODE 7 "Loading..." screen behind it** (KC, 2026-08-31): the keypress exit
+   used to hand the game the abandoned MODE 1 picture, which `PARA`'s own `VDU 22` then
+   blanked for the ten seconds of bank loading. `PortLoading` prints `VDU 22,7`, cursor off,
+   and the message twice in double height at columns 15 of rows 11 and 12, through `OSWRCH`
+   after `restore_os` and before the `*DISC`. The game's mode change is the last thing it
+   does before the title now (`../docs/loader-compression.md`), so the message stays up for
+   the whole load. **It starts a page lower — `&2600` — to pay for it**: his block ran
+   `&2700-&3000` with not one byte spare, and `&2500-&26FF` is free at load time
+   (`ADVTAB` is `&1C00-&21FF`, the zero page and `&0D00` backups are `&2200-&23FF`).
 
 ### The trap PORT 4 exists for
 
