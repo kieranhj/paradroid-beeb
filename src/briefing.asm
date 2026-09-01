@@ -536,8 +536,13 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
 \ ============================================================
 \ BrPagePaint — the current page, from the top
 \ ============================================================
-\ br_page's own prologue, called from there and from BrKeyRedef.
+\ br_page's own prologue, called from there and from BrKeyRedef —
+\ both with bank 5 paged, which the two BmPal calls need.
 .BrPagePaint
+  JSR BmPalHide                 \ invisible ink: every logical takes the
+                                \ background's colour, the OLD page's
+                                \ text vanishing with it, BEFORE the
+                                \ scroll snaps back — briefman.asm
   LDA #0
   STA scrollS
   STA scrollS+1
@@ -550,7 +555,9 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
   BNE br_pg_nopo                \ so the first window composites it
   JSR BrPortrait
 .br_pg_nopo
-  JMP BrDrawPage                \ and its RTS
+  JSR BrDrawPage
+  JMP BmPalReveal               \ the finished block, in one go — and
+                                \ its RTS
 
 \ ============================================================
 \ BrKeyRedef — CTRL+R: the redefine screen, and the page back

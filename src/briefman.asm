@@ -303,3 +303,61 @@ BR_PO_SPAN = 12 * UNIT_BYTES    \ one row's slice of the rectangle
 \ ---- state: only this file touches it -----------------------
 .brChCnt  EQUB 0                \ the C64's snd_9C, counted down
 .brChSeed EQUB 1                \ reseeded by BrRun; never zero
+
+\ ============================================================
+\ BmPalHide / BmPalReveal — the page paint, in invisible ink
+\ ============================================================
+\ KC, 2026-09-01, the screen-swap pass's briefing arm: the per-page
+\ block paint was watchable — sixteen rows of text arriving over a
+\ few fields. The deck screens hide their plots behind PalBlack, but
+\ the briefing inherits whatever palette the last deck left in
+\ palPlay, so black is wrong here: instead every logical takes
+\ LOGICAL 0's OWN physical — text drawn in the background's colour is
+\ invisible on it — and the reveal puts the saved sixteen back.
+\ Bracketed around BrPagePaint (briefing.asm), which also swallows
+\ the OLD page's text on the way in: it vanishes in one clean field,
+\ the new page paints unseen, and the finished block appears in one
+\ go.
+\ THE HIDE WAITS TWO FIELDS before returning: palPlay reaches the
+\ ULA at fire 1, and fieldCount is bumped at fire 3 — so the first
+\ tick can arrive with the old colours still up (a write landing
+\ between a field's fire 1 and its fire 3), and only the second
+\ guarantees a fire 1 has run on the hidden table. Without it the
+\ paint's first rows show for a field, flick off, and reappear.
+\ Plain fieldCount polling, not BrWaitField: its chatter and CTRL+R
+\ hooks have no business inside the paint bracket.
+\ IN THIS BANK for the ceiling reason at the top of this file: the
+\ bracket costs PARBRF six bytes, the machinery none.
+.BmPalHide
+  LDA palPlay                   \ logical 0's entry: the low nibble is
+  AND #&0F                      \ its physical, ULA-inverted — reused
+  STA bmPalTmp                  \ as-is under all sixteen selectors
+  LDX #15
+.bmph_loop
+  LDA palPlay,X
+  STA bmPalSave,X
+  TXA
+  ASL A : ASL A : ASL A : ASL A
+  ORA bmPalTmp
+  STA palPlay,X
+  DEX
+  BPL bmph_loop
+  LDA fieldCount
+  CLC
+  ADC #2
+.bmph_wait
+  CMP fieldCount
+  BNE bmph_wait
+  RTS
+
+.BmPalReveal
+  LDX #15
+.bmpr_loop
+  LDA bmPalSave,X
+  STA palPlay,X
+  DEX
+  BPL bmpr_loop
+  RTS
+
+.bmPalSave SKIP 16
+.bmPalTmp  EQUB 0

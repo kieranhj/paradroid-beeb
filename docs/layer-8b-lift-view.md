@@ -199,6 +199,25 @@ selection is still a commit out of the screen, and it mirrors the entry chord ei
 The console pages' visible drawing stays as it is, by the same ruling: KC — the console is
 meant to be a remote terminal, so its pages painting in view is in character.
 
+## 4d. The briefing's page paint, in invisible ink, 2026-09-01
+
+The last arm of the screen-swap pass (KC): the briefing's per-page block paint — sixteen rows
+of text arriving over a few fields, on every page turn and on the return from CTRL+R's
+redefine screen (page 1's is already behind `BrTimeout`'s R8 blank). **Not `PalBlack`**: the
+briefing inherits whatever palette the last deck left in `palPlay` (layer-11f), so blacking the
+area would flash; instead `BmPalHide` (briefman.asm, bank 5 — PARBRF has no room) saves
+`palPlay` and sets **every logical to logical 0's own physical** — text drawn in the
+background's colour — and `BmPalReveal` puts the saved sixteen back. Bracketed around
+`BrPagePaint`, whose hide also swallows the OLD page's text before the scroll snaps back to
+row 0.
+
+**The hide waits two `fieldCount` ticks before returning**: `palPlay` reaches the ULA at
+fire 1 but `fieldCount` is bumped at fire 3, so the first tick can arrive with the old colours
+still applied and only the second guarantees a fire 1 has run on the hidden table. Plain
+polling, not `BrWaitField` — the chatter and CTRL+R hooks have no business inside the paint
+bracket. Verified in jsbeeb: `palPlay` read `&03,&13,&23…&F3` (all-blue) mid-paint on a page
+turn, then the restored table and the finished page.
+
 ## 5. For whoever touches this next
 
 The console's ship page (`con_ShipInfo`, `$3062`) was built on this drawer the same day:
