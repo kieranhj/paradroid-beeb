@@ -1746,9 +1746,8 @@ ENDIF
 \ was moved out of it. See docs/raster-timing.md.
   JSR AnimTick
 
-  JSR SprSplitOK
-  STA sprSplit
-  BEQ ml_whole
+  JSR SprSplitOK                \ Z is sprSplit's — the bridge's final
+  BEQ ml_whole                  \ LDA survives the RTS, so no re-store
 
 IF DEBUG_DRAW
   LDA #DBG_SPR : JSR DbgSetBg
@@ -3817,6 +3816,17 @@ INCLUDE "src/sprfx.asm"
 \ Layer 3's rupture handover, here for want of room anywhere else --
 \ read its header, and note that ts_loads pages this bank in for it.
 INCLUDE "src/ruptalign.asm"
+
+\ ---- the tranche decision's geometry half ------------------
+\ SprScanCls — the per-slot hit test against everything this pass will
+\ write to the buffer. It was SprHitsDraw inside bank 6's sprsplit.asm
+\ until 2026-09-01, when that bank's last 7 bytes could not hold the
+\ growth; the whole file is 634 B and fits in NO bank's free space, so
+\ it is split instead: the geometry here (it reads only main RAM, zero
+\ page and the low overlay), the component logic in bank 6, and a
+\ per-slot class table in the low overlay carrying the answer across
+\ the page flip. The bridge in sprite.asm pages this bank first.
+INCLUDE "src/sprscan.asm"
 .spr_end
 SAVE "PARASPR", spr_start, spr_end, DATA_LOAD, DATA_LOAD
 
@@ -3848,6 +3858,9 @@ INCLUDE "src/dbgpanel.asm"     \ the debug readouts, beside the panel they draw 
 \ Nothing to do with the panel: it is here because bank 6 has the room
 \ and because every byte it reads is main RAM or zero page, so it can
 \ answer the question without bank 4. sprite.asm holds the bridge.
+\ ITS GEOMETRY HALF IS BANK 5's SINCE 2026-09-01: SprScanCls fills the
+\ per-slot class table (sprCls, low overlay) before this runs — see
+\ src/sprscan.asm.
 INCLUDE "src/sprsplit.asm"
 
 \ The string table is NOT here any more: it is main RAM's, in PARAFNT,

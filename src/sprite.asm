@@ -915,9 +915,9 @@ ENDMACRO
   JMP PgData     \ tail: its RTS is ours
 
 \ ============================================================
-\ SprSplitOK — the bridge into bank 6
+\ SprSplitOK — the bridge into bank 5
 \ ============================================================
-\ THE DECISION ITSELF IS IN src/sprsplit.asm, IN BANK 6, and this is
+\ THE DECISION ITSELF IS IN src/sprsplit.asm, IN BANK 5, and this is
 \ the three instructions that page it in — PanelTick's idiom exactly.
 \ It moved there because it grew: testing each sprite against what this
 \ pass is actually going to draw costs more code than testing a handful
@@ -930,11 +930,13 @@ ENDMACRO
 \ The answer comes back in sprSplit rather than in A, because PAGEBANK
 \ writes A on the way out.
 .SprSplitOK
-  JSR PgSpr2   
+  JSR PgSpr                     \ the geometry half is bank 5's since
+  JSR SprScanCls                \ 2026-09-01 — see sprscan.asm. It fills
+  JSR PgSpr2                    \ sprCls before the decision reads it
   JSR SprSplitDecide
-  JSR PgData   
-  LDA sprSplit
-  RTS
+  JSR PgData
+  LDA sprSplit                  \ the caller branches on these flags —
+  RTS                           \ main.asm no longer re-stores sprSplit
 
 \ ============================================================
 \ SprDrawSlot — save the background for slot X, then blit over it

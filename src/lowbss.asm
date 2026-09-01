@@ -89,6 +89,14 @@ ORG LOWBSS_ADDR
 .infoActive     SKIP 1          \ non-zero: a screen owns the play area
 .infoAct        SKIP 1          \ IS_ACT_*: what to do when it is dismissed
 
+\ ---- the tranche decision's per-slot answer ----------------
+\ Written by SprScanCls (bank 5), read by SprAssignTr (bank 6): the
+\ two halves of the split decision can never see each other, so the
+\ answer crosses the page flip here. Rewritten whole every pass before
+\ it is read, so it needs no seeding. This took lowbss's last 8 bytes
+\ (2026-09-01).
+.sprCls         SKIP 8          \ SPR_SLOTS, declared after this file
+
 IF DEBUG_ENERGY
 \ The bank-4 bytes DbgEnergyOut cannot read for itself: bank 6 is paged
 \ while it runs. Its shim in lowcode2.asm fills these first.
