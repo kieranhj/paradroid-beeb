@@ -184,10 +184,14 @@
   LDX satI
   LDA sprComp,X
   CMP #&FF
-  BEQ sat_asgnext               \ inactive: in neither tranche
+  BNE sat_live                  \ inactive: in neither tranche. The
+  JMP sat_asgnext               \ player-refuse block pushed the label
+.sat_live                       \ out of branch range (2026-09-01)
   LDA sprTr,X
   CMP #&FF
-  BNE sat_asgnext               \ its component is already placed
+  BEQ sat_place                 \ its component is already placed
+  JMP sat_asgnext
+.sat_place
   LDX satI
   LDA sprComp,X
   STA satNew
@@ -201,8 +205,10 @@
   BNE sat_cntnext
   INC satCount
   LDA sprCls,X                  \ under this pass's writes? SprScanCls
-  ORA satForce                  \ (bank 5) answered before we were paged:
-  STA satForce                  \ bit 0 window-A writers, bit 1 window-B
+  AND #3                        \ (bank 5) answered before we were paged:
+  ORA satForce                  \ bit 0 window-A writers, bit 1 window-B.
+  STA satForce                  \ Bit 2 of sprCls[0] is the view-moved
+                                \ flag, masked off here
 .sat_cntnext
   DEX
   BPL sat_cnt
@@ -214,7 +220,21 @@
   BCS sat_toA                   \ tiles repaint); under BOTH no tranche
   LDA satForce                  \ is safe and the pass is drawn whole
   AND #2
+  BEQ sat_bal
+\ Forced to tranche B - unless this is the PLAYER's component on a
+\ pass the view moved. A tranche-B image lags the scroll by one field,
+\ invisible on a droid but a 25 Hz judder on the one sprite the eye
+\ holds against the screen frame, so his component refuses the split
+\ instead (2026-09-01). Bit 2 of sprCls[0] is SprScanCls's view-moved
+\ flag; standing still (recharging on a pad) keeps the split.
+  LDA satNew
+  CMP sprComp+0
   BNE sat_toB
+  LDA sprCls+0
+  AND #4
+  BNE sat_refuse
+  BEQ sat_toB                   \ always
+.sat_bal
   LDA satNA                     \ otherwise the emptier tranche takes it,
   CMP satNB                     \ and a tie goes to A, which is how slot 0
   BCC sat_toA                   \ ends up there

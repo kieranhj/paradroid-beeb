@@ -62,6 +62,24 @@
   ORA colCount
   STA scnAnyW
 
+\ ---- did the view move this pass? ---------------------------
+\ ApplyMove has already run, so oldHX/oldPosY against the live pair
+\ says whether this pass scrolls. The answer rides to bank 6 as BIT 2
+\ of sprCls[0]: a tranche-B sprite's buffer image lags the scroll by
+\ one field, which is invisible on a droid but is a 25 Hz judder on
+\ the PLAYER, the one sprite the eye holds against the screen frame -
+\ so on a scrolling pass SprAssignTr refuses the split rather than
+\ let his component take tranche B (2026-09-01, KC's judder report).
+  LDY #0
+  LDA mapHX   : CMP oldHX      : BNE sscv_mv
+  LDA mapHX+1 : CMP oldHX+1    : BNE sscv_mv
+  LDA posY    : CMP oldPosY    : BNE sscv_mv
+  LDA posY+1  : CMP oldPosY+1  : BEQ sscv_st
+.sscv_mv
+  LDY #4
+.sscv_st
+  STY scnViewMv
+
   LDX #SPR_SLOTS-1
 .sscl_loop
   LDA #0
@@ -75,13 +93,21 @@
 .sscl_next
   DEX
   BPL sscl_loop
+  LDA sprCls+0                  \ bit 2: the view moved - see above.
+  ORA scnViewMv                 \ Bank 6 masks the class bits back off
+  STA sprCls+0                  \ before they reach satForce
   RTS
 
 \ Bank 5 is RAM: the two per-pass flags live beside the code that is
 \ the only reader and writer of either.
 .scnDoorW EQUB 0                \ some door repaints this pass
 .scnAnyW  EQUB 0                \ any writer at all this pass
+.scnViewMv EQUB 0               \ 4 when the view moved this pass
 .shdCls   EQUB 0                \ SprHitsDraw's class accumulator
+.shdR0    EQUB 0                \ the slot's padded char-row span
+.shdR1    EQUB 0
+.shdTR    EQUB 0                \ SprTileHit: the tile's row, set by caller
+.shdRt    EQUB 0                \ SprTileHit: tile top, strip-relative
 
 \ ============================================================
 \ SprHitsDraw — is slot X under anything this pass will write?
@@ -140,6 +166,17 @@
   ADC #SPR_W + 8
   STA shdU1
 
+\ ...and the same two spans as CHARACTER ROWS, for the tile row test:
+\ top inclusive, bottom exclusive, pads already inside shdV0/shdV1.
+  LDA shdV0
+  LSR A : LSR A : LSR A
+  STA shdR0
+  LDA shdV1
+  CLC
+  ADC #7
+  LSR A : LSR A : LSR A
+  STA shdR1
+
 \ ---- the band: one display row, full width ------------------
   LDA bandDo
   BEQ shd_cols
@@ -181,6 +218,8 @@
   BEQ shd_doors
 .shd_aloop
   DEX
+  LDA animRow,X
+  STA shdTR
   LDA animCol,X
   JSR SprTileHit
   BCS shd_ahit
@@ -212,6 +251,8 @@
   AND #7
   BEQ shd_dnext                 \ shut and staying shut
 .shd_dhit
+  LDA doorRow,X
+  STA shdTR
   LDA doorCol,X
   JSR SprTileHit
   BCS shd_dhit2
@@ -242,6 +283,30 @@
 \ -8..-1 — is reported as a hit at unit 0, which is conservative and
 \ two instructions instead of a clamp. Preserves X.
 .SprTileHit
+\ THE ROW TEST COMES FIRST (2026-09-01). The tile tests used to
+\ ignore rows entirely - forcing was always safe when everything
+\ forced tranche A, but a door ten rows away in the same columns now
+\ costs a tranche-B forcing (or, for the player while scrolling, a
+\ refused split), so the four char rows the tile covers are tested
+\ against the slot's padded row span. All quantities are small
+\ signed bytes, so plain SBC/BPL comparisons are safe.
+  TAY                           \ keep the column
+  LDA shdTR
+  ASL A : ASL A                 \ tile row -> its top char row
+  SEC
+  SBC mapYr                     \ strip-relative, signed
+  STA shdRt
+  SEC
+  SBC shdR1                     \ tile top at/below the span's bottom:
+  BPL sth_rno                   \ miss
+  LDA shdRt
+  CLC
+  ADC #4                        \ tile bottom (exclusive)
+  SEC
+  SBC shdR0                     \ at/above the span's top: miss
+  BMI sth_rno
+  BEQ sth_rno
+  TYA                           \ the column, for the unit test below
   STA shdT
   LDA #0
   STA shdT+1
@@ -275,6 +340,7 @@
   STA shdLA
   JMP SprSpanHit
 .sth_no
+.sth_rno
   CLC
   RTS
 

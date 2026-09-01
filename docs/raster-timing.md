@@ -915,3 +915,35 @@ Verified: movement, walls and doors behave identically in play; ESCAPE from its 
 whole death sequence, wash, high-score entry and title; split 127/129 with every pass start
 aligned; 25.0 Hz. Cost: net +1 byte of code image (the shared gate and `ReframeView`'s redundant
 `LDA #0` paid for the zeroing), `code_end` &2FFD, 3 B free.
+
+## The player judder, and the guarantee that was quietly load-bearing — 2026-09-01
+
+KC, after step 4: "the player sprite now judders noticeably when the screen is scrolling." The
+position data was clean — a per-pass trace showed `plyX`, `posX` and slot 0's unit/shift all
+advancing in lockstep — so the cause was temporal, and it was the window-B repaint classes:
+**forcing the player's component into tranche B put his buffer image one field behind the
+scroll.** The strip is world-anchored, so a tranche-B sprite drawn last pass simply hasn't moved
+yet when D1 displays — invisible on a droid, which the eye tracks as a thing moving through the
+world, but the player is held against the SCREEN FRAME by the view-follow, so his image
+alternated centre-minus-a-scroll-step / centre at 25 Hz. The old design's "the player is always
+in the window drawn first — the one thing on screen the eye is actually tracking" was exactly
+this guarantee, and the class-B forcing had broken it. The amplifier: the tile tests ignored
+rows, so a door ten rows away in the same columns forced him constantly while scrolling.
+
+Two changes, both in the banks (no code-image cost):
+
+- **`SprTileHit` tests the tile's four char rows** against the slot's padded row span
+  (`shdR0`/`shdR1`, computed once per slot). The row-blindness was harmless when every forcing
+  went to tranche A; now that a forcing can cost the player his window — or a refusal — it isn't.
+- **A scrolling pass refuses the split rather than put the player's component in tranche B.**
+  `SprScanCls` compares `mapHX`/`posY` against `oldHX`/`oldPosY` (valid: `ApplyMove` has run) and
+  carries the answer to bank 6 as bit 2 of `sprCls[0]`; `SprAssignTr` masks the class bits before
+  they reach `satForce` and, on the forced-B path, refuses when the component is the player's and
+  the bit is set. Standing still — recharging on a pad, the case the window-B repaint was built
+  for — keeps the split, because nothing lags a scroll that isn't happening.
+
+Verified in jsbeeb: `sprTr[0]` never reads 1 while the view moves; 120 of 128 passes still split
+on a heavy diagonal leg through doors (5 refusals — the accepted cost, drawn whole in window A);
+the timing histograms are unchanged from step 4's. Droids in tranche B still lag the scroll by
+one field — they always have, since the split was built — and stay that way: nothing holds them
+against the frame.
