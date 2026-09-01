@@ -295,7 +295,7 @@ ORG SWR_ADDR
   RTS
 
 .swMsgOK
-  EQUS "SWRAM BANKS ", 0
+  EQUS "Detected SWRAM slots: ", 0
 .swMsgShort
   EQUS 13, "PARADROID NEEDS 4 x 16K SIDEWAYS RAM", 13, "BANKS - FOUND ", 0
 .swMsgSolid
