@@ -296,10 +296,18 @@ ASSERT TITLE_R7 >= TITLE_ROWS   \ VSync must fall after the last row shown
   LDX keyTab+CTL_FIRE
   JSR keydown
   BEQ tiw_done                  \ Z set: fire is down
+  LDX keyTab+CTL_XFER           \ TRANSFER starts the game too (KC,
+  JSR keydown                   \ 2026-09-01, 11f DECISION 16) — the
+  BEQ tiw_done                  \ two thumbs a player rests on
   INC tiLo
   BNE tiw_loop
   INC tiHi
-  BEQ tiw_time                  \ the 16-bit wrap: the timeout, below
+  BMI tiw_time                  \ the timeout — at 32,768 turns NOW,
+                                \ not the 16-bit wrap: the second
+                                \ keydown above doubled the turn, so
+                                \ half the turns keeps the ~6 s the
+                                \ header derives. The seed reads the
+                                \ same two bytes either way
 \ THE VOLUME KEYS, and this is the awkward one of VolKeys' three call
 \ sites. There is no sound at the title — GoTitle silenced the chip and
 \ handed the IRQ back — so what is being set here is the level the
@@ -341,10 +349,10 @@ ASSERT TITLE_R7 >= TITLE_ROWS   \ VSync must fall after the last row shown
 \ 18 s was preferred; restoring it means counting something other than
 \ raw turns, not putting the OSBYTE back.
   LDA tiHi
-  AND #3
-  BNE tiw_loop
-  JSR VolKeys
-  JMP tiw_loop
+  AND #1                        \ 1-in-512 turns, not 1024: the turn
+  BNE tiw_loop                  \ doubled with the TRANSFER test, so
+  JSR VolKeys                   \ this holds the ~11 Hz the table
+  JMP tiw_loop                  \ above derives
 .tiw_time
 \ Layer 11f: the 16-bit wrap is the timeout, and the timeout is the
 \ briefing — $291B's own arrangement. BrTimeout fetches PARMAN into

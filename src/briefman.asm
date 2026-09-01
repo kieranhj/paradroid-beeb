@@ -361,3 +361,21 @@ BR_PO_SPAN = 12 * UNIT_BYTES    \ one row's slice of the rectangle
 
 .bmPalSave SKIP 16
 .bmPalTmp  EQUB 0
+
+\ ============================================================
+\ BmStartDown — Z set when FIRE or TRANSFER is down
+\ ============================================================
+\ KC, 2026-09-01 [11f DECISION 16]: either button leaves the briefing
+\ into the game — they are the two thumbs a player rests on. One
+\ helper because BrRun asks in four loops; here rather than PARBRF for
+\ the ceiling reason at the top of this file, and the shrunken call
+\ sites pay PARBRF back. Called only from those loops, whose resting
+\ bank is this one; KeyDownIx and keyTab are main RAM.
+.BmStartDown
+  LDX #CTL_FIRE
+  JSR KeyDownIx
+  BEQ bmsd_x
+  LDX #CTL_XFER
+  JSR KeyDownIx
+.bmsd_x
+  RTS

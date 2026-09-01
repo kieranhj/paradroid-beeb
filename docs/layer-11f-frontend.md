@@ -947,6 +947,15 @@ six controls in the order LEFT, RIGHT, UP, DOWN, FIRE, TRANSFER. Five things wer
 5. **Nothing on the briefing says CTRL+R exists** — KC is putting it in the briefing text, which is
    `briefing.txt` and a rebuild of `src/data/briefing.asm`.
 
+**[DECISION 16]** **Fire OR transfer starts the game** (KC, 2026-09-01) — at the title and out
+of the briefing; they are the two thumbs a player rests on. The briefing's four loops ask
+through one bank-5 helper (`BmStartDown`, briefman.asm), which pays PARBRF back 8 bytes over
+the shrunken call sites. `TiWait` tests both per turn, which doubled the turn's cost — so its
+timeout wraps at 32,768 turns instead of 65,536 (`BMI` on `tiHi`, same ~6 s) and the volume
+gate tightened from 1-in-1024 to 1-in-512 (same ~11 Hz). The C64 has no second button to ask
+about. The 001 page still dismisses on fire alone — it is in the game, and its press must be a
+fresh edge anyway.
+
 ### 8d. Verified in jsbeeb, 2026-08-30
 
 Boot, title timeout, CTRL+R, then: LEFT <- A, a duplicate A refused with "Already used",

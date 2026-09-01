@@ -35,7 +35,7 @@
 brp = chp                       \ record-list walk pointer
 
 \ What BrRun hands back to BrDispatch.
-BR_EXIT_FIRE  = 0               \ fire: start the game
+BR_EXIT_FIRE  = 0               \ fire or transfer: start the game
 BR_EXIT_OFF   = 1               \ off the end of the last page: the title
 
 \ ============================================================
@@ -271,8 +271,7 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
 \ the _4/_5 release wait: a held M must not eat the next page too
 .br_deb
   JSR BrWaitField
-  LDX #CTL_FIRE
-  JSR KeyDownIx
+  JSR BmStartDown               \ fire OR transfer — briefman.asm
   BNE br_nofire                 \ br_fire is past a branch's reach here
   JMP br_fire
 .br_nofire
@@ -285,8 +284,7 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
   STA brDwell
 .br_dw1
   JSR BrWaitField
-  LDX #CTL_FIRE
-  JSR KeyDownIx
+  JSR BmStartDown
   BEQ br_fire
   LDX #CTL_DOWN
   JSR KeyDownIx
@@ -297,8 +295,7 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
 \ ---- the scroll: _8 to $1208 --------------------------------
 .br_scroll
   JSR BrWaitField
-  LDX #CTL_FIRE
-  JSR KeyDownIx
+  JSR BmStartDown
   BEQ br_fire
   LDX #CTL_UP                    \ up: ySpd+1 becomes 0 — hold still
   JSR KeyDownIx
@@ -321,8 +318,7 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
   STA brDwell
 .br_dw2
   JSR BrWaitField
-  LDX #CTL_FIRE
-  JSR KeyDownIx
+  JSR BmStartDown
   BEQ br_fire
   LDX #CTL_DOWN
   JSR KeyDownIx
