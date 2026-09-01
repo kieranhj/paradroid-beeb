@@ -233,7 +233,7 @@ DEV = RELEASE EOR 1
 \ What a RELEASE build calls itself — printed by !BOOT in place of the
 \ DEBUG line (a release build has none, by ASSERT). Bump the number as
 \ candidates go out; becomes "Release Version 1.0" when it ships.
-VERSION_LINE = "Release Candidate #1"
+VERSION_LINE = "Release Candidate #2"
 
 \ page. See docs/memory-map.md for where the next bytes could come from.
 \ DEBUG_RASTER tints the background at entry to each rupture
