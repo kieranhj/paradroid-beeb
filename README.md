@@ -23,7 +23,10 @@ own speeds and dwells, burbling to itself as it goes, with the live score table 
 portrait on its last page. The manual's text is hand-editable (`src/data/briefing.txt`), and every
 front-end screen wears the palette of the last deck played. **CTRL+R on that manual redefines the
 six play controls** — a screen of its own, drawn with the manual's own font engine, that asks for
-each key in turn.
+each key in turn; every key on the keyboard binds except ESCAPE and CTRL, SHIFT and the
+punctuation keys included. And no screen shows itself being drawn: deck loads, the console, the
+lift and the manual's pages all paint hidden and appear complete, the way the C64's off-screen
+builds did.
 
 And it now has an **endgame**. Clear a deck and it pays 500, sounds its chord and the floor
 goes to the cleared colour; clear every deck on the ship and it pays 2,000 and puts up the
@@ -46,12 +49,11 @@ sideways bank until a keypress hands over to the game. `build.ps1 -Release` is t
 carries it with every debug flag off. The four sideways banks are **probed at boot** rather than
 assumed to be 4-7, so the port runs on a board jumpered anywhere.
 
-**What is left** is the last of the visual pass, the balance pass, the polish list in `PLAN.md`,
-and testing on the machines people actually have. RAM is the binding
-constraint rather than any of them: main RAM is down to **7 bytes**, so the next feature of any
-size has to buy its room from somewhere first — `docs/ram-pass.md` keeps the list of what is
-still there to sell. See [`PLAN.md`](PLAN.md) for the layered build plan, the memory map, decisions taken
-and current status.
+**What is left** is the balance-and-fidelity pass (verify against the listing, then playtest),
+testing on the machines people actually have, and a short polish list — see
+[`PLAN.md`](PLAN.md), which is now exactly that list. RAM is the binding constraint rather than
+any of them: main RAM is down to **3 bytes**, so the next feature of any size has to buy its
+room from somewhere first — `docs/ram-pass.md` keeps the list of what is still there to sell.
 
 ## Target
 
@@ -75,9 +77,9 @@ converts mechanically from the ripped data with nothing redrawn.
 |---|---|
 | Z / X | left / right |
 | K / M | up / down — and, on the lift screen, move along the shaft. On the high-score entry they walk the alphabet; on the intro manual K pauses the scroll and M doubles it and skips the dwells |
-| L | fire; on a lift platform it opens the ship's deck-selection screen, and fire again commits. It commits an initial on the entry, and starts the game from anywhere in the manual |
-| SPACE | a second transfer button — hold it and the transfer triggers without needing a direction |
-| Cursor up/down | master volume; **CTRL+Q** mutes, **CTRL+P** pauses (plain **P** unpauses). All three work in play, in the modal screens, in the manual and at the title |
+| L | fire; on a lift platform it opens the ship's deck-selection screen, and fire again commits (with a confirmation chord). It commits an initial on the entry, and starts the game — as does transfer — from the title or anywhere in the manual |
+| SPACE | a second transfer button — hold it and the transfer triggers without needing a direction. Also starts the game, alongside fire |
+| CTRL + cursor up/down | master volume; **CTRL+Q** mutes, **CTRL+P** pauses (plain **P** unpauses). All three work in play, in the modal screens, in the manual and at the title. (Bare cursors are free — they can be bound as controls) |
 | ESCAPE | self-destruct — ends the game. The port's own; the C64 has no abort |
 | CTRL+`[` `]` | debug deck hop |
 | CTRL+C, CTRL+W | debug: clear the deck, win the transfer |
@@ -87,8 +89,9 @@ converts mechanically from the ripped data with nothing redrawn.
 intro manual — asks for a key for each of left, right, up, down, fire and transfer in turn, and
 what you choose holds everywhere the old keys were read: play, the console menus, the transfer
 game, the manual, the high-score entry and the title. ESCAPE abandons the run and puts the old set
-back; SHIFT and CTRL cannot be bound, and nor can a key the font has no name for. A choice lasts
-until it is changed again or the machine is BREAKed — nothing is written to disc.
+back; **only ESCAPE and CTRL cannot be bound** — SHIFT binds, and the punctuation keys show
+spelled-out names ("Slash", "Comma"…). A choice lasts until it is changed again or the machine is
+BREAKed — nothing is written to disc.
 
 The debug keys are debug builds only, are listed by `!BOOT` when they are compiled in — see the
 `DEBUG_*` flags at the top of `src/main.asm` — and **all of them need CTRL**, so a rebound control
@@ -113,8 +116,7 @@ emulator before the next begins:
 11. **Title, game over, sound and the droid screens** — ✅ done: the title, the death and game-over
     sequence, the SN76489 sound driver, the four information screens, and the front end — the
     high-score entry and the scrolling intro manual, which burbles to itself as it scrolls just
-    as the original's does. The ± volume keys, mute, pause, and the CTRL+R key redefinition. Two
-    small sound items are left: the transfer-verdict mapping and fx06
+    as the original's does. The ± volume keys, mute, pause, and the CTRL+R key redefinition
 12. Balance, fidelity and feel
 13. **Memory and machine compatibility** — the RAM pass ✅ done; sideways-RAM detection ✅ done
     (`PARSWR` probes all sixteen banks before the game loads, takes the top four and refuses a
