@@ -869,9 +869,9 @@ ENDMACRO
 \ Restore still walks backwards and draw forwards, so within a tranche
 \ two overlapping sprites are put back in the reverse of the order they
 \ were drawn — the property the whole pool rests on.
-.SprRestoreAll
-  LDA #&FF                      \ every slot, whatever its tranche
-  BNE SprRestoreTr              \ always
+\ SprRestoreAll is gone (2026-09-01): the main loop was its only
+\ caller and now derives SprRestoreTr's argument from sprSplit — &FF
+\ (every slot, whatever its tranche) on a whole pass, 0 on a split one.
 .SprRestoreTr
   STA sprTrWant
   LDX #SPR_SLOTS-1

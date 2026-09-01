@@ -190,18 +190,25 @@
   BNE sat_cntnext
   INC satCount
   LDA sprCls,X                  \ under this pass's writes? SprScanCls
-  BEQ sat_cntnext               \ (bank 5) answered before we were paged
-  STA satForce
+  ORA satForce                  \ (bank 5) answered before we were paged:
+  STA satForce                  \ bit 0 window-A writers, bit 1 window-B
 .sat_cntnext
   DEX
   BPL sat_cnt
 
-  LDA satForce                  \ under the level draw: it MUST be in the
-  BNE sat_toA                   \ tranche that is erased while it runs
+  LDA satForce                  \ under a window-A writer it MUST be in
+  CMP #3                        \ tranche A (erased while the band and
+  BEQ sat_refuse                \ columns paint); under a window-B one it
+  LSR A                         \ MUST be in tranche B (erased while the
+  BCS sat_toA                   \ tiles repaint); under BOTH no tranche
+  LDA satForce                  \ is safe and the pass is drawn whole
+  AND #2
+  BNE sat_toB
   LDA satNA                     \ otherwise the emptier tranche takes it,
   CMP satNB                     \ and a tie goes to A, which is how slot 0
   BCC sat_toA                   \ ends up there
   BEQ sat_toA
+.sat_toB
   CLC
   LDA satNB
   ADC satCount
@@ -236,6 +243,10 @@
 .sat_done
   LDA #1                        \ always: see the note on balance above
   RTS
+.sat_refuse
+  LDA #0                        \ a component under both windows' writers:
+  RTS                           \ sprTr is half-written but a whole pass
+                                \ never reads it
 
 \ ============================================================
 \ SprOverlapXY — slots X and Y close enough to share a tranche

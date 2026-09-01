@@ -1746,22 +1746,18 @@ ENDIF
 \ was moved out of it. See docs/raster-timing.md.
   JSR AnimTick
 
-  JSR SprSplitOK                \ Z is sprSplit's — the bridge's final
-  BEQ ml_whole                  \ LDA survives the RTS, so no re-store
-
+  JSR SprSplitOK                \ A = sprSplit, and one subtract maps it
 IF DEBUG_DRAW
+  PHA
   LDA #DBG_SPR : JSR DbgSetBg
+  PLA
 ENDIF
-  LDA #0
-  JSR SprRestoreTr              \ tranche A only; B stays on screen, which
-  JMP ml_erased                 \ is safe because nothing else writes the
-                                \ buffer on a split pass
-.ml_whole
-IF DEBUG_DRAW
-  LDA #DBG_SPR : JSR DbgSetBg
-ENDIF
-  JSR SprRestoreAll             \ the saved pixels belong at the address
-.ml_erased                      \ they were taken from
+  SEC                           \ onto SprRestoreTr's argument: 1 (split)
+  SBC #1                        \ -> tranche 0, 0 (whole) -> &FF = every
+  JSR SprRestoreTr              \ slot. On a split pass B stays on screen,
+                                \ which is safe because nothing that
+                                \ writes the buffer in window A can touch
+                                \ it -- SprScanCls forced those to A
 IF DEBUG_DRAW
   LDA #DBG_REDRAW : JSR DbgSetBg
 ENDIF
@@ -1852,10 +1848,14 @@ ENDIF                           \ 2026-08-20 it did not: the tint set before
 \ a routine that reads the map and writes no buffer belongs. It rebuilds
 \ the list only when the view has crossed a tile column, so most passes
 \ pay twenty cycles for the test and nothing else.
-\ ABOVE DroidsUpdate on purpose: it borrows `maprow`, which the band
-\ draw owns and the droid AI also uses, and this is the gap between the
-\ two where it is dead.
-  JSR AnimScanPass
+\ IT MOVED BELOW THE TRANCHE-B BLOCK (2026-09-01). It used to run
+\ here, in the gap between the band draw and the droid AI where its
+\ borrowed `maprow` is dead — but on a split pass window B now paints
+\ the list SprScanCls classified at the top of the pass, so rebuilding
+\ it before window B would paint tiles the forcing never saw. Below
+\ the tranche-B draws maprow is just as dead (the next band draw is
+\ next pass's), and a modal arm skipping the rebuild costs nothing:
+\ the list is rebuilt from scratch every normal pass.
 
 \ ============================================================
 \ The droids run HERE, after the drawing, and that is deliberate
@@ -1988,6 +1988,12 @@ ENDIF                           \ wait: what is left untinted is real slack
   \ Tranche B, erased and redrawn inside this window so that no field
   \ ever displays it missing. On a whole pass it was drawn up there
   \ with the rest and there is nothing to do here.
+  \ THE ANIMATED TILES REPAINT IN THIS WINDOW on a split pass
+  \ (2026-09-01): between the restore and the draw, so tranche B is
+  \ erased while they land, and SprScanCls forced anything under them
+  \ into this tranche — window A stops paying for the recharge pad.
+  \ AnimPaintB is past AnimPaint's own split gate; bank 4 is paged
+  \ (SprRestoreTr put it back), which DrawTileCells needs.
   LDA sprSplit
   BEQ ml_nob
 IF DEBUG_DRAW
@@ -1995,12 +2001,17 @@ IF DEBUG_DRAW
 ENDIF
   LDA #1
   JSR SprRestoreTr
+  JSR AnimPaintB
   LDA #1
   JSR SprDrawTr
 IF DEBUG_DRAW
   JSR DbgDeckBg
 ENDIF
 .ml_nob
+  \ The animated-tile list, for the NEXT pass — moved below the
+  \ tranche-B draws so window B paints the list the forcing was
+  \ computed against. See the note above DroidsUpdate.
+  JSR AnimScanPass
 
 IF DEBUG_DRAW
   JSR DbgDeckBg

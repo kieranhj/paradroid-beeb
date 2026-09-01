@@ -224,7 +224,17 @@
 \ ---- AnimPaint — repaint what AnimScan found ---------------
 \ Two cell lists, because the two tiles animate in different places.
 \ animKind separates them: 0 = a recharger, 1 = a sign.
+\
+\ ON A SPLIT PASS THE REPAINT BELONGS TO WINDOW B (2026-09-01): the
+\ main loop's window-A call lands here and bows out, and the window-B
+\ block calls AnimPaintB — past the gate — between tranche B's restore
+\ and its draw. SprScanCls forces any sprite under one of these tiles
+\ into tranche B, which is what makes the deferred write safe; on a
+\ whole pass everything is erased in window A and the old order holds.
 .AnimPaint
+  LDA sprSplit
+  BNE anp_x                     \ split: deferred to the window-B call
+.AnimPaintB
   LDA animCount
   BEQ anp_x
 .anp_loop

@@ -71,9 +71,7 @@
   LDA sprActive,X
   BEQ sscl_next
   JSR SprHitsDraw
-  BCC sscl_next
-  LDA #1
-  STA sprCls,X
+  STA sprCls,X                  \ the class byte, 0..3
 .sscl_next
   DEX
   BPL sscl_loop
@@ -83,6 +81,7 @@
 \ the only reader and writer of either.
 .scnDoorW EQUB 0                \ some door repaints this pass
 .scnAnyW  EQUB 0                \ any writer at all this pass
+.shdCls   EQUB 0                \ SprHitsDraw's class accumulator
 
 \ ============================================================
 \ SprHitsDraw — is slot X under anything this pass will write?
@@ -96,10 +95,19 @@
 \   a door       one tile                         -> units only, rows
 \   an anim tile one tile                            ignored (loose)
 \ The two tile cases ignore rows because a map row is cheap to get
-\ wrong and forcing tranche A is always the safe answer.
+\ wrong and forcing a tranche is always the safe answer.
+\ THE ANSWER IS A CLASS BYTE NOW, not a carry (2026-09-01): bit 0 for
+\ the writers painted in window A (the band, the columns), bit 1 for
+\ the writers painted in window B on a split pass (the animated
+\ tiles). A sprite under a window-A writer must be in tranche A, one
+\ under a window-B writer in tranche B, and one under both refuses
+\ the split -- SprAssignTr acts on the bits. A = the byte on exit;
+\ X is preserved.
 .SprHitsDraw
   TXA
   PHA
+  LDA #0
+  STA shdCls
 
 \ ---- the sprite's own two spans, both padded ----------------
 \ Padded by eight either side: a pass can scroll the view eight units,
@@ -143,7 +151,9 @@
   LDA #8
   STA shdLA
   JSR SprSpanHit
-  BCS shd_yes
+  BCC shd_cols
+  LDA #1                        \ the band paints in window A
+  STA shdCls
 
 \ ---- the columns: 4-pixel columns, full height --------------
 .shd_cols
@@ -156,7 +166,10 @@
   LDA colFirst
   STA shdA
   JSR SprSpanHit
-  BCS shd_yes
+  BCC shd_anim
+  LDA shdCls                    \ the columns paint in window A too
+  ORA #1
+  STA shdCls
 
 \ ---- the animated tiles AnimPaint will repaint --------------
 \ animDirty is what AnimPaint itself tests, so a list with nothing to do
@@ -170,9 +183,14 @@
   DEX
   LDA animCol,X
   JSR SprTileHit
-  BCS shd_yes
+  BCS shd_ahit
   TXA
   BNE shd_aloop
+  BEQ shd_doors                 \ always
+.shd_ahit
+  LDA shdCls                    \ an anim tile paints in window B on a
+  ORA #2                        \ split pass -- the DoorAnimPaint window
+  STA shdCls
 
 \ ---- the doors DoorsUpdate will repaint ---------------------
 \ A door only writes on a pass where it MOVES. One being held open —
@@ -196,20 +214,20 @@
 .shd_dhit
   LDA doorCol,X
   JSR SprTileHit
-  BCS shd_yes
+  BCS shd_dhit2
 .shd_dnext
   TXA
   BNE shd_dloop
+  BEQ shd_no                    \ always
+.shd_dhit2
+  LDA shdCls                    \ a door repaint is window A's (for
+  ORA #1                        \ now: it joins the anim tiles in
+  STA shdCls                    \ window B with the next change)
 
 .shd_no
   PLA
   TAX
-  CLC
-  RTS
-.shd_yes
-  PLA
-  TAX
-  SEC
+  LDA shdCls
   RTS
 
 \ ============================================================
