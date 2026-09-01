@@ -3191,6 +3191,13 @@ XF_PHYS_NEUT = 0                \ black   — logical 3, structure/unclaimed
                                 \ directly, the loading one through
                                 \ LoadDeck — and that is where it goes
                                 \ back. See T1_I3X
+  LDA #&16                      \ the commit's confirmation: the mode-change
+  STA sndFx2                    \ chord, the one the entry above and the
+                                \ console's exit post. THE C64 PLAYS NOTHING
+                                \ HERE — DoLift's exit is silent — so this
+                                \ is KC's addition (2026-09-01), from the
+                                \ existing vocabulary rather than a new
+                                \ effect. Layer-8b section 4c
   LDA #MM_MOBILE
   STA moveMode
   LDA #MM_DELAY

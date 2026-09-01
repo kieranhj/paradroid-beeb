@@ -187,6 +187,18 @@ the 001 page dismissed into the first deck draw. In every case `palPlay` read ba
 during the draw, the play area was a clean black rectangle under a live panel, and the finished
 screen appeared in its own colours in one go.
 
+## 4c. The commit gets a confirmation chord, 2026-09-01
+
+**[DECISION]** The C64's `DoLift` exit is silent — entry posts the `$16` mode-change chord
+(`$2696`) and each selection step posts the `$10` blips (`$271B`/`$2729`), but the committing
+fire plays nothing. KC asked for a short confirmation on the deck selection, so `LvExit4` posts
+`&16` on voice 2: the same chord the entry and the console's exit (`$2CC3`) already use, so the
+addition stays inside the original's effect vocabulary. Both endings play it — an unmoved
+selection is still a commit out of the screen, and it mirrors the entry chord either way.
+
+The console pages' visible drawing stays as it is, by the same ruling: KC — the console is
+meant to be a remote terminal, so its pages painting in view is in character.
+
 ## 5. For whoever touches this next
 
 The console's ship page (`con_ShipInfo`, `$3062`) was built on this drawer the same day:
