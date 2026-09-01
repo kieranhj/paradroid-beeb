@@ -1780,10 +1780,9 @@ IF DEBUG_TIME
 ELSE
   JSR DoRedraws
 ENDIF
-\ The animated tiles that are on screen already. A no-op unless AnimTick
-\ found some, and when it did the pass is not a split one — so this is
-\ always inside the window the level draw just used.
-  JSR AnimPaint
+\ The animated tiles that are on screen already are repainted by
+\ DoorAnimPaint, DoorsUpdate's tail — inside DoRedraws on a whole
+\ pass, from the window-B block on a split one (2026-09-01).
 IF DEBUG_DRAW
   LDA #DBG_REDRAW : JSR DbgSetBg
 ENDIF
@@ -1988,12 +1987,12 @@ ENDIF                           \ wait: what is left untinted is real slack
   \ Tranche B, erased and redrawn inside this window so that no field
   \ ever displays it missing. On a whole pass it was drawn up there
   \ with the rest and there is nothing to do here.
-  \ THE ANIMATED TILES REPAINT IN THIS WINDOW on a split pass
-  \ (2026-09-01): between the restore and the draw, so tranche B is
-  \ erased while they land, and SprScanCls forced anything under them
-  \ into this tranche — window A stops paying for the recharge pad.
-  \ AnimPaintB is past AnimPaint's own split gate; bank 4 is paged
-  \ (SprRestoreTr put it back), which DrawTileCells needs.
+  \ THE MOVING DOORS AND THE ANIMATED TILES REPAINT IN THIS WINDOW on
+  \ a split pass (2026-09-01): between the restore and the draw, so
+  \ tranche B is erased while they land, and SprScanCls forced
+  \ anything under them into this tranche — window A stops paying for
+  \ doors and the recharge pad. Bank 4 is paged (SprRestoreTr put it
+  \ back), which DrawDoorTile and DrawTileCells need.
   LDA sprSplit
   BEQ ml_nob
 IF DEBUG_DRAW
@@ -2001,8 +2000,8 @@ IF DEBUG_DRAW
 ENDIF
   LDA #1
   JSR SprRestoreTr
-  JSR AnimPaintB
-  LDA #1
+  JSR DoorAnimPaint             \ the doors that moved, then the anim
+  LDA #1                        \ tiles — see door.asm's du_gate
   JSR SprDrawTr
 IF DEBUG_DRAW
   JSR DbgDeckBg

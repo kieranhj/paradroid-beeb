@@ -231,7 +231,7 @@ DOOR_SLOTS = 7                  \ the C64's cap, and it compacts on close
 .DoorsUpdate
   LDA numDoors
   BNE du_go
-  JMP du_draw                   \ out of BEQ range once the close arms grew
+  JMP du_gate                   \ out of BEQ range once the close arms grew
 .du_go
   LDX #0
   LDY #0
@@ -306,10 +306,22 @@ DOOR_SLOTS = 7                  \ the C64's cap, and it compacts on close
 
 \ ---- redraw whatever changed --------------------------------
 \ After the band and the columns, so a door inside a freshly drawn
-\ band is written over the top of it rather than under.
-.du_draw
+\ band is written over the top of it rather than under. ON A SPLIT
+\ PASS THE REPAINT BELONGS TO WINDOW B (2026-09-01): the state above
+\ ran in window A (it writes doorDef, which this pass's band and
+\ column draws read, and no buffer), and the main loop's window-B
+\ block calls DoorAnimPaint between tranche B's restore and its draw
+\ -- SprScanCls forced any sprite under a moving door into tranche B,
+\ so the tiles land on an erased patch and the draw's save picks them
+\ up. The tail is the animated tiles' repaint, same class, same
+\ window, so one call serves both.
+.du_gate
+  LDA sprSplit
+  BEQ DoorAnimPaint             \ whole pass: repaint here, in window A
+  RTS
+.DoorAnimPaint
   LDA numDoors
-  BEQ du_x
+  BEQ du_anim
   LDX #0
 .du_dloop
   LDA doorDirty,X
@@ -322,8 +334,8 @@ DOOR_SLOTS = 7                  \ the C64's cap, and it compacts on close
   INX
   CPX numDoors
   BCC du_dloop
-.du_x
-  RTS
+.du_anim
+  JMP AnimPaint
 
 \ Move a patched definition down with its entry. Sixteen bytes, and it
 \ happens only when a door closes ahead of one still open.

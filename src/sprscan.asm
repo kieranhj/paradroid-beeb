@@ -220,9 +220,9 @@
   BNE shd_dloop
   BEQ shd_no                    \ always
 .shd_dhit2
-  LDA shdCls                    \ a door repaint is window A's (for
-  ORA #1                        \ now: it joins the anim tiles in
-  STA shdCls                    \ window B with the next change)
+  LDA shdCls                    \ a door repaint is window B's, like
+  ORA #2                        \ the anim tiles: DoorAnimPaint runs
+  STA shdCls                    \ between tranche B's restore and draw
 
 .shd_no
   PLA
