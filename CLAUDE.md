@@ -124,10 +124,13 @@ the disc out physically in boot access order. The loader (`UnpackBankIn`, reside
 image) only understands that layout, so **`PARADROID-raw.ssd` hangs at the first bank load** — never hand
 it to an emulator. Boot measured 14.4 s → 10.4 s; `docs/loader-compression.md` has the numbers.
 
-**jsbeeb will not boot an unpadded SSD.** It hangs in the DFS FDC poll, because an image that ends
-mid-track leaves jsbeeb refusing to read the last partial one. `build.ps1` (via `make_disc.py`)
-writes the padded copy for you; pad before handing any hand-built image to an emulator or
-publishing it.
+**Pad an SSD to 200K before handing it to an emulator or publishing it.** jsbeeb WILL boot an
+unpadded image, so this is robustness and convention rather than a hard requirement (KC,
+2026-09-01, correcting an earlier absolute here which claimed it would not boot at all and
+blamed a hang in the DFS FDC poll). `build.ps1` (via `make_disc.py`) writes the padded copy for
+you, and every image published to the Bitshifters wip folder is the 204,800-byte one, so match
+that: a published size that differs from the previous publish is a useful signal that the wrong
+file went out.
 
 **beebasm writes its progress and success messages to stderr.** In PowerShell that renders as an
 error, and if you pipe or redirect *that stream* under `$ErrorActionPreference = 'Stop'` it raises
