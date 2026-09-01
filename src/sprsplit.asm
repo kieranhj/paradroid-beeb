@@ -41,6 +41,17 @@
 \ is FORCED INTO TRANCHE A — the tranche that is already erased when the
 \ level draw runs. Tranche B is then disjoint from everything this pass
 \ writes, by construction, and the invariant holds without the veto.
+\ [DECISION, 2026-09-01] THE WRITERS HAVE TWO CLASSES NOW. The band
+\ and the columns are latch-bound and paint in window A: a sprite
+\ under them is forced into tranche A, erased while they land. The
+\ single-tile writers -- a moving door, the recharger, the ALERT sign
+\ -- paint in window B on a split pass (DoorAnimPaint, between
+\ tranche B's restore and its draw): a sprite under one is forced
+\ into tranche B. A component under BOTH classes has no safe tranche
+\ and the split is refused for the pass. SprScanCls (bank 5,
+\ src/sprscan.asm) computes the per-slot class byte; this file
+\ consumes it. "FORCED INTO TRANCHE A" above should be read as
+\ "forced into the writer's window's tranche" throughout.
 \
 \ Overlap components make that sound: forcing is applied to a whole
 \ component, so a sprite overlapping a forced one is forced with it.

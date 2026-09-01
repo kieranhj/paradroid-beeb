@@ -212,8 +212,8 @@ addresses from the `beebasm` output rather than from any document.** In outline:
 | `&5400–&57FF` | Row/unit multiply (`&5400`), **`LUTs` — `BuildCharset`'s four nibble tables at `&54C0`** — character-address and sprite-mask tables, built at startup. **Packed exactly, no slack**: the 64 bytes that look free below `CHAR_PTR_LO` are `LUTs`, and the `ASSERT` that seems to permit a gap does not |
 | `&5800–&7FFF` | Play buffer: circular strip, 16 rows × 640 |
 | SWRAM bank 4 | `PARADAT` — tiles, levels, palettes, droid game data, **the level-draw code, the droid AI, Layer 10's entry/exit and Layer 11e's sound driver**. The char bitmaps ship ZX0-packed; `BuildCharset` unpacks them into the idle sprite save areas at deck load |
-| SWRAM bank 5 | `PARASPR` — the blitter, shifts 0 and 1 px, **the effect blitter (`src/sprfx.asm`, RAM pass DECISION 2) and the rupture handover (`src/ruptalign.asm`)**. **Evicted for the briefing**, which loads `PARMAN` over it: the manual's text, `briefman.asm`, `keyredef.asm` (the CTRL+R key redefinition, Layer 11f) and the chatter's effect records. Both exits reload the blitter |
-| SWRAM bank 6 | `PARSPR2` — shifts 2 and 3 px, same layout, plus Layer 9's panel/console, Layer 11f's `PnBriefing` and the 912 B `dfsSave` snapshot |
+| SWRAM bank 5 | `PARASPR` — the blitter, shifts 0 and 1 px, **the effect blitter (`src/sprfx.asm`, RAM pass DECISION 2) and the rupture handover (`src/ruptalign.asm`), and the tranche prescan (`src/sprscan.asm`, 2026-09-01 — the split decision's geometry half, feeding `sprCls` in lowbss)**. **Evicted for the briefing**, which loads `PARMAN` over it: the manual's text, `briefman.asm`, `keyredef.asm` (the CTRL+R key redefinition, Layer 11f) and the chatter's effect records. Both exits reload the blitter |
+| SWRAM bank 6 | `PARSPR2` — shifts 2 and 3 px, same layout, plus Layer 9's panel/console, Layer 11f's `PnBriefing`, the 912 B `dfsSave` snapshot and the tranche decision's component half (`src/sprsplit.asm` — its geometry moved to bank 5's `sprscan.asm`, 2026-09-01) |
 | SWRAM bank 7 | `PARXFER` — Layer 10's transfer minigame, Layer 8b's lift screen, the console's ship, deck-plan and droid-database pages, and Layer 11's game over. The title is the `PARTITL` disc overlay, and the droid icons are main RAM's now |
 
 **RAM was the binding constraint until the RAM recovery pass of 2026-08-25**
@@ -225,13 +225,13 @@ paragraph:
 |---|---|
 | Main RAM code image | **4 B** — `code_end` `&2FFC` (7 B before `RuptAlign`'s call site). `keyTab` took the last six on 2026-08-30 and left it at zero; moving the debug redraw's key test into bank 4 (`DbgRedrawKey`) gave seven back on 2026-08-31. It was 48 B after the RAM pass; Layer 13b's `swBank` reads and handover copy took 37, and `TitleSeq`'s early `disrFlash` clear 5. **This is the binding constraint again** |
 | Bank 4 | **11 B** on the gauge (2026-08-31: −105 for layer-12 DECISION 5's droid counting and conversion, −3 for BUGS #12's `sprSplit` clear; 143 B before those) + `colourMap` `ALIGN` pad, **which is SPENT** — 200 B put in front of it cost the bank 259, measured. **Now as tight as the code image** |
-| Bank 5 | **602 B** |
-| Bank 6 | **7 B** (2026-08-31: −32 for DECISION 5's `ConCount` and the count lines; 39 B before that. The 114 B here before 2026-08-30 was stale) |
+| Bank 5 | **119 B** (2026-09-01: −~480 for `sprscan.asm`, the tranche prescan; 602 B before) |
+| Bank 6 | **294 B** (2026-09-01: sprsplit's geometry half left for bank 5; was 7 B and the tightest bank) |
 | Bank 7 | 7 B tail + the `planInk` pad — **~100-105 B all in, MEASURED 2026-08-31** by bisecting a `SKIP` in `liftview.asm`. The "~176 B of pad" this table and `memory-map.md` used to quote was stale. **No held reserve frees bank 7**, which is what parked layer-12 DECISION 6 |
 | `PARBRF` (`&0400`, hard ceiling `&0800`) | **18 B** (36 B before `BrTimeout`'s R8 blank, 56 B before the CTRL+R hook) |
 | `PARAFNT` block | **16 B** before `SPR_SAVE` (`KeyDownIx` took 7, DECISION 5's `CN_STRS` 10) |
 | `PARMAN` (bank 5's briefing load; the bound is `DEPK_STREAM + size <= PANEL_ADDR`) | **225 B** — the redefine screen took 893 |
-| Low overlay | `lowcode` **9 B** (its two raw `PAGEBANK`s became `JSR Pg*`), `lowcode2` 3 B, `lowbss` 8 B |
+| Low overlay | `lowcode` **9 B** (its two raw `PAGEBANK`s became `JSR Pg*`), `lowcode2` 3 B, `lowbss` **0 B** (`sprCls` took the last 8, 2026-09-01) |
 | `PINTRO` (`pdloader/`, `-Intro` builds) | **0 B** — it fills to `&3000` exactly, where the picture lands. **It starts at `&2600` since 2026-08-31** (PORT 7's MODE 7 "Loading..." screen took the page it moved down for) and `&2500–&25FF` is what is left below it |
 
 **THE STACK PAGE HAS 128 FREE BYTES AND NOTHING IS IN THEM YET.** `&0100-&017F` was measured
@@ -250,7 +250,7 @@ either `ALIGN` recovers nothing** (the next ALIGN pads by the same amount; both 
 load-bearing in pointer arithmetic), and spending one byte past a pad costs 256 at a stroke.
 Quote a bank's pad and tail as a pair, never the tail alone. `docs/ram-pass.md` records what the
 pass took, what it costed and rejected (do not re-litigate the blitter unrolls, `palPanel` or the
-ALIGNs), and what is held in reserve for the next squeeze — `sprsplit.asm` to bank 5, SCANSTEP
+ALIGNs), and what is held in reserve for the next squeeze — `sprsplit.asm` to bank 5 (SPENT 2026-09-01, as the sprscan.asm split), SCANSTEP
 tail folding, `door.asm` to bank 4, the `hsfont` dedup.
 
 **The `PARBRF` ceiling is measured, not caution**: `&0800-&08FF` is the MOS's sound workspace and

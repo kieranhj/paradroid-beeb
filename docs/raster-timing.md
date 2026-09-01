@@ -798,3 +798,87 @@ before the game-over path reached it.
 Verified in jsbeeb: the title→001 seam is now fully black end to end (no white panel box, no
 front-end-coloured strip), the 001 arrives complete and correctly coloured, and the timed-out path
 still reaches the briefing.
+
+# The window-B repaint classes — 2026-09-01
+
+The audit (`perf-audit-2026-08-31.md`) measured the tranche-A draw finishing over the displayed
+play area on 29% of corridor passes and 59% of droid-crowd passes, and traced the growth to three
+tenants of window A: `SprSplitOK`'s per-pass geometry, the animated-tile repaint, and the door
+repaints — plus the tranches merging on the commonest screen. KC approved three fixes
+(2026-09-01); all three are in, one commit each on `perf-window-a`.
+
+## 1. The tranche decision split across banks 5 and 6
+
+`sprsplit.asm` had 7 bytes of bank 6 to grow into and, at 634 bytes, fits no bank's free space
+whole. The geometry half (`SprHitsDraw` and its helpers, moved instruction-for-instruction) is
+`SprScanCls` in the new `src/sprscan.asm`, bank 5, filling a per-slot class table — `sprCls`,
+lowbss's last 8 bytes — once per pass; `SprAssignTr` (bank 6) reads the table instead of running
+the test per component member, and the `SprSplitOK` bridge pages bank 5 then bank 6.
+
+## 2. Early-outs in the prescan
+
+The commonest pass has no buffer writer at all and used to pay ~2,000–3,800 cycles of geometry at
+the front of window A anyway. `SprScanCls` now answers presence once per pass — one walk of the
+door list with `shd_doors`' own predicate, hoisted, plus the three flags — and zeroes the table
+without any per-slot geometry when nothing writes. Measured: `SprSplitOK` 2,186 cycles on a quiet
+one-sprite pass against ~3,800–4,200 before.
+
+## 3. The single-tile writers paint in window B
+
+**[DECISION, 2026-09-01] `SprHitsDraw` returns a class byte, not a carry: bit 0 for the
+latch-bound writers that stay in window A (the band, the columns), bit 1 for the single-tile
+writers that paint in window B on a split pass (a moving door, the recharger, the ALERT sign).**
+A component under bit 0 is forced into tranche A; under bit 1 into tranche B — the tranche erased
+when its window's writes land; under both, no tranche is safe and the split is refused for the
+pass. The repaints themselves run as `DoorAnimPaint` (door.asm) — the old `du_draw` with
+`AnimPaint` as its tail — called from `DoRedraws`' tail in window A on a whole pass and from the
+window-B block, between tranche B's restore and its draw, on a split one. The door STATE update
+stays in window A because the same pass's band and column draws read `doorDef`.
+
+Two consequences the code comments also carry:
+
+- **`AnimScanPass` runs below the tranche-B block now**, so window B paints the list `SprScanCls`
+  classified at the top of the pass, not a freshly rebuilt one. Its borrowed `maprow` is just as
+  dead there, and a modal arm skipping the rebuild costs nothing — the list is rebuilt from
+  scratch every normal pass.
+- **`SprRestoreAll` is gone**: the main loop derives `SprRestoreTr`'s argument as
+  `sprSplit − 1` (1 → tranche 0, 0 → &FF = the whole pool), which paid for the new calls.
+
+## Step 3 (columns → window B) IS WITHDRAWN — it cannot be made sound
+
+The sketch at the top of this file said "the column half can go to window B". It cannot, and the
+arithmetic is worth keeping: **fire 1 latches the scroll ~22,016 cycles into window A, and the
+SAME field's display (fire 2, 24,576) shows the new viewport.** A column drawn in window B lands
+after that display has run — the newly exposed 4–8 px strip shows stale buffer content (the next
+row's left edge, via the row-major wrap) for one field on every scrolling pass, a shimmering edge
+far worse than the tear it replaces. Deferring the latch to window B instead makes D1 show the old
+viewport — no garbage, sprites world-anchored so no displacement — but the player's world position
+updates in the same pass as the scroll, so he oscillates against the viewport by the scroll delta,
+±8 px at 25 Hz. Rejected. The band and columns stay in window A, bound to the latch. (The
+C64-faithful escape, if ever wanted, is a hidden margin — display fewer units than the buffer row,
+the original's 38-column trick — which costs visible width and is KC's call.)
+
+## Measured after all three (same harness, 128-pass histograms)
+
+| | audit (before) | after |
+|---|---:|---:|
+| corridor scroll, end of tranche-A draw over the display | 29% | — (not re-run) |
+| stationary on an animating recharge pad, tranche-A late | 6/128, up to ~11k cycles | **0/128** |
+| droid crowd, diagonal: tranche-A draw late (incl. a field late) | 59% | **27%** |
+| droid crowd: tranche-B draw into the second display | 30% | **5.5%** |
+| split taken | 123–128/128 | 127–128/128 |
+| pass rate | 25.0 Hz | 25.0 Hz |
+
+Correctness: the buffer oracle reads **0 of 10,240** against `RedrawAll` — diagonal scroll,
+`line` = 7, `mapHX` = 21 (odd), deck cleared with CTRL+C so nothing perturbs the window, all three
+draw sites AND both restore sites NOPed (the restores must be NOPed too when the dumps are taken
+across passes, or the replayed saved backgrounds stamp false diffs — the breakpoint recipe in
+`ram-pass.md` avoids this by staying inside one pass). The player standing ON the pad is forced
+into tranche B (`sprTr[0]` = 1) with the split kept, and the pad animates under him.
+
+**What is left late is the band + the pass preamble against the fire-1 latch** — the movement
+pipeline (`ReadKeys`/`CalcSpeed`/`CheckWalls`, ~5,000 cycles, audit recommendation 4) is the next
+item, unchanged from this file's earlier "what is left" list.
+
+Room after: code image 4 B free (`code_end` &2FFC), bank 5 119 B, bank 6 294 B, lowbss 0 B
+(`sprCls` took the last 8; the stack page's measured-free half is now the only main-RAM slack).
