@@ -475,20 +475,31 @@ SPR_LASTROW = SPR_H - 1         \ ...because that entry is the 1 at the end
 \ a counter in step with the thing it could be read from. The same
 \ holds for svp (a save block is 56 bytes, a column 8), so either
 \ pointer could answer; bufp is the one already in hand.
-\ IT IS A MACRO, NOT A SUBROUTINE. Only four places walk with svp in
-\ hand — the two row loops and the two block passes — so there are four
-\ expansions of seventeen bytes, and a JSR/RTS pair costs 12 of the 33
-\ cycles a step used to take. The glyphs do not walk at all — see
+\ THE PAGE CARRY IS DEFERRED INTO THE CROSSING TAIL (hexwab, issue #1,
+\ 2026-09-01). INC bufp needs its carry propagating into bufp+1, but a
+\ low byte that has just wrapped to zero has `bufp AND 7` = 0 as well,
+\ so that step ALWAYS takes the crossing branch — which means the carry
+\ can be handled once, in SprScanRow, instead of tested on every step.
+\ bufp+1 is stale for the four instructions in between and nothing
+\ there reads it. Worth 3 cycles and 4 bytes a step against 2 cycles on
+\ one step in eight; over the 335 expansions that is ~1,330 bytes of
+\ SWRAM, and it is why the tail does its own INC.
+\
+\ IT IS A MACRO, NOT A SUBROUTINE. Only four places in THIS FILE walk
+\ with svp in hand — the two row loops and the two block passes — but
+\ the compiled rows in droids.asm and droids2.asm expand it too, 335
+\ times in all, at thirteen bytes each. A JSR/RTS pair would cost 12 of
+\ the 30 cycles a step takes. The glyphs do not walk at all — see
 \ SprBuildRowPtrs.
 \
-\ The row crossing stays out of line. It is taken on one step in six,
-\ it is 23 bytes, and putting it behind a JSR keeps the macro small
-\ enough to be worth expanding four times.
+\ The row crossing stays out of line. It is taken on one step in eight,
+\ it is 27 bytes, and putting it behind a JSR keeps the macro small
+\ enough to be worth expanding that many times.
 \
 \ P%+4 and P%+5 skip the following instruction rather than name a
 \ label: a macro body cannot declare one, because the second expansion
-\ would redefine it. 4 = the 2-byte BNE plus the 2-byte zero-page INC;
-\ 5 = the 2-byte BNE plus the 3-byte JSR.
+\ would redefine it. 5 = the 2-byte BNE plus the 3-byte JSR, in the
+\ macro; 4 = the 2-byte BNE plus the 2-byte zero-page INC, in the tail.
 \
 \ Not called NEXTSCAN: NEXT is a BeebASM keyword (FOR..NEXT), and a
 \ macro whose name starts with it fails at the invocation with a bare
@@ -496,8 +507,6 @@ SPR_LASTROW = SPR_H - 1         \ ...because that entry is the 1 at the end
 MACRO SCANSTEP
   INC svp
   INC bufp
-  BNE P%+4
-  INC bufp+1
   LDA bufp
   AND #7
   BNE P%+5                      \ still inside this character row
@@ -507,11 +516,17 @@ ENDMACRO
 \ The crossing tail. Entered with bufp already advanced onto what would
 \ be scanline 8, so both pointers move on by stride-8 rather than
 \ stride-7, and WrapBufFwd's RTS returns to the macro site.
+\ It also finishes the INC that the macro left half-done — see the
+\ note above. The CLC survives the inserted BNE/INC, neither of which
+\ touches carry.
 .SprScanRow
   CLC
   LDA svp    : ADC #SPR_BLOCK-8     : STA svp
   CLC
-  LDA bufp   : ADC #LO(ROW_BYTES-8) : STA bufp
+  LDA bufp
+  BNE P%+4
+  INC bufp+1
+  ADC #LO(ROW_BYTES-8) : STA bufp
   LDA bufp+1 : ADC #HI(ROW_BYTES-8) : STA bufp+1
   JMP WrapBufFwd
 
