@@ -26,7 +26,7 @@
 .hsHigh   EQUB &00, &00, &68, &09
 .hsHiIni  EQUB 0, 4, 1                  \ AEB
 .hsLow    EQUB &00, &00, &65, &02
-.hsLoIni  EQUB 1, 0, 3                  \ BAD
+.hsLoIni  EQUB 1, 1, 2                  \ BBC
 
 \ ---- Redux (4): the entry seeds from the LAST initials ------
 \ Layer-12 [DECISION 4]. GetInitial ($E56D) starts every initial at

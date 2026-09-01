@@ -6,7 +6,7 @@
 
 BR_PAGES     = 5
 BR_ROW_LO    = 1
-BR_ROW_HI    = 58
+BR_ROW_HI    = 57
 BR_ROWS      = BR_ROW_HI - BR_ROW_LO + 1
 
 \ Characters the shared font has not got; the renderer plots an
@@ -74,7 +74,6 @@ BR_XTRA0     = 104
   EQUB LO(brRow_0_55)
   EQUB LO(brRow_0_56)
   EQUB LO(brRow_0_57)
-  EQUB LO(brRow_0_58)
 .brRowHi_0
   EQUB HI(brRow_0_1)
   EQUB HI(brRow_0_2)
@@ -133,7 +132,6 @@ BR_XTRA0     = 104
   EQUB HI(brRow_0_55)
   EQUB HI(brRow_0_56)
   EQUB HI(brRow_0_57)
-  EQUB HI(brRow_0_58)
 .brRowLo_1
   EQUB LO(brRow_1_1)
   EQUB LO(brRow_1_2)
@@ -192,7 +190,6 @@ BR_XTRA0     = 104
   EQUB LO(brRow_1_55)
   EQUB LO(brRow_1_56)
   EQUB LO(brRow_1_57)
-  EQUB LO(brRow_1_58)
 .brRowHi_1
   EQUB HI(brRow_1_1)
   EQUB HI(brRow_1_2)
@@ -251,7 +248,6 @@ BR_XTRA0     = 104
   EQUB HI(brRow_1_55)
   EQUB HI(brRow_1_56)
   EQUB HI(brRow_1_57)
-  EQUB HI(brRow_1_58)
 .brRowLo_2
   EQUB LO(brRow_2_1)
   EQUB LO(brRow_2_2)
@@ -310,7 +306,6 @@ BR_XTRA0     = 104
   EQUB LO(brRow_2_55)
   EQUB LO(brRow_2_56)
   EQUB LO(brRow_2_57)
-  EQUB LO(brRow_2_58)
 .brRowHi_2
   EQUB HI(brRow_2_1)
   EQUB HI(brRow_2_2)
@@ -369,7 +364,6 @@ BR_XTRA0     = 104
   EQUB HI(brRow_2_55)
   EQUB HI(brRow_2_56)
   EQUB HI(brRow_2_57)
-  EQUB HI(brRow_2_58)
 .brRowLo_3
   EQUB LO(brRow_3_1)
   EQUB LO(brRow_3_2)
@@ -428,7 +422,6 @@ BR_XTRA0     = 104
   EQUB LO(brRow_3_55)
   EQUB LO(brRow_3_56)
   EQUB LO(brRow_3_57)
-  EQUB LO(brRow_3_58)
 .brRowHi_3
   EQUB HI(brRow_3_1)
   EQUB HI(brRow_3_2)
@@ -487,7 +480,6 @@ BR_XTRA0     = 104
   EQUB HI(brRow_3_55)
   EQUB HI(brRow_3_56)
   EQUB HI(brRow_3_57)
-  EQUB HI(brRow_3_58)
 .brRowLo_4
   EQUB LO(brRow_4_1)
   EQUB LO(brRow_4_2)
@@ -546,7 +538,6 @@ BR_XTRA0     = 104
   EQUB LO(brRow_4_55)
   EQUB LO(brRow_4_56)
   EQUB LO(brRow_4_57)
-  EQUB LO(brRow_4_58)
 .brRowHi_4
   EQUB HI(brRow_4_1)
   EQUB HI(brRow_4_2)
@@ -605,7 +596,6 @@ BR_XTRA0     = 104
   EQUB HI(brRow_4_55)
   EQUB HI(brRow_4_56)
   EQUB HI(brRow_4_57)
-  EQUB HI(brRow_4_58)
 .brPageLLo
   EQUB LO(brRowLo_0)
   EQUB LO(brRowLo_1)
@@ -686,31 +676,19 @@ BR_XTRA0     = 104
 .brRow_0_16
   EQUB &FF
 .brRow_0_17
+  \ "BBC port by Bitshifters"
+  EQUB 7
+  EQUB 12, 12, 13, 0, 78, 77, 80, 82, 0, 64, 87, 0
+  EQUB 12, 71, 82, 81, 70, 71, 68, 82, 67, 80, 81
+  EQUB &FE
   EQUB &FF
 .brRow_0_18
-  \ "Plug your joystick into port 2"
-  EQUB 4
-  EQUB 26, 74, 83, 69, 0, 87, 77, 83, 80, 0, 72, 77
-  EQUB 87, 81, 82, 71, 65, 73, 0, 71, 76, 82, 77, 0
-  EQUB 78, 77, 80, 82, 0, 3
-  EQUB &FE
   EQUB &FF
 .brRow_0_19
   EQUB &FF
 .brRow_0_20
   EQUB &FF
 .brRow_0_21
-  \ "Press fire to play"
-  EQUB 10
-  EQUB 26, 80, 67, 81, 81, 0, 68, 71, 80, 67, 0, 82
-  EQUB 77, 0, 78, 74, 63, 87
-  EQUB &FE
-  EQUB &FF
-.brRow_0_22
-  EQUB &FF
-.brRow_0_23
-  EQUB &FF
-.brRow_0_24
   \ "Clear  the freighter  of robots by"
   EQUB 3
   EQUB 13, 74, 67, 63, 80, 0, 0, 82, 70, 67, 0, 68
@@ -718,9 +696,9 @@ BR_XTRA0     = 104
   EQUB 0, 80, 77, 64, 77, 82, 81, 0, 64, 87
   EQUB &FE
   EQUB &FF
-.brRow_0_25
+.brRow_0_22
   EQUB &FF
-.brRow_0_26
+.brRow_0_23
   \ "destroying them with twin  lasers"
   EQUB 2
   EQUB 66, 67, 81, 82, 80, 77, 87, 71, 76, 69, 0, 82
@@ -728,9 +706,9 @@ BR_XTRA0     = 104
   EQUB 76, 0, 0, 74, 63, 81, 67, 80, 81
   EQUB &FE
   EQUB &FF
-.brRow_0_27
+.brRow_0_24
   EQUB &FF
-.brRow_0_28
+.brRow_0_25
   \ "or by transferring control to them."
   EQUB 2
   EQUB 77, 80, 0, 64, 87, 0, 82, 80, 63, 76, 81, 68
@@ -738,139 +716,145 @@ BR_XTRA0     = 104
   EQUB 77, 74, 0, 82, 77, 0, 82, 70, 67, 75, 89
   EQUB &FE
   EQUB &FF
+.brRow_0_26
+  EQUB &FF
+.brRow_0_27
+  EQUB &FF
+.brRow_0_28
+  \ "Control is as follows:"
+  EQUB 3
+  EQUB 13, 77, 76, 82, 80, 77, 74, 0, 71, 81, 0, 63
+  EQUB 81, 0, 68, 77, 74, 74, 77, 85, 81, 99
+  EQUB &FE
+  EQUB &FF
 .brRow_0_29
   EQUB &FF
 .brRow_0_30
   EQUB &FF
 .brRow_0_31
-  \ "Control is  by  joystick  only, as"
-  EQUB 3
-  EQUB 13, 77, 76, 82, 80, 77, 74, 0, 71, 81, 0, 0
-  EQUB 64, 87, 0, 0, 72, 77, 87, 81, 82, 71, 65, 73
-  EQUB 0, 0, 77, 76, 74, 87, 104, 0, 63, 81
+  \ "Use keyboard to move your robot."
+  EQUB 2
+  EQUB 31, 81, 67, 0, 73, 67, 87, 64, 77, 63, 80, 66
+  EQUB 0, 82, 77, 0, 75, 77, 84, 67, 0, 87, 77, 83
+  EQUB 80, 0, 80, 77, 64, 77, 82, 89
   EQUB &FE
   EQUB &FF
 .brRow_0_32
   EQUB &FF
 .brRow_0_33
-  \ "follows:"
+  \ "Press fire to shoot your laser and "
   EQUB 2
-  EQUB 68, 77, 74, 74, 77, 85, 81, 99
+  EQUB 26, 80, 67, 81, 81, 0, 68, 71, 80, 67, 0, 82
+  EQUB 77, 0, 81, 70, 77, 77, 82, 0, 87, 77, 83, 80
+  EQUB 0, 74, 63, 81, 67, 80, 0, 63, 76, 66, 0
   EQUB &FE
   EQUB &FF
 .brRow_0_34
   EQUB &FF
 .brRow_0_35
+  \ "use lifts or consoles. Hold fire "
+  EQUB 2
+  EQUB 83, 81, 67, 0, 74, 71, 68, 82, 81, 0, 77, 80
+  EQUB 0, 65, 77, 76, 81, 77, 74, 67, 81, 89, 0, 18
+  EQUB 77, 74, 66, 0, 68, 71, 80, 67, 0
+  EQUB &FE
   EQUB &FF
 .brRow_0_36
-  \ "At all times joystick moves robot"
-  EQUB 2
-  EQUB 11, 82, 0, 63, 74, 74, 0, 82, 71, 75, 67, 81
-  EQUB 0, 72, 77, 87, 81, 82, 71, 65, 73, 0, 75, 77
-  EQUB 84, 67, 81, 0, 80, 77, 64, 77, 82
-  EQUB &FE
   EQUB &FF
 .brRow_0_37
+  \ "whilst stationary to prepare for "
+  EQUB 2
+  EQUB 85, 70, 71, 74, 81, 82, 0, 81, 82, 63, 82, 71
+  EQUB 77, 76, 63, 80, 87, 0, 82, 77, 0, 78, 80, 67
+  EQUB 78, 63, 80, 67, 0, 68, 77, 80, 0
+  EQUB &FE
   EQUB &FF
 .brRow_0_38
-  \ "and holding fire down will  allow"
-  EQUB 2
-  EQUB 63, 76, 66, 0, 70, 77, 74, 66, 71, 76, 69, 0
-  EQUB 68, 71, 80, 67, 0, 66, 77, 85, 76, 0, 85, 71
-  EQUB 74, 74, 0, 0, 63, 74, 74, 77, 85
-  EQUB &FE
   EQUB &FF
 .brRow_0_39
-  EQUB &FF
-.brRow_0_40
-  \ "use of lifts and consoles."
+  \ "transfer mode or press transfer"
   EQUB 2
-  EQUB 83, 81, 67, 0, 77, 68, 0, 74, 71, 68, 82, 81
-  EQUB 0, 63, 76, 66, 0, 65, 77, 76, 81, 77, 74, 67
-  EQUB 81, 89
+  EQUB 82, 80, 63, 76, 81, 68, 67, 80, 0, 75, 77, 66
+  EQUB 67, 0, 77, 80, 0, 78, 80, 67, 81, 81, 0, 82
+  EQUB 80, 63, 76, 81, 68, 67, 80
   EQUB &FE
   EQUB &FF
+.brRow_0_40
+  EQUB &FF
 .brRow_0_41
+  \ "button. Make contact with another"
+  EQUB 2
+  EQUB 64, 83, 82, 82, 77, 76, 89, 0, 23, 63, 73, 67
+  EQUB 0, 65, 77, 76, 82, 63, 65, 82, 0, 85, 71, 82
+  EQUB 70, 0, 63, 76, 77, 82, 70, 67, 80
+  EQUB &FE
   EQUB &FF
 .brRow_0_42
   EQUB &FF
 .brRow_0_43
+  \ "robot to initiate the transfer."
+  EQUB 2
+  EQUB 80, 77, 64, 77, 82, 0, 82, 77, 0, 71, 76, 71
+  EQUB 82, 71, 63, 82, 67, 0, 82, 70, 67, 0, 82, 80
+  EQUB 63, 76, 81, 68, 67, 80, 89
+  EQUB &FE
   EQUB &FF
 .brRow_0_44
-  \ "In addition, pressing fire with the"
-  EQUB 2
-  EQUB 19, 76, 0, 63, 66, 66, 71, 82, 71, 77, 76, 104
-  EQUB 0, 78, 80, 67, 81, 81, 71, 76, 69, 0, 68, 71
-  EQUB 80, 67, 0, 85, 71, 82, 70, 0, 82, 70, 67
-  EQUB &FE
   EQUB &FF
 .brRow_0_45
   EQUB &FF
 .brRow_0_46
-  \ "joystick  centred will  prepare the"
-  EQUB 2
-  EQUB 72, 77, 87, 81, 82, 71, 65, 73, 0, 0, 65, 67
-  EQUB 76, 82, 80, 67, 66, 0, 85, 71, 74, 74, 0, 0
-  EQUB 78, 80, 67, 78, 63, 80, 67, 0, 82, 70, 67
+  \ "Default keys:"
+  EQUB 4
+  EQUB 14, 67, 68, 63, 83, 74, 82, 0, 73, 67, 87, 81
+  EQUB 99
   EQUB &FE
   EQUB &FF
 .brRow_0_47
   EQUB &FF
 .brRow_0_48
-  \ "current robot for transfer. Contact"
-  EQUB 2
-  EQUB 65, 83, 80, 80, 67, 76, 82, 0, 80, 77, 64, 77
-  EQUB 82, 0, 68, 77, 80, 0, 82, 80, 63, 76, 81, 68
-  EQUB 67, 80, 89, 0, 13, 77, 76, 82, 63, 65, 82
-  EQUB &FE
   EQUB &FF
 .brRow_0_49
+  \ "Left:        Z"
+  EQUB 10
+  EQUB 22, 67, 68, 82, 99, 0, 0, 0, 0, 0, 0, 0
+  EQUB 0, 36
+  EQUB &FE
   EQUB &FF
 .brRow_0_50
-  \ "with another robot with the button"
-  EQUB 2
-  EQUB 85, 71, 82, 70, 0, 63, 76, 77, 82, 70, 67, 80
-  EQUB 0, 80, 77, 64, 77, 82, 0, 85, 71, 82, 70, 0
-  EQUB 82, 70, 67, 0, 64, 83, 82, 82, 77, 76
-  EQUB &FE
   EQUB &FF
 .brRow_0_51
+  \ "Right:       X"
+  EQUB 10
+  EQUB 28, 71, 69, 70, 82, 99, 0, 0, 0, 0, 0, 0
+  EQUB 0, 34
+  EQUB &FE
   EQUB &FF
 .brRow_0_52
-  \ "down will initiate transfer."
-  EQUB 2
-  EQUB 66, 77, 85, 76, 0, 85, 71, 74, 74, 0, 71, 76
-  EQUB 71, 82, 71, 63, 82, 67, 0, 82, 80, 63, 76, 81
-  EQUB 68, 67, 80, 89
-  EQUB &FE
   EQUB &FF
 .brRow_0_53
+  \ "Up:          K"
+  EQUB 10
+  EQUB 31, 78, 99, 0, 0, 0, 0, 0, 0, 0, 0, 0
+  EQUB 0, 21
+  EQUB &FE
   EQUB &FF
 .brRow_0_54
-  \ "Press fire with the joystick in  a"
-  EQUB 2
-  EQUB 26, 80, 67, 81, 81, 0, 68, 71, 80, 67, 0, 85
-  EQUB 71, 82, 70, 0, 82, 70, 67, 0, 72, 77, 87, 81
-  EQUB 82, 71, 65, 73, 0, 71, 76, 0, 0, 63
-  EQUB &FE
   EQUB &FF
 .brRow_0_55
-  EQUB &FF
-.brRow_0_56
-  \ "specific direction to fire lasers in"
-  EQUB 2
-  EQUB 81, 78, 67, 65, 71, 68, 71, 65, 0, 66, 71, 80
-  EQUB 67, 65, 82, 71, 77, 76, 0, 82, 77, 0, 68, 71
-  EQUB 80, 67, 0, 74, 63, 81, 67, 80, 81, 0, 71, 76
+  \ "Down:       M"
+  EQUB 10
+  EQUB 14, 77, 85, 76, 99, 0, 0, 0, 0, 0, 0, 0
+  EQUB 23
   EQUB &FE
   EQUB &FF
-.brRow_0_57
+.brRow_0_56
   EQUB &FF
-.brRow_0_58
-  \ "that direction."
-  EQUB 2
-  EQUB 82, 70, 63, 82, 0, 66, 71, 80, 67, 65, 82, 71
-  EQUB 77, 76, 89
+.brRow_0_57
+  \ "Fire:        L"
+  EQUB 10
+  EQUB 16, 71, 80, 67, 99, 0, 0, 0, 0, 0, 0, 0
+  EQUB 0, 22
   EQUB &FE
   EQUB &FF
 .brRow_1_1
@@ -1148,8 +1132,6 @@ BR_XTRA0     = 104
   EQUB &FF
 .brRow_1_57
   EQUB &FF
-.brRow_1_58
-  EQUB &FF
 .brRow_2_1
   \ "The 001 Influence Device consists"
   EQUB 3
@@ -1421,8 +1403,6 @@ BR_XTRA0     = 104
   EQUB &FF
 .brRow_2_57
   EQUB &FF
-.brRow_2_58
-  EQUB &FF
 .brRow_3_1
   \ "An Influence Device can transmit"
   EQUB 3
@@ -1474,9 +1454,9 @@ BR_XTRA0     = 104
 .brRow_3_10
   EQUB &FF
 .brRow_3_11
-  \ "your C64 remote terminal."
+  \ "your BBC remote terminal."
   EQUB 2
-  EQUB 87, 77, 83, 80, 0, 13, 7, 5, 0, 80, 67, 75
+  EQUB 87, 77, 83, 80, 0, 12, 12, 13, 0, 80, 67, 75
   EQUB 77, 82, 67, 0, 82, 67, 80, 75, 71, 76, 63, 74
   EQUB 89
   EQUB &FE
@@ -1686,8 +1666,6 @@ BR_XTRA0     = 104
   EQUB &FF
 .brRow_3_57
   EQUB &FF
-.brRow_3_58
-  EQUB &FF
 .brRow_4_1
   \ "Top score of the day:"
   EQUB 13
@@ -1728,10 +1706,10 @@ BR_XTRA0     = 104
   EQUB &FF
 .brRow_4_12
 .br_loscore
-  \ "    6502 - BAD"
+  \ "    6502 - BBC"
   EQUB 15
   EQUB 0, 0, 0, 0, 7, 6, 1, 3, 0, 98, 0, 12
-  EQUB 11, 14
+  EQUB 12, 13
   EQUB &FE
   EQUB &FF
 .brRow_4_13
@@ -1743,32 +1721,46 @@ BR_XTRA0     = 104
 .brRow_4_16
   EQUB &FF
 .brRow_4_17
+  \ "To pause:      Ctrl-P"
+  EQUB 6
+  EQUB 30, 77, 0, 78, 63, 83, 81, 67, 99, 0, 0, 0
+  EQUB 0, 0, 0, 13, 82, 80, 74, 98, 26
+  EQUB &FE
   EQUB &FF
 .brRow_4_18
   EQUB &FF
 .brRow_4_19
+  \ "Mute sound:    Ctrl-Q"
+  EQUB 6
+  EQUB 23, 83, 82, 67, 0, 81, 77, 83, 76, 66, 99, 0
+  EQUB 0, 0, 0, 13, 82, 80, 74, 98, 27
+  EQUB &FE
   EQUB &FF
 .brRow_4_20
   EQUB &FF
 .brRow_4_21
-  \ "To pause: press run-stop."
-  EQUB 10
-  EQUB 30, 77, 0, 78, 63, 83, 81, 67, 99, 0, 78, 80
-  EQUB 67, 81, 81, 0, 80, 83, 76, 98, 81, 82, 77, 78
-  EQUB 89
+  \ "Volume up:    Ctrl-Up"
+  EQUB 6
+  EQUB 32, 77, 74, 83, 75, 67, 0, 83, 78, 99, 0, 0
+  EQUB 0, 0, 13, 82, 80, 74, 98, 31, 78
   EQUB &FE
   EQUB &FF
 .brRow_4_22
   EQUB &FF
 .brRow_4_23
+  \ "Volume down: Ctrl-Down"
+  EQUB 6
+  EQUB 32, 77, 74, 83, 75, 67, 0, 66, 77, 85, 76, 99
+  EQUB 0, 13, 82, 80, 74, 98, 14, 77, 85, 76
+  EQUB &FE
   EQUB &FF
 .brRow_4_24
   EQUB &FF
 .brRow_4_25
-  \ "From pause mode only:"
-  EQUB 12
-  EQUB 16, 80, 77, 75, 0, 78, 63, 83, 81, 67, 0, 75
-  EQUB 77, 66, 67, 0, 77, 76, 74, 87, 99
+  \ "Quit game:    Escape"
+  EQUB 6
+  EQUB 27, 83, 71, 82, 0, 69, 63, 75, 67, 99, 0, 0
+  EQUB 0, 0, 15, 81, 65, 63, 78, 67
   EQUB &FE
   EQUB &FF
 .brRow_4_26
@@ -1778,59 +1770,62 @@ BR_XTRA0     = 104
 .brRow_4_28
   EQUB &FF
 .brRow_4_29
-  \ "fire      - restarts,"
-  EQUB 14
-  EQUB 68, 71, 80, 67, 0, 0, 0, 0, 0, 0, 98, 0
-  EQUB 80, 67, 81, 82, 63, 80, 82, 81, 104
+  \ "During briefing only:"
+  EQUB 4
+  EQUB 14, 83, 80, 71, 76, 69, 0, 64, 80, 71, 67, 68
+  EQUB 71, 76, 69, 0, 77, 76, 74, 87, 99
   EQUB &FE
   EQUB &FF
 .brRow_4_30
   EQUB &FF
 .brRow_4_31
-  \ "run-stop  - restarts,"
-  EQUB 14
-  EQUB 80, 83, 76, 98, 81, 82, 77, 78, 0, 0, 98, 0
-  EQUB 80, 67, 81, 82, 63, 80, 82, 81, 104
-  EQUB &FE
   EQUB &FF
 .brRow_4_32
+  \ "Redefine keys: Ctrl-R"
+  EQUB 6
+  EQUB 28, 67, 66, 67, 68, 71, 76, 67, 0, 73, 67, 87
+  EQUB 81, 99, 0, 13, 82, 80, 74, 98, 28
+  EQUB &FE
   EQUB &FF
 .brRow_4_33
-  \ "clr-home - quits game,"
-  EQUB 14
-  EQUB 65, 74, 80, 98, 70, 77, 75, 67, 0, 98, 0, 79
-  EQUB 83, 71, 82, 81, 0, 69, 63, 75, 67, 104
-  EQUB &FE
   EQUB &FF
 .brRow_4_34
   EQUB &FF
 .brRow_4_35
-  \ "f7        - cheese,"
-  EQUB 14
-  EQUB 68, 8, 0, 0, 0, 0, 0, 0, 0, 0, 98, 0
-  EQUB 65, 70, 67, 67, 81, 67, 104
-  EQUB &FE
   EQUB &FF
 .brRow_4_36
   EQUB &FF
 .brRow_4_37
-  \ "f8        - pause."
-  EQUB 14
-  EQUB 68, 9, 0, 0, 0, 0, 0, 0, 0, 0, 98, 0
-  EQUB 78, 63, 83, 81, 67, 89
+  \ "Paradroid-90 music by"
+  EQUB 11
+  EQUB 26, 63, 80, 63, 66, 80, 77, 71, 66, 98, 10, 1
+  EQUB 0, 75, 83, 81, 71, 65, 0, 64, 87
   EQUB &FE
   EQUB &FF
 .brRow_4_38
   EQUB &FF
 .brRow_4_39
+  \ "Jason Page."
+  EQUB 16
+  EQUB 20, 63, 81, 77, 76, 0, 26, 63, 69, 67, 89
+  EQUB &FE
   EQUB &FF
 .brRow_4_40
   EQUB &FF
 .brRow_4_41
+  \ "Converted to the BBC by"
+  EQUB 11
+  EQUB 13, 77, 76, 84, 67, 80, 82, 67, 66, 0, 82, 77
+  EQUB 0, 82, 70, 67, 0, 12, 12, 13, 0, 64, 87
+  EQUB &FE
   EQUB &FF
 .brRow_4_42
   EQUB &FF
 .brRow_4_43
+  \ "scarybeasts."
+  EQUB 16
+  EQUB 81, 65, 63, 80, 87, 64, 67, 63, 81, 82, 81, 89
+  EQUB &FE
   EQUB &FF
 .brRow_4_44
   EQUB &FF
@@ -1884,8 +1879,6 @@ BR_XTRA0     = 104
   EQUB &FE
   EQUB &FF
 .brRow_4_57
-  EQUB &FF
-.brRow_4_58
   EQUB &FF
 
 .brExtra

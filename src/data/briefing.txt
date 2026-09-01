@@ -31,24 +31,24 @@ page 1
  7 13 |Paradroid
 10  7 |Competition Edition
 13  7 |@ Graftgold Ltd. 1986.
-18  2 |Plug your joystick into port 2
-21  8 |Press fire to play
-24  1 |Clear  the freighter  of robots by
-26  0 |destroying them with twin  lasers
-28  0 |or by transferring control to them.
-31  1 |Control is  by  joystick  only, as
-33  0 |follows:
-36  0 |At all times joystick moves robot
-38  0 |and holding fire down will  allow
-40  0 |use of lifts and consoles.
-44  0 |In addition, pressing fire with the
-46  0 |joystick  centred will  prepare the
-48  0 |current robot for transfer. Contact
-50  0 |with another robot with the button
-52  0 |down will initiate transfer.
-54  0 |Press fire with the joystick in  a
-56  0 |specific direction to fire lasers in
-58  0 |that direction.
+17  5 |BBC port by Bitshifters
+21  1 |Clear  the freighter  of robots by
+23  0 |destroying them with twin  lasers
+25  0 |or by transferring control to them.
+28  1 |Control is as follows:
+31  0 |Use keyboard to move your robot.
+33  0 |Press fire to shoot your laser and 
+35  0 |use lifts or consoles. Hold fire 
+37  0 |whilst stationary to prepare for 
+39  0 |transfer mode or press transfer
+41  0 |button. Make contact with another
+43  0 |robot to initiate the transfer.
+46  2 |Default keys:
+49  8 |Left:        Z
+51  8 |Right:       X
+53  8 |Up:          K
+55  8 |Down:       M
+57  8 |Fire:        L
 
 page 2
  1  1 |A fleet  of  Robo-Freighters  on
@@ -115,7 +115,7 @@ page 4
  5  0 |location  and the  location of other
  7  0 |robots in visual range.This data is
  9  0 |merged with known ship layouts at
-11  0 |your C64 remote terminal.
+11  0 |your BBC remote terminal.
 13  1 |Additional information  about the
 15  0 |ship and robots may be obtained  by
 17  0 |accessing the  ship's computer at a
@@ -142,15 +142,19 @@ label hiscore
  4 13 |    6809 - AEB
  9 10 |Worst score of the day:
 label loscore
-12 13 |    6502 - BAD
-21  8 |To pause: press run-stop.
-25 10 |From pause mode only:
-29 12 |fire      - restarts,
-31 12 |run-stop  - restarts,
-33 12 |clr-home - quits game,
-35 12 |f7        - cheese,
-37 12 |f8        - pause.
-47  9 |Paradroid programmed by
+12 13 |    6502 - BBC
+17 4  |To pause:      Ctrl-P
+19 4  |Mute sound:    Ctrl-Q
+21 4  |Volume up:    Ctrl-Up
+23 4  |Volume down: Ctrl-Down
+25 4  |Quit game:    Escape
+29 2  |During briefing only:
+32 4  |Redefine keys: Ctrl-R
+37 9  |Paradroid-90 music by
+39 14 |Jason Page.
+41 9  |Converted to the BBC by
+43 14 |scarybeasts.
+47 9  |Paradroid programmed by
 49 12 |Andrew Braybrook.
 51 14 |Sound advice by
 53 14 |Steve Turner.
