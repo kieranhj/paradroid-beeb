@@ -125,7 +125,7 @@ LIFT_LAST  = 30                 \ and so is 31
   JSR PgData   
   LDA lvCommit
   BEQ lvt_x
-  JSR LvExit4                   \ bank 4: palette and t1i3 back, deck set
+  JSR LvExit4                   \ bank 4: palette black, deck set
   LDA lvLoad
   BNE lvt_load
   JSR ReframeView               \ same deck: the world was always there

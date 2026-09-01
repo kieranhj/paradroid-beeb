@@ -481,14 +481,6 @@ ENDIF
 \ RedrawAll — fill the whole viewport from the current position
 \ ============================================================
 .RedrawAll
-  JSR SetPalette                \ THE DECK'S OWN COLOURS BACK. The console
-                                \ and the information screens swap logical 0
-                                \ for a text background (SetTextPal), and
-                                \ every way back to the deck ends in a full
-                                \ redraw — ReframeView's JMP here. Putting it
-                                \ at the top of the redraw rather than in each
-                                \ exit path costs one JSR and cannot be
-                                \ forgotten by a new one. Layer 14 DECISION 4
   LDA #0 : STA rCount
   LDA mapYr : STA cellY
 
@@ -540,6 +532,19 @@ ENDIF
 \ a valid oracle to diff the incremental scrolling against at any
 \ value of `line`, which it was not while the strip aliased map rows
 \ mapYr and mapYr+16 into display row 0.
+  JSR SetPalette                \ THE DECK'S OWN COLOURS BACK — and LAST. The
+                                \ console and the information screens swap
+                                \ logical 0 for a text background (SetTextPal),
+                                \ and every way back to the deck ends in a
+                                \ full redraw — ReframeView's JMP here. In the
+                                \ redraw rather than in each exit path so a
+                                \ new one cannot forget it (Layer 14 DECISION
+                                \ 4); at the BOTTOM so the plot above ran in
+                                \ whatever palPlay already held — BLACK on the
+                                \ lift's exits (LvExit4, layer-8b: the C64
+                                \ builds its decks on an undisplayed screen)
+                                \ — and the next fire 1 shows the finished
+                                \ deck in the new colours in one go.
   RTS
 
 \ ============================================================

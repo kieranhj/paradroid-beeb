@@ -3089,14 +3089,14 @@ XF_PHYS_NEUT = 0                \ black   — logical 3, structure/unclaimed
   STA colCount
   JSR SetCRTCStart
 
-  LDX #15
-.lve_pal
-  LDA palPlay,X
-  STA xfPalSave,X               \ shared with the transfer: the two
-  LDA palLift,X                 \ screens can never be up at once
-  STA palPlay,X
-  DEX
-  BPL lve_pal
+  JSR ConShipEnter4             \ the ship page's loop IS this one: save
+                                \ palPlay, the lift palette in. The lift
+                                \ never reads the save back any more —
+                                \ both of LvExit4's endings leave the play
+                                \ area black and RedrawAll rebuilds the
+                                \ deck's palette at its far end — but the
+                                \ shared loop costs less than a saveless
+                                \ copy of its second half
 
   LDA #HI(T1_I3X)               \ the high byte alone — see T1_I3X
   STA t1i3Hi
@@ -3188,25 +3188,23 @@ XF_PHYS_NEUT = 0                \ black   — logical 3, structure/unclaimed
   STA mmDelay
   LDX liftPos
   CPX lvEntryPos
-  BEQ lvx_stay
+  BEQ lvx_black
 
-\ ---- a different deck: its colours NOW, not after the load ---
-\ KC, 2026-08-29: riding to another deck showed the PREVIOUS deck's
-\ palette for the length of the load, then snapped to the new one as
-\ the deck was drawn. The saved palette is the one LvEnter4 took on the
-\ way in, so restoring it here restores the deck being LEFT, and the
-\ new deck's colours do not arrive until RedrawAll's SetPalette at the
-\ far end of LoadDeck — which is most of a second of charset build,
-\ level decode and redraw with the rupture showing the wrong table
-\ three times a field. So the changed arm never restores: it sets deck
-\ and builds the new palette straight away, and the save slot is simply
-\ abandoned (it is a slot, not live state, and the transfer game fills
-\ it afresh).
-\ THIS IS NOT DECISION 4's `SetPalette` COMING BACK TO LoadDeck. That
-\ one had to go because an information screen is up across LoadDeck at
-\ GameStart and the deck's colours overrode the text background. No
-\ screen is ever up on this route -- the lift is the only thing that
-\ had the machine -- so the call belongs to the lift, not to LoadDeck.
+\ ---- a different deck: BLACK for the load, not its colours ---
+\ Twice revised, and the history matters. As first built, the load ran
+\ in the palette of the deck being LEFT (the restore this arm used to
+\ share with lvx_stay) — KC, 2026-08-29: the wrong colours for most of
+\ a second, snapping as the deck drew. So this arm called SetPalette
+\ here, the NEW deck's colours immediately — KC, 2026-09-01: odd the
+\ other way round; the lift screen recolours a beat before the deck
+\ arrives, and the plotting itself is watchable. The C64 shows
+\ neither, because ChangeDeck ($2705) runs BuildLevel against an
+\ UNDISPLAYED screen while the lift view stays up, and the finished
+\ deck simply appears. One shared play buffer cannot do that, so the
+\ ported decision is "the player never sees the deck plotted": both
+\ endings fall through to lvx_black, the play area is black from the
+\ next fire 1, and RedrawAll's SetPalette — at its far end now, see
+\ screen.asm — reveals the finished deck in the new colours in one go.
   LDA liftDeck,X
   STA deck
   LDA #1
@@ -3221,15 +3219,24 @@ XF_PHYS_NEUT = 0                \ black   — logical 3, structure/unclaimed
 \ says otherwise, which it does either way, later in this same load.
   LDA #0
   STA deckClear
-  JMP SetPalette                \ bank 4's, and its RTS
 
-.lvx_stay
-  LDX #15                       \ same deck: the palette LvEnter4 saved
-.lvx_pal                        \ IS this deck's, cleared-floor override
-  LDA xfPalSave,X               \ and all, so put it back as it was
+\ ---- both endings: the play area black until the redraw ------
+\ Sixteen entries of logical n, physical black: (n<<4) OR (0 EOR 7),
+\ so &F7 down to &07 in steps of &10 — the carry never borrows. The
+\ same-deck ending takes this too: its exit is a full replot of the
+\ deck over the lift art, just as watchable, and RedrawAll's closing
+\ SetPalette rebuilds this deck's palette — cleared-floor override
+\ and all — from `deck` and `deckClear`, so LvEnter4's save slot no
+\ longer needs reading back.
+.lvx_black
+  LDX #15
+  LDA #&F7
+  SEC
+.lvx_blk
   STA palPlay,X
+  SBC #&10
   DEX
-  BPL lvx_pal
+  BPL lvx_blk
   RTS
 
 \ The lift screen's palette: KC's choice — blue field, the emboss in
