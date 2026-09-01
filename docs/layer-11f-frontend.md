@@ -950,11 +950,16 @@ six controls in the order LEFT, RIGHT, UP, DOWN, FIRE, TRANSFER. Five things wer
 **[DECISION 16]** **Fire OR transfer starts the game** (KC, 2026-09-01) — at the title and out
 of the briefing; they are the two thumbs a player rests on. The briefing's four loops ask
 through one bank-5 helper (`BmStartDown`, briefman.asm), which pays PARBRF back 8 bytes over
-the shrunken call sites. `TiWait` tests both per turn, which doubled the turn's cost — so its
-timeout wraps at 32,768 turns instead of 65,536 (`BMI` on `tiHi`, same ~6 s) and the volume
-gate tightened from 1-in-1024 to 1-in-512 (same ~11 Hz). The C64 has no second button to ask
-about. The 001 page still dismisses on fire alone — it is in the game, and its press must be a
-fresh edge anyway.
+the shrunken call sites. The C64 has no second button to ask about. The 001 page still
+dismisses on fire alone — it is in the game, and its press must be a fresh edge anyway.
+
+**And the title timeout was re-measured while adding it**: the loop runs 11,992 turns/s — 167
+cycles a turn with both keydowns, so `TiWait`'s old cycle table was optimistic even before the
+second test. The first cut halved the wrap to compensate for the doubled turn and landed at
+~2.7 s, which KC called far too short; the timeout is now **two 16-bit laps** (`tiPage`),
+131,072 turns ≈ **10.9 s wall** — between the C64's 5.1 s and the port's old 17.9 s — and the
+volume gate stays 1-in-1024, which the measured rate puts at 11.7 Hz. The deck seed still
+reads `tiLo EOR tiHi`.
 
 ### 8d. Verified in jsbeeb, 2026-08-30
 

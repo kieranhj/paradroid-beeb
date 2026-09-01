@@ -292,6 +292,8 @@ ASSERT TITLE_R7 >= TITLE_ROWS   \ VSync must fall after the last row shown
   LDA #0
   STA tiLo
   STA tiHi
+  LDA #2                        \ TWO 16-bit wraps to the timeout — see
+  STA tiPage                    \ the note at the wrap below
 .tiw_loop
   LDX keyTab+CTL_FIRE
   JSR keydown
@@ -302,12 +304,19 @@ ASSERT TITLE_R7 >= TITLE_ROWS   \ VSync must fall after the last row shown
   INC tiLo
   BNE tiw_loop
   INC tiHi
-  BMI tiw_time                  \ the timeout — at 32,768 turns NOW,
-                                \ not the 16-bit wrap: the second
-                                \ keydown above doubled the turn, so
-                                \ half the turns keeps the ~6 s the
-                                \ header derives. The seed reads the
-                                \ same two bytes either way
+  BNE tiw_vol
+  DEC tiPage                    \ the 16-bit wrap — TWICE is the
+  BNE tiw_vol                   \ timeout, 131,072 turns. MEASURED
+                                \ 2026-09-01 at 11,992 turns/s (167
+                                \ cycles a turn with both keydowns —
+                                \ the cycle table above was optimistic
+                                \ even before the TRANSFER test), so
+                                \ one wrap is 5.5 s and this is 10.9 s:
+                                \ KC called ~3 s far too short and
+                                \ asked for at least double. The seed
+                                \ still reads tiLo EOR tiHi
+  JMP tiw_time
+.tiw_vol
 \ THE VOLUME KEYS, and this is the awkward one of VolKeys' three call
 \ sites. There is no sound at the title — GoTitle silenced the chip and
 \ handed the IRQ back — so what is being set here is the level the
@@ -349,10 +358,10 @@ ASSERT TITLE_R7 >= TITLE_ROWS   \ VSync must fall after the last row shown
 \ 18 s was preferred; restoring it means counting something other than
 \ raw turns, not putting the OSBYTE back.
   LDA tiHi
-  AND #1                        \ 1-in-512 turns, not 1024: the turn
-  BNE tiw_loop                  \ doubled with the TRANSFER test, so
-  JSR VolKeys                   \ this holds the ~11 Hz the table
-  JMP tiw_loop                  \ above derives
+  AND #3                        \ 1-in-1024 turns: at the MEASURED
+  BNE tiw_loop                  \ 11,992 turns/s that is 11.7 Hz,
+  JSR VolKeys                   \ which is the target the table above
+  JMP tiw_loop                  \ aims at
 .tiw_time
 \ Layer 11f: the 16-bit wrap is the timeout, and the timeout is the
 \ briefing — $291B's own arrangement. BrTimeout fetches PARMAN into
@@ -385,3 +394,4 @@ ASSERT TITLE_R7 >= TITLE_ROWS   \ VSync must fall after the last row shown
 .tiRun  EQUB 0
 .tiLo   EQUB 0
 .tiHi   EQUB 0
+.tiPage EQUB 0                  \ which of the two 16-bit laps this is
