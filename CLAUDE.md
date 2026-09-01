@@ -424,4 +424,7 @@ Both worked around locally; extending the shared set is the better fix and moves
 - **A debug build says so at boot.** `!BOOT` names every flag that is on (`REM DEBUG: XFERWIN`),
   built from conditional `EQUS` directives beside the build stamp, and a clean build prints no
   such line. Adding a flag means adding it to that block and to `DEBUG_ANY` as well as defining
-  it — otherwise a build can lie about itself.
+  it — otherwise a build can lie about itself. **A RELEASE build prints `VERSION_LINE` in that
+  line's place** ("Release Candidate #1" as of 2026-09-01) — the string is defined beside `DEV`
+  at the top of `main.asm`; bump the number per candidate, and change it to "Release Version
+  1.0" at ship.

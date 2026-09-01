@@ -230,6 +230,11 @@ MAP_CHAR_H = MAP_ROWS * 4       \ 64 character rows
 \ catches any of the others left on by hand.
 DEV = RELEASE EOR 1
 
+\ What a RELEASE build calls itself — printed by !BOOT in place of the
+\ DEBUG line (a release build has none, by ASSERT). Bump the number as
+\ candidates go out; becomes "Release Version 1.0" when it ships.
+VERSION_LINE = "Release Candidate #1"
+
 \ page. See docs/memory-map.md for where the next bytes could come from.
 \ DEBUG_RASTER tints the background at entry to each rupture
 \ interrupt, so the scanline each one lands on is visible:
@@ -4428,6 +4433,11 @@ EQUS "*BASIC", 13
 EQUS "CLS", 13
 EQUS "REM PARADROID", 13
 EQUS "REM BUILD ", TIME$("%d %b %Y %H:%M:%S"), 13
+IF RELEASE
+EQUS "REM ", VERSION_LINE, 13   \ the DEBUG line's seat — a release
+                                \ build has no flags, by the ASSERT
+                                \ above. VERSION_LINE is set beside DEV
+ENDIF
 IF DEBUG_ANY
 EQUS "REM DEBUG:"
 IF DEBUG_RASTER
