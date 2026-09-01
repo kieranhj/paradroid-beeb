@@ -314,8 +314,14 @@ bullet-hit, the lift sounds, and the game start.
 - **The game-over set** (fx 5, $F, $13, $16) — was "needs work but leave for now"; **done
   2026-08-21 with Layer 11d**: $F alone on the wash (noise, instrument 4), 5 with the 999 page as
   `$37FE` posts it, and $16 removed from the seam entirely — see the note on the $16 row above.
-- The transfer-verdict mapping (win/lose/tie → `$C`/`$D`/`$B`) is still the stage-3 guess —
-  A/B against VICE or the real thing when convenient.
+- ~~The transfer-verdict mapping (win/lose/tie → `$C`/`$D`/`$B`) is still the stage-3 guess —
+  A/B against VICE or the real thing when convenient.~~ **CLOSED 2026-09-01, checked against the
+  listing and signed off by KC as it sounds.** The C64's three `FinishTransfer1` posts are not
+  win/lose/tie at all: win → `$B` ($2224), lost-with-a-host → `$C` ($21F4), lost-as-001 (burnt
+  out) → `$D` ($2236) — and the tie never reaches `FinishTransfer1`; `Capture`'s replay arm
+  posts **`$E`** ($22DA) with "Short circuit". So the port's mapping (tie `$B`, win `$C`, lost
+  `$D` for both loss kinds) is a knowing deviation now, not a guess: KC heard it and called it
+  fine (2026-09-01). If it is ever revisited, the faithful wiring is above.
 - The noise scale factor (`NOISE_SHIFT`) and the periodic ≈ pitch/15 approximation have
   passed the ear test in practice; a VICE A/B remains available if anything ever sounds
   transposed.

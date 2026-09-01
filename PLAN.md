@@ -72,7 +72,7 @@ from any document.
 
 | | | |
 |---|---|---|
-| **Sound: two loose ends** | ~~The game-over set~~ — **CLOSED by KC 2026-08-31**, after the wash's length and its effect coverage were fixed in Layer 15 §6a. What is left of 11e is smaller: the transfer-verdict mapping is an unverified guess, and fx06 wants checking with 11d | small |
+| ~~**Sound: two loose ends**~~ | **CLOSED 2026-09-01 — nothing left of 11e.** ~~The game-over set~~ closed by KC 2026-08-31 (Layer 15 §6a). fx06 was already done 2026-08-29 (11e round thirteen — the row here was stale). The transfer-verdict mapping was checked against the listing: the C64's posts are win `$B` / lost-with-host `$C` / lost-as-001 `$D`, tie `$E` from `Capture` — the port's tie `$B` / win `$C` / lost `$D` stands as a knowing deviation, KC's ear having signed it off. [`docs/layer-11e-sound.md`](docs/layer-11e-sound.md) stage 4 | **done** |
 | **Briefing F6: exit-load trim** | The briefing → game reload is ~1.1 s naive; deferred from 11f. The pause-legend wording in `briefing.txt` is KC's, ongoing | later |
 | **Layer 12 — balance, fidelity and feel** | Not a feature layer: the fidelity audit against the listing, the Redux fix list triaged, playtesting against the isolated dials, graceful degradation. **Verify before tuning**, or a fidelity bug gets balanced around instead of fixed. [`docs/layer-12-balance.md`](docs/layer-12-balance.md) | **12b DONE** 2026-08-31 — all six adoptions closed as DECISIONS 1-6: two built, one already satisfied, three parked with their evidence. 12a (the fidelity audit), 12c (playtesting) and 12d (performance) still TODO |
 | **Layer 13c — machine compatibility** | **13b is BUILT** (2026-08-29): `PARSWR` probes all sixteen banks before the game loads, takes the top four, refuses a board it cannot drive, and makes the bank numbers a run-time table. Three DECISIONs and the cost ledger in [`docs/layer-13-compatibility.md`](docs/layer-13-compatibility.md). **13c — running on the machines people actually have — is the open half**, and everything under *Open hazards* that says "check on hardware" belongs to it | open |
@@ -102,8 +102,10 @@ own DONE/NO marks are the sign-off: an item struck through here is struck there.
 
 **Gameplay**
 
-- Sprite flicker (still).
-- **BUG:** shooting while at full tilt leaves a few pixels behind (KC, deck 476).
+- ~~Sprite flicker (still).~~ **CLOSED by KC 2026-09-01** — considered fixed by the raster and
+  tranche work.
+- ~~**BUG:** shooting while at full tilt leaves a few pixels behind (KC, deck 476).~~ **CLOSED
+  by KC 2026-09-01** — no longer observed on the current build.
 - ~~**BUG:** droid sprite corruption when entering the console.~~ **FIXED 2026-08-31** as
   `BUGS.md` #12: the console opens mid-pass above tranche B, which stamped droids and bullets
   back over the freshly drawn page; `ConMenuInit4` clears `sprSplit`. (Since 2026-09-01 the
@@ -132,9 +134,11 @@ own DONE/NO marks are the sign-off: an item struck through here is struck there.
 
 **Console**
 
-- Continually redrawing the top line when on the droid info page? Also the panel word?
-- The droid info screens are always on a white background with blue header and red text —
-  should follow the deck?
+- ~~Continually redrawing the top line when on the droid info page? Also the panel word?~~
+  **CLOSED by KC 2026-09-01** — no longer observed.
+- ~~The droid info screens are always on a white background with blue header and red text —
+  should follow the deck?~~ **SATISFIED, KC 2026-09-01**: the background follows the deck
+  (`deckTextPal`, layer-14 DECISION 4) and the fixed header/text colours are as wanted.
 
 **Game over**
 
@@ -171,7 +175,7 @@ own DONE/NO marks are the sign-off: an item struck through here is struck there.
 - Redux bug fixes and feature additions — triaged 2026-08-26; the bug list is adopted as behaviour in `docs/decisions.md` and the six adoptions (droid counts on the console included) are a Features row above.
 - ~~Pause~~ — **built 2026-08-26**, P both ways, [`docs/layer-11e-sound.md`](docs/layer-11e-sound.md) §10.
 - ~~Volume~~ — **built 2026-08-26**, [`docs/layer-11e-sound.md`](docs/layer-11e-sound.md) §9.
-- What's Cheese?
+- ~~What's Cheese?~~ **Obsolete** — closed by KC 2026-09-01.
 - ~~Redefine keys.~~ **BUILT 2026-08-30** — CTRL+R on the briefing, all six controls, everywhere
   they are read. [`docs/layer-11f-frontend.md`](docs/layer-11f-frontend.md) §8 and [DECISION 15].
 - ~~Pressing Z, X, K, M and L together on real hardware triggers C and clears the deck — check
@@ -184,7 +188,9 @@ own DONE/NO marks are the sign-off: an item struck through here is struck there.
 
 **Attention to detail**
 
-- Palette change timing.
+- ~~Palette change timing.~~ **CLOSED 2026-09-01**: `palPlay` is applied only at the rupture's
+  fire 1 (2026-08-31, the panel-flash fix) and every screen swap now hides its drawing behind
+  `PalBlack` / invisible ink — layer-8b §4b–4d.
 - TV resync — the rupture-mid-frame hazard row below is the home for this.
 - ~~Single-line scroll flicker — move keys off OSBYTE?~~ **DONE 2026-08-26, and the guess in the
   note was right.** `keydown` drives the System VIA matrix directly instead of calling OSBYTE
@@ -199,8 +205,8 @@ own DONE/NO marks are the sign-off: an item struck through here is struck there.
   entry draws hide behind the same `PalBlack`; the briefing's page paints in invisible ink (text
   in the background's colour) and appears in one go. The lift's deck load holds the lift screen
   static across the build, exactly as the C64 does. [`docs/layer-8b-lift-view.md`](docs/layer-8b-lift-view.md)
-  §4b–4d is the ledger. **High-score → Paradroid logo is the one seam not yet looked at** — KC to
-  say if it still shows.
+  §4b–4d is the ledger. The high-score → logo seam was the one not treated, and **KC considers
+  it fine as it is (2026-09-01)**.
 - The lift commit plays a confirmation chord (`&16`, the mode-change chord) since 2026-09-01 —
   a KC addition, the C64's own exit being silent. Layer-8b §4c.
 
@@ -305,7 +311,7 @@ The one-line summaries below are an index; the layer docs hold everything else.
 | 8 | Doors, lifts and the deck-selection screen | **DONE** [`docs/layer-8-doors-lifts.md`](docs/layer-8-doors-lifts.md), [`docs/layer-8b-lift-view.md`](docs/layer-8b-lift-view.md) |
 | 9 | HUD and console — `ConsoleMain` line for line, all four pages | **DONE** [`docs/layer-9-hud.md`](docs/layer-9-hud.md) |
 | 10 | The transfer minigame, all three outcomes | **DONE** [`docs/layer-10-transfer.md`](docs/layer-10-transfer.md) |
-| 11 | Title, game over, boot split, droid screens (11d), sound (11e), front end (11f) | **DONE** but for two small sound items above [`docs/layer-11-sound-title.md`](docs/layer-11-sound-title.md), [`docs/layer-11d-droid-screens.md`](docs/layer-11d-droid-screens.md), [`docs/layer-11e-sound.md`](docs/layer-11e-sound.md), [`docs/layer-11f-frontend.md`](docs/layer-11f-frontend.md) |
+| 11 | Title, game over, boot split, droid screens (11d), sound (11e), front end (11f) | **DONE** — the last two sound items closed 2026-09-01 [`docs/layer-11-sound-title.md`](docs/layer-11-sound-title.md), [`docs/layer-11d-droid-screens.md`](docs/layer-11d-droid-screens.md), [`docs/layer-11e-sound.md`](docs/layer-11e-sound.md), [`docs/layer-11f-frontend.md`](docs/layer-11f-frontend.md) |
 | 12 | **Balance, fidelity and feel** — verify before tuning | **TODO** [`docs/layer-12-balance.md`](docs/layer-12-balance.md) |
 | 13 | Memory and compatibility. 13a (+6,085 B), 13b (**sideways-RAM detection, 2026-08-29**) and 13d (title overlay, portrait, ZX0 maps) done; **13c real machines is open** | **PART** [`docs/layer-13-ram-pass.md`](docs/layer-13-ram-pass.md), [`docs/layer-13d-space.md`](docs/layer-13d-space.md), [`docs/layer-13-compatibility.md`](docs/layer-13-compatibility.md) |
 | 14 | **The visual pass** — floors, dither, text-screen backgrounds, cleared-deck and lift tile done; deck palettes and the ALERT lamp signed off 2026-08-31 | **nearly done** [`docs/layer-14-visual.md`](docs/layer-14-visual.md) |
