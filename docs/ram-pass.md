@@ -18,6 +18,11 @@ the bank gauges, never from this file.
 | `PARDEPK` overlay | 239 B | 144 B | −95 (took the boot loop) |
 | `PARAFNT` block | ~1 B | ~49 B | +48 |
 
+Those are the pass's own figures and stay as they were. For what the banks hold **today**,
+read the build gauges — the pass has been overtaken twice since, by the tranche split
+(2026-09-01) and then by the SCANSTEP deferred carry, which alone put banks 5 and 6 well
+above anything this table records.
+
 Cycle cost of the whole pass: **~57 cycles per 79,872-cycle pass** (0.07%),
 all of it from decision 5's helpers; nothing inside the blitter's inner
 loops, the compiled shifts or the rupture was touched.
@@ -154,10 +159,26 @@ seeded and checked, and a comment at the site should say which paths were.
   of banks 5 and 6 for ~480 cycles/pass, ~1% of the blit window): the 70
   compiled rows per bank ending `SCANSTEP:RTS` can end `JMP ScanStepRts`
   instead. The mechanical-diff check cannot validate it — use the oracle.
+  **Cheaper and less needed since 2026-09-01:** the deferred carry below
+  left a cycle surplus this would spend out of, and took the two banks to
+  674 B and 925 B, so the pressure that made it attractive is off.
 - **`door.asm` → bank 4** (~610 B of main RAM, high effort): most of
   `door.asm` is called only from bank-4 code and reads `doorDef`; it needs
   ~650 B free in bank 4 first, which SCANSTEP folding (via bank 5 taking
   bank-4-resident, bank-independent code) could provide.
+- **SCANSTEP's page carry — SPENT 2026-09-01** (hexwab, issue #1; commit
+  833b640). `INC bufp` no longer tests for its own carry: the scanline IS
+  `bufp AND 7`, so a low byte that has just wrapped to zero always takes the
+  crossing branch, and `SprScanRow` can do the `INC bufp+1` once instead of
+  335 expansions testing for it every step. **+668 B in bank 5, +656 B in
+  bank 6, +12 B of code image, and ~3 cycles a step FASTER** — the only
+  entry here that paid in both directions. Not a mechanical change, so the
+  listing-diff check could not validate it; verified exhaustively instead
+  (all 65,536 `bufp` values, comparing svp/bufp/A/carry/control flow),
+  structurally (the patched instruction stream re-expands to baseline
+  exactly) and at runtime (headless jsbeeb A/B, 400 frames, both `mapHX`
+  parities and all eight `line` values). `src/sprite.asm`'s macro header
+  carries the invariant — read it before touching SCANSTEP again.
 - **`hsfont.asm` ≡ `textfont.asm`** (1,152 B, byte-identical): deletable
   if the high-score entry runs while `PARAFNT` is resident (move
   `highscore.asm`, ~655 B, to bank 5). Buys `PARTITL` headroom and load

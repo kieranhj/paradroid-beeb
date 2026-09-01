@@ -221,12 +221,12 @@ addresses from the `beebasm` output rather than from any document.** In outline:
 take live figures from `PRINT "code"` and the bank gauges in the build output, never from this
 paragraph:
 
-| Region | Free (measured 2026-08-30) |
+| Region | Free (measured 2026-09-01, after the SCANSTEP deferred carry) |
 |---|---|
-| Main RAM code image | **4 B** — `code_end` `&2FFC` (7 B before `RuptAlign`'s call site). `keyTab` took the last six on 2026-08-30 and left it at zero; moving the debug redraw's key test into bank 4 (`DbgRedrawKey`) gave seven back on 2026-08-31. It was 48 B after the RAM pass; Layer 13b's `swBank` reads and handover copy took 37, and `TitleSeq`'s early `disrFlash` clear 5. **This is the binding constraint again** |
+| Main RAM code image | **15 B** — `code_end` `&2FF1`. hexwab's SCANSTEP deferred carry (issue #1, commit 833b640) gave 12 back on 2026-09-01, off the four expansions in `sprite.asm`; it was **3 B** before that, and the **4 B** this row used to quote was already stale. It has been the binding constraint all year — `keyTab` took it to zero on 2026-08-30, `DbgRedrawKey` moving into bank 4 gave seven back on 2026-08-31 |
 | Bank 4 | **19 B** on the gauge (2026-09-01: +8 net from the black-while-drawing rework, layer-8b §4b; 11 B before) + `colourMap` `ALIGN` pad, **which is SPENT** — 200 B put in front of it cost the bank 259, measured |
-| Bank 5 | **119 B** (2026-09-01: −~480 for `sprscan.asm`, the tranche prescan; 602 B before) |
-| Bank 6 | **294 B** (2026-09-01: sprsplit's geometry half left for bank 5; was 7 B and the tightest bank) |
+| Bank 5 | **674 B** (2026-09-01: **+668** from the SCANSTEP deferred carry, 168 expansions at 4 B apiece). It was **6 B** immediately before that — the tightest region in the machine — and the 119 B this row used to quote was stale by a build |
+| Bank 6 | **925 B** (2026-09-01: **+656** from the SCANSTEP deferred carry, 164 expansions at 4 B; 269 B before that, after sprsplit's geometry half left for bank 5) |
 | Bank 7 | 7 B tail + the `planInk` pad — **~100-105 B all in, MEASURED 2026-08-31** by bisecting a `SKIP` in `liftview.asm`. The "~176 B of pad" this table and `memory-map.md` used to quote was stale. **No held reserve frees bank 7**, which is what parked layer-12 DECISION 6 |
 | `PARBRF` (`&0400`, hard ceiling `&0800`) | **18 B** (36 B before `BrTimeout`'s R8 blank, 56 B before the CTRL+R hook) |
 | `PARAFNT` block | **16 B** before `SPR_SAVE` (`KeyDownIx` took 7, DECISION 5's `CN_STRS` 10) |
