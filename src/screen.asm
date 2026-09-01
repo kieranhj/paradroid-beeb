@@ -480,7 +480,34 @@ ENDIF
 \ ============================================================
 \ RedrawAll — fill the whole viewport from the current position
 \ ============================================================
+\ ============================================================
+\ PalBlack — the play area black until someone rebuilds palPlay
+\ ============================================================
+\ Sixteen palPlay entries of logical n, physical black: (n<<4) OR
+\ (0 EOR 7), so &F7 down to &07 in steps of &10, the carry never
+\ borrowing. The screen swaps all hide their plotting behind this —
+\ RedrawAll below blacks every full repaint of the deck, and the
+\ lift's and console's entries black their own draws (LvEnter4,
+\ ConMenuInit4), each revealed by the first thing to rebuild palPlay
+\ afterwards. The C64 shows none of these plots (its modal screens
+\ are separate VIC screens; the deck underneath is untouched or
+\ rebuilt undisplayed), so the ported decision is "the player never
+\ sees a screen plotted". Layer-8b section 4b.
+.PalBlack
+  LDX #15
+  LDA #&F7
+  SEC
+.pb_loop
+  STA palPlay,X
+  SBC #&10
+  DEX
+  BPL pb_loop
+  RTS
+
 .RedrawAll
+  JSR PalBlack                  \ plot invisibly; the closing SetPalette
+                                \ below reveals the finished frame at
+                                \ the next fire 1, in one go
   LDA #0 : STA rCount
   LDA mapYr : STA cellY
 
@@ -540,11 +567,9 @@ ENDIF
                                 \ redraw rather than in each exit path so a
                                 \ new one cannot forget it (Layer 14 DECISION
                                 \ 4); at the BOTTOM so the plot above ran in
-                                \ whatever palPlay already held — BLACK on the
-                                \ lift's exits (LvExit4, layer-8b: the C64
-                                \ builds its decks on an undisplayed screen)
-                                \ — and the next fire 1 shows the finished
-                                \ deck in the new colours in one go.
+                                \ the BLACK the top of this routine installed,
+                                \ and the next fire 1 shows the finished deck
+                                \ in the new colours in one go.
   RTS
 
 \ ============================================================

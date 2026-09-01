@@ -224,7 +224,7 @@ paragraph:
 | Region | Free (measured 2026-08-30) |
 |---|---|
 | Main RAM code image | **4 B** — `code_end` `&2FFC` (7 B before `RuptAlign`'s call site). `keyTab` took the last six on 2026-08-30 and left it at zero; moving the debug redraw's key test into bank 4 (`DbgRedrawKey`) gave seven back on 2026-08-31. It was 48 B after the RAM pass; Layer 13b's `swBank` reads and handover copy took 37, and `TitleSeq`'s early `disrFlash` clear 5. **This is the binding constraint again** |
-| Bank 4 | **29 B** on the gauge (2026-09-01: +18 from the lift's black-load rework, layer-8b §4b; 11 B before) + `colourMap` `ALIGN` pad, **which is SPENT** — 200 B put in front of it cost the bank 259, measured |
+| Bank 4 | **19 B** on the gauge (2026-09-01: +8 net from the black-while-drawing rework, layer-8b §4b; 11 B before) + `colourMap` `ALIGN` pad, **which is SPENT** — 200 B put in front of it cost the bank 259, measured |
 | Bank 5 | **119 B** (2026-09-01: −~480 for `sprscan.asm`, the tranche prescan; 602 B before) |
 | Bank 6 | **294 B** (2026-09-01: sprsplit's geometry half left for bank 5; was 7 B and the tightest bank) |
 | Bank 7 | 7 B tail + the `planInk` pad — **~100-105 B all in, MEASURED 2026-08-31** by bisecting a `SKIP` in `liftview.asm`. The "~176 B of pad" this table and `memory-map.md` used to quote was stale. **No held reserve frees bank 7**, which is what parked layer-12 DECISION 6 |

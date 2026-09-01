@@ -2307,16 +2307,16 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
 .ConsoleEnter
   JSR PnMirror
   JSR ConMenuInit4              \ bank 4 — FIRST, and the resting bank, so
-                                \ no paging. It ends in SetTextPal, and the
-                                \ point of the order is that the palette is
-                                \ in force BEFORE ConsoleOpen draws on it.
+                                \ no paging. It ends in PalBlack, so the
+                                \ draw below runs HIDDEN and the first
+                                \ ConMenu4 pass reveals the finished menu.
                                 \ It only writes flags, so nothing here
                                 \ depends on the draw having happened
-  JSR PgSpr2   
+  JSR PgSpr2
   JSR ConsoleOpen
-  JSR PgData   
-  RTS                           \ no recolour tail: ConMenuInit4 above
-                                \ set the ink table before the draw
+  JSR PgData
+  RTS                           \ no recolour tail: ConMenu4 reveals on
+                                \ the next pass
                                 \ had no room for any of this: 23 B free
 
 \ The console's menu lives in BANK 4 (ConMenu4, droid.asm) — bank 6 is

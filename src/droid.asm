@@ -3089,14 +3089,15 @@ XF_PHYS_NEUT = 0                \ black   — logical 3, structure/unclaimed
   STA colCount
   JSR SetCRTCStart
 
-  JSR ConShipEnter4             \ the ship page's loop IS this one: save
-                                \ palPlay, the lift palette in. The lift
-                                \ never reads the save back any more —
-                                \ both of LvExit4's endings leave the play
-                                \ area black and RedrawAll rebuilds the
-                                \ deck's palette at its far end — but the
-                                \ shared loop costs less than a saveless
-                                \ copy of its second half
+  JSR PalBlack                  \ NOT the lift palette: LvStart7's draw
+                                \ runs black, hidden like every other
+                                \ screen swap, and the first LvTick4 —
+                                \ the next pass — reveals the finished
+                                \ art. No palPlay save either: the lift
+                                \ never read it back once RedrawAll took
+                                \ over the exits, which rebuild the
+                                \ deck's palette from `deck` at the far
+                                \ end of the replot
 
   LDA #HI(T1_I3X)               \ the high byte alone — see T1_I3X
   STA t1i3Hi
@@ -3111,6 +3112,14 @@ XF_PHYS_NEUT = 0                \ black   — logical 3, structure/unclaimed
 \ the fire edge that commits. ChangeDeck ($2705) is the model: step the
 \ index, and the shaft-sentinel mismatch is the whole bounds test.
 .LvTick4
+  JSR ConShipEnter4             \ the lift palette in, EVERY pass — the
+                                \ first tick is the reveal of LvEnter4's
+                                \ black entry draw, and the repeats are
+                                \ idempotent. The loop's palPlay save
+                                \ goes to a slot nothing reads on this
+                                \ route, and sharing the ship page's
+                                \ routine costs three bytes against a
+                                \ liftless copy's twelve
   LDX #CTL_UP
   JSR KeyDownIx
   BNE lvt4_upOff
@@ -3188,23 +3197,24 @@ XF_PHYS_NEUT = 0                \ black   — logical 3, structure/unclaimed
   STA mmDelay
   LDX liftPos
   CPX lvEntryPos
-  BEQ lvx_black
+  BEQ lvx_stay
 
-\ ---- a different deck: BLACK for the load, not its colours ---
+\ ---- a different deck: NO palette work at all any more -------
 \ Twice revised, and the history matters. As first built, the load ran
-\ in the palette of the deck being LEFT (the restore this arm used to
-\ share with lvx_stay) — KC, 2026-08-29: the wrong colours for most of
-\ a second, snapping as the deck drew. So this arm called SetPalette
-\ here, the NEW deck's colours immediately — KC, 2026-09-01: odd the
-\ other way round; the lift screen recolours a beat before the deck
-\ arrives, and the plotting itself is watchable. The C64 shows
-\ neither, because ChangeDeck ($2705) runs BuildLevel against an
-\ UNDISPLAYED screen while the lift view stays up, and the finished
-\ deck simply appears. One shared play buffer cannot do that, so the
-\ ported decision is "the player never sees the deck plotted": both
-\ endings fall through to lvx_black, the play area is black from the
-\ next fire 1, and RedrawAll's SetPalette — at its far end now, see
-\ screen.asm — reveals the finished deck in the new colours in one go.
+\ in the palette of the deck being LEFT (a restore both arms shared) —
+\ KC, 2026-08-29: the wrong colours for most of a second, snapping as
+\ the deck drew. So this arm called SetPalette here, the NEW deck's
+\ colours immediately — KC, 2026-09-01: odd the other way round; the
+\ lift screen recolours a beat before the deck arrives, and the
+\ plotting itself is watchable. The C64 shows neither, because
+\ ChangeDeck ($2705) runs BuildLevel against an UNDISPLAYED screen
+\ while the lift view stays up, and the finished deck simply appears.
+\ RedrawAll is where that decision lives now, for EVERY route back to
+\ the deck: its top turns the play area black, its far-end SetPalette
+\ reveals the finished frame — see screen.asm. So the lift palette
+\ simply stays up here, over its own static art, until the redraw
+\ blacks it: nothing to do in either arm, and LvEnter4's save is
+\ never read back.
   LDA liftDeck,X
   STA deck
   LDA #1
@@ -3219,24 +3229,7 @@ XF_PHYS_NEUT = 0                \ black   — logical 3, structure/unclaimed
 \ says otherwise, which it does either way, later in this same load.
   LDA #0
   STA deckClear
-
-\ ---- both endings: the play area black until the redraw ------
-\ Sixteen entries of logical n, physical black: (n<<4) OR (0 EOR 7),
-\ so &F7 down to &07 in steps of &10 — the carry never borrows. The
-\ same-deck ending takes this too: its exit is a full replot of the
-\ deck over the lift art, just as watchable, and RedrawAll's closing
-\ SetPalette rebuilds this deck's palette — cleared-floor override
-\ and all — from `deck` and `deckClear`, so LvEnter4's save slot no
-\ longer needs reading back.
-.lvx_black
-  LDX #15
-  LDA #&F7
-  SEC
-.lvx_blk
-  STA palPlay,X
-  SBC #&10
-  DEX
-  BPL lvx_blk
+.lvx_stay
   RTS
 
 \ The lift screen's palette: KC's choice — blue field, the emboss in
@@ -3304,18 +3297,20 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
   STA conMPrevL
   STA conPrevU
   STA conPrevD
-\ AND THE MENU'S PALETTE, BEFORE ANYTHING IS DRAWN ON IT. ConsoleEnter
-\ calls this first for exactly that reason — the console reads white text,
-\ so logical 0 becomes the deck's text background, and the draw that
-\ follows lands on the colours it will be seen in. Setting it afterwards
-\ showed the menu in the deck's colours for as long as the draw took.
-\ KC, 2026-08-24.
+\ AND THE PLAY AREA GOES BLACK, BEFORE ANYTHING IS DRAWN ON IT.
+\ This ended in SetTextPal from 2026-08-24 — the menu's colours in
+\ force before the draw, which had been showing the menu in the deck's
+\ colours for as long as the draw took — until KC asked for the draw
+\ itself to be hidden (2026-09-01, with the lift's): ConsoleOpen now
+\ plots against black, and the first ConMenu4 — the next pass — puts
+\ the text palette up over the finished screen. PalBlack's header has
+\ the shape.
   JSR ConIconInk4               \ the icon colours BEFORE ConsoleOpen
                                 \ draws them - KC 2026-08-24
   JSR CnCounts4                 \ and Redux's two droid counts, for the
                                 \ same reason: this is the last bank-4
                                 \ code before ConsoleEnter pages bank 6
-  JMP SetTextPal                \ and its RTS
+  JMP PalBlack                  \ and its RTS
 
 
 
@@ -3438,6 +3433,14 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
 .cnUnit  EQUB 0
 
 .ConMenu4
+  JSR SetTextPal                \ the menu's palette, EVERY menu pass —
+                                \ the first is the reveal of the black
+                                \ entry draw (see ConMenuInit4's tail),
+                                \ the rest are idempotent. Runs only in
+                                \ the menu state, and the page arms
+                                \ below set their own palettes AFTER
+                                \ this on the press pass, so it cannot
+                                \ stomp a page
   LDX #CTL_UP                    \ up the menu
   JSR KeyDownIx
   BNE cm4_upOff

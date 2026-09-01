@@ -137,7 +137,7 @@ Deck 6's floor is yellow and deck 5's is white, so `palPlay[0]` tells the whole 
 deck 6's `&04` never appearing. The unchanged-selection exit still restores `&00`. 8 bytes of
 bank 4, tail 33 → **25 B**.
 
-## 4b. The deck appears finished — black across the load, 2026-09-01
+## 4b. Every screen swap is hidden — black while drawing, 2026-09-01
 
 **KC:** the 4a arrangement is odd the other way round — the *lift screen* recolours to the new
 deck's palette a beat before the deck is drawn, and the drawing itself is watchable. Proposed
@@ -149,32 +149,43 @@ screen, so the deck is built entirely off-screen and simply appears on exit. One
 buffer cannot build off-screen, so the port keeps the *effect*: **the player never sees the deck
 plotted.**
 
-Three moves, superseding 4a's palette handling (its `deck`/`deckClear`/`liftPlace` ordering all
-stands):
+The shape (superseding 4a's palette handling; its `deck`/`deckClear`/`liftPlace` ordering all
+stands). **`PalBlack`** (screen.asm, bank 4) writes sixteen `palPlay` entries of physical black
+(`&F7` down to `&07` by `&10`); a draw bracketed by `PalBlack` and a palette rebuild is
+invisible, revealed complete by the next fire 1. Four places use it:
 
-1. **`RedrawAll`'s `JSR SetPalette` moved from its top to its end** (screen.asm). Layer-14
-   DECISION 4's reason — in the redraw so no exit path can forget it — is placement-agnostic;
-   at the bottom, the plot runs in whatever `palPlay` already held and the finished frame is
-   revealed by the next fire 1. On non-lift routes (console close, info dismissal, CTRL+R) the
-   only difference is that the correct palette arrives at the end of the redraw instead of the
-   start.
-2. **Both of `LvExit4`'s endings fall through to `lvx_black`**: sixteen `palPlay` entries of
-   physical black (`&F7` down to `&07` by `&10`). The changed arm's immediate `SetPalette`
-   (4a) is gone — the reveal is `RedrawAll`'s. The same-deck ending goes black too: its exit
-   is an equally watchable full replot of the deck over the lift art, and `SetPalette` rebuilds
-   this deck's palette (cleared-floor override and all) from `deck`/`deckClear` at the far end,
-   so the entry save is never read back.
-3. **`LvEnter4`'s save/swap loop became `JSR ConShipEnter4`** — the ship page's identical loop.
-   The save is now written and never read on the lift route, but sharing the loop is cheaper
-   than a saveless copy of its second half.
+1. **`RedrawAll` starts with `JSR PalBlack` and ends with `JSR SetPalette`** (moved from its
+   top; Layer-14 DECISION 4's reason — in the redraw so no exit path can forget it — is
+   placement-agnostic). Every route BACK to the deck passes through it — the info screens'
+   dismissal (the 001 start page included), the console's close, the transfer's and the lift's
+   exits, `LoadDeck`, CTRL+R — so every deck replot is hidden.
+2. **`LvExit4` does no palette work at all any more.** On a changed deck the lift screen simply
+   stays up, static, across the charset build and level decode (exactly the C64's look), until
+   `RedrawAll` blacks it and reveals the finished deck. Same-deck: straight to the redraw.
+3. **The lift screen's own entry draw is hidden too** (KC's follow-up): `LvEnter4` ends in
+   `PalBlack`, `LvStart7` draws the cross-section black, and `LvTick4` — every lift pass, so
+   the first is the reveal and the rest are idempotent — installs `palLift` via
+   `ConShipEnter4` (whose `palPlay` save nothing on the lift route reads back).
+4. **So is the console's**: `ConMenuInit4` ends in `PalBlack` instead of `SetTextPal` (the
+   2026-08-24 "palette before the draw" arrangement, now inverted), `ConsoleOpen` draws black,
+   and `ConMenu4`'s top — every menu pass — runs `SetTextPal` as the reveal. Safe because
+   `ConMenu4` runs only in the menu state, and the page arms set their own palettes AFTER it
+   on the press pass.
 
-Net **−18 bytes of bank 4** (11 → 29 free). The panel is untouched throughout — `palPanel` is
-applied at VSync, `palPlay` at fire 1, so the black covers exactly the play area.
+NOT hidden (unchanged, candidates if wanted): the console pages' draws over the menu (ship,
+deck plan, database — the plan deliberately draws in the deck's colours), the menu's redraw on
+a page's close, and the transfer board's entry.
 
-**Verified in jsbeeb** on the 4a recipe (player placed on lift 13, deck 6, fire entering for
-real). Same-deck exit: `palPlay` all-black through the replot, deck 6 back in its own colours.
-Changed-deck exit (one step up, commit): `deck`=5 and `palPlay` all-black mid-load, play area a
-clean black rectangle under a live panel, then deck 5 complete in white/red at the reveal.
+Net **−10 bytes of bank 4** across the whole change (11 → 19 free); main RAM untouched. The
+panel is untouched throughout — `palPanel` is applied at VSync, `palPlay` at fire 1, so the
+black covers exactly the play area.
+
+**Verified in jsbeeb**, all on real routes: the lift ridden via the 4a recipe (same-deck exit,
+and one step up with `deck`=5 confirmed mid-load), the console entered by fire on a real
+console cell (map tile 16 at 10/2 of deck 6, reference cell 41/10) and exited to the deck, and
+the 001 page dismissed into the first deck draw. In every case `palPlay` read back all-black
+during the draw, the play area was a clean black rectangle under a live panel, and the finished
+screen appeared in its own colours in one go.
 
 ## 5. For whoever touches this next
 
