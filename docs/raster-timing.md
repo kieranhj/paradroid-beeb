@@ -882,3 +882,36 @@ item, unchanged from this file's earlier "what is left" list.
 
 Room after: code image 4 B free (`code_end` &2FFC), bank 5 119 B, bank 6 294 B, lowbss 0 B
 (`sprCls` took the last 8; the stack page's measured-free half is now the only main-RAM slack).
+
+## Step 4 — the movement pipeline (2026-09-01, same day)
+
+`ReadKeys`/`CalcSpeed`/`CheckWalls` — and the ESCAPE test with them — moved out of window A into
+the display period, next to the droid AI whose `overPhase` gate they now share, computing the
+speeds the NEXT pass's `ApplyMove` applies. `ApplyMove` is all that remains above the erase: the
+scroll depends on it. Because it has already run when `CheckWalls` executes, the clip is taken
+against exactly the position the next move starts from — not stale, as this file predicted. What
+it costs is one pass (40 ms) of input latency, the same pipeline the droid AI and the anim scan
+already ride.
+
+**The seams needed one addition**: the pipelined speeds are wall-clipped at a position the player
+may no longer occupy after a transfer, a lift or a deck load, so `ReframeView` — the one point
+every way back to the deck passes through — zeroes `xSpd`/`ySpd`. A console close or an unpause
+(position unchanged, clip still valid) would merely carry one pass of old momentum; the zeroing
+covers those too via the same choke point where they reframe. At game start the 001 screen holds
+`ReframeView` back and the `IS_ACT_GAME` reframe zeroes the speeds before the first `ApplyMove`
+ever runs, which is what makes the pipeline safe against uninitialised BSS on real hardware.
+
+Measured: **`DoRedraws` is entered 4,727 cycles after the pass starts** against ~13,100 before —
+the level draw's fire-1 latch budget grew from ~8,900 to ~17,300 cycles. On a diagonal
+band-crossing leg, the pass now enters `DoRedraws` inside the first 8,192 cycles (rupture state 3)
+on 75% of passes, something the old front could never do; end-of-tranche-A-draw distributions gain
+a matching population of super-early state-3 finishes (the bin is unambiguous no longer — before
+step 4 state 3 could only mean a full field late). **The one tenant still overrunning window A is
+the full-width band itself** (~19,200 cycles; ~23% of passes on a fast vertical leg leave
+`DoRedraws` over the display, by ~3k where it used to be ~11k) — and the band is latch-bound for
+the same reason the columns are, so the levers left are making it cheaper or `FRAME_LOCK` 3.
+
+Verified: movement, walls and doors behave identically in play; ESCAPE from its new home runs the
+whole death sequence, wash, high-score entry and title; split 127/129 with every pass start
+aligned; 25.0 Hz. Cost: net +1 byte of code image (the shared gate and `ReframeView`'s redundant
+`LDA #0` paid for the zeroing), `code_end` &2FFD, 3 B free.

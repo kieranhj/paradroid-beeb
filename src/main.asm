@@ -1599,31 +1599,17 @@ ENDIF
 \
 \ No edge latch. Both writes are idempotent, and once overPhase is set
 \ the game-over arm above takes the pass before this is reached again.
-  LDX #KEY_ESCAPE
-  JSR keydown
-  BNE ml_notEsc
-  LDA #0
-  STA drType
-  STA drEnergy
-.ml_notEsc
-
-  \ Z / X left-right, K / M up-down. The keys feed a direction pair
-  \ and the direction pair feeds an accelerating speed, so the view
-  \ position moves by 0-7 pixels a frame rather than a fixed step.
-IF DEBUG_TIME
-  JSR DbgSpeedOverride          \ a poked speed takes the controls over
-  BNE ml_poked                  \ and skips the walls; zero gives them back
-ENDIF
-  LDA overPhase                 \ the game is ending: $14A8 calls RunGame
-  BNE ml_nomove                 \ and nothing else, so he stops where he
-                                \ fell and the cloud burns over him
-  LDA liftMode                  \ the lift has the controls: no movement,
-  BNE ml_nomove                 \ and UP/DOWN mean something else below
-  JSR ReadKeys
-  JSR CalcSpeed
-  JSR CheckWalls                \ before the move, as the C64 does: it
-.ml_poked                       \ zeroes the speed the move would apply
-.ml_nomove
+\ THE KEYS AND THE WALLS MOVED TO THE DISPLAY PERIOD (Step 4,
+\ 2026-09-01): ReadKeys/CalcSpeed/CheckWalls ran in the PREVIOUS
+\ pass's display period, against exactly the position this ApplyMove
+\ moves from, so the clip is not stale — see the pipeline block above
+\ DroidsUpdate, and the ESCAPE test that moved with it. What that
+\ bought is ~5,000 cycles at the front of window A, which the level
+\ draw's fire-1 latch budget needed; what it costs is one pass (40 ms)
+\ of input latency, the same pipeline the droid AI and the anim scan
+\ already ride. ReframeView zeroes the speeds at every seam that
+\ moves the player without a pass — a transfer, a lift, a deck load —
+\ so the first pass after a modal exit applies rest, not momentum.
   JSR ApplyMove
 
 \ ============================================================
@@ -1886,9 +1872,48 @@ ENDIF                           \ 2026-08-20 it did not: the tint set before
 \   - a door probed here is held open by the NEXT pass's DoorsUpdate,
 \     one pass later than before but never closing under a droid that
 \     is still standing at it.
+\ ---- ESCAPE — the influence device destroys itself ----------
+\ A WAY OUT OF A GAME, and the port's own (KC, 2026-08-21): forcing
+\ drType and drEnergy to zero makes CbCheckDeath's $144D arm end the
+\ game through everything a real death runs. Both writes idempotent.
+\ IT MOVED HERE WITH THE KEYS (Step 4): modal passes skip this block
+\ the same way they skipped it above — each modal arm ends the pass
+\ before it — so ESCAPE still cannot fire while the console, the lift
+\ view, the transfer game or an information screen owns the machine.
+\ CbCheckDeath runs BELOW, so the death still lands the same pass.
+  LDX #KEY_ESCAPE
+  JSR keydown
+  BNE ml_notEsc
+  LDA #0
+  STA drType
+  STA drEnergy
+.ml_notEsc
+
+\ ---- the movement pipeline, for the NEXT pass ---------------
+\ Step 4 (2026-09-01): ReadKeys/CalcSpeed/CheckWalls write no buffer,
+\ so they belong here, in the display period, not in window A. They
+\ compute the speeds the NEXT pass's ApplyMove applies — and because
+\ ApplyMove has already run this pass, CheckWalls clips against the
+\ position the player will move FROM, so the clip is never stale.
+\ Z / X left-right, K / M up-down; the keys feed a direction pair and
+\ the pair feeds an accelerating speed, 0-7 px a pass.
+\ DoCharUnder, below, reads the plyCX/plyCY this CheckWalls leaves —
+\ still the same pass. The overPhase gate is shared with the droids:
+\ the burning player neither steers nor runs them.
   LDA overPhase                 \ $14A8/$14C5 call RunGame and NOT
   BNE ml_nodroids               \ RunDroids: the ship stops while the
-  JSR DroidsUpdate              \ player burns
+                                \ player burns — and steers nothing
+IF DEBUG_TIME
+  JSR DbgSpeedOverride          \ a poked speed takes the controls over
+  BNE ml_poked                  \ and skips the walls; zero gives them back
+ENDIF
+  LDA liftMode                  \ the lift has the controls: no movement,
+  BNE ml_poked                  \ and UP/DOWN mean something else there
+  JSR ReadKeys
+  JSR CalcSpeed
+  JSR CheckWalls                \ before the NEXT move, as the C64 does:
+.ml_poked                       \ it zeroes the speed that move would apply
+  JSR DroidsUpdate
 .ml_nodroids
 
 \ ---- did the collision pass start a transfer? ---------------
@@ -3362,8 +3387,14 @@ ASSERT FRAME_LOCK >= 2
   STA iline
   STA bandDo                    \ the exposed edges belonged to the frame
   STA colCount                  \ we have just thrown away
+  STA xSpd : STA xSpd+1         \ Step 4: the pipelined speeds were
+  STA ySpd : STA ySpd+1         \ wall-clipped at a position the player
+                                \ may no longer occupy — a transfer, a
+                                \ lift, a deck load all land here — so
+                                \ the first pass back applies rest
   LDX #SPR_SLOTS-1              \ the saved backgrounds belong to the view
-  LDA #0                        \ we are leaving; RedrawAll replaces them
+                                \ we are leaving; RedrawAll replaces them
+                                \ (A is still zero from the run above)
 .rv_unsave
   STA sprSaved,X
   DEX
