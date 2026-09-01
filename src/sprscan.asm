@@ -23,10 +23,51 @@
 \ the play buffer, else 0. Inactive slots read 0. SprAssignTr (bank 6)
 \ ORs the byte over each overlap component to decide the forcing.
 .SprScanCls
+\ ---- once per pass: which writers exist at all? -------------
+\ The commonest pass has NO buffer writer — no band, no column, no
+\ dirty animated tile, no door moving — and used to pay the full
+\ per-member geometry anyway, ~2,000-3,800 cycles at the front of
+\ window A (docs/perf-audit-2026-08-31.md). The presence tests run
+\ once here instead; the door predicate below is shd_doors' exactly,
+\ so a door this loop calls static is one SprHitsDraw would have too.
+  LDX numDoors
+  BEQ sscw_nod
+.sscw_dloop
+  DEX
+  LDA doorDirty,X               \ already opening, from this pass's probe
+  BNE sscw_dyes
+  LDA doorState,X
+  AND #&40
+  BNE sscw_dnext                \ held open: static this pass
+  LDA doorState,X
+  AND #7
+  BNE sscw_dyes                 \ open and not held: closes a step
+.sscw_dnext
+  TXA
+  BNE sscw_dloop
+.sscw_nod
+  LDA #0
+  BEQ sscw_store                \ always
+.sscw_dyes
+  LDA #1
+.sscw_store
+  STA scnDoorW
+
+  LDA animDirty                 \ anim presence is what AnimPaint tests:
+  BEQ sscw_na                   \ dirty AND a non-empty list
+  LDA animCount
+.sscw_na
+  ORA scnDoorW
+  ORA bandDo
+  ORA colCount
+  STA scnAnyW
+
   LDX #SPR_SLOTS-1
 .sscl_loop
   LDA #0
   STA sprCls,X
+  LDA scnAnyW
+  BEQ sscl_next                 \ nothing writes: every slot reads 0
   LDA sprActive,X
   BEQ sscl_next
   JSR SprHitsDraw
@@ -37,6 +78,11 @@
   DEX
   BPL sscl_loop
   RTS
+
+\ Bank 5 is RAM: the two per-pass flags live beside the code that is
+\ the only reader and writer of either.
+.scnDoorW EQUB 0                \ some door repaints this pass
+.scnAnyW  EQUB 0                \ any writer at all this pass
 
 \ ============================================================
 \ SprHitsDraw — is slot X under anything this pass will write?
@@ -134,8 +180,9 @@
 \ not decremented and not marked dirty by DoorsUpdate, so it repaints
 \ nothing and is not a writer.
 .shd_doors
+  LDA scnDoorW                  \ hoisted: no door moves this pass, so
+  BEQ shd_no                    \ skip the per-member walk entirely
   LDX numDoors
-  BEQ shd_no
 .shd_dloop
   DEX
   LDA doorDirty,X               \ already opening, from this pass's probe
