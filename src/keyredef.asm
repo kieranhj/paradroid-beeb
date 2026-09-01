@@ -125,8 +125,8 @@ KR_SFX_NO   = &1A               \ effect 26: collision bump
   CMP #KR_ESCAPE
   BEQ bkr_esc
   TAX
-  LDA bmKeyChar-&10,X           \ can the font name it? if not it is not
-  BEQ bkr_bad                   \ bindable — see the table's header
+  JSR BmKrChar                  \ can the screen name it? if not it is
+  BEQ bkr_bad                   \ not bindable — see the table's header
   TXA
   EOR #&FF                      \ keyTab holds INKEY bytes, as keydown
   STA bmKrKey                   \ wants them
@@ -193,15 +193,23 @@ KR_SFX_NO   = &1A               \ effect 26: collision bump
 \ with no draw budget to protect, so it borrows keydown rather than
 \ driving the matrix a second time.
 \
-\ IT STARTS AT &10, NOT 0, and that is not tidiness: internal numbers
-\ &02-&09 are the KEYBOARD DIP LINKS, which read as pressed or not
-\ according to how the machine is strapped, and 0 and 1 are SHIFT and
-\ CTRL. The MOS's own OSBYTE &7A scans from 16 for exactly this reason.
-\ It also settles the modifiers: SHIFT and CTRL cannot be bound because
-\ they are never looked at. [11f DECISION 15]
+\ THE LOOP STARTS AT &10, NOT 0, and that is not tidiness: internal
+\ numbers &02-&09 are the KEYBOARD DIP LINKS, which read as pressed or
+\ not according to how the machine is strapped, and 0 and 1 are SHIFT
+\ and CTRL. The MOS's own OSBYTE &7A scans from 16 for exactly this
+\ reason. SHIFT IS ASKED FOR BY NAME INSTEAD, below the loop's floor:
+\ it is a fine fire button and nothing in play reads it (KC,
+\ 2026-09-01). CTRL stays unreachable and must — it gates the pause,
+\ the mute, the volume and every debug key. [11f DECISION 15]
 \
 \ Y IS NOT THE COUNTER — keydown loads its own Y for the latch.
 .BmKrScan
+  LDX #&FF                      \ SHIFT: internal 0, INKEY -1
+  JSR keydown
+  BNE bks_notsh
+  LDA #0
+  RTS
+.bks_notsh
   LDA #&10
   STA bmKrN
 .bks_l
@@ -309,9 +317,12 @@ KR_SFX_NO   = &1A               \ effect 26: collision bump
   LDA keyTab,X                  \ which is what the name table indexes
   EOR #&FF
   TAX
-  LDA bmKeyChar-&10,X
-  CMP #32
-  BCS bks_one                   \ >= 32: it prints as itself
+  JSR BmKrChar
+  CMP #33                       \ >= 33: it prints as itself. 33, not
+  BCS bks_one                   \ 32 — code 32 is Backslash's name and
+                                \ no entry is ASCII space (the space
+                                \ KEY is name 11), so the boundary
+                                \ moved up one for a tenth name
   CMP #11
   BCS bks_named                 \ 11 and up: a name from the list
 
@@ -477,35 +488,54 @@ KR_SFX_NO   = &1A               \ effect 26: collision bump
 \ bmKeyChar — internal key number &10-&7F -> how to name it
 \ ============================================================
 \ THE MATRIX, ROW BY ROW. An entry is either a printable ASCII code
-\ (>= 32, printed as itself), 1-10 for f0-f9, 11 and up for a name in
+\ (>= 33, printed as itself), 1-10 for f0-f9, 11 and up for a name in
 \ bmKrNames, or 0 for "this key cannot be bound".
 \
-\ ZERO MEANS THE FONT CANNOT NAME IT, and that is the whole rule for
-\ what is bindable: ^ _ [ ] @ ; , / and \ have no glyph in the shared
-\ set, so a key bound to one would show as a blank and the player would
-\ have no way to see what he had done. They are refused instead, with
-\ "Not usable" [11f DECISION 15]. Columns 10-15 do not exist in the
-\ matrix at all.
+\ ZERO NOW MARKS ONLY THE HOLES: columns 10-15 do not exist in the
+\ matrix at all. The nine punctuation keys — ^ _ [ ] @ ; , / \ — were
+\ zeros until 2026-09-01, refused because the shared glyph set cannot
+\ DRAW them; KC ruled that too many ('/' is a common fire button), so
+\ they carry spelled-out names from bmKrNames instead, exactly as
+\ Space and Return always have. Every physical key &10-&7F is
+\ bindable now; SHIFT (internal 0) is bindable through BmKrChar's
+\ special case, and the only refusals left are ESCAPE (the game's
+\ self-destruct, and this screen's own cancel) and CTRL (never
+\ scanned — it gates the pause, the mute, the volume and the debug
+\ keys). [11f DECISION 15, revised]
 \
 \ THE LAYOUT IS CONFIRMED BY OUR OWN CONSTANTS, not recalled: KEY_Z,
 \ KEY_X, KEY_K, KEY_M, KEY_L, KEY_SPACE, KEY_P, KEY_Q, KEY_R, KEY_C,
 \ KEY_W, KEY_LBRK, KEY_RBRK, KEY_UP, KEY_DOWN and KEY_ESCAPE all EOR
 \ &FF to exactly the positions below.
 .bmKeyChar
-  EQUB 'Q', '3', '4', '5', 5, '8', 8, '-', 0, 21   \ &10: Q 3 4 5 f4 8 f7 - ^ LEFT
+  EQUB 'Q', '3', '4', '5', 5, '8', 8, '-', 24, 21  \ &10: Q 3 4 5 f4 8 f7 - ^ LEFT
   EQUB 0, 0, 0, 0, 0, 0                            \ columns 10-15: no key
-  EQUB 1, 'W', 'E', 'T', '7', 'I', '9', '0', 0, 20 \ &20: f0 W E T 7 I 9 0 _ DOWN
+  EQUB 1, 'W', 'E', 'T', '7', 'I', '9', '0', 25, 20 \ &20: f0 W E T 7 I 9 0 _ DOWN
   EQUB 0, 0, 0, 0, 0, 0
-  EQUB '1', '2', 'D', 'R', '6', 'U', 'O', 'P', 0, 19 \ &30: 1 2 D R 6 U O P [ UP
+  EQUB '1', '2', 'D', 'R', '6', 'U', 'O', 'P', 26, 19 \ &30: 1 2 D R 6 U O P [ UP
   EQUB 0, 0, 0, 0, 0, 0
-  EQUB 17, 'A', 'X', 'F', 'Y', 'J', 'K', 0, ':', 12  \ &40: CAPS A X F Y J K @ : RETURN
+  EQUB 17, 'A', 'X', 'F', 'Y', 'J', 'K', 28, ':', 12  \ &40: CAPS A X F Y J K @ : RETURN
   EQUB 0, 0, 0, 0, 0, 0
-  EQUB 18, 'S', 'C', 'G', 'H', 'N', 'L', 0, 0, 13    \ &50: SHFTLK S C G H N L ; ] DELETE
+  EQUB 18, 'S', 'C', 'G', 'H', 'N', 'L', 29, 27, 13   \ &50: SHFTLK S C G H N L ; ] DELETE
   EQUB 0, 0, 0, 0, 0, 0
-  EQUB 15, 'Z', 11, 'V', 'B', 'M', 0, '.', 0, 14     \ &60: TAB Z SPACE V B M , . / COPY
+  EQUB 15, 'Z', 11, 'V', 'B', 'M', 30, '.', 31, 14    \ &60: TAB Z SPACE V B M , . / COPY
   EQUB 0, 0, 0, 0, 0, 0
-  EQUB 16, 2, 3, 4, 6, 7, 9, 10, 0, 22               \ &70: ESC f1 f2 f3 f5 f6 f8 f9 \ RIGHT
+  EQUB 16, 2, 3, 4, 6, 7, 9, 10, 32, 22               \ &70: ESC f1 f2 f3 f5 f6 f8 f9 \ RIGHT
   EQUB 0, 0, 0, 0, 0, 0
+
+\ ---- the one key below the table's floor --------------------
+\ X = internal number -> A = the char code, Z set on unbindable.
+\ SHIFT is internal 0 and the table starts at &10, so the two callers
+\ (the accept test and BmKrShow) come through here rather than index
+\ &10 below the label.
+.BmKrChar
+  CPX #0
+  BNE bkc_tab
+  LDA #23                       \ SHIFT: its name
+  RTS
+.bkc_tab
+  LDA bmKeyChar-&10,X
+  RTS
 
 \ Codes 11 up, in order, each terminated. ESCAPE's entry is here for
 \ completeness only — bkr_wait catches it before the table is read.
@@ -522,6 +552,17 @@ KR_SFX_NO   = &1A               \ effect 26: collision bump
   EQUS "Down"    : EQUB 0        \ 20
   EQUS "Left"    : EQUB 0        \ 21
   EQUS "Right"   : EQUB 0        \ 22
+  EQUS "Shift"   : EQUB 0        \ 23 — BmKrChar's, not the table's
+  EQUS "Caret"   : EQUB 0        \ 24: ^
+  EQUS "Underline" : EQUB 0      \ 25: _
+  EQUS "LBracket" : EQUB 0       \ 26: [
+  EQUS "RBracket" : EQUB 0       \ 27: ]
+  EQUS "At"      : EQUB 0        \ 28: @
+  EQUS "Semicolon" : EQUB 0      \ 29: ;
+  EQUS "Comma"   : EQUB 0        \ 30: ,
+  EQUS "Slash"   : EQUB 0        \ 31: /
+  EQUS "Backslash" : EQUB 0      \ 32: \ — and the ASCII boundary is
+                                 \ 33 for it, see BmKrShow
 
 \ ---- the six, in CTL_* order -------------------------------
 .bmKrLabels

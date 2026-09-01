@@ -931,12 +931,16 @@ six controls in the order LEFT, RIGHT, UP, DOWN, FIRE, TRANSFER. Five things wer
    extra under the indexed design.
 2. **A redefinition lasts until it is redefined**, across a game over, the title and the next game
    — which is what put `keyTab` in the code image. It is lost on BREAK; nothing is written to disc.
-3. **ESCAPE and the modifiers are refused.** SHIFT and CTRL are unreachable by construction (the
-   scan starts at `&10`); ESCAPE is never accepted as a binding and **abandons the run instead**,
-   putting all six back as they were. A key already chosen *earlier in the same run* is refused
-   with "Already used" — the ones still on their defaults are fair game, because they may be about
-   to change. A key the font cannot name is refused with "Not usable"; that is the whole rule for
-   what is bindable, and it is a display rule, not a keyboard one.
+3. **Only ESCAPE and CTRL are refused** *(revised 2026-09-01 — KC: the original exclusions were
+   too many)*. ESCAPE is never accepted as a binding and **abandons the run instead**, putting all
+   six back as they were; CTRL is never scanned, and must not be — it gates the pause, the mute,
+   the volume (also since 2026-09-01, so the now-bindable cursors don't crank it) and every debug
+   key. Everything else binds: the nine punctuation keys the font cannot draw (`^ _ [ ] @ ; , /
+   \`) carry spelled-out names from `bmKrNames` ("Slash", "Comma"…, codes 23-32, the ASCII
+   boundary moved to 33 for the tenth), and **SHIFT** — internal key 0, below the scan loop's
+   `&10` floor — is asked for by name in `BmKrScan` and named through `BmKrChar`'s special case.
+   A key already chosen *earlier in the same run* is refused with "Already used" — the ones still
+   on their defaults are fair game, because they may be about to change.
 4. **The chatter is off while the screen is up** and every press answers with a beep — the menu
    step beep for a key taken, the collision bump for one refused. §8e has the effects, why those
    two, and the measurements.

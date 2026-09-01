@@ -1097,8 +1097,8 @@ KEY_Z      = &9E                \ -98
 KEY_X      = &BD                \ -67
 KEY_K      = &B9                \ -71
 KEY_M      = &9A                \ -102
-KEY_UP     = &C6                \ -58, volume up
-KEY_DOWN   = &D6                \ -42, volume down
+KEY_UP     = &C6                \ -58, volume up, WITH CTRL
+KEY_DOWN   = &D6                \ -42, volume down, WITH CTRL
 KEY_SPACE  = &9D                \ -99, the second transfer button
 KEY_R      = &CC                \ -52, DEBUG_REDRAW's forced redraw, WITH CTRL
                                 \ since 2026-08-31 like every other debug
@@ -2886,9 +2886,11 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
 \ The port of AdjustVolume ($0CB4), which is one of the few C64
 \ routines this port does NOT take verbatim. Four deviations, all
 \ agreed with KC 2026-08-26 and written up as layer-11e DECISIONs:
-\   1. CURSOR UP/DOWN, not F5 and SHIFT-F5. The BBC's f-keys are a
-\      different shape and the cursors were free once the debug deck
-\      hop moved to [ and ].
+\   1. CTRL + CURSOR UP/DOWN, not F5 and SHIFT-F5. The BBC's f-keys
+\      are a different shape and the cursors were free once the debug
+\      deck hop moved to [ and ]. BARE cursors until 2026-09-01, when
+\      the redefine screen made all four cursors bindable controls and
+\      the volume took the CTRL modifier, as the mute always had.
 \   2. IT RUNS EVERYWHERE, not on the title alone. The C64 calls
 \      AdjustVolume from TitleLoop and nowhere else, so its volume
 \      cannot be changed once a game starts. Ours is polled from the
@@ -2914,6 +2916,14 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
 \ UNGATED: the callers below own the cadence, because their clocks are
 \ three different things — passes, fields, and a free-running dwell.
 .VolKeys
+  LDX #KEY_CTRL                 \ CTRL gates ALL THREE now, not just Q
+  JSR keydown                   \ (KC, 2026-09-01): the cursors became
+  BNE vk_qup                    \ bindable controls when the redefine
+                                \ screen freed its punctuation, and a
+                                \ volume that rode bare cursor keys
+                                \ would crank under anyone who bound
+                                \ one. CTRL up takes Q's own exit, so a
+                                \ half-pressed combo resets the edge
   LDX #KEY_UP
   JSR keydown
   BNE vk_notup
@@ -2929,9 +2939,6 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
   BEQ vk_notdn
   DEC sndVolume
 .vk_notdn
-  LDX #KEY_CTRL                 \ CTRL+Q, not bare Q (KC, 2026-08-30) —
-  JSR keydown                   \ CTRL up takes the same exit as Q up, so a
-  BNE vk_qup                    \ half-pressed combo resets the edge flag
   LDX #KEY_Q
   JSR keydown
   BNE vk_qup

@@ -599,6 +599,10 @@ The port has no `sndState $11`: 11f [DECISION 11].)*
 ## 9. The volume keys and the mute — built 2026-08-26
 
 > **The mute moved to CTRL+Q on 2026-08-30** (KC), and pause to CTRL+P — see §12.
+> **The volume itself moved to CTRL+cursors on 2026-09-01** (KC): the redefine screen made all
+> four cursor keys bindable controls (layer-11f DECISION 15, revised), and a volume riding bare
+> cursor up/down would crank under anyone who bound one. `VolKeys` now tests CTRL once at its
+> top, gating all three functions; byte-neutral.
 
 `AdjustVolume` is one of the few C64 routines this port does not take verbatim. Everything
 that could be kept was: the 0–15 range, the clamp at both ends, and the every-fourth-frame
