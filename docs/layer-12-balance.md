@@ -328,8 +328,73 @@ poking `shipNumDroids` to 1 and reopening: "1 droid" above "9 droids" on the sam
 `CMP #CHAR_CONSOLE` to `LDA #0` in the running machine so fire opens it anywhere; a runtime patch
 only, and a useful one to know for any future console work.)
 
-**[DECISION 6] — (6) the lift's deck-selection screen colours cleared decks: PARKED. Designed,
-costed and attempted; it does not fit, and KC closed it rather than pay for it. 2026-08-31.**
+**[DECISION 6] — (6) the lift's deck-selection screen colours cleared decks: BUILT
+2026-09-02, on the bank-6 route. Everything below the next section is the record of the attempt
+that was PARKED on 2026-08-31; it is kept because the design it costed is the design that shipped.**
+
+### What unparked it: bank 6, not bank 7
+
+**Bank 7 never gained a byte.** It was measured at 90 B free on 2026-09-02 — *tighter* than the
+100-105 recorded in August, and neither of hexwab's two patches (issue #1) touched it. The finding
+below — that no held reserve frees bank 7 — still stands.
+
+What changed is the SECOND option in the list below, "put the marking walk somewhere else". In
+August bank 6 had 7 B free and bank 5 had 6, so there was nowhere to put it. hexwab's SCANSTEP
+deferred carry took bank 6 to 931 B and the code image from 3 B to 82, and that is the whole
+difference. **`LvClearedMark` lives in `src/console.asm`, bank 6**, and main RAM orchestrates:
+
+    LiftViewEnter   LvEnter4 (4) -> LvStart7 (7) -> LvClearedMark (6) -> LvStart7b (7)
+    ConsoleTick     ConShipEnter4 (4) -> LvShip7 (7) -> LvClearedMark (6) -> LvRepaintAll (7)
+
+`LvStart7` and `LvShip7` both stopped short of `LvRepaintAll`, which is now the caller's to make —
+the mark has to land in the colour shadow between the shadow being built and its being painted.
+`LvTick7` needs no second mark: it repaints from the shadow, so a selection move is unaffected.
+
+**The stack page was NOT used, and stays an untouched reserve.** It was the August plan, but
+`ram-pass.md` lists the lift's deck-selection screen among the paths its 128-byte measurement did
+not exercise — and that is the one screen this feature runs on. The code image had the room
+instead, so `DECK_DONE` is there.
+
+**Two bank-7 dependencies had to be broken, and only one was obvious.** The walk writes the colour
+shadow, which is main RAM (`xsCram = SPR_SAVE + XS_COFF`), so that part was free. But it also needs
+the deck rectangles, and `svDeckY/X/H/W` are in `sideview.asm` — bank 7. `tools/export_sideview.py`
+now emits `src/data/svdecks6.asm` as well: the same four tables under `lvcDeck*` names, from the
+same C64 listing in the same run, so the two copies cannot drift. `sideview.asm` came back
+byte-identical from that change. `xsLineLo/Hi` are bank 7's too and were not needed at all — the
+row address is ten adds of 40, once a cleared deck, on a screen drawn once.
+
+*And a beebasm trap worth knowing, hit three times building this:* `console.asm` is INCLUDEd before
+`xfer.asm`, so `xsCram` and `xdest` are **forward references there**, and beebasm's two passes
+choose different operand sizes and abort with *"the second assembler pass has generated different
+code to the first"*. The fix is to name what is already defined — `SPR_SAVE + &300` and `bufp` —
+with `ASSERT`s at the end of `main.asm` tying them to the real equates. The same trap catches a
+routine's own scratch bytes if they are declared after it.
+
+### What it cost, measured
+
+| Region | Before | After | Spent |
+|---|---|---|---|
+| Bank 6 | 931 B | **748 B** | 183 (the walk, the 64 B of tables, 3 B of scratch) |
+| Bank 7 | 90 B | **25 B** | 65 (the stipple in `LvCellPaint`) |
+| Code image | 82 B | **31 B** | 51 (24 trampolines, `DECK_DONE` 16, `DeckDoneClear` 11) |
+| Bank 4 | 19 B | **11 B** | 8 — exactly what August costed |
+| Bank 5 | 674 B | 674 B | 0 |
+
+### Verified
+
+- `DECK_DONE` is set by the deck-clear arm and nowhere else: `CTRL+C` on deck 5 leaves
+  `[0,0,0,0,0,1,0,...]`, one entry, and the game plays on.
+- The walk marks **18 of deck 5's 18 cells** and **18 in the whole shadow** — nothing outside the
+  cleared deck's rectangle.
+- 16 of those 18 paint chequered, halves aligned (`0a 15 2a 15 ... 0a 55 aa 55`). The two that do
+  not are char `$A6`, outside `$80-$8F`: no lit partner exists, so they are left solid by design.
+- A cleared deck that is ALSO the selected one paints solid — confirmed by accident first, since
+  the obvious test (clear the deck you are standing on) is exactly that case. Clear one deck,
+  `CTRL+]` to another, then open the lift.
+- Control: an uncleared deck's cells are solid art.
+
+### — the August attempt, kept for its costings —
+
 
 **KC, 2026-08-31, closing it: "it's easy enough to skip up and down the lift to check which decks
 have been cleared."** The information is already available — a cleared deck's floor is blue

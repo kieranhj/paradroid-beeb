@@ -457,6 +457,10 @@ ENDIF
   JMP LoadDeck                  \ and its RTS
 
 .NewShipDroids
+  JSR DeckDoneClear             \ layer-12 DECISION 6: a new ship
+                                \ un-clears every deck. Main RAM's, and
+                                \ calling out of a bank is the legal
+                                \ direction
   LDA #0
   TAY
 .nsd_clear
@@ -816,6 +820,11 @@ ENDIF
   STY deckClear                 \ Y is 1: the deck is clear, and the
   JSR SetPalette                \ floor turns blue until DroidsInit
                                 \ says otherwise
+  LDX deck                      \ layer-12 DECISION 6: remember it, for
+  INC DECK_DONE,X               \ the lift screen. DECK_DONE is main
+                                \ RAM because bank 6 reads it. This arm
+                                \ fires exactly once a deck, so INC
+                                \ cannot run away
 
 \ ---- $17DF: FIVE HUNDRED POINTS, and the effect -----------
 \ TWO CALLS OF 250 AND NOT ONE OF 500, because AddScore takes a

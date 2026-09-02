@@ -544,6 +544,14 @@ DBG_AI       = 1                \ red     — the droid AI and the rest of the
 \ These live here rather than in screen.asm/rupture.asm because
 \ beebasm resolves constant assignments in file order, and both
 \ of those files need them.
+\ The lift screen's third colour token, layer-12 DECISION 6. The shadow
+\ colour byte is 0 (plain) or &F9 (the chosen lift's shaft, which draws
+\ from the forced-multicolour set); &FA marks a deck the player has
+\ cleared, and LvCellPaint stipples it. Free of the transfer game's own
+\ tokens (&F1-&F4, &F8, &FC, &FD, &FF) although it need not be: the two
+\ screens are never up at once and LvClearShadows zeroes both.
+XS_CLR     = &FA
+
 BUF_BASE   = &5800              \ 10K play buffer, wraps at &8000
 BUF_SIZE   = 10240              \ 16 rows x 640
 BUF_END    = BUF_BASE + BUF_SIZE
@@ -2351,6 +2359,10 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
   JSR ConShipEnter4             \ bank 4: the side view's palette in
   JSR PgXfer   
   JSR LvShip7                   \ bank 7: the cross-section, deck lit
+  JSR PgSpr2                    \ bank 6: mark the cleared decks in the
+  JSR LvClearedMark             \ colour shadow (layer-12 DECISION 6)
+  JSR PgXfer
+  JSR LvRepaintAll              \ bank 7: and now paint it
   JSR PgData   
   LDA #2
   STA conShipReq
@@ -3678,6 +3690,37 @@ INCLUDE "src/zx0depack.asm"
   EQUB KEY_L                    \ CTL_FIRE
   EQUB KEY_SPACE                \ CTL_XFER
 
+\ ============================================================
+\ DECK_DONE / DeckDoneClear — which decks the player has cleared
+\ ============================================================
+\ layer-12 DECISION 6. One byte a deck, non-zero once DroidsUpdate's
+\ deck-clear arm has fired for it. Set from BANK 4, read from BANK 6 by
+\ LvClearedMark, so it has to be main RAM: only one bank is visible at
+\ a time and neither can see the other's.
+\
+\ MAIN RAM AND NOT THE STACK PAGE, deliberately. &0100-&017F has room
+\ and this was first designed to live there, but ram-pass.md's
+\ measurement of that page explicitly did NOT exercise the lift screen
+\ — which is the one screen this feature runs on. The code image had
+\ the room once hexwab's two patches landed, so it takes it and the
+\ stack page stays an untouched reserve.
+\
+\ NOT reset per deck or per ship-load: only NewShipDroids clears it,
+\ because a new ship is the only thing that un-clears a deck.
+.DECK_DONE
+  SKIP 16
+
+\ Called from bank 4 (NewShipDroids) — bank code may call main RAM
+\ freely, which is the direction that is legal.
+.DeckDoneClear
+  LDA #0
+  LDX #15
+.ddc_loop
+  STA DECK_DONE,X
+  DEX
+  BPL ddc_loop
+  RTS
+
 .code_end
 
 \ ---- MODE 1 charset, built at deck-load time ----------------
@@ -4310,6 +4353,10 @@ SAVE "PARALOW", low2_start, low_end, LOW_STAGE, LOW_STAGE
 
 ASSERT CON_TYPES == DR_TYPES    \ console.asm is in bank 4 and cannot see
                                 \ the sprite bank's count when it needs it
+ASSERT lcmPtr = xdest           \ ...and the pointer it borrows
+ASSERT LVC_CRAM = xsCram        \ console.asm reaches the colour shadow
+                                \ through SPR_SAVE, because xfer.asm's own
+                                \ equate is not defined yet where it sits
 ASSERT DR_W == SPR_W            \ sprite.asm declares these ahead of the
 ASSERT DR_H == SPR_H            \ generated data; keep the two in step
 ASSERT DR_SEQSHIFT == SPR_SEQSHIFT

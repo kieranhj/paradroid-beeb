@@ -116,6 +116,20 @@ LIFT_LAST  = 30                 \ and so is 31
   JSR LvEnter4                  \ bank 4: flatten, palette, t1i3, mirrors
   JSR PgXfer   
   JSR LvStart7
+\ THE CLEARED-DECK MARK IS BANK 6's (layer-12 DECISION 6). It walks the
+\ deck rectangles writing XS_CLR into the colour shadow, which is main
+\ RAM (xsCram = SPR_SAVE + XS_COFF), so it needs no bank-7 data — but
+\ it does need the deck geometry, and bank 7's copy is invisible from
+\ here, so svdecks6.asm carries a second generated copy. It is in bank
+\ 6 because bank 7 has ~90 bytes free and bank 6 has ~930.
+\
+\ It runs BETWEEN the shadow being built and its being painted, which
+\ is why LvStart7 stops at LvRepaintAll and the repaint is ours to
+\ call. LvTick7 needs no second mark: it repaints from the shadow.
+  JSR PgSpr2
+  JSR LvClearedMark
+  JSR PgXfer
+  JSR LvStart7b
   JMP PgData     \ tail: its RTS is ours
 
 .LiftViewTick

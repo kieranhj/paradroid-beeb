@@ -224,13 +224,13 @@ addresses from the `beebasm` output rather than from any document.** In outline:
 take live figures from `PRINT "code"` and the bank gauges in the build output, never from this
 paragraph:
 
-| Region | Free (measured 2026-09-01, after the SCANSTEP deferred carry) |
+| Region | Free (measured 2026-09-02, after layer-12 DECISION 6) |
 |---|---|
-| Main RAM code image | **15 B** — `code_end` `&2FF1`. hexwab's SCANSTEP deferred carry (issue #1, commit 833b640) gave 12 back on 2026-09-01, off the four expansions in `sprite.asm`; it was **3 B** before that, and the **4 B** this row used to quote was already stale. It has been the binding constraint all year — `keyTab` took it to zero on 2026-08-30, `DbgRedrawKey` moving into bank 4 gave seven back on 2026-08-31 |
-| Bank 4 | **19 B** on the gauge (2026-09-01: +8 net from the black-while-drawing rework, layer-8b §4b; 11 B before) + `colourMap` `ALIGN` pad, **which is SPENT** — 200 B put in front of it cost the bank 259, measured |
+| Main RAM code image | **31 B** — `code_end` `&2FE1`. Layer-12 DECISION 6 took 51 on 2026-09-02 (two bank-6 trampolines, the 16-byte `DECK_DONE` and its clear); it was 82 B after hexwab's two patches and **3 B** before them. Historically the binding constraint |
+| Bank 4 | **11 B** on the gauge (DECISION 6's two hooks took 8 on 2026-09-02; 19 B before) (2026-09-01: +8 net from the black-while-drawing rework, layer-8b §4b; 11 B before) + `colourMap` `ALIGN` pad, **which is SPENT** — 200 B put in front of it cost the bank 259, measured |
 | Bank 5 | **674 B** (2026-09-01: **+668** from the SCANSTEP deferred carry, 168 expansions at 4 B apiece). It was **6 B** immediately before that — the tightest region in the machine — and the 119 B this row used to quote was stale by a build |
-| Bank 6 | **925 B** (2026-09-01: **+656** from the SCANSTEP deferred carry, 164 expansions at 4 B; 269 B before that, after sprsplit's geometry half left for bank 5) |
-| Bank 7 | 7 B tail + the `planInk` pad — **~100-105 B all in, MEASURED 2026-08-31** by bisecting a `SKIP` in `liftview.asm`. The "~176 B of pad" this table and `memory-map.md` used to quote was stale. **No held reserve frees bank 7**, which is what parked layer-12 DECISION 6 |
+| Bank 6 | **748 B** (2026-09-02: —183 for layer-12 DECISION 6 — `LvClearedMark`, the 64 B of `svdecks6.asm` and its scratch; 931 B before). **The bank with room, and the reason DECISION 6 could be built at all** |
+| Bank 7 | **25 B** — MEASURED 2026-09-02 by bisecting a `SKIP` at `.LvStart7`, after DECISION 6's stipple took 65. It was **90 B** before that, itself tighter than the 100-105 measured in August, and neither of hexwab's patches touched this bank. **Still no held reserve frees bank 7** |
 | `PARBRF` (`&0400`, hard ceiling `&0800`) | **18 B** (36 B before `BrTimeout`'s R8 blank, 56 B before the CTRL+R hook) |
 | `PARAFNT` block | **16 B** before `SPR_SAVE` (`KeyDownIx` took 7, DECISION 5's `CN_STRS` 10) |
 | `PARMAN` (bank 5's briefing load; the bound is `DEPK_STREAM + size <= PANEL_ADDR`) | **225 B** — the redefine screen took 893 |

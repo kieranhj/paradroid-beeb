@@ -50,6 +50,11 @@
   LDA deck                      \ light the deck we are standing on
   STA lvShown
   JSR LvHighlight
+\ STOPS HERE. LiftViewEnter runs bank 6's LvClearedMark over the colour
+\ shadow and then calls LvStart7b — layer-12 DECISION 6, and the reason
+\ is that bank 7 had ~90 bytes free and the walk did not fit in them.
+  RTS
+.LvStart7b
   JSR LvRepaintAll
 
   JSR XfTextClear               \ the panel line: "Lift" and the deck
@@ -95,8 +100,9 @@
   JSR LvDrawPacked
   LDA deck
   STA lvShown
-  JSR LvHighlight
-  JMP LvRepaintAll              \ and its RTS
+  JMP LvHighlight               \ and its RTS. The repaint is the
+                                \ CALLER's, with bank 6's cleared-deck
+                                \ mark in between — see ConsoleTick
 
 \ ============================================================
 \ LvTick7 — one pass (from LiftViewTick, after LvTick4 stepped)
@@ -433,10 +439,18 @@
 \ the lit variants' magenta fill — so the only choice here is the
 \ C64's own: a cell the shaft mark coloured $F9 draws from the
 \ forced-multicolour set, everything else from the normal one.
-  LDY #1
+  LDY #0
+  STY lvStip                    \ layer-12 DECISION 6: off unless the
+  LDY #1                        \ colour shadow says otherwise
   CMP #&F9
-  BNE lvc_set
+  BNE lvc_nsh
   INY
+  BNE lvc_set                   \ always: Y is 2
+.lvc_nsh
+  CMP #XS_CLR
+  BNE lvc_set
+  INC lvStip                    \ pen stays 1 — the stipple draws the
+                                \ LIT glyph from the NORMAL set
 .lvc_set
   STY xfPen
 
@@ -452,6 +466,26 @@
 
   LDA xfChar
   BEQ lvc_blank
+
+\ ---- layer-12 DECISION 6: a cleared deck draws LIT, stippled ----
+\ THE TWO COMPARES MUST BE THIS WAY ROUND. #&80 then #&90 leaves carry
+\ CLEAR at the ADC, so it adds exactly $10; the other order leaves it
+\ set and silently adds $11, fetching the wrong glyph.
+\
+\ $90-$9D is already the lit art, which means this cell is the SELECTED
+\ deck — it paints solid, so selection still reads on a cleared deck.
+  LDX lvStip
+  BEQ lvc_nostip
+  CMP #&80
+  BCC lvc_nostip                \ not hull: leave it alone
+  CMP #&90
+  BCS lvc_nostip                \ already lit: the selected deck
+  ADC #&10                      \ carry clear: exactly +$10
+  BNE lvc_stipok                \ always: >= $90
+.lvc_nostip
+  LDX #0
+  STX lvStip
+.lvc_stipok
   TAX
   LDA xsGlyphOf,X               \ glyph * 16 into the pen's set
   LDY xfPen                     \ ...but the shaft pen has a set of its own
@@ -476,11 +510,37 @@
   LDA xgs   : ADC lvSetLo,Y : STA xgs
   LDA xgs+1 : ADC lvSetHi,Y : STA xgs+1
   LDY #15
+  LDA lvStip
+  BNE lvc_stipple
 .lvc_copy
   LDA (xgs),Y
   STA (xgd),Y
   DEY
   BPL lvc_copy
+  RTS
+
+\ The chequer, layer-12 DECISION 6. In MODE 1 pixel n takes bits 7-n
+\ and 3-n, so &AA keeps pixels 0 and 2 and &55 keeps 1 and 3; masking
+\ the lit glyph with them alternately by scanline leaves its magenta on
+\ half the pixels and background on the other half. EOR #&FF flips
+\ between the two, so there is no table.
+\
+\ The copy runs Y = 15 down to 0 and a glyph is the left half's eight
+\ scanlines then the right half's, so starting at &55 puts &AA on
+\ scanline 0 of BOTH halves — the halves line up, which they must or
+\ the chequer breaks at the character's midline.
+.lvc_stipple
+  LDA #&55
+  STA lvMask
+.lvc_scopy
+  LDA (xgs),Y
+  AND lvMask
+  STA (xgd),Y
+  LDA lvMask
+  EOR #&FF
+  STA lvMask
+  DEY
+  BPL lvc_scopy
   RTS
 .lvc_blank
   LDA #0
@@ -493,6 +553,10 @@
 
 \ Pen 0 is the blank, 1 the normal art, 2 the shaft pen falling back to
 \ the normal art, and 3 the shaft rungs' own three glyphs.
+.lvStip  EQUB 0                 \ layer-12 DECISION 6: this cell is a
+                                \ cleared deck's, and draws chequered
+.lvMask  EQUB 0                 \ the chequer's current scanline mask
+
 .lvSetLo
   EQUB 0, LO(svChars1), LO(svChars1), LO(svCharsMk)
 .lvSetHi

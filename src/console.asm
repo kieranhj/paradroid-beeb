@@ -225,6 +225,106 @@ CON_DROID_D  = BUF_BASE + CON_ROW_ICON0 * ROW_BYTES + 7 * UNIT_BYTES
 \ four have a blank row between them — so a line-times-two index cannot
 \ express the layout. The row step is a loop rather than a multiply
 \ because it runs once per string, not once per glyph.
+INCLUDE "src/data/svdecks6.asm"     \ BEFORE the walk that indexes them:
+                                    \ a forward reference makes beebasm's
+                                    \ two passes disagree and abort
+
+\ xsCram by another name. xfer.asm defines the real equate but is
+\ INCLUDEd AFTER this file, so naming it here makes the two passes
+\ generate different code. SPR_SAVE is sprite.asm's and is already
+\ known at this point; the ASSERT at the end of main.asm ties the two
+\ together so they cannot drift.
+LVC_CRAM = SPR_SAVE + &300
+
+\ And the same trap: xfer.asm's `xdest = bufp` is not defined yet
+\ either. bufp is main.asm's and is, so use it by its own name.
+lcmPtr = bufp
+
+\ ============================================================
+\ LvClearedMark — stipple the decks the player has finished
+\ ============================================================
+\ layer-12 DECISION 6, and it is in BANK 6 rather than beside the rest
+\ of the lift screen because bank 7 has ~90 bytes free and bank 6 has
+\ ~930. Called from main RAM between LvStart7 and LvStart7b (lift) or
+\ LvShip7 and LvRepaintAll (console ship page), with this bank paged.
+\
+\ WHAT IT NEEDS, and why all of it is reachable from here:
+\   DECK_DONE   main RAM (the code image)
+\   xsCram      main RAM — xsScr = SPR_SAVE, + XS_COFF
+\   lcmPtr       zero page (= bufp), free between the two halves
+\   the deck rectangles — NOT reachable: svDeckY/X/H/W are bank 7's.
+\     src/data/svdecks6.asm is a second copy under lvcDeck* names,
+\     emitted by the SAME exporter run from the SAME C64 listing, so
+\     the two cannot drift. Regenerate, never hand-edit.
+\
+\ It marks the colour shadow only; LvCellPaint does the drawing. Cells
+\ the shaft already coloured &F9 are left alone, so the chosen shaft
+\ still reads through a cleared deck.
+\ Scratch. Declared BEFORE the routine, not after: bank 6 is at &8000
+\ and up, but on the first pass beebasm has not seen the labels yet and
+\ picks zero-page operands for them, then absolute on the second - and
+\ aborts with 'the second assembler pass has generated different code'.
+.lcmWid  EQUB 0
+.lcmHgt  EQUB 0
+.lcmDeck EQUB 0
+
+.LvClearedMark
+  LDX #15
+.lcm_deck
+  LDA DECK_DONE,X
+  BEQ lcm_next
+
+  LDA lvcDeckW,X                \ the rectangle, as LvPaintRect's
+  STA lcmWid
+  LDA lvcDeckH,X
+  STA lcmHgt
+  STX lcmDeck
+
+\ addr = xsCram + (deckY+1)*40 + (deckX+1). Row 10 x 40 is past a byte,
+\ so no shift trick: ten adds at worst, once a cleared deck, on a
+\ screen that is drawn once.
+  LDA #LO(LVC_CRAM) : STA lcmPtr
+  LDA #HI(LVC_CRAM) : STA lcmPtr+1
+  LDY lvcDeckY,X
+  INY
+.lcm_mul
+  CLC
+  LDA lcmPtr   : ADC #40 : STA lcmPtr
+  LDA lcmPtr+1 : ADC #0  : STA lcmPtr+1
+  DEY
+  BNE lcm_mul
+  LDX lcmDeck
+  CLC
+  LDA lcmPtr   : ADC lvcDeckX,X : STA lcmPtr
+  LDA lcmPtr+1 : ADC #0         : STA lcmPtr+1
+  INC lcmPtr                     \ the +1 the deck tables all carry
+  BNE lcm_row
+  INC lcmPtr+1
+
+.lcm_row
+  LDY #0
+.lcm_col
+  LDA (lcmPtr),Y
+  CMP #&F9                      \ the shaft wins: it is where the
+  BEQ lcm_skip                  \ player is going, and it is thinner
+  LDA #XS_CLR
+  STA (lcmPtr),Y
+.lcm_skip
+  INY
+  CPY lcmWid
+  BCC lcm_col
+  CLC
+  LDA lcmPtr   : ADC #40 : STA lcmPtr
+  LDA lcmPtr+1 : ADC #0  : STA lcmPtr+1
+  DEC lcmHgt
+  BNE lcm_row
+  LDX lcmDeck
+
+.lcm_next
+  DEX
+  BPL lcm_deck
+  RTS
+
 .ConAt
 \ THE CONSOLE IS WHITE, and the panel's ink is not. Logical 1 is physical
 \ 7 on every one of the sixteen decks, where logical 3 varies and is
