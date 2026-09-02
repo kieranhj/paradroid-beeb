@@ -515,10 +515,18 @@ ENDMACRO
 
 \ The crossing tail. Entered with bufp already advanced onto what would
 \ be scanline 8, so both pointers move on by stride-8 rather than
-\ stride-7, and WrapBufFwd's RTS returns to the macro site.
+\ stride-7, and its RTS returns to the macro site.
+\
 \ It also finishes the INC that the macro left half-done — see the
 \ note above. The CLC survives the inserted BNE/INC, neither of which
 \ touches carry.
+\
+\ The strip wrap is inline here rather than a JMP WrapBufFwd, which
+\ is why this ends in an RTS of its own (hexwab, issue #1 follow-up,
+\ 2026-09-02). BUF_END is &8000, so past-the-end IS bit 7 set, and
+\ BUF_SIZE is &2800, so the correction is one high-byte SBC with
+\ carry known clear. bufcore.asm's header has the derivation and the
+\ two asserts it rests on.
 .SprScanRow
   CLC
   LDA svp    : ADC #SPR_BLOCK-8     : STA svp
@@ -527,8 +535,13 @@ ENDMACRO
   BNE P%+4
   INC bufp+1
   ADC #LO(ROW_BYTES-8) : STA bufp
-  LDA bufp+1 : ADC #HI(ROW_BYTES-8) : STA bufp+1
-  JMP WrapBufFwd
+  LDA bufp+1 : ADC #HI(ROW_BYTES-8)
+  BPL ssr_nowrap
+  \ C clear
+  SBC #HI(BUF_SIZE)-1
+.ssr_nowrap
+  STA bufp+1
+  RTS
 
 \ ============================================================
 \ SprNextUnit — bufp on to the next 4-pixel column, wrapping
@@ -538,8 +551,11 @@ ENDMACRO
   LDA bufp : ADC #UNIT_BYTES : STA bufp
   BCC snu_nc
   INC bufp+1
+  BPL snu_nc
+  LDA #HI(BUF_BASE)
+  STA bufp+1
 .snu_nc
-  JMP WrapBufFwd
+  RTS
 
 \ ============================================================
 \ SprFetchRow — sprRowBuf = this row's 7 data bytes and their masks

@@ -178,9 +178,9 @@ marked; regenerate before trusting any address in it.
 | `&A3AB` | 2,437 | **Code**: `screen.asm`, `scroll.asm`, `level.asm` — `DrawHalf`, `HalfPtr`, `BandSetRow`, `BandCharPtr`, `ColSetup`, `MapChar`, `RedrawAll`, `BuildCharPtrs`, `DrawColumn`, `DrawBandRows`, `DoRedraws`, `BuildLevel`, `BuildCharset`, `BuildLUTs`, `SetPalette` |
 
 What could **not** come with it is in `src/bufcore.asm`, 480 bytes in main RAM: `SetupMode`/`SetupRupture` and
-`SetCRTCStart` run before this bank is loaded, and `WrapBufFwd`, `SetCell` and the `rowMul`/`unitMul`
-tables are reached while the *sprite* bank is paged in — `SprScanRow` tail-calls the first and
-`SprCalcAddr` calls the second. A JSR from there into this bank would land in compiled sprite rows,
+`SetCRTCStart` run before this bank is loaded, and `SetCell` and the `rowMul`/`unitMul`
+tables are reached while the *sprite* bank is paged in — `SprCalcAddr` calls it. (`WrapBufFwd` was
+reached the same way until 2026-09-02, when it was inlined away to a `BPL` and one `SBC`.) A JSR from there into this bank would land in compiled sprite rows,
 and nothing would diagnose it.
 
 ### Layer 15 space pass — bank 4, 8 B → 105 B free (2026-08-24)
@@ -335,7 +335,7 @@ that makes the bank-4 files safe is in `bufcore.asm`'s header.
 |---|---|---|
 | `main.asm` | main RAM | Constants, the zero page map, memory map, main loop and its two windows, IRQ dispatch. Geometry constants live here because beebasm resolves them in file order |
 | `rupture.asm` | main RAM | Three-cycle vertical rupture, the T1 state machine, `FillPanel`, `DbgSetBg` |
-| `bufcore.asm` | main RAM | What the level draw could not take into the bank: `SetupMode`/`SetupRupture`, `SetCRTCStart`, `WrapBufFwd`, `SetCell`, the `rowMul`/`unitMul` tables |
+| `bufcore.asm` | main RAM | What the level draw could not take into the bank: `SetupMode`/`SetupRupture`, `SetCRTCStart`, `SetCell`, the `rowMul`/`unitMul` tables (`WrapBufFwd` too, until it was inlined away 2026-09-02) |
 | `player.asm` | main RAM | `ReadKeys`, `CheckWalls`, `ApplyMove`, `DeadZone`, the clamps |
 | `combat.asm` | main RAM | Layer 7a: energy, ceiling, weapon, alert, BCD score, `DoAging`. Main RAM because BOTH banks' code reaches it |
 | `sprite.asm` | main RAM | The blitter front end: slot state, the tranche walk, `SprSplitOK`/`SprAssignTr`, the compiled-row dispatch and the wrap fallback |

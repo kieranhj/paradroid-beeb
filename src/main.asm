@@ -547,6 +547,8 @@ DBG_AI       = 1                \ red     — the droid AI and the rest of the
 BUF_BASE   = &5800              \ 10K play buffer, wraps at &8000
 BUF_SIZE   = 10240              \ 16 rows x 640
 BUF_END    = BUF_BASE + BUF_SIZE
+ASSERT (LO(BUF_BASE)==0)
+ASSERT (BUF_END == &8000)
 PLAY_UNITS = 80                 \ CRTC units across (4 px each) = 320 px
 PLAY_ROWS  = 16                 \ character rows = 128 px
 UNIT_BYTES = 8

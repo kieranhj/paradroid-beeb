@@ -14,9 +14,10 @@
 \
 \ RUN WHILE SWRAM_SPR IS PAGED IN. SprDrawAll and SprRestoreAll page
 \ the sprite bank in around themselves, and inside that window:
-\   - SprScanRow tail-calls WrapBufFwd, and SCANSTEP is inlined into
-\     every compiled row in the bank, so this is reached from bank
-\     code as well as from sprite.asm;
+\   - SCANSTEP is inlined into every compiled row in the bank, so
+\     SetCell below is reached from bank code as well as from
+\     sprite.asm. WrapBufFwd USED to be the other reason and is
+\     gone — see the note under SetCell;
 \   - SprCalcAddr calls SetCell, which reads rowMul/unitMul — so the
 \     tables have to stay too, all 192 bytes of them.
 \ A JSR from here into SWRAM_DATA while that bank is out reaches
@@ -157,13 +158,13 @@
 \ and must not see a half-updated address.
 .SetCRTCStart
   CLC                           \ addr = BUF_BASE + scrollS
-  LDA scrollS   : ADC #LO(BUF_BASE) : STA sTmp
   LDA scrollS+1 : ADC #HI(BUF_BASE) : STA sTmp+1
 
+  LDA scrollS
   LDX #3                        \ addr / 8
 .sc_shift
   LSR sTmp+1
-  ROR sTmp
+  ROR A
   DEX
   BNE sc_shift
 
@@ -173,31 +174,10 @@
 \ letting the IRQ see one updated and not the other shows a frame
 \ at a position that never existed.
   SEI
+  STA crtcLo
   LDA sTmp+1 : STA crtcHi
-  LDA sTmp   : STA crtcLo
   LDA line   : STA pline
   CLI
-  RTS
-
-\ ============================================================
-\ WrapBufFwd — bufp past the end of the strip? bring it back
-\ bufp is always a real address in [BUF_BASE, BUF_END).
-\ ============================================================
-\ Reached from the compiled rows in SWRAM_SPR, through SCANSTEP and
-\ SprScanRow, which is why it is here and not in screen.asm.
-.WrapBufFwd
-  LDA bufp+1                    \ past the end? subtract the buffer size
-  CMP #HI(BUF_END)
-  BCC wbf_done
-  BNE wbf_sub
-  LDA bufp
-  CMP #LO(BUF_END)
-  BCC wbf_done
-.wbf_sub
-  SEC
-  LDA bufp   : SBC #LO(BUF_SIZE) : STA bufp
-  LDA bufp+1 : SBC #HI(BUF_SIZE) : STA bufp+1
-.wbf_done
   RTS
 
 \ ---- offset tables -----------------------------------------
@@ -251,6 +231,39 @@ unitMulHi = UNITMUL_HI
   RTS
 
 \ ============================================================
+\ THE STRIP'S TWO MAGIC NUMBERS, and why there is no WrapBufFwd
+\ ============================================================
+\ hexwab, issue #1 follow-up, 2026-09-02. main.asm asserts both:
+\
+\   LO(BUF_BASE) == 0        BUF_BASE is &5800
+\   BUF_END      == &8000    so BUF_SIZE is &2800, LO() zero too
+\
+\ Three consequences, and between them they deleted a subroutine:
+\
+\  1. Adding BUF_BASE cannot touch the low byte. Every
+\     `LDA lo : ADC #LO(BUF_BASE) : STA lo` in the port was a no-op.
+\  2. Subtracting BUF_SIZE cannot touch it either, so the wrap is one
+\     high-byte SBC. It is written `SBC #HI(BUF_SIZE)-1` with carry
+\     known CLEAR, because SBC with C=0 subtracts the extra 1.
+\  3. `past the end` IS `bit 7 set`. WrapBufFwd's 16-bit CMP ladder
+\     became a single BPL, small enough to inline at all four of its
+\     call sites, so the routine and its JSR/RTS are gone.
+\
+\ ONE conditional subtract is enough because the offset before the
+\ wrap is always under 2*BUF_SIZE: scrollS < BUF_SIZE (it is declared
+\ 0..BUF_SIZE-1), rCount*640 <= 9600 and uCount*8 <= 632, so the
+\ worst case is &4FF7 against &5000. Break that and one subtract
+\ stops being enough, silently.
+\
+\ THE `C clear` COMMENTS BELOW ARE LOAD-BEARING and non-local: the
+\ carry they rely on is established several instructions earlier,
+\ across a chained ADC pair that only stays safe because
+\ HI(scrollS) <= &27. An edit that inserts anything touching carry
+\ breaks the wrap with no diagnostic, and the mechanical listing
+\ diff cannot catch it. Verified exhaustively instead — every
+\ input value of every routine here — when it landed.
+\
+\ ============================================================
 \ SetCell — point bufp at display cell (rCount, uCount)
 \   bufp = BUF_BASE + ((scrollS + rCount*640 + uCount*8) MOD SIZE)
 \ ============================================================
@@ -260,26 +273,15 @@ unitMulHi = UNITMUL_HI
   LDX rCount
   CLC
   LDA scrollS   : ADC rowMulLo,X : STA bufp
-  LDA scrollS+1 : ADC rowMulHi,X : STA bufp+1
+  LDA scrollS+1 : ADC #HI(BUF_BASE): ADC rowMulHi,X : STA bufp+1
 
   LDX uCount
-  CLC
+  \ C clear
   LDA bufp   : ADC unitMulLo,X : STA bufp
-  LDA bufp+1 : ADC unitMulHi,X : STA bufp+1
-
-  LDA bufp+1                    \ wrap into [0, SIZE)
-  CMP #HI(BUF_SIZE)
-  BCC sc_nowrap
-  BNE sc_wrap
-  LDA bufp
-  CMP #LO(BUF_SIZE)
-  BCC sc_nowrap
-.sc_wrap
-  SEC
-  LDA bufp   : SBC #LO(BUF_SIZE) : STA bufp
-  LDA bufp+1 : SBC #HI(BUF_SIZE) : STA bufp+1
+  LDA bufp+1 : ADC unitMulHi,X
+  BPL sc_nowrap
+  \ C clear
+  SBC #HI(BUF_SIZE)-1
 .sc_nowrap
-  CLC
-  LDA bufp   : ADC #LO(BUF_BASE) : STA bufp
-  LDA bufp+1 : ADC #HI(BUF_BASE) : STA bufp+1
+  STA bufp+1
   RTS

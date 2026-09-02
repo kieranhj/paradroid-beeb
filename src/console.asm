@@ -241,7 +241,6 @@ CON_DROID_D  = BUF_BASE + CON_ROW_ICON0 * ROW_BYTES + 7 * UNIT_BYTES
   LSR A : LSR A : LSR A : LSR A
   STA pnDst+1
   CLC
-  LDA pnDst   : ADC #LO(BUF_BASE) : STA pnDst
   LDA pnDst+1 : ADC #HI(BUF_BASE) : STA pnDst+1
 
   LDX conRow

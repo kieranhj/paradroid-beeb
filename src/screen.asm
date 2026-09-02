@@ -27,7 +27,7 @@
 \ Geometry constants live in main.asm — beebasm resolves constant
 \ assignments in file order, and rupture.asm needs them too.
 
-\ SetupMode/SetupRupture, SetCRTCStart and WrapBufFwd are NOT here: they are in
+\ SetupMode/SetupRupture, SetCRTCStart and SetCell are NOT here: they are in
 \ bufcore.asm, in main RAM, because they run either before this bank
 \ is loaded or while the sprite bank is paged in. Its header has the
 \ rule. Everything below runs with SWRAM_DATA in, which is the
@@ -514,11 +514,12 @@ ENDIF
 .ra_row
   CLC                           \ row start = BUF_BASE + scrollS + row*640
   LDA scrollS   : ADC rowOfs   : STA bufp
-  LDA scrollS+1 : ADC rowOfs+1 : STA bufp+1
-  CLC
-  LDA bufp   : ADC #LO(BUF_BASE) : STA bufp
-  LDA bufp+1 : ADC #HI(BUF_BASE) : STA bufp+1
-  JSR WrapBufFwd
+  LDA scrollS+1 : ADC #HI(BUF_BASE) : ADC rowOfs+1 : STA bufp+1
+  BPL ra_nowrap
+  \ C clear
+  SBC #HI(BUF_SIZE)-1
+.ra_nowrap
+  STA bufp+1
 
   LDA mapHX   : STA halfX
   LDA mapHX+1 : STA halfX+1
@@ -534,8 +535,10 @@ ENDIF
   LDA bufp : ADC #UNIT_BYTES : STA bufp
   BCC ra_nohi
   INC bufp+1
+  BPL ra_nohi
+  LDA #HI(BUF_BASE)
+  STA bufp+1
 .ra_nohi
-  JSR WrapBufFwd
   INC uCount
   LDA uCount
   CMP #PLAY_UNITS

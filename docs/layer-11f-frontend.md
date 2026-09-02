@@ -131,7 +131,7 @@ character, so the motion is at least as smooth.
 
 Horizontal is **not** a scroll: `ScreenPosX += $140` is a jump-cut to the next page top
 (`$122B`, then `JMP _3`). So the port needs vertical scrolling only, over the strip it already
-scrolls, with `SetCRTCStart`/`WrapBufFwd` from `bufcore.asm` and a row painter modelled on
+scrolls, with `SetCRTCStart` from `bufcore.asm` and its inline strip wrap, and a row painter modelled on
 `DrawBandRows` — reading briefing records where that reads the tile map.
 
 The row painter is the only genuinely new drawing code, and it is simple: a canvas row is
