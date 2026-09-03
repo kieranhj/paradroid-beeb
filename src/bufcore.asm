@@ -158,12 +158,12 @@
 \ and must not see a half-updated address.
 .SetCRTCStart
   CLC                           \ addr = BUF_BASE + scrollS
-  LDA scrollS+1 : ADC #HI(BUF_BASE) : STA sTmp+1
+  LDA scrollS+1 : ADC #HI(BUF_BASE) : STA sTmp
 
   LDA scrollS
   LDX #3                        \ addr / 8
 .sc_shift
-  LSR sTmp+1
+  LSR sTmp
   ROR A
   DEX
   BNE sc_shift
@@ -175,7 +175,7 @@
 \ at a position that never existed.
   SEI
   STA crtcLo
-  LDA sTmp+1 : STA crtcHi
+  LDA sTmp   : STA crtcHi
   LDA line   : STA pline
   CLI
   RTS

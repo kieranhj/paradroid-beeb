@@ -514,9 +514,10 @@ ENDIF
 .ra_row
   CLC                           \ row start = BUF_BASE + scrollS + row*640
   LDA scrollS   : ADC rowOfs   : STA bufp
-  LDA scrollS+1 : ADC #HI(BUF_BASE) : ADC rowOfs+1 : STA bufp+1
+  LDA scrollS+1 : ADC #HI(BUF_BASE) : ADC rowOfs+1
   BPL ra_nowrap
-  \ C clear
+  \ C clear. The high byte is stored ONCE, at ra_nowrap — an STA before
+  \ the branch could never be observed (hexwab, issue #1, 2026-09-03).
   SBC #HI(BUF_SIZE)-1
 .ra_nowrap
   STA bufp+1

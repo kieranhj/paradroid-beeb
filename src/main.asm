@@ -3527,7 +3527,9 @@ ENDIF
 
 \ ---- absolute working storage ------------------------------
 .rowOfs    EQUW 0               \ row*640 accumulator for RedrawAll
-.sTmp      EQUW 0
+.sTmp      EQUB 0               \ ONE byte: SetCRTCStart shifts the low
+                                \ half in A now, so only this high one is
+                                \ live (hexwab, issue #1, 2026-09-03)
 .sprSplit  EQUB 0               \ this pass is drawing the pool in two
 .passF0    EQUB 0               \ the window this pass started in
 .vsyncCount EQUB 0              \ bumped by IrqHandler once per field
