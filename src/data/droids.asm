@@ -205,6 +205,12 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDA (rowp+14),Y : STA (rowq+14),Y
   RTS
 
+\ The three digit positions, as column offsets. The glyphs
+\ below index these with the position in X.
+.drYcol0 EQUB 0, 16, 32
+.drYcol1 EQUB 8, 24, 40
+.drYcol2 EQUB 16, 32, 48
+
 \ Glyph dispatch, at index (shift AND 1)*10 + digit.
 .drGlyphLo
   EQUB LO(drGlyph0_0),LO(drGlyph0_1),LO(drGlyph0_2),LO(drGlyph0_3),LO(drGlyph0_4),LO(drGlyph0_5),LO(drGlyph0_6),LO(drGlyph0_7),LO(drGlyph0_8),LO(drGlyph0_9)

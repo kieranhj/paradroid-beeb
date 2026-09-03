@@ -4393,6 +4393,9 @@ ASSERT xdrDigit0  == drDigit0
 ASSERT xdrDigit1  == drDigit1
 ASSERT xdrDigit2  == drDigit2
 ASSERT xdrBlkSave6 == drBlkSave6
+ASSERT xdrYcol0   == drYcol0    \ both banks' copies of the digit columns
+ASSERT xdrYcol1   == drYcol1    \ land at the same address, like everything
+ASSERT xdrYcol2   == drYcol2    \ else in the fixed section
 
 DATA_PAGES = (data_end - data_start + 255) DIV 256
 SPR_PAGES  = (spr_end - spr_start + 255) DIV 256

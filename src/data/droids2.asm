@@ -193,6 +193,12 @@
   LDA (rowp+14),Y : STA (rowq+14),Y
   RTS
 
+\ The three digit positions, as column offsets. The glyphs
+\ below index these with the position in X.
+.xdrYcol0 EQUB 0, 16, 32
+.xdrYcol1 EQUB 8, 24, 40
+.xdrYcol2 EQUB 16, 32, 48
+
 \ Glyph dispatch, at index (shift AND 1)*10 + digit.
 .xdrGlyphLo
   EQUB LO(drGlyph2_0),LO(drGlyph2_1),LO(drGlyph2_2),LO(drGlyph2_3),LO(drGlyph2_4),LO(drGlyph2_5),LO(drGlyph2_6),LO(drGlyph2_7),LO(drGlyph2_8),LO(drGlyph2_9)

@@ -721,9 +721,11 @@ ENDMACRO
 \ drop that column on the floor — the artwork was truncated to two bytes
 \ before it was shifted — which took a column out of the right edge of
 \ every glyph but 1, at odd 2 px positions only.
-.drYcol0 EQUB 0, 16, 32
-.drYcol1 EQUB 8, 24, 40
-.drYcol2 EQUB 16, 32, 48
+\ THE TABLE ITSELF IS IN THE SPRITE BANKS, one copy in each, emitted by
+\ export_droids.py beside the glyphs — the only code that reads it, and
+\ code that always runs with its own bank paged. It was nine bytes of
+\ main RAM that no main-RAM routine ever touched, in the region that has
+\ been the binding constraint all year (hexwab, issue #1, 2026-09-03).
 
 \ ============================================================
 \ SprBuildRowPtrs — the block's eight scanline addresses
