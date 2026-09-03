@@ -32,6 +32,7 @@ sections below are in neither. **The table is the index; read it first.**
 | **17** | [Four debug flags silently push the code image past `&3000`](#17-four-debug-flags-silently-push-the-code-image-past-3000--partly-fixed-2026-08-20) | **Fixed** 2026-08-20, bar one | VSYNC, POS and ENERGY fixed and a `GUARD` added so it can never be silent again. RASTER, DRAW and TIME should fit comfortably since the RAM recovery pass (639 B free); none has been run since — try before trusting. MAPGUARD's 1 K still exceeds bank 4's 51 B |
 | **16** | [Enemy droids draw a black rotor and a WHITE number](#16-enemy-droids-draw-a-black-rotor-and-a-white-number--fixed-2026-08-19) | **Fixed** 2026-08-19 | the wrap fallback blits digits interpreted and never sees `colPix` |
 | **19** | [`paradroid_ce_annotated.asm` truncated multi-column `.BYTE` lines](#19-paradroid_ce_annotatedasm-truncated-multi-column-byte-lines--fixed-2026-08-24) | **Fixed** 2026-08-24 | 43% of the listing's data was missing AND what survived was misaligned. `annotate.py`'s `get_content`; `tools/verify_annotation.py` is the standing check |
+| **20** | [The player's bullet starves every other collision in the pass](#20-the-players-bullet-starves-every-other-collision-in-the-pass--fixed-2026-09-03) | **Fixed** 2026-09-03 | `DrCollide` scanned from slot 7. The bullet has no `drSlotOwner`, so its pair dead-ended and the whole pass was abandoned. Playtest report #3 |
 
 `## Delivered: DEBUG_POS` near the end is not a defect — it is the position bookmark that came out
 of #5, kept with the defects because that is where it is looked for.
@@ -1133,3 +1134,50 @@ and stripping it means guessing where a hex dump ends and a label begins. Left a
 
 The exporters in `tools/` parse the **raw** listing (`export_title.py`'s `parse_listing` reads
 `LST_FILE = paradroid_ce.lst`), so `src/data/` was never affected — confirmed, not assumed.
+
+---
+
+## 20. The player's bullet starves every other collision in the pass — **FIXED 2026-09-03**
+
+Reported by playtester Sydney, 2026-09-03: *"Droids passed through me and each other,
+particularly when moving fast."*
+
+### The cause
+
+`DrCollide`'s inner scan began at `LDY #SPR_SLOTS-1` — **slot 7, the player's bullet**. The
+bullet is not a droid-table entry: `DrFindSlot` starts at `SPR_POOL_LAST` (6) and its header
+already says a droid may never be given slot 7, and `DroidsInit`'s clear is the only write that
+ever touches `drSlotOwner+7`. So that entry is **provably 0 for the life of the game**.
+
+Both arms of `DrCollided` dead-end on a zero owner — `dc_player`'s `LDY dcInner / BEQ dc_x` and
+`dc_matrix`'s `dc_none`. And `DrCollide` services **one pair a pass** and `JMP`s out of the loop
+the moment it finds one. So whenever the bullet fell inside the 18 x 14 box of the outer slot, it
+won the pair and the routine returned having done **nothing at all**: no player bump, no
+droid-droid reverse, no pause — and `_x_none` was never reached, so `drCollHit` stayed latched
+into the next pass as well.
+
+A bullet spawns on top of the player, so this cost **1-2 passes of every shot**, plus every pass
+the bullet flew within the box of any droid on its way across the deck.
+
+### Why it reads as "particularly when moving fast"
+
+The box is sampled once a pass. A slow approach spends many passes inside it and survives losing
+one or two; a pair closing at 16 px a pass — the player at `CAM_TOPSPD` against a 302 or an 834,
+the only two droids with `drSpeed` 8 — is only inside it for two or three passes, so a pass eaten
+by the bullet loses the collision outright.
+
+### The fix
+
+`LDY #SPR_POOL_LAST`, so slot 7 is never a candidate. Skipping the slot rather than aborting on it
+is also what the C64 does in substance: **sprite 0 is its player's shot and it carries a real
+droid record** (mode 3, column 3 of `CollisionType`), so its pair reaches `DoCollision2` and the
+table acts on it. Ours has already been serviced, by `DrBulletHit` before the loop runs.
+
+No size change in bank 4 (`data` ends `&BFF3` before and after) — it is one immediate operand.
+
+### Ruled out
+
+**Not tunnelling through the box.** The first reading of this was that a 16 px/pass closure skips
+a 14 px box. It does not: `|dy| <= 13` is 27 consecutive integers and the step is 16, so on a
+single axis some sample always lands inside. `DR_COL_W`/`DR_COL_H` being smaller than the 24 x 21
+sprite is a separate, deliberate judgement (see `DrCollide`'s header) and was left alone.

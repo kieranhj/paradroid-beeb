@@ -917,7 +917,27 @@ ENDIF
   LDA dcX : STA dcX2
   LDA dcY : STA dcY2
 
-  LDY #SPR_SLOTS-1
+\ SPR_POOL_LAST, NOT SPR_SLOTS-1: SLOT 7 IS NOT A COLLISION CANDIDATE.
+\ On the C64 sprite 0 IS the player's shot and it carries a real droid
+\ record -- mode 3, column 3 of CollisionType -- so its pair reaches
+\ DoCollision2 and the table acts on it. Ours has drSlotOwner 0 there
+\ for ever, because DrFindSlot only hands out 1..SPR_POOL_LAST, and
+\ the bullet's own hits are settled by DrBulletHit before this loop.
+\ Starting the scan at 7 therefore let the bullet WIN THE PAIR and
+\ then dead-end: dc_player's LDY dcInner / BEQ dc_x and dc_matrix's
+\ dc_none both RTS on the zero owner, so the whole pass's collision
+\ handling was abandoned -- no player bump, no droid-droid reverse --
+\ and _x_none was never reached, so drCollHit stayed latched too.
+\ A bullet spawns on top of the player, so that cost 1-2 passes of
+\ EVERY shot, plus every pass it flew inside a droid's box.
+\ Playtest report #3, 2026-09-03: droids passed through me and each
+\ other, particularly when moving fast -- a fast pair is only in
+\ contact for two or three passes, so losing one to a bullet loses
+\ the collision outright, where a slow approach has passes to spare.
+\ Skipping the slot rather than aborting on it is also what the C64
+\ does in substance: its bullet pair is SERVICED and the scan spent
+\ on a real arm, where ours has already been serviced elsewhere.
+  LDY #SPR_POOL_LAST
 .dc_inner
   CPY dcOuter
   BEQ dc_inext
