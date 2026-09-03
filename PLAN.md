@@ -98,7 +98,7 @@ holds 13b, the probing half, which is done):
 
 | | |
 |---|---|
-| **RAM** | Measured 2026-09-02 after layer-12 DECISION 6: main RAM **31 B**, bank 4 **11 B**, bank 5 **674 B**, bank 6 **748 B**, bank 7 **25 B**, bank 7 **~100-105 B** (tail + pad), `PARBRF` ~20 B, `PARAFNT` tail 16 B, `PARMAN` well down from 225 B, `PINTRO` **0 B**. **No held reserve frees bank 7** — that parked layer-12 DECISION 6. The stack page's `&0100-&017F` is 128 measured-free bytes. Live numbers from the build output; spending rules and reserves in [`docs/ram-pass.md`](docs/ram-pass.md) and `CLAUDE.md` |
+| **RAM** | Measured 2026-09-02 after layer-9 DECISION 20: main RAM **24 B**, bank 4 **11 B**, bank 5 **674 B**, bank 6 **673 B**, bank 7 **25 B**, bank 7 **~100-105 B** (tail + pad), `PARBRF` ~20 B, `PARAFNT` tail 16 B, `PARMAN` well down from 225 B, `PINTRO` **0 B**. **No held reserve frees bank 7** — that parked layer-12 DECISION 6. The stack page's `&0100-&017F` is 128 measured-free bytes. Live numbers from the build output; spending rules and reserves in [`docs/ram-pass.md`](docs/ram-pass.md) and `CLAUDE.md` |
 | **Some debug builds may still fail to assemble** | Pre-RAM-pass, every flag except `DEBUG_INVULN` broke the build on space. KC 2026-08-21: accepted. The pass's headroom may have brought some back — try the flag before assuming. `BUGS.md` #17 |
 | Open defects | `BUGS.md` #2, #3, #7b, #9 and #15 — all old, all wanting retests against builds that have moved under them; #1 is probably moot |
 | Transfer presentation differs | Status text on the panel line rather than above the board, numbers standing in for the side-select sprites. Decisions 6–8 in [`docs/layer-10-transfer.md`](docs/layer-10-transfer.md) |

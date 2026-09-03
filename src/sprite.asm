@@ -1378,10 +1378,12 @@ efSrc = psrc
 \ the deck's highlight. That is per-deck too, and it is the only
 \ colour left that cannot be mistaken for either. See the note in
 \ docs/layer-7-combat.md for what the alternative would have cost.
-\ BELOW ENERGY 8 HE FLASHES, and that is the only energy readout the
-\ game has: KC dropped the port's own energy bar in layer-9-hud.md
-\ decision 4 because the C64 does not have one, which left this as the
-\ whole of the cue. $3DEE tests energy against 8 and indexes
+\ BELOW ENERGY 8 HE FLASHES. It was the ONLY energy readout the game had
+\ until 2026-09-02 -- KC dropped the port's own energy bar in
+\ layer-9-hud.md decision 4 because the C64 does not have one -- and
+\ layer-9 DECISION 20's bar under the logo is now the gauge this
+\ threshold alarm sits at the end of. The flash is unchanged: it is the
+\ original's cue and the bar is beside it, not instead of it. $3DEE tests energy against 8 and indexes
 \ LowNrgColor_t (or LowNrgXferCol_t in transfer mode) with frameCount
 \ AND 7 — eight entries, a symmetric fade out of the base colour and
 \ back, ending on white.

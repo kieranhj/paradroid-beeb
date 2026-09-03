@@ -224,12 +224,12 @@ addresses from the `beebasm` output rather than from any document.** In outline:
 take live figures from `PRINT "code"` and the bank gauges in the build output, never from this
 paragraph:
 
-| Region | Free (measured 2026-09-02, after layer-12 DECISION 6) |
+| Region | Free (measured 2026-09-02, after layer-9 DECISION 20 and layer-12 DECISION 6) |
 |---|---|
-| Main RAM code image | **31 B** — `code_end` `&2FE1`. Layer-12 DECISION 6 took 51 on 2026-09-02 (two bank-6 trampolines, the 16-byte `DECK_DONE` and its clear); it was 82 B after hexwab's two patches and **3 B** before them. Historically the binding constraint |
+| Main RAM code image | **24 B** — `code_end` `&2FE8`. Layer-9 DECISION 20's energy bar took 7 on 2026-09-02 (`pmEnergy` and its mirror); 31 B before. Layer-12 DECISION 6 took 51 the same day (two bank-6 trampolines, the 16-byte `DECK_DONE` and its clear); it was 82 B after hexwab's two patches and **3 B** before them. Historically the binding constraint |
 | Bank 4 | **11 B** on the gauge (DECISION 6's two hooks took 8 on 2026-09-02; 19 B before) (2026-09-01: +8 net from the black-while-drawing rework, layer-8b §4b; 11 B before) + `colourMap` `ALIGN` pad, **which is SPENT** — 200 B put in front of it cost the bank 259, measured |
 | Bank 5 | **674 B** (2026-09-01: **+668** from the SCANSTEP deferred carry, 168 expansions at 4 B apiece). It was **6 B** immediately before that — the tightest region in the machine — and the 119 B this row used to quote was stale by a build |
-| Bank 6 | **748 B** (2026-09-02: —183 for layer-12 DECISION 6 — `LvClearedMark`, the 64 B of `svdecks6.asm` and its scratch; 931 B before). **The bank with room, and the reason DECISION 6 could be built at all** |
+| Bank 6 | **673 B** (2026-09-02: —75 for layer-9 DECISION 20's `PnEnergy`, and before it —183 for layer-12 DECISION 6 — `LvClearedMark`, the 64 B of `svdecks6.asm` and its scratch; 931 B before). **The bank with room, and the reason DECISION 6 could be built at all** |
 | Bank 7 | **25 B** — MEASURED 2026-09-02 by bisecting a `SKIP` at `.LvStart7`, after DECISION 6's stipple took 65. It was **90 B** before that, itself tighter than the 100-105 measured in August, and neither of hexwab's patches touched this bank. **Still no held reserve frees bank 7** |
 | `PARBRF` (`&0400`, hard ceiling `&0800`) | **18 B** (36 B before `BrTimeout`'s R8 blank, 56 B before the CTRL+R hook) |
 | `PARAFNT` block | **16 B** before `SPR_SAVE` (`KeyDownIx` took 7, DECISION 5's `CN_STRS` 10) |

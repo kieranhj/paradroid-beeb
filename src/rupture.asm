@@ -79,7 +79,11 @@ ENDIF
 \ The C64's status area is grey on white with the logo and the score in
 \ red. The BBC has no grey, so the frame and the mode word take black.
 PN_PHYS_PAPER = 7               \ white — the inside of the box
-PN_PHYS_SPARE = 0               \ logical 1 is not used by the panel
+PN_PHYS_BAR   = 2               \ green — LAYER 9 DECISION 20's energy bar,
+                                \ and the whole of what it costs the palette:
+                                \ logical 1 was the panel's unused colour, so
+                                \ the bar takes a fourth ink without moving the
+                                \ paper, the logo, the score or the frame
 PN_PHYS_RED   = 1               \ the logo and the score
 PN_PHYS_INK   = 0               \ black — the frame and the mode word
 
@@ -93,8 +97,8 @@ ENDMACRO
 .palPanel
   PALENT  0, PN_PHYS_PAPER : PALENT  1, PN_PHYS_PAPER
   PALENT  4, PN_PHYS_PAPER : PALENT  5, PN_PHYS_PAPER
-  PALENT  2, PN_PHYS_SPARE : PALENT  3, PN_PHYS_SPARE
-  PALENT  6, PN_PHYS_SPARE : PALENT  7, PN_PHYS_SPARE
+  PALENT  2, PN_PHYS_BAR   : PALENT  3, PN_PHYS_BAR
+  PALENT  6, PN_PHYS_BAR   : PALENT  7, PN_PHYS_BAR
   PALENT  8, PN_PHYS_RED   : PALENT  9, PN_PHYS_RED
   PALENT 12, PN_PHYS_RED   : PALENT 13, PN_PHYS_RED
   PALENT 10, PN_PHYS_INK   : PALENT 11, PN_PHYS_INK

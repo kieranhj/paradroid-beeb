@@ -723,12 +723,12 @@ nothing else. Kept below with the outcome, because the reasoning is the record o
 | 1 | Font at `&3C00` in main RAM | **stands.** Now 3,328 B of a 3,584 B hole. It must be main RAM: bank 4 and bank 6 both read it and only one is visible at a time |
 | 2 | `MG_COPY` moved, `DEBUG_MAPGUARD` off | stands; only matters if another map-corruption bug turns up |
 | 3 | Bar cells synthesised | **reversed.** Gone with the energy bar. Every byte of panel artwork is now the C64's |
-| 4 | Energy bar and droids-left shown, which the original does not | **reversed.** Both dropped. The cost is that the game has *no* energy readout at all until decision 5 is built — the C64's cue is the sprite flash, and that is Layer 12 |
-| 5 | No low-energy sprite flash | stands, and matters more now: it is the only energy cue the port is missing rather than one of two |
+| 4 | Energy bar and droids-left shown, which the original does not | **reversed, then half-reversed again.** Droids-left stays dropped; the ENERGY BAR came back on 2026-09-02 as DECISION 20, in a shape that costs the C64's artwork nothing — see below |
+| 5 | No low-energy sprite flash | **built** (§7), and it is the threshold alarm DECISION 20's bar is the gauge for |
 | 6 | Console in the play area, not full screen | stands. The C64's is full screen and has a different shape; ours fits seven lines where theirs fits eleven |
 | 7 | Panel palette shared with the deck | **closed.** The panel is a separate CRTC cycle and now has its own four colours — §5a. Sixteen ULA writes at each boundary, ~210 cycles, twice a frame |
 | 8 | Panel, HUD and console in bank 6, with a main-RAM bridge | stands, and is now Layer 13's to unpick. The bridge shrank to two scalars when the droid number and energy bar went |
-| 9 | Energy bar absolute, one cell per 8 | **reversed** with decision 4 |
+| 9 | Energy bar absolute, one cell per 8 | **superseded by DECISION 20**, which is absolute as this was but one PIXEL per point, not one cell per eight |
 | 10 | Console pages are Ship and Droids | mostly reversed 2026-08-17: the menu selection, the **ship side view** and the **deck plan** are built (see 6e). Only the C64's droid database remains |
 | 11 | The surround is **black**, where the C64's is grey | new. The original fills all eight status rows with the surround colour and puts the box in the middle 32 scanlines; we draw the box alone and leave the rest CRTC-blanked. Covering it needs all eight rows displayed — 5,120 bytes against a 7-row panel cycle |
 | 12 | The box sits at the **top** of the display; the C64's is 8 scanlines down | new, and cosmetic given 11: the same 32 scanlines of box, 8 px higher against black. Matching it exactly means displaying 5 rows with the first blank, which costs 640 bytes and a second `PANEL_ADDR` |
@@ -911,3 +911,89 @@ from picking the faster one.
 **Verified in jsbeeb.** Mid-window: `entryHold` 7, `drEnergy` 7, the player solid white in one
 frame and solid black four fields later. After expiry: `entryHold` 0, `drEnergy` `&40`, `maxEnergy`
 `&40` — exactly `$1345`/`$134A`.
+
+## [DECISION 20] The energy bar comes back — one pixel a point, under the logo
+
+**KC, 2026-09-02**, on a suggestion from Stew: the game needs an energy readout. This reverses
+half of **DECISION 4** and it is the first thing in the panel that is not the C64's, so the
+reasoning is here in full.
+
+### What the original does, and why that is not enough here
+
+Nothing, in the status area. `AnimateDroids`' tail (`$3DE5`) flashes the player's sprite through
+`LowNrgColor_t` once `droidEnergy < 8` and beeps; §7 above is where the port built it. That is a
+**threshold alarm**, not a gauge — it says "you are about to die" and says nothing at all between
+64 and 8, which is where a player actually makes decisions about whether to take a fight.
+
+### Where it lives, and why that costs the original nothing
+
+`panelframe`'s bottom-middle cells (8 and 9) carry ink on **scanline 5 alone**, so **scanlines 0-4
+of panel row 3 are blank inside the box**, under the text line and above the box's bottom edge.
+The bar takes **scanline 2**, centred in that band. No glyph moved, no cell of the C64's artwork
+was overdrawn, and the box reads exactly as it did — the rule sits in space the original leaves
+empty. Row 0 has the same blank band (scanlines 3-7) and was rejected: above the text the rule
+reads as part of the top edge rather than as a gauge.
+
+### One pixel per energy point, and the arithmetic that follows
+
+`CB_ENERGY_FULL` is `$40` and a MODE 1 byte is four pixels, so a full bar is **64 px = 16 bytes**
+and **the byte count IS the energy shifted right twice**. No scale factor, no multiply, no
+rounding: every single point of energy moves the bar by exactly one pixel, and the part-lit byte
+at the end comes from a four-entry table (`$00`, `$08`, `$0C`, `$0E` — pixel *n* of a MODE 1 byte
+takes bit 3-*n* for its low colour bit).
+
+Centred under the nine-cell logo (72 px) leaves 4 px either side, which puts the left end **on a
+byte boundary** — so the bar runs from the RIGHT half of `PN_COL_LOGO` to the LEFT half of its
+ninth cell and needs no shifting anywhere. Consecutive 4-pixel units are **8 bytes apart**, not 1,
+so the sixteen stores are `STA PN_BAR_ADDR,X` with X stepping 8.
+
+**It is the ceiling that is not shown.** `maxEnergy` falls all game and drags energy with it, and
+an earlier mock drew it as a second, thinner line out to the ceiling. KC took the single bar:
+the ageing shows up as the bar's own maximum walking left, which is the same information without a
+second thing to read.
+
+### The colour was already paid for
+
+`palPanel` gives logical 0 to white paper, 2 to red and 3 to black, and **logical 1 was unused** —
+`PN_PHYS_SPARE` said so in `rupture.asm`. It is now `PN_PHYS_BAR = 2`, green. The bar therefore
+has a **fourth ink of its own** without the paper, the logo, the score or the frame moving, and
+nothing else in the panel draws logical 1 — checked against `PnStr`, `PnFrame`, `PnBriefing`,
+`PnGameOn` and `condb.asm`'s panel write, all of which use `PN_INK_TEXT` or `PN_INK_RED`.
+
+### What it cost
+
+| | |
+|---|---|
+| bank 6 | **75 B** — `PnEnergy`, its part-lit table and the shadow byte. 748 B free → **673** |
+| main RAM code image | **7 B** — `pmEnergy` and `PnMirror`'s two instructions. 31 B free → **24**. `code_end` `&2FE8` |
+| per pass | one compare when energy has not moved; sixteen stores when it has |
+| the palette | one `PALENT` pair, no extra ULA writes: the rupture already writes all sixteen entries |
+
+`pmEnergy` is the fourth scalar in the bank-6 bridge (DECISION 8) and is there for the same reason
+as the other three: `drEnergy` is entry 0 of the droid table, which is bank 4, and `panel.asm`
+cannot see it. `PnMirror` fills it while bank 4 is still paged.
+
+`PnEnergy` is called from `PanelUpdate` and **not** from `pu_score`, which is the transfer game's
+own entry (`PanelScore`): the subgame owns the panel's text field, energy cannot move while it
+runs, and `XferExit`'s `PanelSetup` invalidates every shadow on the way out anyway.
+
+### Verified in the buffer, 2026-09-02
+
+Not from the screenshot. `PnMirror`'s `LDA drEnergy` was patched to `LDA #imm : NOP` in the
+emulator and the sixteen bar bytes read back at `&527A + 8n`:
+
+```
+    energy  0   every unit &00                          bar empty
+    energy  6   &0F &0C then zeros                      6 px
+    energy 27   six &0F then &0E                        27 px
+    energy 33   eight &0F then &08                      33 px
+    energy 64   sixteen &0F, and &52FA still &00        64 px, no overrun
+```
+
+`&527A+3` — scanline 5, the box's bottom edge — read `&FF` in every one of those, and scanlines
+0, 1, 3 and 4 read `&00`: the rule is on the scanline it claims and the border is untouched.
+Unpatched and running, `pmEnergy` = 62 gave fifteen `&0F` and one `&0C`, and the whole 64-63-62
+walk was the ageing ceiling coming down. The **game over** screen was reached through ESCAPE's
+self-destruct and shows no bar, because the death path leaves energy at zero; the **briefing**
+cannot show a stale one either, since `briefing.asm` calls `PanelInit` — and so `PnClear` — before
+`PnBriefing`.

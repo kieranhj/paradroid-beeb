@@ -10,7 +10,12 @@ droid's explosion hurt whatever else they touch. The 711 and the 742 carry the d
 weapon that hits everything on screen at once and costs the firer as well — and so do you, once you
 have taken one. Recharge pads turn under you and the ALERT signs light as the ship gets angrier.
 The status line and the console are the original's, down to the deck being called `Reactor` rather
-than `5`, and the console carries the ship diagram, the deck plan and the droid database. The
+than `5`, and the console carries the ship diagram, the deck plan and the droid database. The one
+thing in that line the C64 does not have is a **player energy bar** — a single green rule under the
+logo, one pixel per point of energy, drawn in scanlines the original leaves blank inside its own
+status box and inked in the fourth colour the panel palette had spare. The C64's only energy cue is
+the player's sprite flashing below eight, which this port has too; the bar is the gauge that alarm
+sits at the end of. The
 transfer minigame plays too: prime with fire, touch a droid, pick a side and fight the circuit board
 for it — win and you *are* that droid, with its weapon and speed. It has a voice, through an
 SN76489 driver with every in-game trigger wired. And it has the droid information screens the
@@ -52,7 +57,7 @@ assumed to be 4-7, so the port runs on a board jumpered anywhere.
 **What is left** is the balance-and-fidelity pass (verify against the listing, then playtest),
 testing on the machines people actually have, and a short polish list — see
 [`PLAN.md`](PLAN.md), which is now exactly that list. RAM is the binding constraint rather than
-any of them: main RAM is down to **3 bytes**, so the next feature of any size has to buy its
+any of them: main RAM is down to **24 bytes**, so the next feature of any size has to buy its
 room from somewhere first — `docs/ram-pass.md` keeps the list of what is still there to sell.
 
 ## Target
@@ -173,9 +178,11 @@ the tool rather than editing it by hand, and commit what the tool produces.
 The result is a bootable DFS disc image. Note that DFS filenames are limited to 7 characters, so
 the executable on disc is `PARA`.
 
-> **jsbeeb will not boot an unpadded SSD.** It hangs in the DFS FDC poll, because an image that
-> ends mid-track leaves jsbeeb refusing to read the last partial one. The build writes the padded
-> `PARADROID-200K.SSD` for you — give jsbeeb that one.
+> **Hand an emulator the padded image.** jsbeeb does boot an unpadded SSD — an earlier note here
+> said otherwise and blamed a hang in the DFS FDC poll, which was wrong (corrected 2026-09-01) — but
+> 200K is the convention, it is what every published build is, and a published size that differs
+> from last time is a useful sign that the wrong file went out. The build writes
+> `PARADROID-200K.SSD` for you.
 
 ## Repository layout
 

@@ -251,9 +251,9 @@ IF DEBUG_ENERGY
 \ DbgEnergyOut — the player's combat state, second panel row
 \ ============================================================
 \ Layer 7a. The panel is Layer 9's and holds a placeholder box, so
-\ there is nowhere the game itself shows energy, alert or score — which
-\ makes every stage of Layer 7 unverifiable by eye without this. Nine
-\ bytes as eighteen hex digits:
+\ the game itself shows energy only as DECISION 20's bar and the alert
+\ level not at all — which leaves most of Layer 7 unverifiable by eye
+\ without this readout. Nine bytes as eighteen hex digits:
 \
 \   type  energy maxEnergy  weapon  alert  score(4, BCD)
 \

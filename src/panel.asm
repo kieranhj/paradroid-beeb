@@ -476,6 +476,38 @@ PN_COL_BARR  = 39
 PN_LOGO_CELLS = 9               \ nine cells from seven glyphs
 PN_SCORE_BYTES = 4              \ eight BCD digits
 
+\ ---- LAYER 9 DECISION 20: the energy bar --------------------
+\ THE ONLY THING IN THE PANEL THAT IS NOT THE C64's, and it is put where
+\ the C64 draws nothing at all: panelframe's bottom-middle cells carry
+\ ink on scanline 5 alone, so scanlines 0-4 of panel row 3 are blank
+\ INSIDE the box, under the text line. The bar takes scanline 2 of them,
+\ centred in that band, and displaces no artwork of the original's.
+\n\ ONE PIXEL PER ENERGY POINT. CB_ENERGY_FULL is &40, a MODE 1 byte is
+\ four pixels, so a full bar is 64 px = SIXTEEN BYTES, and the byte
+\ count IS the energy shifted right twice — no scale factor and no
+\ multiply. Centred under the nine-cell logo (72 px): 4 px of margin
+\ either side puts the left end on a byte boundary, which is why the
+\ bar starts at the RIGHT half of PN_COL_LOGO and ends at the left half
+\ of the ninth cell.
+\n\ CONSECUTIVE 4-PIXEL UNITS ARE 8 BYTES APART, not 1 — a cell is its
+\ left half's 8 scanlines then its right half's — so the sixteen units
+\ are PN_BAR_ADDR + 8n and the draw is one STA abs,X with X stepping 8.
+\n\ THE INK IS LOGICAL 1, which palPanel left unused: see PN_PHYS_BAR in
+\ rupture.asm. Pixel n of a MODE 1 byte takes bit 7-n for its high
+\ colour bit and bit 3-n for its low one, so four pixels of logical 1
+\ are &0F and the part-lit unit's patterns are &08, &0C, &0E.
+PN_BAR_ROW   = PANEL_ROWS - 1   \ the bottom border row
+PN_BAR_SL    = 2                \ scanline 2 of it; the blank band is 0-4
+PN_BAR_UNITS = CB_ENERGY_FULL / 4
+PN_BAR_FULL  = &0F              \ four pixels of logical 1
+PN_BAR_ADDR  = PANEL_ADDR + PN_BAR_ROW * ROW_BYTES + PN_COL_LOGO * 16 + 8 + PN_BAR_SL
+
+\ 16 units of 4 px is 64, and the C64's full energy is $40. If either
+\ ever moves, the bar is no longer a pixel a point and the assert says so.
+ASSERT PN_BAR_UNITS * 4 == CB_ENERGY_FULL
+\ ...and the last unit must still be inside the logo's nine cells.
+ASSERT PN_BAR_ADDR + (PN_BAR_UNITS-1) * 8 < PANEL_ADDR + PN_BAR_ROW * ROW_BYTES + (PN_COL_LOGO + PN_LOGO_CELLS) * 16
+
 \ ============================================================
 \ PanelInit — the box, the bars and the logo, all of them static
 \ ============================================================
@@ -513,17 +545,70 @@ PN_SCORE_BYTES = 4              \ eight BCD digits
   CPX #PN_LOGO_CELLS
   BNE pi_logo
 
-  LDA #&FF                      \ both shadows invalid: repaint them
-  STA pnShMode
-  STA pnShScore
+  LDA #&FF                      \ every shadow invalid: repaint them all.
+  STA pnShMode                  \ PnClear has just wiped the bar with the
+  STA pnShScore                 \ rest of the panel, so it must come back
+  STA pnShEnergy
   RTS
 
 .pnLogoSeq EQUB 0, 1, 2, 1, 3, 2, 4, 5, 6
 
 \ ============================================================
-\ PanelUpdate — the two fields that move. Once a pass, from the main loop
+\ PnEnergy — DECISION 20's bar. Once a pass, from PanelUpdate
+\ ============================================================
+\ pmEnergy is PnMirror's copy of drEnergy[0], the player's own: this
+\ bank cannot read the droid table. A SHADOW BYTE gates the draw exactly
+\ as the score's does, so a pass that took no damage costs one compare.
+\ pnTmp and pnCount are borrowed the way the score's draw borrows them:
+\ nothing here calls PnStr or PnGlyph, so the two never overlap.
+\n\ It is NOT called from pu_score, which is the transfer game's own entry
+\ (PanelScore): the subgame owns the text field, energy cannot move while
+\ it runs, and XferExit's PanelSetup invalidates the shadow anyway.
+.PnEnergy
+  LDA pmEnergy
+  CMP pnShEnergy
+  BEQ pn_e_x
+  STA pnShEnergy
+
+  AND #3                        \ the part-lit unit at the bar's end
+  TAY
+  LDA pnBarPart,Y
+  STA pnCount
+
+  LDA pnShEnergy
+  LSR A : LSR A                 \ whole units, and energy $40 gives 16 —
+  STA pnTmp                     \ one past the last, so every unit is lit
+
+  LDX #0                        \ the byte offset: 8 to a unit
+  LDY #0                        \ the unit index
+.pn_e_unit
+  CPY pnTmp
+  BCC pn_e_lit
+  BNE pn_e_dark
+  LDA pnCount                   \ Y = the count: the part-lit one
+  BPL pn_e_put                  \ always — every pattern is < &80
+.pn_e_lit
+  LDA #PN_BAR_FULL
+  BNE pn_e_put                  \ always
+.pn_e_dark
+  LDA #0
+.pn_e_put
+  STA PN_BAR_ADDR,X
+  TXA : CLC : ADC #8 : TAX
+  INY
+  CPY #PN_BAR_UNITS
+  BNE pn_e_unit
+.pn_e_x
+  RTS
+
+\ 0, 1, 2 and 3 pixels of logical 1, from the left of the byte.
+.pnBarPart EQUB 0, &08, &0C, &0E
+
+\ ============================================================
+\ PanelUpdate — the fields that move. Once a pass, from the main loop
 \ ============================================================
 .PanelUpdate
+  JSR PnEnergy                  \ DECISION 20's bar, before the text fields
 \ ---- Mobile / Weapon / Transfer / Console ------------------
 \ moveMode's four states collapse to the original's three words: $80
 \ Mobile, 1 Weapon, 0 Transfer, and 2 is the settling state on its way to
@@ -649,6 +734,7 @@ PN_SCORE_BYTES = 4              \ eight BCD digits
 
 .pnShMode   EQUB &FF
 .pnShScore  EQUB &FF
+.pnShEnergy EQUB &FF
 
 \ ============================================================
 \ PnBriefing — the box's text for the briefing screen. Layer 11f

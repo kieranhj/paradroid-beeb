@@ -2277,8 +2277,10 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
 \ SprDrawAll does for the blitter. The mirror is filled BEFORE the page,
 \ while bank 4 is still up, and read after it — which is the only order
 \ that works.
-\ THREE scalars. drEnergy went with the energy bar the HUD no longer
-\ shows; drType came back for the console's "Unit type 001" line, which
+\ FOUR scalars. drEnergy came BACK on 2026-09-02 with layer-9 DECISION
+\ 20's energy bar, which needs it once a pass and cannot reach bank 4
+\ any more than the rest of the panel can; drType came back before it
+\ for the console's "Unit type 001" line, which
 \ ShowRobotType ($3149) indexes DCent_t and DNum_t with. drCount and
 \ shipLevel are the console's deck and ship lines.
 \ A subroutine, not a macro (RAM pass 5): four 18-byte expansions were
@@ -2286,6 +2288,7 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
 \ MUST be called with SWRAM_DATA paged — drType and friends are bank 4.
 .PnMirror
   LDA drType   : STA pmType
+  LDA drEnergy : STA pmEnergy   \ entry 0 is the player — DECISION 20's bar
   LDA drCount  : STA pmCount
   LDA shipName : STA pmShip     \ the NAME, not the level: shipLevel
   RTS                           \ stops at 8 and shipName keeps cycling
@@ -2421,6 +2424,7 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
   RTS
 
 .pmType   EQUB 0
+.pmEnergy EQUB 0
 .pmCount  EQUB 0
 .pmShip   EQUB 0
 .shipName EQUB 1                \ 1-8, cycling, and it is what names the
