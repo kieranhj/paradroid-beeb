@@ -33,6 +33,7 @@ sections below are in neither. **The table is the index; read it first.**
 | **16** | [Enemy droids draw a black rotor and a WHITE number](#16-enemy-droids-draw-a-black-rotor-and-a-white-number--fixed-2026-08-19) | **Fixed** 2026-08-19 | the wrap fallback blits digits interpreted and never sees `colPix` |
 | **19** | [`paradroid_ce_annotated.asm` truncated multi-column `.BYTE` lines](#19-paradroid_ce_annotatedasm-truncated-multi-column-byte-lines--fixed-2026-08-24) | **Fixed** 2026-08-24 | 43% of the listing's data was missing AND what survived was misaligned. `annotate.py`'s `get_content`; `tools/verify_annotation.py` is the standing check |
 | **20** | [The player's bullet starves every other collision in the pass](#20-the-players-bullet-starves-every-other-collision-in-the-pass--fixed-2026-09-03) | **Fixed** 2026-09-03 | `DrCollide` scanned from slot 7. The bullet has no `drSlotOwner`, so its pair dead-ended and the whole pass was abandoned. Playtest report #3 |
+| **21** | [Two black squares flicker on the transfer game's central column](#21-two-black-squares-flicker-on-the-transfer-games-central-column--2026-09-03-unreproduced) | **Open, unreproduced** | reported on real hardware, rarely on BeebEm. Two hypotheses, neither tested; the cursor one is a 30-second check |
 
 `## Delivered: DEBUG_POS` near the end is not a defect — it is the position bookmark that came out
 of #5, kept with the defects because that is where it is looked for.
@@ -1181,3 +1182,48 @@ No size change in bank 4 (`data` ends `&BFF3` before and after) — it is one im
 a 14 px box. It does not: `|dy| <= 13` is 27 consecutive integers and the step is 16, so on a
 single axis some sample always lands inside. `DR_COL_W`/`DR_COL_H` being smaller than the 24 x 21
 sprite is a separate, deliberate judgement (see `DrCollide`'s header) and was left alone.
+
+---
+
+## 21. Two black squares flicker on the transfer game's central column — **2026-09-03, UNREPRODUCED**
+
+Reported by playtester Sydney, 2026-09-03: *"Occasionally in the transfer game the
+yellow/black/magenta square at the top of the central column will have two square black artifacts
+flickering. Looks very much like sprite flicker. Don't think I've noticed this on beebem, just
+real hardware but I've only played 15 minutes on beebem."*
+
+Not reproduced here. Recorded now because a hardware-mostly, intermittent, location-fixed artifact
+is expensive to re-derive from scratch, and because the two candidates below are cheap to test in
+the wrong order.
+
+### Hypothesis 1 — the live screen writes race the raster (likelier)
+
+The subgame writes the board **live**, with no raster gate: `XfRemovePulser` / `XfDrawPulser`
+(`src/xfer.asm`, the block headed "LIVE writes") and `XfPutBackPulser`. A write caught mid-scan
+shows as flicker **localised to exactly the element being redrawn**, which is what was described,
+and the CPU/video race differs between real hardware and an emulator, which fits "hardware more
+than BeebEm".
+
+*How to test:* `run_frames` one at a time across a pulser commit and diff the play buffer between
+consecutive frames, rather than trusting a screenshot — see CLAUDE.md's standing rule. The
+squares' position should track the pulser cell being written.
+
+### Hypothesis 2 — a stale CRTC text cursor (cheaper to rule out, so do it first)
+
+`SetupMode` turns the cursor off with `VDU 23,1,0;0;0;0;`. **The game-over -> title path does not
+go through `SetupMode`** — it uses `SetupPlain` (`src/screen.asm`), which writes R0-R6 and the
+palette and nothing else — and `GoTitle` then makes filing-system calls. If anything re-enables
+R10's blink across that, a flashing block lands at R14/R15, which with the OS still believing it
+owns `&3000-&7FFF` can point **inside the play buffer** at `&5800-&7FFF`. A blinking cursor is
+black, fixed in position, and many emulators do not render it — all three of which fit.
+
+It also predicts something checkable: the artifact should appear only **after a game over has
+returned to the title**, never in the first game of a session. Sydney reports 15 minutes on BeebEm
+without seeing it and longer on hardware, which is consistent but nowhere near proof.
+
+*How to test:* start a second game (through a real game over, not a reset) and read CRTC R10.
+
+### What is needed from the reporter
+
+How often, whether it is always the same square, and — decisively for hypothesis 2 — **whether it
+has ever happened in the first game after a fresh boot.**

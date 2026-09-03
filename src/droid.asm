@@ -1009,6 +1009,20 @@ ENDIF
   LDY dcInner                   \ an explosion still owns its slot, so it
   LDA drSlotOwner,Y             \ turns up here — and the table is what
   BNE dc_gotpair                \ says it may not be shoved about
+\ DEAD SINCE 2026-09-03, AND DELIBERATELY NOT MADE TO CLEAR drCollHit.
+\ The C64 reaches _x_none from exactly this test -- $1A11 and $1A1F are
+\ LDA SprNumber,X / BEQ _x_none -- and _x_none CLEARS byte_0_6C. Ours
+\ returns without clearing, so if this arm could still be reached it
+\ would leave the latch down and suppress the next DrReverse: BUGS.md
+\ #7a's shape exactly.
+\ It cannot. Both slots are pool slots now that the bullet is out of
+\ the scan (see the header above dc_inner), and sprActive and
+\ drSlotOwner are written and cleared TOGETHER at every site that
+\ touches them -- drs_place, drs_off, DrFreeEntry -- so an active slot
+\ with a zero owner does not arise. The arm is kept as the structural
+\ mirror of the C64's two BEQs and costs one byte.
+\ IF THAT INVARIANT EVER BREAKS, this must become a JMP to the outer
+\ loop's exit (the LDA #0 / STA drCollHit at dc_onext), not an RTS.
 .dc_none
   RTS
 .dc_gotpair

@@ -39,6 +39,17 @@ starts with them:
 | the death respawn | the C64 does not move the player; ours teleports to waypoint 0 and re-frames |
 | the death explosion | the C64 draws the player's droid *under* the explosion; ours replaces it |
 | culling | sprites are culled, not clipped, so a droid pops in and out a sprite's width from the edge. The C64's hardware clips |
+| doors | close in 160 ms flat against the C64's 160-240 ms. Two causes: our pass never drifts to three frames, and `DoorsUpdate` clears bit 6 on the compaction DESTINATION where `CloseDoors` clears it on the source, costing a further step. Both deliberate; see the session log, 2026-09-03 |
+
+### Rows confirmed so far
+
+Walked against the listing and found **identical**. Recorded because each one cost the listing
+being opened and each will be asked about again.
+
+| Ours | C64 | Verdict |
+|---|---|---|
+| `drSpeed` (`src/data/droidgame.asm`) | `DSpeed_t` `$EA40` | **Identical**, byte for byte: `4,1,2,4,2,1,8,2,1,4,4,2,2,2,1,4,1,2,2,2,4,8,1,4`. Droid 302 is index 6 = **8**, the joint-fastest in the game with 834 — so "302 is too fast" is the original's own design. Checked after playtest report #2, 2026-09-03 |
+| the capture / death ordering in the main loop | `GameLoop` `$13EF` / `$143B` | **Identical.** `xferDroid` is tested BEFORE `droidEnergy`, and `Capture` returns via `_reenter_game` -> `EnterGame` -> straight into the energy test. So a transfer that starts on the pass the player dies runs to completion and the death lands immediately after it, on both machines. Ours is `ml_noxstart` above `CbCheckDeath` (`src/main.asm`). Checked after playtest report #6, 2026-09-03 |
 
 ## 12b — The Redux fix list
 
@@ -105,8 +116,9 @@ constraint at 7 bytes free, to defend against a hypothetical future change to bu
 explosion energy — and no `ASSERT` can express the condition. KC, 2026-08-31: recording it is
 enough.
 
-**[DECISION 3] — (2) the three-droid deadlock randomisation: NOT REPRODUCED, held open as a
-playtesting question. No code written. 2026-08-31.**
+**[DECISION 3] — (2) the three-droid deadlock randomisation: still held open, no code written.
+2026-08-31 as NOT REPRODUCED; a droid WAS seen stuck in play on 2026-09-03, but probably by the
+other mechanism — read the update below before acting on it.**
 
 The triage made this one conditional on reproducing the deadlock here first. A deliberate harness
 could not, but it did not clear the port either, and the reasons are worth keeping.
@@ -150,6 +162,25 @@ With the player's pairs treated as breaking the run, the honest figures over 60 
 Nothing near saturation. A stack of six disperses within seconds -- on deck 0 the initial pile had
 three droids on an exact shared position (`sprUnit` 37, `sprScrY` 42, slots 3, 4 and 5) and was
 gone inside ten seconds.
+
+**REPRODUCED IN PLAY, 2026-09-03.** Playtester Sydney: *"One droid (302!) managed to get trapped
+in a corner"*, with a photograph. This is the observation the decision was held open for, and it
+arrived from ordinary play rather than a harness -- exactly as the paragraph below predicted.
+
+*It is one droid, not three, so it is probably the simpler mechanism and not the deadlock.*
+`DrCheckAdvance` sets `drState = 2` on a solid cell ahead and **only a waypoint ever turns a droid
+round** (`src/droid.asm`, and `CheckDroidAdvance` `$1D30` does the same). A droid facing a wall on
+a cell with no waypoint re-blocks every pass, for ever. That is faithful to the original -- and it
+is also what three entries on the Redux list are about ("droids might lose waypoints if bumped
+into when they were just leaving one"; "droids ignored waypoints if they paused at the exact same
+time they entered one"; "the very last waypoint of the very last deck sent droids to wall"), all
+of which were rejected for 1.0 as part of the droid-AI pack.
+
+*What is still missing before anything is built:* **the deck number**, and whether the droid was
+alone or had been shoved there. The harness above distinguishes the two mechanisms -- a deadlock
+saturates `dbgLockRun`, a lone droid stuck on a wall never enters it at all, because `DrCollide`
+sees no contact. If the counter stays at zero while a droid is visibly stuck, it is the waypoint
+mechanism and DECISION 3's randomisation would not have helped.
 
 *Why it is held open rather than closed.* Seconds-long jams demonstrably happen, so the mechanism
 is present and only its permanence is unproven; and the coverage is three decks of sixteen, on
@@ -551,6 +582,27 @@ second or so**. The second one has a harness recorded in DECISION 3 and a measur
 1.4 s is the longest jam seen without the player involved, so anything visibly longer than that is
 new information and worth the deck number.
 
+### Session log
+
+One entry per playtest report, with the verdict and where the evidence is. **A report ruled
+*faithful* is as valuable as one that finds a bug** -- it will be reported again, by someone else,
+and the listing should not have to be reopened to answer it.
+
+#### 2026-09-03 — Sydney, BeebEm and real hardware
+
+| # | Report | Verdict |
+|---|---|---|
+| 1 | Fired through an open door; it closed, the droid vanished, the bullet flew on and missed | **Partly deviates.** The vanish and the miss are the original: a droid behind a wall has `sprActive` 0 and only drawn slots collide (the C64's `SpriteEna` / `$D01E`), and the bullet was already past the door, so it died at the view edge as it should. But **the doors do close faster here** — see the deviation table in 12a |
+| 2 | Droid 302 is very fast | **Faithful.** `drSpeed` is byte-identical to `DSpeed_t`; 302 is the joint-fastest droid in the game. See 12a's confirmed rows |
+| 3 | Droids passed through the player and each other, particularly when moving fast | **PORT BUG, FIXED** the same day — BUGS.md #20. `DrCollide` scanned from slot 7, the player's bullet, which has no `drSlotOwner`; its pair dead-ended and abandoned the whole pass's collision handling. Cost 1-2 passes of every shot |
+| 4 | One droid (302) trapped in a corner, photographed | **Open.** The playtest evidence DECISION 3 was held open for — see it for the mechanism, the harness and what is still needed (the deck number) |
+| 5 | Background hum feels too loud against the C64 | **Held**, at the reporter's own suggestion, pending an A/B. Note there is a working master volume everywhere including mid-game — CTRL + cursor up/down, CTRL+Q to mute (`VolKeys`) — so this is about the default level, not a missing control. `docs/layer-11e-sound.md` records several earlier eared rounds on the same question |
+| 6 | Transferring to a 999, shot mid-transfer, won the subgame, returned as a 001 | **Faithful**, and the reporter's read of the mechanism was exactly right. See 12a's confirmed rows for the two addresses |
+| 7 | Two black squares flicker on the yellow/black/magenta square at the top of the transfer game's central column; hardware more than BeebEm | **Open, unreproduced** — BUGS.md #21 |
+
+*Four of seven were the original behaving as it always did.* That is the expected ratio for a
+faithful port and is not a reason to triage reports less carefully — #3 was real, was a single
+instruction, and arrived in the same message as three that were not.
 ## 12d — Performance and graceful degradation
 
 `docs/raster-timing.md` has the method. Two questions:
@@ -567,4 +619,3 @@ new information and worth the deck number.
    teleports droids away to avoid losing one to sprite starvation, but our Layer 6 slot
    OWNERSHIP already keeps an undrawn droid alive — verify rather than port. Options to cost: dropping
    the rotor animation, thinning the sight-line budget, skipping a tranche.
-
