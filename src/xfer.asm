@@ -1553,6 +1553,37 @@ XF_REPLAY_PASSES = 50
 \ xfer_DrawResult ($E453) / xferPutResultColor ($20C0): X = the colour,
 \ into the 2x2 result window and the verdict variable.
 .XfDrawResult
+\ ---- THE 2x2 IS BLITTED, SO IT MUST NOT MEET THE BEAM --------
+\ $E453 writes four bytes of colour RAM and the VIC picks them up on
+\ its next pass. Ours has to blit four 16-byte cells, ~1,800 cycles,
+\ and it is reached deep inside a tick that is 67,500 cycles long
+\ (measured 2026-09-05, jsbeeb, from the pass's mainloop stamp) -- so
+\ it runs while the play area is being displayed, and ruptState read
+\ at this label was 2 in every sample taken. The result window is
+\ shadow rows 1-2, eight scanlines into the play area: start the blit
+\ with the beam inside it and that field shows the OLD colour above
+\ the tear and the new one below. Yellow and magenta in the same
+\ frame -- Sydney's report, 2026-09-05.
+\ ONLY WHEN THE COLOUR CHANGES. XfWCol repaints nothing when the byte
+\ it is given is the one already there, so a verdict that is holding
+\ still draws nothing and must not pay for a wait. That gate is also
+\ what keeps this affordable: the tick has ~12,000 cycles of slack in
+\ its 79,866-cycle pass, and waiting out the play area costs up to
+\ 15,400 -- twice a tick, unconditionally, would push every iteration
+\ into a third field and undo XF_PLY_STEP's 11-second calibration.
+\ 1 AND 2 ARE BOTH THE PLAY CYCLE: 2 is displaying it, 1 is the seven
+\ scanlines between fire 1 and fire 2, which is not enough margin for
+\ the blit. 3 and 0 are the tail and the panel, and rt_drawok's note
+\ gives that window as 184 scanlines -- ten times what this needs.
+  CPX xfWinColor
+  BEQ xdr_go
+.xdr_wait
+  LDA ruptState
+  SEC
+  SBC #1
+  CMP #2
+  BCC xdr_wait
+.xdr_go
   LDA #LO(xsCram + XS_RESULT_OFS)
   STA xdest2
   LDA #HI(xsCram + XS_RESULT_OFS)

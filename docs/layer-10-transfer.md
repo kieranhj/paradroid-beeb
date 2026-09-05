@@ -438,6 +438,54 @@ bytes 1:1 out of the tail, leaving real free space unchanged at 286 B and puttin
 somewhere it reads worse. It stays where it is. What the exercise did produce is the bank-7
 map below, which is the thing worth keeping.
 
+**[DECISION 15] The result window waits for the beam — 2026-09-05.**
+
+Sydney, playtesting: *"the transfer game block flicker is when there's an item that is battling
+between yellow and magenta, with the winner unresolved. It should smoothly switch between yellow
+and magenta each frame until the decision is resolved one way or another (or to black if it's a
+tie). Instead it looks like the plotting of the conflicted block is hitting the raster so both
+colours are seen on the same frame."* The "or to black" pins which block it is: black is `$F8`,
+the tie, and only `XfDrawResult` ever paints that — the 2×2 result window at shadow rows 1-2,
+cols 19-20.
+
+**The diagnosis is Sydney's and it is right.** Measured in jsbeeb, from the pass's `mainloop`
+stamp, with the game in the play phase:
+
+| | |
+|---|---|
+| pass length | 79,866 cycles (2 fields, `FRAME_LOCK`) |
+| one `XfPlayTick` iteration, entry to `DoScore` | **67,556 cycles** — 1.7 fields |
+| first `XfDrawCBar` of an iteration | 40,875 cycles into the pass |
+| `ruptState` read at `.XfDrawResult` | **2** in every sample — the play area is being displayed |
+
+The play cycle occupies `ruptState` 2, which is scanlines P+64 to P+192 of the field; the pass
+starts at P+192 (`rt_drawok`) and the off-display window is the 184 scanlines to the next play
+cycle, ~23,500 cycles. The tick is three times that, so everything after the first ~24,000 cycles
+of it draws into a live display. The C64 does not have this problem because `$E453` writes four
+bytes of colour RAM and the VIC picks them up on its next pass; ours has to blit four 16-byte
+cells, ~1,800 cycles, and the window is eight scanlines into the play area. Start that blit with
+the beam inside it and the field shows the old colour above the tear and the new one below.
+
+**The fix is a spin on `ruptState` at the top of `XfDrawResult`,** waiting out states 1 and 2 —
+2 is the play cycle displaying and 1 is the seven scanlines before it starts, which is not enough
+margin for the blit. States 3 and 0 are the tail and the panel.
+
+**GATED ON THE COLOUR ACTUALLY CHANGING, and that gate is what makes it affordable.** `XfWCol`
+repaints nothing when the byte it is handed is the one already there, so a verdict that is
+holding still draws nothing and must not pay for a wait. Waiting out the play area costs up to
+15,400 cycles; the tick has ~12,300 of slack in its pass, and two unconditional waits an
+iteration would push every iteration into a third field and undo `XF_PLY_STEP`'s 11-second
+calibration. A verdict flip is rare — the wait is paid a handful of times a game.
+
+**COSTED AND NOT DONE: the same guard on the whole of `XfDrawCBar`.** The centre bar's own
+cells (cols 19-20, rows 3-14) are written the same way and can tear the same way. Guarding the
+whole routine is a two-line change, but `XfDrawCBar` runs twice an iteration and would then wait
+twice — expected ~16,000 cycles, more than the slack — so iteration passes would routinely
+stretch to three fields and the subgame would run ~7% slow. The alternative, deferring those
+paints to the top of the next tick where the beam is guaranteed off-display, needs ~45 bytes and
+bank 7 had ~25 before this change took 14. **Left for KC.** Nobody has reported the bar itself
+flickering, and the bar cells change far less often than the verdict does.
+
 ## 6. Bank 7's map, measured 2026-08-25
 
 > **Superseded the same evening by RAM pass 3b** ([`ram-pass.md`](ram-pass.md)):

@@ -423,3 +423,30 @@ defect.
 > `Source: paradroid_ce.lst (Paradroid Redux, C64)` into every file it generates. That attribution
 > is wrong — see [`decisions.md`](decisions.md) — and `export_droids.py` already says
 > "original/CE lineage". Worth fixing when `export_bbc.py` is next touched for the lift tables.
+
+## The lift takes the platform, not the tile — 2026-09-05
+
+Sydney and KC, independently, from playtesting: *"the activation of the lifts. Could the area in
+which lifts are activated be made smaller? I feel every firefight near a lift ends up with me in
+the lift."*
+
+**The port was wrong, and the original says so.** `DoCharUnder` (`$2E7B`) gates the lift on
+`charUnder` — the single map character under the player's reference point, read at `$39F4` from
+`plyMapPos` = view origin + (8, `$13`) — being 43-46. Those four codes are `$2B`-`$2E`, and
+`tools/export_bbc.py`'s `tiledefs.asm` puts them at cell indices 5, 6, 9 and 10 of **tile 3 and no
+other tile**: the inner 2×2 of the 4×4, which is the platform itself. The frame drawn round it is
+not a lift. On the C64 you have to be standing *on* the platform.
+
+`LiftFind` matched the whole tile — four times the area — and `L` does double duty as the weapon,
+so a quarter of every shot fired anywhere near a lift went into the lift instead.
+
+The gate added at the top of `LiftFind` requires cell 1 or 2 of the four in **each** axis, which
+is `$2E7B`'s region byte for byte: our `plyCX`/`plyCY` reference cell *is* the C64's `charUnder`
+cell, so this is the original's test rather than an approximation of it. 20 bytes of main RAM
+(`code_end` `&2FDE` → `&2FF2`, 14 B free after the transfer fix as well).
+
+**Headroom if that 20 bytes is ever wanted back:** `LiftFind` reads `liftDeck`, `liftTileCol`,
+`liftTileRow` and `liftShaft`, all four of which are in `levels.asm` — bank 4 — and it is only
+called from `LiftEnter`, in the main loop, where `SWRAM_DATA` is the resting bank. Moving the
+whole routine into the `PARADAT` block beside its tables would give ~45 B of main RAM back. Not
+done here; it is a move, not a fix.

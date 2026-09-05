@@ -60,6 +60,30 @@ LIFT_LAST  = 30                 \ and so is 31
 \ the pass. Lift mode suppresses CheckWalls, but this only ever runs on
 \ the way IN, when it has just been called.
 .LiftFind
+\ ---- THE PLATFORM, NOT THE WHOLE TILE ------------------------
+\ DoCharUnder ($2E7B) gates the lift on charUnder being 43-46, and
+\ those four codes ($2B-$2E) are the INNER 2x2 of tile 3 -- the
+\ platform itself. The frame drawn round it is not a lift, so on the
+\ C64 you have to be standing ON the platform, not merely inside the
+\ tile that carries it.
+\ THE PORT MATCHED THE WHOLE 4x4 and that is four times the area, in
+\ a game where the same key fires the weapon: every firefight near a
+\ lift ended with the player in the lift (Sydney and KC, 2026-09-05).
+\ Cell 1 or 2 of the four in each axis is the original's region
+\ exactly, asked the way our coordinates can answer it -- the char
+\ under the player IS the reference cell, so this is $2E7B's test and
+\ not an approximation of it. See docs/layer-8-doors-lifts.md.
+  LDA plyCX
+  AND #3
+  BEQ lf_none
+  CMP #3
+  BEQ lf_none
+  LDA plyCY
+  AND #3
+  BEQ lf_none
+  CMP #3
+  BEQ lf_none
+
   LDA plyCX
   LSR A : LSR A
   STA lfCol
@@ -81,6 +105,7 @@ LIFT_LAST  = 30                 \ and so is 31
 .lf_next
   DEX
   BNE lf_loop                   \ index 0 is the sentinel, never a match
+.lf_none
   SEC
   RTS
 
