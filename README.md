@@ -1,261 +1,185 @@
 # Paradroid — BBC Micro
 
-A port of Andrew Braybrook's *Paradroid* (Commodore 64, 1985) to the BBC Micro Model B.
+A port of Andrew Braybrook's *Paradroid* (Commodore 64, 1985) to the **BBC Micro Model B**,
+written in 6502 assembly for [BeebASM](https://github.com/stardot/beebasm).
 
-It plays, start to finish. The title screen comes up, the deck hardware-scrolls eight ways under a
-droid you steer, a pool of eight sprites runs over it, doors open as you walk into them and lifts
-carry you between decks — so the whole ship is traversable. Droids patrol it, shoot at you and can
-kill you; you shoot back, and score. They kill *each other* too, because a droid's shot and a
-droid's explosion hurt whatever else they touch. The 711 and the 742 carry the disruptor — an area
-weapon that hits everything on screen at once and costs the firer as well — and so do you, once you
-have taken one. Recharge pads turn under you and the ALERT signs light as the ship gets angrier.
-The status line and the console are the original's, down to the deck being called `Reactor` rather
-than `5`, and the console carries the ship diagram, the deck plan and the droid database. The one
-thing in that line the C64 does not have is a **player energy bar** — a single green rule under the
-logo, one pixel per point of energy, drawn in scanlines the original leaves blank inside its own
-status box and inked in the fourth colour the panel palette had spare. The C64's only energy cue is
-the player's sprite flashing below eight, which this port has too; the bar is the gauge that alarm
-sits at the end of. The
-transfer minigame plays too: prime with fire, touch a droid, pick a side and fight the circuit board
-for it — win and you *are* that droid, with its weapon and speed. It has a voice, through an
-SN76489 driver with every in-game trigger wired. And it has the droid information screens the
-original opens and closes on: the 001 briefing that starts a game, the two pages the transfer shows
-you before the board, and the 999 Command Cyborg behind "Transmission / Terminated" when the ship
-burns out under a dissolve. The front end is the original's too: a great (or terrible) score gets
-the three-initial entry under a panel reading "game over", the table survives into the next game,
-and leaving the title alone drops into the five-page intro manual — smooth-scrolled at the C64's
-own speeds and dwells, burbling to itself as it goes, with the live score table and a random droid
-portrait on its last page. The manual's text is hand-editable (`src/data/briefing.txt`), and every
-front-end screen wears the palette of the last deck played. **CTRL+R on that manual redefines the
-six play controls** — a screen of its own, drawn with the manual's own font engine, that asks for
-each key in turn; every key on the keyboard binds except ESCAPE and CTRL, SHIFT and the
-punctuation keys included. And no screen shows itself being drawn: deck loads, the console, the
-lift and the manual's pages all paint hidden and appear complete, the way the C64's off-screen
-builds did.
+You are a service droid loose on a hostile starship. You can shoot the other droids, but you are
+weak and they are not — so the real weapon is the **transfer**: touch a droid, win a duel on a
+logic-circuit board, and you *become* it, with its weapon, its speed and its armour. Clear a deck,
+clear the ship, move on to the next one. It runs until you die.
 
-And it now has an **endgame**. Clear a deck and it pays 500, sounds its chord and the floor
-goes to the cleared colour; clear every deck on the ship and it pays 2,000 and puts up the
-original's own congratulations screen before boarding the next ship — a fresh roster, a new
-name, and your captured droid carried across at seven energy, as the C64 does it. The
-difficulty stops climbing at the eighth ship and the eight ship names cycle under it, so the
-game is not won so much as survived: it runs until you die, which is the original's shape.
+The port plays start to finish. The deck hardware-scrolls eight ways under you, droids patrol and
+fight (each other as well as you), doors open and lifts run between the decks, the console carries
+the ship diagram, deck plan and droid database, the transfer minigame plays, and the front end —
+title, briefing, five-page scrolling manual, high-score table, game over — is the original's. Sound
+is an SN76489 driver with every in-game trigger wired.
 
-The **visual pass has started**. The BBC's palette is fully saturated where the C64's is not, so a
-deck floor of solid red or cyan reads far harsher here than the original ever did: half the floor's
-pixels now take black in a 2x2 checker, and it comes out at half intensity. That turns out to add a
-FIFTH tone to a four-colour mode, and three decks spend it on white dithered to the grey their C64
-floor actually is - a colour MODE 1 does not have and this port could not previously show. The
-static text screens do not dither; they take a solid background of their own, chosen per deck,
-because a floor that looks right underfoot is often far too bright to read white text on.
+It is a faithful port rather than a remake: the C64 disassembly is the specification, and the
+levels, tiles, sprites, text, droid statistics and movement constants are the original's data,
+converted mechanically. Where the BBC's hardware forces a change, the aim is to port the *decision*
+the original made rather than approximate the effect.
 
-And it now boots with a **loading intro**: Chris Evans' (scarybeasts) three-robots screen with the
-lightning, over a three-channel sample player at ~15.6 kHz a channel, its music living in one
-sideways bank until a keypress hands over to the game. `build.ps1 -Release` is the build that
-carries it with every debug flag off. The four sideways banks are **probed at boot** rather than
-assumed to be 4-7, so the port runs on a board jumpered anywhere.
-
-**What is left** is the balance-and-fidelity pass (verify against the listing, then playtest),
-testing on the machines people actually have, and a short polish list — see
-[`PLAN.md`](PLAN.md), which is now exactly that list. RAM is the binding constraint rather than
-any of them: main RAM is down to **24 bytes**, so the next feature of any size has to buy its
-room from somewhere first — `docs/ram-pass.md` keeps the list of what is still there to sell.
-
-## Target
+## Requirements
 
 | | |
 |---|---|
-| Machine | BBC Model B / B+ with 4 × 16K sideways RAM banks, **probed at boot** — any four, highest first; 4–7 on a Master and on most boards |
-| CPU | Plain 6502 (`CPU 0` — no 65C12 opcodes) |
-| Display | MODE 1, 4 colours. A 4-row static panel at `&4A00` above a 320 × 120 play area, driven by a three-cycle vertical rupture. The panel has its own palette, swapped at the cycle boundary |
-| Play area | 10K circular strip at `&5800` with a 10K hardware wrap, scrolled by the CRTC — 4 px horizontally, 1 scanline vertically |
-| Game loop | Locked to 2 fields a pass, 25 Hz |
-| Assembler | [BeebASM](https://github.com/stardot/beebasm) |
+| Machine | BBC Model B, B+ or Master 128, with **4 × 16K sideways RAM banks** — any four; they are probed at boot, highest first (a Master has them at 4–7) |
+| Display | MODE 1 |
+| Media | A DFS disc (single-sided, 200K) |
 
-MODE 1 was chosen because it maps the C64 original 1:1 at 320 pixels across with four colours. The
-C64 mixes hires and multicolour cells on the same screen — multicolour is selected per cell by bit
-3 of the colour RAM nibble — and MODE 1 accommodates both, having no attribute constraints. Artwork
-converts mechanically from the ripped data with nothing redrawn.
+Any emulator configured with four sideways RAM banks will run it. On a machine it cannot drive, the
+loader says so and stops rather than crashing.
+
+The port uses no 65C12 instructions and no Master-only hardware, so the Master runs the same code as
+a B — and it has been **tested on a real Master**. Testing on real Model B and B+ hardware is still
+outstanding; see [`PLAN.md`](PLAN.md).
+
+## Building
+
+There is no pre-built image in the repository. Put `beebasm.exe` in `bin/`, then:
+
+```powershell
+.\build.ps1           # assemble into build/
+.\build.ps1 -Run      # assemble and launch in b-em
+.\build.ps1 -Release  # the build to give to other people: loading intro, no debug flags
+```
+
+`make.bat` and `make.sh` are thin wrappers over the same script, for cmd and sh (`make run` works).
+Python 3 and Pillow are needed for the build's data stages.
+
+Everything lands in `build/`. Hand an emulator **`build/PARADROID-200K.SSD`** — the padded copy,
+which is what every published build is.
+
+> **beebasm's own output is not bootable.** The build is several stages: the intro-manual text is
+> converted, beebasm assembles a raw image, and `tools/make_disc.py` then ZX0-compresses the
+> sideways-RAM bank files and lays the disc out in the order the loader expects. Running beebasm by
+> hand produces `build/PARADROID-raw.ssd`, which hangs at the first bank load. Use the scripts.
+
+DFS filenames are limited to seven characters, so the executable on disc is `PARA`.
 
 ## Controls
 
 | | |
 |---|---|
-| Z / X | left / right |
-| K / M | up / down — and, on the lift screen, move along the shaft. On the high-score entry they walk the alphabet; on the intro manual K pauses the scroll and M doubles it and skips the dwells |
-| L | fire; on a lift platform it opens the ship's deck-selection screen, and fire again commits (with a confirmation chord). It commits an initial on the entry, and starts the game — as does transfer — from the title or anywhere in the manual |
-| SPACE | a second transfer button — hold it and the transfer triggers without needing a direction. Also starts the game, alongside fire |
-| CTRL + cursor up/down | master volume; **CTRL+Q** mutes, **CTRL+P** pauses (plain **P** unpauses). All three work in play, in the modal screens, in the manual and at the title. (Bare cursors are free — they can be bound as controls) |
-| ESCAPE | self-destruct — ends the game. The port's own; the C64 has no abort |
-| CTRL+`[` `]` | debug deck hop |
-| CTRL+C, CTRL+W | debug: clear the deck, win the transfer |
-| CTRL+R | force a full redraw (also the verification oracle) |
+| **Z** / **X** | left / right |
+| **K** / **M** | up / down. On the lift screen they move along the shaft; on the high-score entry they walk the alphabet; on the intro manual **K** pauses the scroll and **M** doubles it |
+| **L** | fire. On a lift platform it opens the deck-selection screen (fire again commits); it commits an initial on the high-score entry, and starts the game from the title or the manual |
+| **SPACE** | transfer — hold it and a transfer triggers on contact without needing a direction. Also starts the game |
+| **ESCAPE** | self-destruct, ending the game. The port's own addition; the C64 has no abort |
+| **CTRL** + cursor up/down | volume. **CTRL+Q** mutes, **CTRL+P** pauses (**P** unpauses) |
 
-**The six controls in the first four rows are defaults.** **CTRL+R on the briefing screen** — let the title time out into the
-intro manual — asks for a key for each of left, right, up, down, fire and transfer in turn, and
-what you choose holds everywhere the old keys were read: play, the console menus, the transfer
-game, the manual, the high-score entry and the title. ESCAPE abandons the run and puts the old set
-back; **only ESCAPE and CTRL cannot be bound** — SHIFT binds, and the punctuation keys show
-spelled-out names ("Slash", "Comma"…). A choice lasts until it is changed again or the machine is
-BREAKed — nothing is written to disc.
+The six play controls are **redefinable**: let the title time out into the intro manual and press
+**CTRL+R**. It asks for a key for each of left, right, up, down, fire and transfer in turn, and the
+choice holds everywhere — play, the console, the transfer game, the manual, the title. Everything
+binds except ESCAPE and CTRL; ESCAPE abandons the run and puts the old set back. Definitions last
+until the machine is BREAKed; nothing is written to disc.
 
-The debug keys are debug builds only, are listed by `!BOOT` when they are compiled in — see the
-`DEBUG_*` flags at the top of `src/main.asm` — and **all of them need CTRL**, so a rebound control
-cannot fire one by accident.
+Debug builds add further keys, all of them behind CTRL so a rebound control cannot fire one by
+accident. `!BOOT` lists whichever are compiled in; the flags are at the top of `src/main.asm`.
 
-## Approach
+## How it works
 
-No hardware abstraction layer. The port is built one layer at a time, each verified running in an
-emulator before the next begins:
+| | |
+|---|---|
+| Display | MODE 1, four colours: a 4-row static panel above a 320 × 120 play area, split by a **three-cycle vertical CRTC rupture**. The panel has its own palette, swapped at the cycle boundary |
+| Play area | A 10K circular strip at `&5800` with a 10K hardware wrap, scrolled by the CRTC — 4 px horizontally, one scanline vertically |
+| Sprites | A compiled blitter with four pre-shifted variants, spread across two sideways banks |
+| Game loop | Locked to two fields a pass, 25 Hz |
+| CPU | Plain 6502 (`CPU 0`) — no 65C12 opcodes |
 
-0. **Toolchain and screen geometry** — ✅ done
-1. **Graphics data pipeline** — ✅ done
-2. **Static deck render** — ✅ done
-3. **Scroll** — ✅ done; *the key design decision*
-4. **Player movement** — ✅ done
-5. **Droid movement** — ✅ done; a compiled sprite blitter across two banks
-6. **Droids** — ✅ done
-7. **Combat** — ✅ done; including the disruptor, friendly fire and the animated deck tiles
-8. **Doors, lifts, decks** — ✅ done, taken ahead of 6 and 7 so droid AI has a ship to route through
-9. **HUD and console** — ✅ done
-10. **Transfer minigame** — ✅ done; in a fourth sideways bank, with its two pre-game info screens
-11. **Title, game over, sound and the droid screens** — ✅ done: the title, the death and game-over
-    sequence, the SN76489 sound driver, the four information screens, and the front end — the
-    high-score entry and the scrolling intro manual, which burbles to itself as it scrolls just
-    as the original's does. The ± volume keys, mute, pause, and the CTRL+R key redefinition
-12. Balance, fidelity and feel
-13. **Memory and machine compatibility** — the RAM pass ✅ done; sideways-RAM detection ✅ done
-    (`PARSWR` probes all sixteen banks before the game loads, takes the top four and refuses a
-    machine it cannot drive); testing on real machines outstanding
-14. **Visual pass** — ✅ nearly done: the deck dither, the per-deck text-screen backgrounds, the
-    cleared-deck floor and the lift tile, with the deck palettes and the ALERT lamp signed off on
-    2026-08-31. What is left is an eye for any character whose C64 colour merges in MODE 1
-15. **The endgame** — ✅ done: the deck and ship payouts, the congratulations screen, and the
-    ship progression. Before this the port had no win condition at all — `shipNumDroids` was
-    maintained and never read, and the C64's two entry points were fused into one routine so
-    the second could not be reached
+MODE 1 was chosen because it maps the C64 1:1 at 320 pixels across with four colours. The C64 mixes
+hires and multicolour cells on one screen; MODE 1 has no attribute constraints and accommodates
+both, so the artwork converts mechanically with nothing redrawn. The BBC's palette is fully
+saturated where the C64's is not, so deck floors are dithered to half intensity in a 2×2 checker —
+which incidentally buys a fifth tone in a four-colour mode, and three decks spend it on the grey
+their C64 floor actually is.
 
-Outside the layer numbering: **the loading intro** ✅ done — Chris Evans' (scarybeasts)
-picture-and-sample-player executable, vendored in `pdloader/` and chained from `!BOOT` on `-Intro`
-and `-Release` builds, its data ZX0-compressed to a seventh of what it was
-([`docs/intro.md`](docs/intro.md)).
-
-Each completed layer keeps its working notes in [`docs/`](docs/) — the measurements, the dead ends
-and the hardware facts bought the hard way, including several options that were costed and
-deliberately rejected.
-
-## Building
-
-Put `beebasm.exe` in `bin/`, then:
-
-```powershell
-.\build.ps1           # assemble into build/
-.\build.ps1 -Run      # assemble and launch in b-em
-.\build.ps1 -Intro    # + the loading intro
-.\build.ps1 -Release  # the build for other people: -Intro, every debug flag off
-```
-
-Everything it produces goes in `build/`: `PARADROID.SSD`, a 200K-padded copy for emulators, and
-beebasm's assembly listing. `make.bat` and `make.sh` are thin wrappers over the same script
-(`make run` works), for cmd and sh respectively.
-
-**The build is several stages and all of them matter**: `tools/make_briefing.py` converts the
-hand-editable intro-manual text (`src/data/briefing.txt` — edit it freely and rebuild), beebasm
-assembles a *raw* image, `tools/make_intro_data.py` builds the intro's two compressed streams on an
-intro build, and `tools/make_disc.py` ZX0-compresses the sideways-RAM bank files and lays the disc
-out for the loader. **beebasm's direct output is not bootable** — the loader expects
-the compressed layout and hangs at the first bank load — so there is no meaningful way to build
-with beebasm alone; use the scripts.
-
-`main.asm` assembles its own `!BOOT`, carrying the build stamp and the list of debug flags that
-are on, so nothing may pass `-boot`. It also passes `RELEASE` to beebasm on every build, because
-beebasm has no `IFDEF` and refuses a symbol defined twice — so a bare `beebasm` invocation has to
-pass `-D RELEASE=0` as well.
-
-`src/data/` **is** in the repository (since 2026-08-27), so the tree assembles without a local copy
-of the C64 listing. It is still generated by the `tools/export_*.py` scripts — regenerate it with
-the tool rather than editing it by hand, and commit what the tool produces.
-
-The result is a bootable DFS disc image. Note that DFS filenames are limited to 7 characters, so
-the executable on disc is `PARA`.
-
-> **Hand an emulator the padded image.** jsbeeb does boot an unpadded SSD — an earlier note here
-> said otherwise and blamed a hang in the DFS FDC poll, which was wrong (corrected 2026-09-01) — but
-> 200K is the convention, it is what every published build is, and a published size that differs
-> from last time is a useful sign that the wrong file went out. The build writes
-> `PARADROID-200K.SSD` for you.
+Main RAM is the binding constraint throughout: the code image runs to within a couple of dozen
+bytes of its ceiling, and the four sideways banks carry the level data, the blitter, the panel and
+console, the transfer game and the sound driver.
 
 ## Repository layout
 
 ```
-src/            BBC Micro 6502 source (BeebASM); src/data/ is generated but tracked, and
-                briefing.txt inside it is the hand-editable intro-manual text
-pdloader/       The loading intro, by Chris Evans (scarybeasts) — a vendored drop, kept
-                verbatim; its README lists the six changes this port makes to it
-tools/          Python data-extraction and conversion tools (see below)
-annotate.py     Generates the annotated C64 disassembly
-docs/           Per-layer working notes, plus graphics.md — the C64 data reference
-PLAN.md         Layered build plan, memory map, and status
-BUGS.md         Open defects, with the evidence and what has been ruled out
-ANNOTATION.md   Analysis of the C64 original: memory map, subroutines, hardware
+src/               BBC Micro 6502 source (BeebASM). src/data/ is generated by tools/ but tracked,
+                   so the tree assembles without a local copy of the C64 listing
+pdloader/          The loading intro, by Chris Evans (scarybeasts) — a vendored drop, kept verbatim
+tools/             Python extraction and conversion tools for the C64 data
+annotate.py        Generates the annotated C64 disassembly
+docs/              Per-layer working notes: the measurements, the dead ends, the hardware facts
+docs/decisions.md  Why things are as they are, including which Paradroid the listing is
+PLAN.md            The live plan — state of the port, memory map, what is outstanding
+BUGS.md            Open defects, with the evidence and what has been ruled out
+ANNOTATION.md      Analysis of the C64 original: memory map, subroutines, hardware, data tables
 ```
 
-## Original game data
+## The original game's data
 
-The C64 game's code and data are **not** included in this repository — they remain the copyright of
-Andrew Braybrook and Hewson Consultants. To run the extraction tools you need to supply
-`paradroid_ce.lst` in the project root.
+**The C64 game's code and data are not in this repository.** They remain the copyright of Andrew
+Braybrook and Hewson Consultants. What *is* committed is the converted output in `src/data/` — the
+data the port needs, in BeebASM form — so the game builds without them.
 
-> **Which version?** That listing is a disassembly of the **1985 Hewson original / 1986 Competition
-> Edition** lineage — verified by unpacking all four C64 releases with `tools/unpack_prg.ps1` and
-> diffing them against it. Everything ported so far — level data, tile definitions, sprites, game
-> logic — is original-lineage. It is *not* Paradroid Redux or Heavy Metal, both of which relocate
-> everything and match the listing at ~1–3 %. See [`docs/decisions.md`](docs/decisions.md).
->
-> The two lineages also share their movement constants byte for byte: the Competition Edition is
-> faster because it runs more game-loop iterations per second, not because droids move further per
-> iteration.
+To re-run the extraction tools yourself you must supply your own copy of `paradroid_ce.lst`, a
+disassembly of the C64 binary, in the project root.
 
-With that in place:
+> **Which version?** That listing is the **1985 Hewson original / 1986 Competition Edition**
+> lineage, verified by unpacking all four C64 releases and diffing them against it. It is *not*
+> Paradroid Redux or Heavy Metal, both of which relocate everything and match at ~1–3%. The two
+> lineages share their movement constants byte for byte — the Competition Edition is faster because
+> it runs more game-loop iterations per second, not because droids move further per iteration. See
+> [`docs/decisions.md`](docs/decisions.md).
+
+With the listing in place:
 
 ```
 python annotate.py              # -> paradroid_ce_annotated.asm
 python tools/rip_graphics.py    # sprites and character sets
-python tools/rip_levels.py      # all 16 deck maps and tile definitions
+python tools/rip_levels.py      # deck maps and tile definitions
 python tools/rip_sideview.py    # ship cross-section
-python tools/rip_screens.py     # title screen and transfer minigame board
+python tools/rip_screens.py     # title screen and transfer board
 ```
 
-Those write to `tools/output/` and are for inspection. The two that feed the build write BeebASM
-source into `src/data/`:
+Those write to `tools/output/` and are for inspection. The `tools/export_*.py` scripts are the ones
+that feed the build, writing BeebASM source into `src/data/` — tiles, decks and palettes, droid
+sprites and statistics, effects, fonts, strings, console icons, the transfer board, the lift
+screen's cross-section, the droid database, the title screen, the droid portraits, the sound tables
+and the loading intro's picture. `build.ps1` does **not** run them, so a tool or a palette edit
+means running the tool and committing what it produces.
 
-```
-python tools/export_bbc.py        # tiles, decks, palettes -> src/data/
-                                  # RUN THIS after editing tools/deck_palettes.json:
-                                  # build.ps1 does not, and stops if it is stale
-python tools/export_droids.py     # droid sprites and game data -> src/data/
-python tools/export_effects.py    # bullet and explosion frames -> src/data/
-python tools/export_font.py       # the $7000 text font and the status box -> src/data/
-python tools/export_strings.py    # the $C000 name table -> src/data/
-python tools/export_icons.py      # the console's menu icons -> src/data/
-python tools/export_droidicon.py  # the console's droid icon -> src/data/
-python tools/export_xfer.py       # the transfer board, three ownership sets -> src/data/
-python tools/export_sideview.py   # the lift screen's ship cross-section -> src/data/
-python tools/export_droidinfo.py  # the droid database's stats and descriptions -> src/data/
-python tools/export_title.py      # the title screen's own glyphs and RLE -> src/data/
-python tools/export_portraits.py  # the 48 x 84 droid portrait pool -> src/data/
-python tools/export_sound.py      # the effect and instrument tables -> src/data/
-python tools/export_hsfont.py     # the high-score entry's font -> src/data/
-python tools/export_intro.py      # the loading intro's picture and colourways -> src/data/
-```
+Two are special cases: `tools/export_briefing.py` decodes the C64's intro manual into
+`src/data/briefing.txt`, which is tracked and hand-editable, and refuses to overwrite it without
+`--force`; `tools/make_briefing.py` converts that text on every build, and `build.ps1` does run it.
 
-`tools/export_briefing.py` is not in that list because it is one-shot: it decodes the C64's intro
-manual into `src/data/briefing.txt`, which **is** tracked, and refuses to overwrite it without
-`--force` so hand edits survive. `tools/make_briefing.py` is what converts that text every build,
-and `build.ps1` runs it for you.
+[`docs/graphics.md`](docs/graphics.md) is the reference for where each piece of C64 data lives,
+what format it is in, and which tool reads it.
 
-The tools require Python 3 and Pillow. Regenerate `src/data/` rather than editing it.
+## Status
+
+The game is complete and playable. [`PLAN.md`](PLAN.md) is the live list of what remains — chiefly
+the balance-and-fidelity pass and testing on real hardware — and each finished layer keeps its
+working notes in [`docs/`](docs/), including several options that were costed and deliberately
+rejected.
 
 ## Credits
 
-*Paradroid* was written by Andrew Braybrook and published by Hewson Consultants in 1985. This port
-is an unaffiliated hobbyist project.
+*Paradroid* was written by **Andrew Braybrook** and published by **Hewson Consultants** in 1985. It
+is his game; this is an unaffiliated hobbyist port, not endorsed by or connected with either.
+
+The loading intro — the three-robots picture, the lightning and the three-channel sample player —
+is by **Chris Evans (scarybeasts)**, vendored in [`pdloader/`](pdloader/) and kept verbatim so his
+next version arrives as a clean diff. The changes this port makes to it are marked `\ PORT:` at
+each site and listed in `pdloader/README.md`.
+
+Compression is [ZX0](https://github.com/einar-saukas/ZX0) by Einar Saukas. The assembler is
+[BeebASM](https://github.com/stardot/beebasm) by Rich Talbot-Watkins.
+
+**How it was written.** The port's code is entirely the work of **Claude** (Anthropic's Claude
+Code), written under the direction of **Kieran Connell** — the 6502 source in `src/`, the Python
+extraction and conversion tools, the build scripts and the documentation alike. The direction,
+the design decisions, the verification against the original and the playtesting are his; the
+typing is Claude's. `pdloader/` is the exception, being Chris Evans' own work, vendored.
+
+**There is deliberately no licence file.** This repository contains material that is not ours to
+license — the converted game data in `src/data/`, the vendored loading intro in `pdloader/` — so no
+licence is offered over the tree as a whole, and none should be inferred. It is published to be
+read and built, not to be relicensed. See [`docs/decisions.md`](docs/decisions.md).

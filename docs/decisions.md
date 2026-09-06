@@ -38,6 +38,7 @@ own doc, and the RAM recovery pass's are in [`ram-pass.md`](ram-pass.md).
 | **Every non-gameplay screen shows all 16 rows** | Started 2026-08-16 as the transfer board alone, on a variable fire-2→3 interval (`t1i3`); the lift's deck select and the deck plan followed. Now the console and its three pages, the four information screens and the game over's wash have it too, so **only the scrolled deck is 15 rows**. Set on entry, restored in **one** place — `ReframeView` — which freed 47 B of bank 4. The **ported** pages (database, information screens, game over) moved down one row onto the C64's own rows; the console main screen stays plotted from row 0 per KC's earlier rule. [`layer-9-hud.md`](layer-9-hud.md) §6g | 2026-08-16, extended 2026-08-21 |
 | The four banks ship ZX0-compressed on disc | Boot 14.4 s → 10.4 s measured. `PARDEPK` (an eighth disc file, the same depack macro as bank 4's) unpacks each bank from `&3200` straight into SWRAM; `tools/make_disc.py` compresses and lays the disc out in boot access order after beebasm — **the raw beebasm image is no longer bootable**. [`loader-compression.md`](loader-compression.md) | 2026-08-21 |
 | **The Redux added-features triage** | All of https://paradro.id/'s enhancements ruled on with KC, 2026-08-26. **Adopted**: explosions no longer restarted by the disruptor/bullets; the three-droid-deadlock randomisation (if our port reproduces the deadlock); lift-adjacent waypoints excluded from droid starting points; high-score entry remembers the previous initials; the console menu shows droids remaining on the deck and across the ship; the lift's deck-selection screen colours completed decks differently (KC spotted the last two in play, 2026-08-26 — they are not on the page's own list). **Rejected for 1.0**: a console game-statistics page (same substance as F3 statistics); the droid AI pack (flee/pursue/energizers/alert fire), radar, security doors, Redux scoring (accuracy/pacifist/alert bonuses — CE scoring stays, damage tables stay CE's too, laser swap included), transfer pulser-count link, randomised/spawn-point/deck-section map changes, disc-saved high scores, F7/F8 ship carryover, Competition Mode, F3 statistics, a shipped cheat mode (DEBUG_* builds remain the cheat surface). §12b records the detail | 2026-08-26 |
+| **No licence file, and the README says why** | The tree cannot be cleanly licensed: `src/data/` is converted Braybrook/Hewson artwork and `pdloader/` is Chris Evans' vendored drop, so a repository-wide licence would purport to grant rights over material that is not ours. A licence covering only our own work with carve-outs was considered and rejected as more risk than it buys. The README states the position explicitly, because GitHub renders a licence-less repo as a bare "No license" that a visitor cannot tell from an oversight | 2026-09-06 |
 | **The RAM recovery pass** | Five commits, 2026-08-25: dead tables deleted, the effect blitter to bank 5, the boot loop to `PARDEPK`, one droid-icon copy in main RAM, `PAGEBANK`/`PNMIRROR` as subroutines. Main RAM 2 B → 639 B, every other region up too, for ~57 cycles a pass. [`ram-pass.md`](ram-pass.md) has the decisions, the rejections and the reserves | 2026-08-25 |
 
 ### How the bank count grew from two to four
@@ -89,6 +90,27 @@ width and breaking the 32×32 tile aspect ratio.
 
 > An earlier version of this section described the map as 1bpp hires and the 4-colour budget as
 > "tight". Both were wrong — see [Layer 1](layer-1-graphics-pipeline.md).
+
+### No licence file, and why
+
+KC, 2026-09-06. There has never been a `LICENSE` in this repository, and there is not going to be
+one. The reason is that the tree is not ours to license as a whole:
+
+- **`src/data/`** is the C64 game's artwork, level data, text and droid statistics, converted
+  mechanically. It is derived work; the underlying material is Andrew Braybrook's and Hewson's.
+- **`pdloader/`** is Chris Evans' (scarybeasts) loading intro, a vendored drop kept verbatim,
+  under whatever terms he gives it.
+- **`bin/zx0.exe` and `tools/zx0src/`** are Einar Saukas' ZX0 (BSD-3), which carries its own.
+
+Our own material — `src/*.asm`, `tools/`, `build.ps1`, `docs/` — *is* ours and could carry a
+licence. **A licence covering only that, with carve-outs naming everything above, was considered
+and rejected**: it invites a reader to mistake the scope, and the carve-out list would have to stay
+correct as the tree changes. Saying nothing is the safer position for a port of somebody else's
+game.
+
+The one cost is that GitHub renders a licence-less repository as a bare "No license", which a
+visitor cannot tell from an oversight — so **the README's Credits section states the position in
+so many words**. If that sentence is ever removed, this decision goes with it.
 
 ## Source material: which Paradroid? ✅ DECIDED
 

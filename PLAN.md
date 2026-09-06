@@ -66,7 +66,11 @@ fixed. [`docs/layer-12-balance.md`](docs/layer-12-balance.md). 12b (the Redux ad
 ### Layer 13c — the machines people actually have
 
 Everything needing real hardware, in one place ([`docs/layer-13-compatibility.md`](docs/layer-13-compatibility.md)
-holds 13b, the probing half, which is done):
+holds 13b, the probing half, which is done).
+
+**A real Master 128 runs it (KC, 2026-09-06)** — the first hardware the port has run on, and the
+machine this pass expected to be the hardest. **A real B, a B+, DFS 2.26 and second processors are
+still untested**, and so are the items below, which the Master run does not settle on its own:
 
 - **The rupture goes up mid-frame and a TV can lose lock** — a roll or tear into a game and
   after a game over. Candidates: switch on a field boundary, order the writes so the frame stays

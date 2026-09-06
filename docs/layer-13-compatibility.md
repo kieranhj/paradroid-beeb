@@ -114,8 +114,13 @@ cycle-neutral against the old build, at the price of a hand-maintained address l
 
 ## 13c — Machine compatibility testing
 
-The port has only ever run on jsbeeb's `B-DFS1.2` and b-em. This pass runs it on the machines
-people actually have: B with DFS 1.2 and 2.26, B+, Master 128 (shadow RAM and a different `PAGE`),
+**A real Master 128 runs it — KC, 2026-09-06.** That is the first time the port has run on
+hardware rather than jsbeeb's `B-DFS1.2` or b-em, and it clears the machine this pass expected
+to be the awkward one: shadow RAM, a different `PAGE`, and the 65C12 the port deliberately does
+not use. The README lists the Master as a supported machine on the strength of it. **Real B and
+B+ hardware, DFS 2.26, and second processors are still untested.**
+
+This pass runs it on the machines people actually have: B with DFS 1.2 and 2.26, B+, Master 128 (shadow RAM and a different `PAGE`),
 and second processors, which the IRQ takeover and the rupture are both likely to dislike. Each
 combination either works, or is documented as unsupported with the reason.
 
