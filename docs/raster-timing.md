@@ -947,3 +947,45 @@ on a heavy diagonal leg through doors (5 refusals — the accepted cost, drawn w
 the timing histograms are unchanged from step 4's. Droids in tranche B still lag the scroll by
 one field — they always have, since the split was built — and stay that way: nothing holds them
 against the frame.
+
+## The bottom edge's corner: T1_TUNE was 10 us shy — 2026-09-06
+
+**KC: "the interrupt to blank the screen on the last line for the smooth vertical scrolling is
+ever-so-slightly late. you can see a couple of pixels on the bottom left corner of the play area
+box" — and then, correctly: "or it's most of a scanline too early!"** Both readings describe the
+same instant. It was late: the write had slipped past the end of the scanline it belonged in and
+landed a character or two into the next one, which is displayed.
+
+### The measurement
+
+MODE 1 shows 80 of 128 character times and the CPU runs at one cycle a character, so **a scanline
+is 128 CPU cycles, the display is cycles 0-79, and blanking is cycles 80-127.** Fire 2's unblank
+and fire 3's blank both have to land in that window or the scanline they cut is shown part-way
+across.
+
+Measured in jsbeeb, in gameplay, as the phase of the `STA CRTC_DATA` at `rt_drawok` against a
+`run_frames` paint anchor (`elapsed_cycles` at each, difference mod 128; the anchor sits at a line
+boundary — cross-checked against `RuptVSync`'s entry, which is the CA1 edge plus a known prologue):
+
+| build | fire 2's write | fire 3's write | margin to the wrap |
+|---|---|---|---|
+| `T1_TUNE = -4*SL - 22` | ~116-120 | **120-124** (starts measured at 121, 117, 119 on three consecutive frames) | **3-7 cycles** |
+| `T1_TUNE = -4*SL - 32` | ~93 | **~99** (starts 96, 96) | **29 cycles** |
+
+Three to seven cycles is not margin. **The IRQ's own latency swings further than that**: the 6502
+finishes the instruction it is on before taking the interrupt, and `SetCRTCStart`'s `SEI` window is
+17 cycles by itself. The frames that overran put a character of the row below the view in the
+bottom-left corner — exactly what KC saw, and intermittently, which is why it reads as a flicker.
+
+### The fix
+
+`T1_TUNE` from `-22` to `-32` — 10 us, which moves **every** fire 20 cycles earlier and centres
+fires 2 and 3 in blanking. Nothing crosses a line boundary, so **no edge moves**: the same 120
+scanlines are displayed, top and bottom, before and after. Fire 1 is unaffected in practice — its
+window is 16 *scanlines* wide (P+32 to P+48) and 10 us is a sixth of one.
+
+The old constant came from the `T1_PROBE` calibration recorded beside it (the R8 write landing 9 us
+into the displayed part, corrected to us 51). Reality had drifted about 6 us later than that
+arithmetic since — the phase is a property of the whole IRQ path, and that path has changed.
+**Take the phase from the emulator, not from the arithmetic.** The breakpoint-and-`elapsed_cycles`
+method above is cheaper than `T1_PROBE` and gives a number rather than a step to eyeball.

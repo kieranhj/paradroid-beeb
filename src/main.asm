@@ -917,14 +917,34 @@ SL = 64                         \ 1 scanline = 64 us = 64 T1 ticks
 \ view. Erring late is harmless — it just starts the view a couple
 \ of scanlines further down the map — but erring early shows content
 \ that belongs at the bottom of the window at the top of it.
-\ -22 us: the sub-scanline phase. Measured with T1_PROBE below — the
-\ R8 write was landing 9 us into the 40 us displayed part of the
-\ scanline, which cuts that scanline part-way across. MODE 1 shows
-\ 80 of 128 character times, so blanking is us 40-63; -22 us puts
-\ fire 1's write at us 51, fire 2 at ~53 and fire 3 at ~55 (they
-\ differ by the length of RuptTimer's dispatch). All three land in
-\ horizontal blanking, so a whole scanline is either shown or not.
-T1_TUNE = -4 * SL - 22
+\ -32 us: the sub-scanline phase. MODE 1 shows 80 of 128 character
+\ times and the CPU runs at one cycle a character, so the scanline is
+\ 128 cycles, the display is cycles 0-79 and BLANKING IS CYCLES
+\ 80-127. A write outside that window cuts a scanline part-way
+\ across; a write that overruns 127 puts a character or two of the
+\ next scanline on screen before it lands.
+\ It was -22, and that is what KC saw at the bottom-left corner of
+\ the play area (2026-09-06): a character of the row below the view.
+\ MEASURED in jsbeeb, in gameplay, as the phase of fire 3's
+\ STA CRTC_DATA against a frame-paint anchor — 121, 117 and 119 on
+\ three consecutive frames, so the WRITE (an STA's fourth cycle)
+\ landed at 120-124 of 128. That is 3 to 7 cycles of margin, and the
+\ IRQ's own latency swings further than that: the 6502 finishes the
+\ instruction it is on before taking the interrupt, and
+\ SetCRTCStart's SEI window is 17 cycles by itself. The frames that
+\ overran showed the corner.
+\ 10 us more moves every fire 20 cycles earlier and centres them:
+\ fire 3's write at ~102 of 128, fire 2's four cycles ahead of it,
+\ with ~22 cycles of margin to the display's end and ~25 to the
+\ line's. Nothing crosses a line boundary, so no edge moves.
+\ Fire 1 is unaffected in practice — its window is 16 SCANLINES
+\ wide (P+32 to P+48) and 10 us is a sixth of one.
+\ The old note recorded the T1_PROBE calibration that set -22: the
+\ R8 write landing 9 us into the displayed part, corrected to us 51.
+\ Reality had drifted ~6 us later than that since, which is what the
+\ measurement above supersedes — take the phase from the emulator,
+\ not from this arithmetic.
+T1_TUNE = -4 * SL - 32
 
 \ PHASE PROBE, normally 0. Set to 24 * SL to drag fire 1 back into
 \ the panel's displayed rows, giving the time straight back to fire
