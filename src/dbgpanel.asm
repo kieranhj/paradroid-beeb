@@ -73,7 +73,7 @@ IF DEBUG_VSYNC OR DEBUG_POS
 .dbgLastVs EQUB 0
 ENDIF
 
-IF DEBUG_VSYNC OR DEBUG_POS OR DEBUG_ENERGY
+IF DEBUG_VSYNC OR DEBUG_POS OR DEBUG_ENERGY OR DEBUG_TRCHK
 \ The digit font, shared by all three readouts — DbgFrameCount above,
 \ DbgHexDigit below. Guarded separately from DbgFrameCount so that a
 \ DEBUG_ENERGY-only build does not assemble the frame counter it never
@@ -105,7 +105,7 @@ DBG_PX = 17
   EQUB %1111 * DBG_PX, %1000 * DBG_PX, %1110 * DBG_PX, %1000 * DBG_PX, %1000 * DBG_PX
 ENDIF
 
-IF DEBUG_POS OR DEBUG_ENERGY
+IF DEBUG_POS OR DEBUG_ENERGY OR DEBUG_TRCHK
 \ ============================================================
 \ DbgHexDigit — A = 0-15, printed at swDst; swDst moves on one column
 \ ============================================================

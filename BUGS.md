@@ -34,6 +34,7 @@ sections below are in neither. **The table is the index; read it first.**
 | **19** | [`paradroid_ce_annotated.asm` truncated multi-column `.BYTE` lines](#19-paradroid_ce_annotatedasm-truncated-multi-column-byte-lines--fixed-2026-08-24) | **Fixed** 2026-08-24 | 43% of the listing's data was missing AND what survived was misaligned. `annotate.py`'s `get_content`; `tools/verify_annotation.py` is the standing check |
 | **20** | [The player's bullet starves every other collision in the pass](#20-the-players-bullet-starves-every-other-collision-in-the-pass--fixed-2026-09-03) | **Fixed** 2026-09-03 | `DrCollide` scanned from slot 7. The bullet has no `drSlotOwner`, so its pair dead-ended and the whole pass was abandoned. Playtest report #3 |
 | **21** | [Two black squares flicker on the transfer game's central column](#21-two-black-squares-flicker-on-the-transfer-games-central-column--2026-09-03-unreproduced) | **Open, unreproduced** | reported on real hardware, rarely on BeebEm. Two hypotheses, neither tested; the cursor one is a 30-second check |
+| **22** | [Sprite pixels are occasionally left on the deck](#22-sprite-pixels-are-occasionally-left-on-the-deck--2026-09-06-open) | **Open** | reported from play, in a firefight, no repro. The tranche split was the first suspect and is EXONERATED by measurement — `DEBUG_TRCHK` counted zero cross-tranche overlaps through minutes of contrived heavy fire |
 
 `## Delivered: DEBUG_POS` near the end is not a defect — it is the position bookmark that came out
 of #5, kept with the defects because that is where it is looked for.
@@ -1227,3 +1228,61 @@ without seeing it and longer on hardware, which is consistent but nowhere near p
 
 How often, whether it is always the same square, and — decisively for hypothesis 2 — **whether it
 has ever happened in the first game after a fresh boot.**
+
+
+## 22. Sprite pixels are occasionally left on the deck — **2026-09-06, OPEN**
+
+Reported by KC from play: *"very occasionally I will see some left over sprite pixels on the
+screen, so these didn't get restored properly ... generally if in an intense fire fight with
+another droid."* No repro.
+
+### Ruled out by reading
+
+- **A slot freed mid-pass.** `sprSaved` is not cleared when a droid dies or a bullet lands, and
+  `SprRestoreSlot` replays the DRAW's own `sprPtr0`/`sprScan0`/`sprKindS`/`sprShiftS`/
+  `sprSeqBaseS`, so a stale background still goes back where it came from.
+- **A slot freed and immediately reused** (explosion -> droid, or the reverse). Same mechanism,
+  deliberately: the restore uses the draw's kind, not this frame's.
+- **`SprDrawSlot`'s cull path** clearing `sprSaved` — it runs after that tranche's restore.
+- **A slot in neither tranche holding a saved background**: `SprSplitDecide` vetoes the split for
+  the whole pass on saved-but-inactive, which is the case that would otherwise strand one.
+
+### Ruled out by measurement: the tranche split
+
+The hypothesis was the split's overlap test. Within a pass the order is restore A, draw A, ...,
+restore B, draw B, so a tranche-B sprite drawn over a tranche-A one saves A's pixels into its
+background and stamps them back at its OLD position next pass — a sprite-shaped ghost. `SprAssignTr`
+prevents that by forcing overlapping sprites into one tranche, and `SprOverlapXY` pads its test by
+**2 units and 8 scanlines** on the stated grounds that 8 px is "the most any sprite's view position
+can shift". **That is false of bullets**: `cbDisp` is `$F4/$00/$0C`, so the player's bullet moves
+**±12 world px a pass** in each axis (`MovePlyFire` applies it once a pass), and relative motion
+between two sprites can reach ~20 px.
+
+`DEBUG_TRCHK` was built to settle it (`SprTrCheck`, `src/sprsplit.asm`, bank 6; three hex bytes at
+the top left of the panel — count, then the last offending pair). It keeps each slot's last-drawn
+position and counts pairs in opposite tranches whose **union** of this pass's and last pass's
+footprints intersect — exact, no pad, because the pad is what is on trial.
+
+- **Harness validated**: one branch flipped to count SAME-tranche overlaps instead reads `1D` (29)
+  within seconds, so the loop, the box arithmetic and the readout all work.
+- **The real test stayed at `00`** through several minutes of a contrived worst case: droid types
+  poked to class 16 (weapon 2), `shipLevel` = 31 so they fire on nearly every opportunity, the
+  player armed (`weaponType` = 2, `drFireDelay` confirmed cycling) so his 12 px/pass bullets were in
+  the air, `DEBUG_INVULN` on to survive it, moving through droids all the while.
+
+So the padding shortfall is real arithmetic and **does not** produce a violated invariant in play —
+most likely because a bullet spawns already offset from its firer and `SprScanCls`'s forcing merges
+components more aggressively than the pad alone. **The split is not the cause.**
+
+### Where to look next
+
+1. **A pass that exits through the middle** — defect #12's shape. `ConMenuInit4` clears `sprSplit`
+   for the console; the lift, the transfer and death take other mid-pass exits and each rests on
+   its own argument for why tranche B is safe.
+2. **Effect sprites at the strip's wrap** — the restore replays the drawn frame's box, and a
+   bullet flips frames every pass.
+3. **The bottom edge**, where a sprite is partly outside the 15 displayed rows.
+
+The harness ships off (`DEBUG_TRCHK = 0`, no bytes when off). To use it: set it to 1, play until
+the artefact appears, and read the top left of the panel. A count still at `00` when pixels are
+left on screen closes the split out completely; a non-zero one hands over the pair.

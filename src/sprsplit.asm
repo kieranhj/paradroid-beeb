@@ -315,3 +315,171 @@ SPR_OVL_Y = SPR_H + 8
   ADC #1
 .sab_x
   RTS
+
+IF DEBUG_TRCHK
+\ ============================================================
+\ SprTrCheck — DEBUG_TRCHK: does the split ever break its own rule?
+\ ============================================================
+\ THE INVARIANT UNDER TEST. Within a pass the order is restore A, draw
+\ A, ..., restore B, draw B. So if a tranche-B sprite overlaps a
+\ tranche-A one, B's saved background is taken with A already drawn
+\ into it, and next pass B's restore stamps an A-shaped fragment back
+\ at B's OLD position — sprite pixels left behind. SprAssignTr exists
+\ to stop that: overlapping sprites must share a tranche.
+\
+\ This walks every pair AFTER both tranches are drawn, with sprUnit and
+\ sprScrY still holding the positions the pass actually drew at (the
+\ movement pipeline writes the next pass's below).
+\
+\ IT TESTS THE UNION OF THIS PASS'S AND LAST PASS'S FOOTPRINTS, and it
+\ has to. The hazard is not only two overlapping sprites drawn in
+\ opposite tranches this pass: a tranche-B sprite's saved background
+\ was taken LAST pass, so a bullet that was over a droid last pass and
+\ has since moved 12 px away still stamps that droid's pixels back
+\ when it is restored. So each slot keeps the position it was drawn at
+\ last pass and the test is union against union — which is exactly
+\ what SprOverlapXY's 8 px pad is trying to approximate, and the point
+\ of the exercise is whether 8 px is enough.
+\
+\ The test here is EXACT — no pad — because this is the condition the
+\ invariant is stated in. A non-zero count says the assignment let a
+\ pair into opposite tranches whose footprints do meet, which cannot be
+\ anything but a hole in the padding or in SprAssignTr itself.
+\
+\ Reads out as three hex bytes at the top left of the panel: the hit
+\ count (saturating at FF), then the two slot numbers of the last pair.
+\ NOT COMPATIBLE WITH DEBUG_POS OR DEBUG_VSYNC — same digits.
+.dbgTrHits EQUB 0
+.dbgTrI    EQUB 0
+.dbgTrJ    EQUB 0
+.trcI      EQUB 0
+.trcJ      EQUB 0
+.trcULo    SKIP SPR_SLOTS        \ the union box, per slot: min and max
+.trcUHi    SKIP SPR_SLOTS        \ of last pass's drawn position and
+.trcYLo    SKIP SPR_SLOTS        \ this one's
+.trcYHi    SKIP SPR_SLOTS
+.trcUOld   SKIP SPR_SLOTS        \ what it was drawn at last pass; &FF
+.trcYOld   SKIP SPR_SLOTS        \ in trcTrOld means "not drawn"
+.trcTrOld  SKIP SPR_SLOTS
+
+.SprTrCheck
+\ ---- the union box, and this pass's positions kept for the next -----
+  LDX #SPR_SLOTS-1
+.trc_box
+  LDA sprTr,X
+  CMP #&FF                      \ not drawn this pass: no box, and
+  BEQ trc_boxnone               \ nothing to carry forward
+  LDA trcTrOld,X
+  CMP #&FF
+  BEQ trc_boxnew                \ not drawn last pass: the box is just
+                                \ this pass's position
+  LDA sprUnit,X
+  CMP trcUOld,X
+  BCC trc_uold                  \ this < last
+  LDA trcUOld,X : STA trcULo,X
+  LDA sprUnit,X : STA trcUHi,X
+  JMP trc_boxy
+.trc_uold
+  LDA sprUnit,X : STA trcULo,X
+  LDA trcUOld,X : STA trcUHi,X
+.trc_boxy
+  LDA sprScrY,X
+  CMP trcYOld,X
+  BCC trc_yold
+  LDA trcYOld,X : STA trcYLo,X
+  LDA sprScrY,X : STA trcYHi,X
+  JMP trc_boxnext
+.trc_yold
+  LDA sprScrY,X : STA trcYLo,X
+  LDA trcYOld,X : STA trcYHi,X
+  JMP trc_boxnext
+.trc_boxnew
+  LDA sprUnit,X : STA trcULo,X : STA trcUHi,X
+  LDA sprScrY,X : STA trcYLo,X : STA trcYHi,X
+.trc_boxnext
+  LDA sprUnit,X : STA trcUOld,X
+  LDA sprScrY,X : STA trcYOld,X
+.trc_boxstore
+  LDA sprTr,X   : STA trcTrOld,X
+  DEX
+  BMI trc_pairs
+  JMP trc_box
+.trc_boxnone
+  LDA #&FF : STA trcTrOld,X     \ and leave the old position alone
+  DEX
+  BMI trc_pairs                 \ out of a branch's reach
+  JMP trc_box
+
+\ ---- every pair in opposite tranches whose boxes meet --------------
+.trc_pairs
+  LDA #0
+  STA trcI
+.trc_i
+  LDX trcI
+  LDA sprTr,X
+  CMP #&FF
+  BEQ trc_inext
+  LDA trcI
+  CLC
+  ADC #1
+  STA trcJ
+.trc_j
+  LDA trcJ
+  CMP #SPR_SLOTS
+  BCS trc_inext
+  TAY
+  LDA sprTr,Y
+  CMP #&FF
+  BEQ trc_jnext
+  LDX trcI
+  CMP sprTr,X                   \ A is sprTr,Y — same tranche is legal
+  BEQ trc_jnext
+
+\ Boxes overlap when each low edge is inside the other's extent. The
+\ sprite is SPR_W units by SPR_H scanlines, so the extent is the box
+\ plus that less one.
+  LDA trcUHi,Y
+  CLC
+  ADC #SPR_W-1
+  CMP trcULo,X
+  BCC trc_jnext                 \ j ends left of i
+  LDA trcUHi,X
+  CLC
+  ADC #SPR_W-1
+  CMP trcULo,Y
+  BCC trc_jnext
+  LDA trcYHi,Y
+  CLC
+  ADC #SPR_H-1
+  CMP trcYLo,X
+  BCC trc_jnext
+  LDA trcYHi,X
+  CLC
+  ADC #SPR_H-1
+  CMP trcYLo,Y
+  BCC trc_jnext
+
+.trc_hit                        \ THE BREAKPOINT: reached only on a
+  LDA trcI : STA dbgTrI         \ violation, so a jsbeeb execute
+  LDA trcJ : STA dbgTrJ         \ breakpoint here is the whole proof
+  LDA dbgTrHits
+  CMP #&FF
+  BEQ trc_jnext
+  INC dbgTrHits
+.trc_jnext
+  INC trcJ
+  JMP trc_j
+.trc_inext
+  INC trcI
+  LDA trcI
+  CMP #SPR_SLOTS
+  BEQ trc_out
+  JMP trc_i
+.trc_out
+  LDA #LO(DBG_PANEL_TL) : STA swDst
+  LDA #HI(DBG_PANEL_TL) : STA swDst+1
+  LDA dbgTrHits : JSR DbgHexByte
+  LDA dbgTrI    : JSR DbgHexByte
+  LDA dbgTrJ    : JSR DbgHexByte
+  RTS
+ENDIF

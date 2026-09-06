@@ -517,6 +517,21 @@ DEBUG_KILL = DEV              \ dev only: see DEV above
 \ that a build has it on -- the repaint draws the map, not the pool.
 DEBUG_REDRAW = DEV            \ dev only: see DEV above
 
+\ DEBUG_TRCHK is a PROOF, not a readout: it checks the tranche split
+\ against its own invariant every split pass. Overlapping sprites must
+\ share a tranche, because within a pass the order is restore A, draw
+\ A, ... restore B, draw B — so a tranche-B sprite drawn over a
+\ tranche-A one saves A's pixels in its background and stamps them
+\ back at its old position next pass, which is a sprite-shaped ghost
+\ left on the deck. SprTrCheck (src/sprsplit.asm, bank 6) counts the
+\ pairs that break it, using the positions the pass actually drew at.
+\ Three hex bytes top left of the panel: count, then the last pair's
+\ two slots. NOT compatible with DEBUG_POS or DEBUG_VSYNC — same
+\ digits. OFF by default even in dev builds: it is turned on to answer
+\ one question. Reported by KC 2026-09-06 as leftover sprite pixels in
+\ a firefight.
+DEBUG_TRCHK = 0
+
 \ DEBUG_INVULN pins the player's energy at full, so a run can be taken
 \ deep into the ship without a 001's death ending it. Asked for by KC
 \ alongside 11b, which is what took the free respawn away: the port used
@@ -2063,6 +2078,11 @@ ENDIF
   JSR DoorAnimPaint             \ the doors that moved, then the anim
   LDA #1                        \ tiles — see door.asm's du_gate
   JSR SprDrawTr
+IF DEBUG_TRCHK
+  JSR PgSpr2                    \ here and not later: sprUnit/sprScrY
+  JSR SprTrCheck                \ still hold what this pass DREW, the
+  JSR PgData                    \ movement pipeline writes below
+ENDIF
 IF DEBUG_DRAW
   JSR DbgDeckBg
 ENDIF
@@ -4495,7 +4515,8 @@ INCLUDE "src/swram.asm"
 DEBUG_ANY1 = DEBUG_RASTER OR DEBUG_DRAW OR DEBUG_POS OR DEBUG_VSYNC
 DEBUG_ANY2 = DEBUG_TIME OR DEBUG_ENERGY OR DEBUG_MAPGUARD OR DEBUG_XFERWIN
 DEBUG_ANY3 = DEBUG_INVULN OR DEBUG_DECK OR DEBUG_KILL OR DEBUG_REDRAW
-DEBUG_ANY  = DEBUG_ANY1 OR DEBUG_ANY2 OR DEBUG_ANY3
+DEBUG_ANY4 = DEBUG_TRCHK
+DEBUG_ANY  = DEBUG_ANY1 OR DEBUG_ANY2 OR DEBUG_ANY3 OR DEBUG_ANY4
 
 \ A RELEASE BUILD CARRIES NO DEBUG AT ALL. The three above go off with
 \ DEV; this catches one of the readouts left on by hand, which would
@@ -4555,6 +4576,9 @@ EQUS " KILL"
 ENDIF
 IF DEBUG_REDRAW
 EQUS " REDRAW"
+ENDIF
+IF DEBUG_TRCHK
+EQUS " TRCHK"
 ENDIF
 EQUB 13
 ENDIF
