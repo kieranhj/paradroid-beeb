@@ -424,6 +424,37 @@ routine's own scratch bytes if they are declared after it.
   `CTRL+]` to another, then open the lift.
 - Control: an uncleared deck's cells are solid art.
 
+### The rectangle is not the deck (fixed 2026-09-06)
+
+**KC, two reports: a cleared bottom deck stippled a strip straight across the character row
+(`ref/deck-cleared-bug.png`), and a cleared engine deck stippled a solid rectangle over its
+neighbours (`ref/deck-cleared-bug2.png`).** Both are the same mistake, and it was in the walk from
+the day it was built: `LvClearedMark` marked every cell of `lvcDeckX/Y/W/H`, and **that rectangle
+is not the deck's shape**. `lift_DeckWidth` is 26 and 24 for decks 14 and 15 — the full hull at
+those rows, straight through the middle engine decks — and the tall decks' own rectangles overhang
+to the right of a hull that steps in.
+
+The C64 gets away with it because `lift_HighlightDeck` ($240C) **filters every cell by its
+character** before swapping it, and that filter is what decides which cells are the deck's:
+
+| | |
+|---|---|
+| `H > 1` | codes `$80-$9D` are the deck's; `$9E+` (the shafts) are not; and a cell whose LIT code is `$92/$95/$98/$9B` — the hull's right edge — **ends the row**, whatever the width says |
+| `H = 1` | only `$80-$82`, `$8C-$8D` and their lit partners `$90-$92`, `$9C-$9D`. That is the set that steps over a tall deck's interior (`$83-$8B`) where the bottom decks' wide rectangle runs through it |
+
+`LvClearedMark` now reads the character shadow — the colour shadow's own pointer less `XS_COFF`,
+borrowed and put back, so it still needs only one zero-page pair — and applies both arms,
+transliterated from $240C exactly as `LvHighlight` is. **The magic constants are the C64's own.**
+
+Cost: **112 B of bank 6** (664 free → 552; the walk also outgrew two of its own branches, hence the
+`JMP`s at the top and tail of the deck loop). No other region moved.
+
+Verified in jsbeeb on the console's ship page, against a Python model of $240C's filter run over the
+decoded side view: with decks 11/14/15 cleared the colour shadow marks **exactly** the model's cells
+— deck 14's row is cols 1-5, 7-9, 23, 25, 26 with the engine deck's interior skipped, not a solid
+26 — and with 10/12/13 cleared deck 10 marks 8, 10 and 11 cells on its three rows, stepping with
+the hull instead of squaring off over its neighbours.
+
 ### — the August attempt, kept for its costings —
 
 

@@ -260,6 +260,22 @@ lcmPtr = bufp
 \ It marks the colour shadow only; LvCellPaint does the drawing. Cells
 \ the shaft already coloured &F9 are left alone, so the chosen shaft
 \ still reads through a cleared deck.
+\ THE RECTANGLE IS NOT THE DECK. lift_DeckWidth is 26 and 24 for the
+\ two bottom decks, which is the whole hull at those rows - it runs
+\ straight through the triple-height engine decks in the middle - and
+\ the tall decks' own rectangles overhang to the right. The C64 does
+\ not care because lift_HighlightDeck ($240C) filters every cell by
+\ its CHARACTER before swapping it, and that filter is what says which
+\ cells are this deck's. So the walk reads the character shadow (the
+\ colour shadow's own address less XS_COFF) and applies the same two
+\ arms, transliterated from $240C exactly as LvHighlight is:
+\   H > 1  codes $80-$9D are the deck's, and $82/$85/$88/$8B end the
+\          row where the hull does ($92/$95/$98/$9B once lit)
+\   H = 1  only $80-$82, $8C-$8D and their lit partners $90-$92,
+\          $9C-$9D - the set that skips a tall deck's interior
+\ The magic constants are the C64's own; do not rationalise them.
+\ (Fixed 2026-09-06: without the filter a cleared bottom deck stippled
+\ a strip across the whole character row - ref/deck-cleared-bug.png.)
 \ Scratch. Declared BEFORE the routine, not after: bank 6 is at &8000
 \ and up, but on the first pass beebasm has not seen the labels yet and
 \ picks zero-page operands for them, then absolute on the second - and
@@ -267,17 +283,27 @@ lcmPtr = bufp
 .lcmWid  EQUB 0
 .lcmHgt  EQUB 0
 .lcmDeck EQUB 0
+.lcmH1   EQUB 0                 \ this deck's rectangle is one row high
+.lcmLit  EQUB 0                 \ the cell's LIT character code
 
 .LvClearedMark
   LDX #15
 .lcm_deck
   LDA DECK_DONE,X
-  BEQ lcm_next
+  BNE lcm_do                    \ the walk grew past a branch's reach
+  JMP lcm_next
+.lcm_do
 
   LDA lvcDeckW,X                \ the rectangle, as LvPaintRect's
   STA lcmWid
   LDA lvcDeckH,X
   STA lcmHgt
+  LDY #0                        \ the arm is chosen by the ORIGINAL
+  CMP #1                        \ height, so latch it before the row
+  BNE lcm_tall                  \ loop decrements lcmHgt
+  INY
+.lcm_tall
+  STY lcmH1
   STX lcmDeck
 
 \ addr = xsCram + (deckY+1)*40 + (deckX+1). Row 10 x 40 is past a byte,
@@ -304,15 +330,62 @@ lcmPtr = bufp
 .lcm_row
   LDY #0
 .lcm_col
+  LDA lcmPtr+1                  \ the character shadow is XS_COFF below
+  SEC                           \ the colour one, so one pointer serves
+  SBC #HI(XS_COFF)              \ both - borrow it and put it back
+  STA lcmPtr+1
   LDA (lcmPtr),Y
-  CMP #&F9                      \ the shaft wins: it is where the
-  BEQ lcm_skip                  \ player is going, and it is thinner
-  LDA #XS_CLR
-  STA (lcmPtr),Y
+  PHA
+  LDA lcmPtr+1
+  CLC
+  ADC #HI(XS_COFF)
+  STA lcmPtr+1
+  PLA
+  BPL lcm_skip                  \ blank, or not a hull character at all
+  LDX lcmH1
+  BNE lcm_h1
+
+  CMP #&9E                      \ ---- $240C's multi-row arm ----
+  BCS lcm_skip                  \ the shafts' own codes: never a deck's
+  CMP #&90
+  BCS lcm_h2m                   \ already lit: this deck IS the shown one
+  ADC #&10                      \ carry clear: exactly +$10
+.lcm_h2m
+  STA lcmLit
+  JSR lcm_set
+  LDA lcmLit                    \ the hull's right edge ends the row,
+  CMP #&92                      \ whatever the width says
+  BEQ lcm_erow
+  CMP #&95
+  BEQ lcm_erow
+  CMP #&98
+  BEQ lcm_erow
+  CMP #&9B
+  BEQ lcm_erow
+  BNE lcm_skip                  \ always
+
+.lcm_h1                         \ ---- $240C's single-row arm ----
+  CMP #&9C
+  BEQ lcm_mark
+  CMP #&9D
+  BEQ lcm_mark
+  CMP #&93
+  BCS lcm_skip
+  CMP #&90
+  BCS lcm_mark
+  CMP #&8E
+  BCS lcm_skip
+  CMP #&8C
+  BCS lcm_mark
+  CMP #&83
+  BCS lcm_skip
+.lcm_mark
+  JSR lcm_set
 .lcm_skip
   INY
   CPY lcmWid
   BCC lcm_col
+.lcm_erow
   CLC
   LDA lcmPtr   : ADC #40 : STA lcmPtr
   LDA lcmPtr+1 : ADC #0  : STA lcmPtr+1
@@ -322,7 +395,20 @@ lcmPtr = bufp
 
 .lcm_next
   DEX
-  BPL lcm_deck
+  BMI lcm_done
+  JMP lcm_deck                  \ out of a branch's reach, as above
+.lcm_done
+  RTS
+
+\ One cell of the colour shadow, Y within the row. The shaft wins: it
+\ is where the player is going, and it is thinner.
+.lcm_set
+  LDA (lcmPtr),Y
+  CMP #&F9
+  BEQ lcm_setx
+  LDA #XS_CLR
+  STA (lcmPtr),Y
+.lcm_setx
   RTS
 
 .ConAt
