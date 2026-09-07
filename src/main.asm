@@ -697,6 +697,21 @@ LOW_STAGE = &4A00
 \ DEPK_STREAM inside the font block. docs/no-load.md §5, step 5.
 TITLE_ADDR = &0900
 TITLE_LIMIT = LOWBSS_ADDR       \ &0C90 — 912 bytes, and lowbss above it
+\ AND IT IS NOT A DISC FILE ANY MORE (no-load step 4, 2026-09-07). Step
+\ 3 left it 397 bytes, which made it the cheapest of the six post-boot
+\ streams by a factor of two, so it is the first one to go resident: the
+\ image lives in bank 7 at titlImg and TiResident copies it down. The
+\ overlay is still ASSEMBLED at TITLE_ADDR, because it runs there and is
+\ not position-independent; beebasm's COPYBLOCK puts the assembled bytes
+\ into the bank at the end of the PARTITL block below.
+\ TITL_BYTES IS HAND-MAINTAINED AND THE ASSERT IS WHAT KEEPS IT HONEST,
+\ the same arrangement CON_STR_BYTES and FONTCODE_BYTES already use: the
+\ bank block needs the size long before the overlay is assembled, and
+\ beebasm resolves constants in file order. If the ASSERT fires, put the
+\ number it names here.
+TITL_BYTES = 397
+ASSERT TITL_BYTES > 256         \ TiResident copies one whole page and
+ASSERT TITL_BYTES < 512         \ then a tail; both must be non-empty
 
 \ ---- the boot depacker overlay ------------------------------
 \ PARDEPK is an eighth disc file: the ZX0 decompressor (the same macro
@@ -2160,9 +2175,8 @@ ENDIF                           \ other close: no band may outlive a pass
 .loadlow
   EQUS "LOAD PARALOW"
   EQUB 13
-.loadtitl
-  EQUS "LOAD PARTITL"
-  EQUB 13
+\ loadtitl is gone with no-load step 4: the title overlay is bank 7's
+\ image now and TitleSeq copies it down instead of loading it.
 
 \ UnpackBankIn and the boot's bank loop live in the PARDEPK overlay
 \ now (RAM pass 3) — they only ever run with it resident. The story of
@@ -2616,14 +2630,18 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
   LDA #0
   STA disrFlash
 
-  LDX #LO(loadtitl)
-  LDY #HI(loadtitl)
-  JSR OSCLI
+\ THE TITLE OVERLAY, AND IT IS A COPY RATHER THAN A LOAD (no-load step
+\ 4): bank 7 holds the image and TiResident lands it at TITLE_ADDR. The
+\ bank is paged explicitly rather than assumed — boot arrives here with
+\ SWRAM_XFER up, because UnpackBankIn on it is boot's last act, but the
+\ game-over path arrives from GoTitle's RestoreDfsWs and does not.
+  JSR PgXfer
+  JSR TiResident
   JSR TiBootPal                 \ KC 2026-08-24: at a COLD boot only, a
                                 \ random deck text palette for the front
                                 \ end to inherit, and the LFSR seed from
                                 \ the same sample. It is PARTITL code, so
-                                \ it must follow the load above; boot-only,
+                                \ it must follow the copy above; boot-only,
                                 \ so it needs bootPal. See its header
   JSR HsEntry                   \ Layer 11f: the high-score entry, if the
                                 \ game just ended on one. It draws on the
@@ -4189,8 +4207,45 @@ INCLUDE "src/data/title.asm"
 \ sentinels as constants, and beebasm resolves those in file order.
 INCLUDE "src/data/hsremap.asm"
 INCLUDE "src/highscore.asm"
+
+\ ---- the title overlay's IMAGE, and the copy that lands it --
+\ no-load step 4: PARTITL is not a disc file any more. The bytes are
+\ reserved here and written by the COPYBLOCK at the end of the PARTITL
+\ block below — the overlay is assembled at TITLE_ADDR because that is
+\ where it runs, and this is only where it is KEPT.
+\ IT COSTS THE BANK ITS OWN SIZE AND NOTHING MORE: it is behind
+\ plandata.asm's ALIGN with xfericon.asm and the title artwork, and the
+\ stream ships inside PARXFER's own ZX0 compression, so a raw image here
+\ is smaller on disc than a separately-packed one would be.
+.titlImg
+  SKIP TITL_BYTES
+
+\ TiResident — the image down to TITLE_ADDR, called by TitleSeq with
+\ this bank paged. It replaces `*LOAD PARTITL` and is 14 bytes cheaper
+\ than the OSCLI and its string were, which is 14 bytes of CODE IMAGE
+\ — the scarcest region in the machine and the reason this was the
+\ step-4 item worth doing first.
+\ EXACTLY TITL_BYTES, not two whole pages: a page-granular copy would
+\ read past the image, and at the tail of a bank that is the MOS ROM.
+\ X comes back to 0 from the first loop's own wrap.
+\ IT ENDS IN MAIN RAM'S PgData, which is legal from here and necessary:
+\ a PAGEBANK executed in this bank would swap the RTS out from under
+\ itself. PgData's RTS is TitleSeq's.
+.TiResident
+  LDX #0
+.tr_page
+  LDA titlImg,X
+  STA TITLE_ADDR,X
+  INX
+  BNE tr_page
+.tr_tail
+  LDA titlImg+256,X
+  STA TITLE_ADDR+256,X
+  INX
+  CPX #TITL_BYTES-256
+  BNE tr_tail
+  JMP PgData                    \ the data bank back, and its RTS
 .xfer_end
-SAVE "PARXFER", xfer_start, xfer_end, DATA_LOAD, DATA_LOAD
 
 \ ---- the text font: its own file, straight to &3C00 ---------
 \ It has no bank to belong to. Bank 4 is full, bank 6 now holds the panel
@@ -4424,7 +4479,15 @@ GUARD TITLE_LIMIT
 INCLUDE "src/title.asm"
 .titl_end
 ASSERT titl_end <= TITLE_LIMIT
-SAVE "PARTITL", titl_start, titl_end, TITLE_ADDR, TITLE_ADDR
+\ AND INTO BANK 7, WHICH IS WHERE IT IS KEPT (no-load step 4). It is
+\ assembled at TITLE_ADDR above because that is where it runs; this
+\ copies the assembled bytes into titlImg's reservation, and PARXFER's
+\ SAVE is deliberately below this line so that it picks them up. There
+\ is no PARTITL disc file any anymore — tools/make_disc.py's LAYOUT
+\ simply stops finding one.
+ASSERT titl_end - titl_start == TITL_BYTES
+COPYBLOCK titl_start, titl_end, titlImg
+SAVE "PARXFER", xfer_start, xfer_end, DATA_LOAD, DATA_LOAD
 
 
 \ ============================================================

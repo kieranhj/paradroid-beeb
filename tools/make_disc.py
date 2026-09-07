@@ -125,12 +125,17 @@ def in_place_delta(packed, raw):
 # in the code image since 2026-08-29), then the title, then (after
 # the title is dismissed) the font and the low overlay.
 # PARBRF (the briefing driver, loaded by TiShow on every title) and
-# PARMAN (the briefing text, loaded only when the title times out) sit
-# with PARTITL: the three are all title-time loads. Layer 11f.
+# PARMAN (the briefing text, loaded only when the title times out) are
+# both title-time loads. Layer 11f.
+# PARTITL USED TO SIT WITH THEM AND IS GONE (no-load step 4, 2026-09-07):
+# the title overlay is 397 bytes carried inside PARXFER now, copied down
+# by TiResident, so there is no title file to place. It is dropped from
+# LAYOUT rather than left in it, because the list doubles as the
+# required-file check below and would otherwise fail every build.
 # On an --intro build, PINTRO slots in after !BOOT: it is the first
 # thing !BOOT runs (docs/intro.md §4).
 LAYOUT = ["!BOOT", "PARSWR", "PARA", "PARADAT", "PARASPR", "PARSPR2",
-          "PARXFER", "PARTITL", "PARBRF", "PARMAN", "PARAFNT", "PARALOW"]
+          "PARXFER", "PARBRF", "PARMAN", "PARAFNT", "PARALOW"]
 
 SECTOR = 256
 

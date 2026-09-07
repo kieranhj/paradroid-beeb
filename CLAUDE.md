@@ -140,7 +140,8 @@ code. Redirecting **stdout** alone is safe, which is how `build.ps1` captures th
 
 **beebasm's `SAVE` writes a loose host file whenever it has no disc image to put it in**, so any
 run without a working `-do` drops `PARA`, `PARADAT`, `PARASPR`, `PARSPR2`, `PARXFER`, `PARAFNT`,
-`PARALOW`, `PARTITL`, `PARBRF`, `PARMAN` and `PARSWR` in the project root. They are gitignored. Two things follow: a `-do` path that cannot be written leaves a
+`PARALOW`, `PARBRF`, `PARMAN` and `PARSWR` in the project root (`PARTITL` was one of them until
+no-load step 4 stopped `SAVE`ing it). They are gitignored. Two things follow: a `-do` path that cannot be written leaves a
 build that *looks* like it worked, and the symbol dump below litters unless you give it one.
 
 Symbol addresses come from
@@ -181,8 +182,10 @@ variable's runtime address for an emulator poke. `-do` is there only to stop the
   above `&3000` is wiped before it can be read — hence the split `PARA` / `PARADAT` disc files.
   **The mode change is the LAST thing boot does before the title (2026-08-31)**: every bank load
   and copy-up happens in the MOS's boot mode, where nothing they touch is displayed, and
-  `SetupMode` then leaves the frame blank with **R1 = 0** so that `TitleSeq`'s own `*LOAD` of
-  `PARTITL` cannot be seen either — `TiCRTC` restores `R1 = PLAY_UNITS` with the title.
+  `SetupMode` then leaves the frame blank with **R1 = 0** so that the title-time loads cannot be
+  seen either — `TiCRTC` restores `R1 = PLAY_UNITS` with the title. (`PARTITL` was the load this
+  was written for; it is a bank-7 copy since no-load step 4, but `TiShow` still `*LOAD`s `PARBRF`
+  and the blank is still doing its job.)
   `docs/loader-compression.md` has the note, including why R6 = 0 leaks a row and R1 does not.
 - **`&FE44` read at a fixed point in a vsync-locked loop is NOT random.** System VIA T1 runs
   the 100 Hz tick: 20,000 cycles, exactly half a frame, so the sampled byte is near-constant
@@ -226,13 +229,13 @@ paragraph:
 
 | Region | Free (measured 2026-09-02, after layer-9 DECISION 20 and layer-12 DECISION 6) |
 |---|---|
-| Main RAM code image | **25 B** — `code_end` `&2FE7`. hexwab's `sTmp` `EQUB` gave 1 back on 2026-09-03. Layer-9 DECISION 20's energy bar took 7 on 2026-09-02 (`pmEnergy` and its mirror); 31 B before. Layer-12 DECISION 6 took 51 the same day (two bank-6 trampolines, the 16-byte `DECK_DONE` and its clear); it was 82 B after hexwab's two patches and **3 B** before them. Historically the binding constraint |
+| Main RAM code image | **14 B** on the `no-load` branch — `code_end` `&2FF2`. It was **0** from `b385cd6` until no-load step 4, which deleted `loadtitl`'s OSCLI and its string and gave 14 back; that is what funds BUGS.md #23. The pre-branch history: **25 B**, `code_end` `&2FE7`. hexwab's `sTmp` `EQUB` gave 1 back on 2026-09-03. Layer-9 DECISION 20's energy bar took 7 on 2026-09-02 (`pmEnergy` and its mirror); 31 B before. Layer-12 DECISION 6 took 51 the same day (two bank-6 trampolines, the 16-byte `DECK_DONE` and its clear); it was 82 B after hexwab's two patches and **3 B** before them. Historically the binding constraint |
 | Bank 4 | **13 B** on the gauge (2026-09-03: +2 from hexwab's dead store in `ra_row`; DECISION 6's two hooks took 8 on 2026-09-02, 19 B before) (2026-09-01: +8 net from the black-while-drawing rework, layer-8b §4b; 11 B before) + `colourMap` `ALIGN` pad, **which is SPENT** — 200 B put in front of it cost the bank 259, measured |
 | Bank 5 | **674 B** (2026-09-01: **+668** from the SCANSTEP deferred carry, 168 expansions at 4 B apiece). It was **6 B** immediately before that — the tightest region in the machine — and the 119 B this row used to quote was stale by a build |
 | Bank 6 | **552 B** (2026-09-06: —112 for layer-12 DECISION 6's character filter, the cleared-deck stipple fix; 664 on the gauge before it) (2026-09-02: —75 for layer-9 DECISION 20's `PnEnergy`, and before it —183 for layer-12 DECISION 6 — `LvClearedMark`, the 64 B of `svdecks6.asm` and its scratch; 931 B before). **The bank with room, and the reason DECISION 6 could be built at all** |
-| Bank 7 | **1,181 B** — the `no-load` branch's packing pass took it from 25 B to 3,021 (transfer board, lift screen, portrait pool, `poLut`; `docs/no-load.md` §4), and step 3 then SPENT 1,840 of that on the title artwork and the high-score screen. Before the branch it was 25 B, measured 2026-09-02 by bisecting a `SKIP` at `.LvStart7` |
+| Bank 7 | **759 B** — the `no-load` branch's packing pass took it from 25 B to 3,021 (transfer board, lift screen, portrait pool, `poLut`; `docs/no-load.md` §4); step 3 SPENT 1,840 on the title artwork and the high-score screen, and step 4 a further 422 on the title overlay's image and `TiResident`. Before the branch it was 25 B, measured 2026-09-02 by bisecting a `SKIP` at `.LvStart7` |
 | `PARBRF` (`&0400`, hard ceiling `&0800`) | **12 B** (36 B before `BrTimeout`'s R8 blank, 56 B before the CTRL+R hook) |
-| `PARTITL` (`&0900`, ceiling `&0C90` = `LOWBSS_ADDR`) | **515 B** — the overlay is 397 and the region is 912. `&0800–&08FF` is NOT in it; see the note under the disc files below |
+| The title overlay (`&0900`, ceiling `&0C90` = `LOWBSS_ADDR`) | **515 B** — the overlay is 397 and the region is 912. `&0800–&08FF` is NOT in it; see the note under the disc files below. Not a disc file since no-load step 4: the image is bank 7's |
 | `PARAFNT` block | **16 B** before `SPR_SAVE` (`KeyDownIx` took 7, DECISION 5's `CN_STRS` 10) |
 | `PARMAN` (bank 5's briefing load; the bound is `DEPK_STREAM + size <= PANEL_ADDR`) | **225 B** — the redefine screen took 893 |
 | Low overlay | `lowcode` **9 B** (its two raw `PAGEBANK`s became `JSR Pg*`), `lowcode2` 3 B, `lowbss` **0 B** (`sprCls` took the last 8, 2026-09-01) |
@@ -329,9 +332,12 @@ reason. A bare `*RUN PARA` finds no magic byte and falls back to 4,5,6,7, so deb
 unchanged. It is assembled AFTER `SAVE "PARA"` because it runs at `&1900`, inside the code image.
 `docs/layer-13-compatibility.md`.
 
-**`PARTITL` is a seventh disc file — the title screen's DRIVER**, 397 bytes, loaded by `TitleSeq`
-when the title is wanted: at boot, and again on the way back from a game over. **It is at `&0900`
-since no-load step 3 (2026-09-07), not `&3000`** — in the MODE 1 charset's ground, above `PARBRF`
+**The title screen's DRIVER is a 397-byte overlay at `&0900`, and it is NOT a disc file** —
+no-load step 4 (2026-09-07) put the image in bank 7 at `titlImg` and `TitleSeq` calls `TiResident`
+to copy it down, at boot and again on the way back from a game over. It is still *assembled* at
+`&0900` (beebasm's `COPYBLOCK` moves the bytes into the bank), because it runs there and is not
+position-independent, and `TITL_BYTES` in `main.asm` is the hand-maintained size the `ASSERT`
+guards. **It went to `&0900` from `&3000` in no-load step 3** — in the MODE 1 charset's ground, above `PARBRF`
 at `&0400–&0800` and deliberately clear of `&0800–&08FF`, which is the MOS's sound workspace and is
 chewed while the MOS owns IRQ1V (the PARBRF block in `main.asm` has the measurement). `&3000` and
 the text font therefore survive the title now, which is what let the high-score screen's private

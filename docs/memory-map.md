@@ -105,10 +105,11 @@ of garbage in the play area.
 `PageDataIn`, never loaded with the code. The tile map, the panel, `CHAR_PTR` and `SPR_MASKTAB` all
 already satisfy it.
 
-Three more files load after the bank staging, in TitleSeq's order: `PARTITL` to **`&0900`** (the
-title's driver, run in place in the charset's ground — it moved off `&3000` in no-load step 3,
-2026-09-07, so the text font now survives the title), `PARAFNT` straight to `&3000`, and `PARALOW`
-staged on the panel and copied down last — see the boot code and `layer-11-sound-title.md` §11c.
+Two more files load after the bank staging, in TitleSeq's order: `PARAFNT` straight to `&3000`,
+and `PARALOW` staged on the panel and copied down last. (`PARTITL` was a third until no-load step
+4, 2026-09-07: the title's driver still runs at **`&0900`**, in the charset's ground — it moved
+off `&3000` in step 3 so the text font survives the title — but its image is carried in bank 7
+and `TiResident` copies it down, so there is no load.) — see the boot code and `layer-11-sound-title.md` §11c.
 
 ### Zero page, by group
 
@@ -356,7 +357,7 @@ that makes the bank-4 files safe is in `bufcore.asm`'s header.
 | `liftview.asm` | bank 7 | Layer 8b's deck-selection screen |
 | `condeck.asm` | bank 7 | The console's deck plan page |
 | `condb.asm` | bank 7 | The console's droid database page |
-| `title.asm` | `PARTITL` at **`&0900`** | Layer 11's title screen driver plus `HsEntry` — a disc overlay, loaded by `TitleSeq` at boot and after a game over, buried by the next `BuildCharset`. Its artwork is `src/data/title.asm` in bank 7 (no-load step 3) |
+| `title.asm` | assembled at **`&0900`**, kept in bank 7 | Layer 11's title screen driver plus `HsEntry` — an overlay copied down by `TiResident` at boot and after a game over, buried by the next `BuildCharset`. Not a disc file since no-load step 4. Its artwork is `src/data/title.asm`, also bank 7 (step 3) |
 | `highscore.asm` | bank 7 | Layer 11f's high-score entry, everything below `HsEntry` — it moved out of the PARTITL overlay in no-load step 3 and its 1,152-byte alphabet became `hsremap.asm`, 72 bytes of indices into `textfont` |
 | `portrait.asm` | bank 7 | `PoDraw` — the 48 × 84 droid portrait, composed from `portraits.asm`'s pool for the database page (Layer 13d) |
 

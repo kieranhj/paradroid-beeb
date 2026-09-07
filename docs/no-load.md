@@ -115,7 +115,8 @@ Branch `no-load`, off `main` at `eabeffe`.
 | `b385cd6` | the board depacks before the palette moves | |
 | `7c0c4d5` | BUGS.md 23 and 24 | |
 | *step 3* | title artwork to bank 7 | 1,881 |
-| *step 3* | `hsGlyphs` deleted, high-score screen to bank 7, PARTITL to `&0900` | **1,181** |
+| *step 3* | `hsGlyphs` deleted, high-score screen to bank 7, PARTITL to `&0900` | 1,181 |
+| *step 4* | the title overlay itself into bank 7 — **PARTITL stops being a disc file** | **759** |
 
 **Step 2 is complete: bank 7 went from 7 bytes free to 3,021.** Content saving 3,295.
 
@@ -138,7 +139,56 @@ Order below is the posted one, with corrections found since.
 **Step 3 — `hsfont` dedup + PARTITL relocation. DONE 2026-09-07.** See §6, which is now the
 record of what was built rather than the plan for it.
 
-**Step 4 — the individual loads**, cheapest first, as space allows.
+**Step 4 — the individual loads**, cheapest first, as space allows. **The title overlay is done,
+2026-09-07** — see §4a. Five post-boot streams are left.
+
+### 4a. Step 4's first item: the title overlay, 2026-09-07
+
+Step 3 left `PARTITL` at **397 bytes**, which made it the cheapest post-boot stream by a factor of
+two — so it is the first one to go resident. The image lives in bank 7 at `titlImg`; `TiResident`
+copies it down to `TITLE_ADDR`; the disc file is gone.
+
+**The overlay is still ASSEMBLED at `&0900`** because it runs there and is not
+position-independent. beebasm's **`COPYBLOCK`** moves the assembled bytes into the bank, which is
+what makes "assembled at one address, stored at another" possible in a single pass. Two
+consequences worth knowing before touching it:
+
+- `SAVE "PARXFER"` had to move **below** the PARTITL block, so that it writes the bank *after* the
+  `COPYBLOCK` has filled `titlImg`. It is the last thing in that block now.
+- `TITL_BYTES` is **hand-maintained**, with `ASSERT titl_end - titl_start == TITL_BYTES` to keep it
+  honest — the bank block reserves the space long before the overlay is assembled, and beebasm
+  resolves constants in file order. `CON_STR_BYTES` and `FONTCODE_BYTES` are the same arrangement.
+
+`TiResident` copies **exactly `TITL_BYTES`**, one full page then a tail, rather than two whole
+pages: a page-granular copy would read past the image, and at the tail of a bank that is the MOS
+ROM. It ends in main RAM's `PgData`, whose `RTS` is `TitleSeq`'s — a `PAGEBANK` executed in the
+bank would swap the `RTS` out from under itself.
+
+| | before | after |
+|---|---|---|
+| **main-RAM code image free** | **0** | **14 B** (`code_end` `&2FF2`) |
+| bank 7 free | 1,181 | **759** (397 image + 25 `TiResident`) |
+| post-boot loads | 6 | **5** |
+| disc files | 12 | 11 |
+| disc image, packed | 46,848 | 46,592 |
+
+**The 14 bytes of code image are the point, and they were the surprise.** `LDX`/`LDY`/`JSR OSCLI`
+(7 bytes) became `JSR PgXfer` / `JSR TiResident` (6), and `loadtitl`'s `EQUS "LOAD PARTITL"` + `CR`
+(13) went entirely. §10 said step 3 would find the bytes BUGS.md #23 needs and was wrong; step 4
+found them instead, and #23 wants three of the fourteen.
+
+**Verified.** Offline: the 397 bytes `COPYBLOCK` placed in the bank were extracted from the raw SSD
+and compared against beebasm's own listing of `&0900–&0A8D` — identical across the 383 bytes the
+listing renders as code. Against the *previous* build's `PARTITL` file they differ in exactly eight
+bytes, and all eight are 16-bit operands pointing into the code image, each moved down by 13 or 14
+— the shift `loadtitl`'s deletion caused, not corruption. In jsbeeb: cold boot title (first copy),
+game, ESCAPE, game over, high-score entry, title again (**second copy, from the game-over path** —
+which is why `TitleSeq` pages `SWRAM_XFER` explicitly rather than relying on the bank it arrives
+on; boot arrives with it up, the game-over seam does not), briefing timeout, briefing, fire exit,
+game. All correct.
+
+**`tools/make_disc.py`'s `LAYOUT` lost `PARTITL`**, and that list doubles as the required-file
+check — which is what caught the first build of this change, exactly as it should have.
 
 **Step 5 — the briefing page split.** The text is 4,608 raw / 2,438 as one stream; as five page
 streams **2,805 (+367)**, and the buffer needed is **1,082**, the largest page, against the
@@ -326,13 +376,29 @@ fire while *standing on* `CHAR_CONSOLE` (`combat.asm`'s `dcu_console`), not by w
 
 ## 10. State of the tree
 
-**The code image is exactly full** — `code_end == FONT_ADDR == &3000`, zero bytes free. Bank 4 has
-8. Bank 7 has **1,181** after step 3. `PARBRF` ends `&07F4`; `PARTITL` now runs `&0900–&0A8D`, so
-`&0A8D–&0C90` (515 bytes) is the free tail of the charset region at title time.
+**The code image has 14 bytes** — `code_end` `&2FF2`, after step 4 deleted `loadtitl`. It was
+exactly full (`code_end == FONT_ADDR == &3000`) from `b385cd6` until then. Bank 4 has 8. Bank 7 has
+**759**. `PARBRF` ends `&07F4`; the title overlay runs `&0900–&0A8D`, so `&0A8D–&0C90` (515 bytes)
+is the free tail of the charset region at title time.
 
-**Step 3 did NOT free any code image, and BUGS.md #23 and #24 are still unfunded.** The hope in an
-earlier draft of this section — that step 3 would find the three bytes #23 needs, because it
-"reorganises main RAM anyway" — turned out to be wrong: everything step 3 moved was overlay or
-bank content, and the code image is untouched at `&3000`. Whatever funds #23 has to come from
-somewhere else. Nothing in this branch's remaining steps obviously does; step 6's DFS reclaim is
-the nearest, and its pieces are all in low RAM rather than the code image.
+**BUGS.md #23 (3 bytes) and #24 are now affordable and are still unfixed.** Step 3 did not free any
+code image — everything it moved was overlay or bank content — and an earlier draft of this
+section had assumed it would, which was wrong. **Step 4 is what paid**: removing a load removes its
+OSCLI and its filename, and that is a pattern worth remembering for the four remaining streams.
+`PARBRF`, `PARAFNT`, `PARALOW` and `PARMAN` each carry an `EQUS` of their own name plus a call
+site; going resident reclaims those too.
+
+**Five post-boot streams are left**, and what could hold them:
+
+| stream | disc bytes | bank space available |
+|---|---|---|
+| PARMAN | 3,595 | — |
+| PARASPR | 3,510 | — (step 5's job, not step 4's) |
+| PARAFNT | 1,947 | — |
+| PARBRF | 1,012 raw / 770 packed | bank 7's 759 is *just* short |
+| PARALOW | 919 raw / 730 packed | bank 7's 759 would take it packed |
+
+Bank 4 has 8 bytes, bank 5 has 665 and bank 6 has 552, so nothing else fits a whole stream and no
+two banks can be combined — only one is visible at a time. **`PARALOW` packed is the next
+candidate** and it is the last one bank 7 can hold; after that, step 4 is out of space until step 5
+frees bank 5 or step 6 reclaims the DFS workspace.

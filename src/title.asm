@@ -27,9 +27,16 @@
 \ header of tools/export_title.py, and [DECISION 8]. They live in BANK
 \ 7 now, with the RLE stream, and TiPaint pages for them.
 \
-\ A DISC OVERLAY, NOT A BANK RESIDENT. Layer 13d restored [DECISION 6]:
-\ TitleSeq *LOADs this file when the title is wanted — at boot, and
-\ again on the way back from a game over.
+\ AN OVERLAY, AND NO LONGER A DISC FILE. Layer 13d restored [DECISION
+\ 6] and made this a PARTITL disc file that TitleSeq *LOADed when the
+\ title was wanted — at boot, and again on the way back from a game
+\ over. no-load step 4 (2026-09-07) kept the overlay and dropped the
+\ file: step 3 had left it 397 bytes, the cheapest of the six post-boot
+\ streams by a factor of two, so the image now lives in bank 7 at
+\ titlImg and TiResident copies it down. It is still ASSEMBLED here at
+\ TITLE_ADDR because it runs here and is not position-independent;
+\ beebasm's COPYBLOCK puts the bytes in the bank. The one-load-a-title
+\ went, and so did the OSCLI and its string — 14 bytes of code image.
 \
 \ IT IS AT &0900 NOW, NOT &3000 (no-load step 3, 2026-09-07). It used
 \ to be assembled over PARAFNT's ground, which is why the title carried
