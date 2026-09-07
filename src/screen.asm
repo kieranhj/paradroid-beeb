@@ -540,6 +540,15 @@ ENDIF
 \ JMP ml_modalend before the level draw, AnimTick and AnimScanPass,
 \ and MapGuardSnap is DEBUG_MAPGUARD only.
 \
+\ AND THIS REBUILD DOES NOT COVER THE PLAN PAGE, which is the trap.
+\ Two console pages in a row never come back through here — the
+\ console does not return to the deck until it closes — so the ship
+\ page's depack was still in the map when the plan read it. ct_trydeck
+\ in main.asm rebuilds on the plan page's own entry for that reason.
+\ The rule the arena runs on: this is where LEAVING a modal screen
+\ puts the map back, and any screen that READS the map ensures it for
+\ itself on the way in.
+\
 \ LOADDECK STILL BUILDS ITS OWN and that call stays: it runs ahead of
 \ DoorInit and DroidsInit, and leaving it there keeps LoadDeck correct
 \ without depending on anything here. The second build is identical

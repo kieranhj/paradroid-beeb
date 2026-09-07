@@ -2414,7 +2414,28 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
   LDA conDeckReq
   CMP #1
   BNE ct_noship
-  JSR PgXfer   
+\ ---- the plan reads the tile map, so REBUILD it first --------
+\ ConDeck7 walks the map in place (condeck.asm), and it is the only
+\ screen that does. Everything else modal treats &4600 as scratch --
+\ the ship page above depacks the lift artwork into it, the transfer
+\ board its own -- and the rebuild that covers all of that is the one
+\ in RedrawAll, which does not run between two CONSOLE pages: the
+\ console never returns to the deck until it closes. So the ship page
+\ then the plan came out corrupt (KC, on the branch).
+\
+\ THE READER ENSURES THE MAP. Cleaning up in whichever screen dirtied
+\ it would work today and rot the moment something else takes the
+\ arena; doing it here is one rule that holds however many users the
+\ arena gains. It is one-shot -- conDeckReq 1 -> 2 -- so this is once
+\ per visit to the page, ~40k cycles, and it is redundant only when
+\ the plan is opened without the ship page having been seen.
+\
+\ BEFORE PgXfer, because BuildLevel is bank 4's and bank 4 is still
+\ the resting bank here; below this line the page is bank 7's.
+  LDA deck
+  JSR BuildLevel
+
+  JSR PgXfer
   JSR ConDeck7                  \ bank 7: the plan, and the white marker
   JSR PgData   
   LDA #2
