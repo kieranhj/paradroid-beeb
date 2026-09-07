@@ -8,6 +8,14 @@ analysis; this file is the working copy, kept current as the branch lands.
 **Read the arena rule below before touching `&4600`.** It is the only invariant on the branch and
 it has already been broken twice.
 
+**STATUS, 2026-09-07: PAUSED, AND NOT READY FOR `main`.** Steps 2, 3 and the first item of step 4
+have landed — one post-boot load fewer and 14 bytes of code image back. The rest is blocked, and
+**§1a is the important read**: the founding table in §1 was wrong in both directions, and adding
+supply against demand for the first time puts the goal ~1,200 bytes out of reach. §10 has the
+state of play and **the list of what must be tested before this merges** — several screens that
+KC signed off earlier in the branch have not been looked at since bank 7 was rearranged under
+them.
+
 ---
 
 ## 1. The problem, in one table
@@ -576,6 +584,10 @@ fire while *standing on* `CHAR_CONSOLE` (`combat.asm`'s `dcu_console`), not by w
 
 ## 9. Outstanding verification
 
+**Superseded by §10's list, which is longer.** These two are the ones that were outstanding when
+step 2 finished; they are still outstanding, and the KC sign-offs quoted in them PRE-DATE steps 3
+and 4 and the bank 4 pass, so the reassurance in the brackets no longer covers the current build.
+
 - **A droid type whose four portrait slots straddle a chunk boundary.** Types **12** (slots 15, 37,
   38, 39), **13** (55–58) and **17** (7, 8, 11, 9, 10). The droid database shows them. *(KC checked
   the droid info page 2026-09-07 and it is good; the straddling types specifically are still
@@ -584,7 +596,71 @@ fire while *standing on* `CHAR_CONSOLE` (`combat.asm`'s `dcu_console`), not by w
   `sideview`'s depack trashes the map and `RedrawAll` must restore it. *(Lift screen and console
   ship page confirmed good by KC 2026-09-07; the no-load exit specifically was not called out.)*
 
-## 10. State of the tree
+## 10. WHERE WE ARE — paused 2026-09-07, NOT READY TO MERGE
+
+**The branch works and is one load lighter. It has not been tested widely enough to go to `main`.**
+
+### What landed
+
+| | |
+|---|---|
+| Post-boot loads | **6 → 5** — `PARTITL` is gone; the title overlay is carried in bank 7 and copied down |
+| Main-RAM code image | **0 → 14 B** free, the first the branch has given back |
+| `&3000` at the title | **survives** — which is the precondition for ever dropping the `PARAFNT` reload |
+| Bank 7 | 25 → 3,021 (step 2) → **759** after steps 3 and 4 |
+| Bank 4 | 8 → **225** |
+| Disc image, packed | 48,896 → **46,336**; 12 files → 11 |
+| `hsGlyphs` | deleted — 1,152 bytes became a 72-byte remap into `textfont` |
+
+Steps 2, 3 and the first item of step 4 are complete. **Steps 4 (the rest), 5 and 6 are blocked**
+— §4b for the local arithmetic, **§1a for why it was never going to close**.
+
+### What has been verified, and in what
+
+In jsbeeb, repeatedly, after each of steps 3 and 4: cold boot → title → game → ESCAPE → game over
+→ high-score entry (walking the alphabet, capital I, three initials committed) → title → briefing
+timeout → briefing → fire exit → game. Plus, for the bank 4 pass, 900 frames scrolling right and
+700 down, which is what drives `SprFetchRow` across the buffer wrap.
+
+Offline, and these are the strong ones: the `hsRemap` identity is re-derived from the C64 listing
+and compared against the committed `textfont.asm` on every build; `drSprData`'s intern is likewise
+re-checked against the listing every run, and was compared through both index tables (360 reachable
+rows, zero mismatches); the moved high-score code was diffed as a (mnemonic, addressing class,
+length) stream against `HEAD` and differs by exactly the two instructions `HsGlyph` gained; and
+`&0900` was read back from a running machine and matched the overlay byte for byte after a full
+title dwell.
+
+### WHAT STILL NEEDS TESTING BEFORE THIS MERGES
+
+**The concern is bank 7 and the sprites, and it is specific.** KC checked the lift screen, the
+console's ship page, the deck plan and the droid info page on 2026-09-07 — *before* steps 3 and 4
+and the bank 4 pass. Those three changes moved bank 7's whole layout (the transfer game, the lift,
+the console pages and the portrait pool all live there), rewrote `drSprData` (every droid sprite),
+and shifted the code image by 14 bytes. **None of those screens has been looked at since.**
+
+- [ ] **The transfer minigame** — entry, play, win and lose. Bank 7's biggest tenant.
+- [ ] **The lift**, including the no-load exit: take a lift and return to the same deck. Still the
+      §9 item, now also a bank-7 regression check.
+- [ ] **The console** — ship page, deck plan, droid database.
+- [ ] **A droid type whose portrait slots straddle a chunk boundary** — types 12, 13, 17 (§9).
+- [ ] **Droid sprites at every rotor phase and several types**, because the rotor rows are now
+      shared. The offline proof says no reachable pixel changed; this is the runtime confirmation.
+- [ ] **CTRL+R, the redefine screen**, which nothing this session touched but which lives in the
+      briefing's overlay.
+- [ ] **Sound**, not listened to once this session.
+- [ ] **The `-Release` build booted**, not merely built. It was booted through to the title after
+      step 3; after step 4 and the bank 4 pass it has only been assembled.
+- [ ] **Real hardware.** Everything here is jsbeeb.
+
+**The honest caveat this branch inherited still applies**: three of its first four defects were
+found at runtime, after static analysis said the change was sound, and all of them at the seams
+between screens rather than inside a change. The offline compares here are stronger than that
+branch's were — they check identity against the C64 listing rather than against the previous
+build — but they still buy interpretability, not confidence.
+
+---
+
+## 10a. State of the tree
 
 **The code image has 14 bytes** — `code_end` `&2FF2`, after step 4 deleted `loadtitl`. It was
 exactly full (`code_end == FONT_ADDR == &3000`) from `b385cd6` until then. Bank 4 has 8. Bank 7 has
