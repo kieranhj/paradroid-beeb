@@ -36,6 +36,91 @@ gets destroyed and reloaded.
 **Loads come off one at a time, each costing its packed size resident, forever.** Only the
 briefing's three are a bundle. That is what makes the work schedulable.
 
+> **THAT SENTENCE IS WRONG, AND SO IS THE TOTAL ABOVE. See §1a.** The table is kept as written
+> because every step from 2 to 4 was planned against it and the commits quote it.
+
+---
+
+## 1a. The ledger was wrong — corrected 2026-09-07
+
+The table above was never re-derived after the branch learnt what the streams actually are. It is
+wrong in **both directions**, which is why it survived four steps: the two errors partly cancel.
+
+**A restoration costs nothing resident.** `PARASPR` is the blitter, which is *already* resident in
+bank 5; its 3,512 is the price of putting it back after the briefing evicts it. `PARAFNT` is the
+font, *already* resident at `&3000`; its 1,947 is the price of putting it back after the title or
+the briefing destroys it. Neither needs a home — each needs its **destroyer** removed, which is
+exactly what steps 3 and 5 do. §1 counted them as "the expensive part" when they are the free part.
+**Overstated by 5,459.**
+
+**Content that is CODE costs its UNPACKED size, and content read in place cannot be packed at
+all.** A stream only costs its packed size if it is depacked somewhere on demand. Two of the six
+are not like that:
+
+- `PARMAN`'s 1,485 of `briefman` + `keyredef` + `sndchat` is code that runs during the briefing,
+  and its text as five page streams is 2,805 rather than 2,438. True residency **4,290**, not
+  3,595 — understated by 695.
+- `PARTITL` was 1,597 packed. Its artwork (1,140) is read in place by `TiPaint` and **cannot be
+  packed — there is no arena at title time (§3)** — and the high-score screen is code. Measured by
+  building it: step 3 spent **1,840** of bank 7 and step 4 a further **422**. True residency
+  **2,262** — understated by 665.
+
+### The corrected ledger
+
+| stream | §1 said | actually needs resident | why |
+|---|---|---|---|
+| PARASPR | 3,512 | **0** | restoration; step 5 removes the eviction |
+| PARAFNT | 1,947 | **0** | restoration; steps 3+5 remove the destroyers |
+| PARTITL | 1,597 | **2,262** *(SPENT)* | artwork unpackable, high-score screen is code |
+| PARMAN | 3,595 | **4,290** | 2,805 page streams + 1,485 of code, unpacked |
+| PARBRF | 770 | 769 | packed, depacked to `&0400` when wanted |
+| PARALOW | 730 | 730 | packed, depacked to the staging area |
+| **total** | **12,151** | **8,051** | of which **5,789** is still to find |
+
+### And the supply was totalled as a pool, which it is not
+
+"Free SWRAM at the start of the branch was 1,237 B" adds four banks together. **Nothing can span a
+bank** — §1 states that constraint one sentence later and then the arithmetic ignores it. Today
+there are 2,201 "free" bytes (225 / 665 / 552 / 759) and the largest single block is **759**, while
+the largest indivisible item is `keyredef` at **1,014 unpacked, 776 packed**. It fits nowhere, and
+no amount of total is going to change that.
+
+### Supply against demand, added up for the first time
+
+| supply, bank bytes | |
+|---|---|
+| free at branch start | 1,237 |
+| step 2, the bank 7 packing pass | 3,295 |
+| the bank 4 pass (§4c) | 217 |
+| SCANSTEP tail folding, the one big held reserve | 2,100 |
+| **total the plan can ever reach** | **6,849** |
+
+Against **8,051** of demand. **The branch falls about 1,200 bytes short of its goal even after
+spending the reserve it hoped not to need** — and steps 6 and 7 do not help, because step 6's ~500
+is main-RAM low workspace (bank content cannot live there) and step 7's ~140 is code image.
+
+**Nobody ever added these two columns together.** §1 showed 12,151 against 1,237 — a ten-to-one
+gap that reads as "obviously needs work" rather than "compute whether this is possible" — and then
+step 2 delivered 3,295, which felt like progress against an unquantified target.
+
+### What this changes
+
+1. **The goal is ~1,200 bytes out of reach, not hopeless and not close.** That is a much more
+   useful number than "blocked", and it is small enough that one concession closes it: dropping
+   `PARBRF` from the plan (769) and keeping one load at the title leaves ~430 to find.
+2. **SCANSTEP tail folding is no longer optional.** It is 2,100 of the 6,849, so nothing finishes
+   without it — and it is also what gives banks 5 and 6 a block big enough for `keyredef`.
+   `docs/ram-pass.md` files it as a reserve for "next time RAM runs out"; that time is now.
+3. **`keyredef` is the shape of the problem, not just its biggest item.** At 776 packed it exceeds
+   every free block. One idea the plan never considered: the redefine screen is a modal screen
+   *inside* a modal screen, so it could be depacked into the briefing's own 3,196-byte arena and
+   run from there — which drops it from 1,014 unpacked to 776 packed and removes the need for it to
+   sit anywhere permanently in unpacked form.
+4. **The step order spent what step 5 needed.** Step 2 left bank 7 with 3,021; step 5's page
+   streams are 2,805 and would have fitted exactly. Steps 3 and 4 spent 2,262 of it first. This was
+   not decisive — `keyredef` blocked step 5 either way — but the sequence was never checked against
+   the demand, because the demand was never computed.
+
 ---
 
 ## 2. THE ARENA RULE
@@ -146,7 +231,8 @@ measurement.
 ### 4b. THE WALL — measured 2026-09-07, after step 4's first item
 
 **Steps 4, 5 and 6 are all blocked on the same thing: there is no bank space left.** This section
-is the arithmetic, so it does not have to be re-derived.
+is the arithmetic, so it does not have to be re-derived. **§1a is why it was never going to
+close** — read that first; this section is the local detail, that one is the ledger.
 
 Free bank space, from the build gauges: **bank 4 = 8, bank 5 = 665, bank 6 = 552, bank 7 = 759**,
 total 1,984. They cannot be pooled — only one bank is visible at a time, so a stream has to fit
