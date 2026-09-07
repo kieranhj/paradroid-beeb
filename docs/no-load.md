@@ -140,7 +140,71 @@ Order below is the posted one, with corrections found since.
 record of what was built rather than the plan for it.
 
 **Step 4 — the individual loads**, cheapest first, as space allows. **The title overlay is done,
-2026-09-07** — see §4a. Five post-boot streams are left.
+2026-09-07** — see §4a. Five post-boot streams are left and **none of them fits**; §4b is the
+measurement.
+
+### 4b. THE WALL — measured 2026-09-07, after step 4's first item
+
+**Steps 4, 5 and 6 are all blocked on the same thing: there is no bank space left.** This section
+is the arithmetic, so it does not have to be re-derived.
+
+Free bank space, from the build gauges: **bank 4 = 8, bank 5 = 665, bank 6 = 552, bank 7 = 759**,
+total 1,984. They cannot be pooled — only one bank is visible at a time, so a stream has to fit
+inside a single one, and bank 4's 8 bytes are unusable for anything.
+
+**The five remaining post-boot streams:**
+
+| stream | raw | packed | when |
+|---|---|---|---|
+| PARMAN | 6,093 | 3,595 | briefing entry |
+| PARASPR | 15,719 | 3,510 | briefing exit |
+| PARAFNT | 3,510 | 1,947 | after the title, after the briefing |
+| PARBRF | 1,012 | **769** | every title |
+| PARALOW | 919 | **730** | after the title |
+
+**Step 4 has exactly one candidate left and it is a bad trade.** `PARALOW` packed is 730 against
+bank 7's 759 — which leaves 29, and its depack stub is most of that, so the machine would end with
+**about four spare bytes in its last flexible bank** to remove the second-smallest of five loads.
+`PARBRF` at 769 misses bank 7 by **ten bytes** and fits nothing else. Everything above 1,947 is out
+by a factor of two or more. *Left for KC: spend bank 7 down to nothing on `PARALOW`, or not.*
+
+**Step 5 is short by ~2,300, and the posted figure did not count the half that has to move.** If
+bank 5 is never evicted then `PARMAN` cannot land in it, so BOTH halves need permanent homes:
+
+| what | bytes | note |
+|---|---|---|
+| the five page streams | 2,805 | §5's own figure |
+| `keyredef.asm` | **1,014** | the CTRL+R redefine screen |
+| `briefman.asm` | 456 | |
+| `sndchat.asm` | 15 | |
+| **needed** | **4,290** | against **1,976** in banks 5-7 |
+
+And it is worse than the total suggests: **`keyredef.asm` alone, at 1,014, exceeds the largest free
+block (759)**, so step 5 does not even start.
+
+**The one big held reserve does not close it.** `docs/ram-pass.md`'s **SCANSTEP tail folding** is
+~1,050 B in EACH of banks 5 and 6, which would make 4,076 available — still ~214 short before any
+fragmentation, for ~480 cycles a pass (~1% of the blit window) and a change the mechanical
+listing-diff explicitly cannot validate. `door.asm` → bank 4 buys main RAM, not bank space, and
+wants ~650 B free in bank 4 first.
+
+**Step 6 does not help either.** Its ~500 usable bytes are main-RAM low workspace in six pieces,
+and bank content cannot live there.
+
+**So the next move is a decision, not a task.** The options, none of which is obviously right:
+
+1. **Spend bank 7 on `PARALOW`** and accept ~4 bytes free — one load fewer, no room for anything
+   after it.
+2. **SCANSTEP tail folding**, for ~2,100 B of bank space at ~1% of the blit window, verified
+   against the oracle rather than the listing diff. Still leaves step 5 ~214 short.
+3. **Change step 5's shape.** `keyredef.asm` is the single biggest obstacle and CTRL+R is the
+   rarest screen in the game — making it an on-demand overlay of its own trades a rare load for
+   1,014 bytes and unblocks the rest.
+4. **Hunt for another packing pass** the way step 2 did. Bank 4 is where the unexamined data now
+   is (levels, tiles, droid tables, `plandata`, `conicons`, `svdecks6`, `effects`, `sounddata`);
+   step 2 found 3,295 bytes in bank 7 by asking "is this generatable?" first. Nobody has asked it
+   of bank 4.
+5. **Stop.** The branch has already halved the front end's load cost and freed the code image.
 
 ### 4a. Step 4's first item: the title overlay, 2026-09-07
 
@@ -388,17 +452,7 @@ OSCLI and its filename, and that is a pattern worth remembering for the four rem
 `PARBRF`, `PARAFNT`, `PARALOW` and `PARMAN` each carry an `EQUS` of their own name plus a call
 site; going resident reclaims those too.
 
-**Five post-boot streams are left**, and what could hold them:
-
-| stream | disc bytes | bank space available |
-|---|---|---|
-| PARMAN | 3,595 | — |
-| PARASPR | 3,510 | — (step 5's job, not step 4's) |
-| PARAFNT | 1,947 | — |
-| PARBRF | 1,012 raw / 770 packed | bank 7's 759 is *just* short |
-| PARALOW | 919 raw / 730 packed | bank 7's 759 would take it packed |
-
-Bank 4 has 8 bytes, bank 5 has 665 and bank 6 has 552, so nothing else fits a whole stream and no
-two banks can be combined — only one is visible at a time. **`PARALOW` packed is the next
-candidate** and it is the last one bank 7 can hold; after that, step 4 is out of space until step 5
-frees bank 5 or step 6 reclaims the DFS workspace.
+**Five post-boot streams are left and the branch is out of bank space for all of them.** §4b has
+the arithmetic and the five options; the short version is that `PARALOW` is the only stream that
+fits anywhere, it would leave bank 7 with about four bytes, and step 5 is short by ~2,300 because
+`keyredef.asm` has to move too and nothing can hold it.
