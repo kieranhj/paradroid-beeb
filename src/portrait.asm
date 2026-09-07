@@ -273,12 +273,22 @@ PO_DSTMID = BUF_BASE + PO_UNIT_MID * UNIT_BYTES
   STA poB                       \ posp_put spends X, so keep the source
   BIT poMeta
   BPL posp_hires
+\ ONE 16-ENTRY TABLE, INDEXED BY A NIBBLE. poLut was poLutL/poLutR,
+\ two tables of 256, until the no-load pass (issue #2) took the 496
+\ bytes back out of bank 7. The left MODE 1 byte is pixels 0,0,1,1 and
+\ the right 2,2,3,3, so each half depends on ONE nibble of the source
+\ and both take the same sixteen values -- see export_portraits.py,
+\ which asserts the identity every time it runs. The shifts cost ~10
+\ cycles a source byte on a draw that happens once per screen.
+  LSR A : LSR A : LSR A : LSR A \ the high nibble: the left byte
   TAX
-  LDA poLutL,X
+  LDA poLut,X
   LDY poK
   JSR posp_put
-  LDX poB
-  LDA poLutR,X
+  LDA poB
+  AND #15                       \ and the low nibble: the right
+  TAX
+  LDA poLut,X
   JMP posp_r
 .posp_hires
   AND #&F0

@@ -29,13 +29,17 @@ WHAT IS EMITTED
           right image's slot.
   poPool  the unique images, 64 bytes each, verbatim C64 data, sorted
           by C64 image number. Slot order is the sort order.
-  poLutL/poLutR
-          multicolour byte -> left/right MODE 1 byte. One mc byte is
-          four 2-bit pixels drawn double-wide: the left MODE 1 byte
-          shows pixels 0,0,1,1 and the right 2,2,3,3, each 2-bit value
-          v landing as logical colour v (MODE 1 pixel n takes bit 7-n
-          high and 3-n low). Hires bytes need no table: logical 2 is
-          high-bit-only, so left = b AND $F0 and right = b << 4.
+  poLut   multicolour NIBBLE -> the MODE 1 byte for its two pixels.
+          One mc byte is four 2-bit pixels drawn double-wide: the left
+          MODE 1 byte shows pixels 0,0,1,1 and the right 2,2,3,3, each
+          2-bit value v landing as logical colour v (MODE 1 pixel n
+          takes bit 7-n high and 3-n low). Each half therefore depends
+          on ONE nibble, and both take the same sixteen values, so one
+          16-byte table serves both: left = poLut[b >> 4], right =
+          poLut[b AND 15]. It was two 256-byte tables until the no-load
+          pass (issue #2) wanted the 496 bytes back out of bank 7.
+          Hires bytes need no table at all: logical 2 is high-bit-only,
+          so left = b AND $F0 and right = b << 4.
 
 Colour fidelity (SpriteColor_t/SpriteMc_t via DColorTheme_t) is NOT
 exported: the console page has one 4-colour palette and the mapping
@@ -129,18 +133,28 @@ def main():
         for row in rows_of(d):
             out.append('  EQUB ' + row)
     out.append('')
-    out.append('\\ Multicolour byte -> MODE 1, left half (pixels 0,0,1,1).')
-    out.append('.poLutL')
-    for row in rows_of([mc_expand(b)[0] for b in range(256)]):
-        out.append('  EQUB ' + row)
-    out.append('\\ ... and the right half (pixels 2,2,3,3).')
-    out.append('.poLutR')
-    for row in rows_of([mc_expand(b)[1] for b in range(256)]):
+    out.append('\\ Multicolour nibble -> the MODE 1 byte for its two pixels.')
+    out.append('\\ ONE 16-BYTE TABLE, NOT TWO OF 256. pack() below reads the')
+    out.append('\\ top two 2-bit pixels for the left byte and the bottom two')
+    out.append('\\ for the right, so each half depends on ONE NIBBLE of the')
+    out.append('\\ source and both halves take the same sixteen values:')
+    out.append('\\   left  = poLut[b >> 4]      right = poLut[b AND 15]')
+    out.append('\\ The two 256-byte tables this replaces were that identity')
+    out.append('\\ written out longhand, 512 bytes of bank 7 for 16 bytes of')
+    out.append('\\ information. portrait.asm extracts the nibble; a portrait')
+    out.append('\\ is drawn once per screen, so the shifts cost nothing.')
+    lut = [mc_expand(n << 4)[0] for n in range(16)]
+    assert all(mc_expand(b)[0] == lut[b >> 4] for b in range(256)), \
+        'poLut: left half is not a function of the high nibble'
+    assert all(mc_expand(b)[1] == lut[b & 15] for b in range(256)), \
+        'poLut: right half is not a function of the low nibble'
+    out.append('.poLut')
+    for row in rows_of(lut):
         out.append('  EQUB ' + row)
     out.append('')
 
     OUT.write_text('\n'.join(out) + '\n')
-    total = len(imgs) * IMG_SIZE + TYPES * 8 + 512
+    total = len(imgs) * IMG_SIZE + TYPES * 8 + 16
     print('wrote %s: %d images, %d bytes of data' % (OUT, len(imgs), total))
     hires = [n for n in imgs if not (mem[IMG_BASE + n * IMG_SIZE + 63] & 0x80)]
     print('hires images: %s' % (', '.join('&%02X' % n for n in hires) or 'none'))

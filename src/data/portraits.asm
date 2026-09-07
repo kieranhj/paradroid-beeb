@@ -354,40 +354,16 @@ PO_MIRROR = &FF
   EQUB &A0, &00, &03, &A0, &00, &03, &A0, &00, &03, &A0, &00, &03, &A0, &00, &03, &A0
   EQUB &00, &03, &A0, &00, &2B, &B8, &00, &3A, &EC, &00, &3E, &BC, &00, &05, &50, &95
 
-\ Multicolour byte -> MODE 1, left half (pixels 0,0,1,1).
-.poLutL
-  EQUB &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00
-  EQUB &03, &03, &03, &03, &03, &03, &03, &03, &03, &03, &03, &03, &03, &03, &03, &03
-  EQUB &30, &30, &30, &30, &30, &30, &30, &30, &30, &30, &30, &30, &30, &30, &30, &30
-  EQUB &33, &33, &33, &33, &33, &33, &33, &33, &33, &33, &33, &33, &33, &33, &33, &33
-  EQUB &0C, &0C, &0C, &0C, &0C, &0C, &0C, &0C, &0C, &0C, &0C, &0C, &0C, &0C, &0C, &0C
-  EQUB &0F, &0F, &0F, &0F, &0F, &0F, &0F, &0F, &0F, &0F, &0F, &0F, &0F, &0F, &0F, &0F
-  EQUB &3C, &3C, &3C, &3C, &3C, &3C, &3C, &3C, &3C, &3C, &3C, &3C, &3C, &3C, &3C, &3C
-  EQUB &3F, &3F, &3F, &3F, &3F, &3F, &3F, &3F, &3F, &3F, &3F, &3F, &3F, &3F, &3F, &3F
-  EQUB &C0, &C0, &C0, &C0, &C0, &C0, &C0, &C0, &C0, &C0, &C0, &C0, &C0, &C0, &C0, &C0
-  EQUB &C3, &C3, &C3, &C3, &C3, &C3, &C3, &C3, &C3, &C3, &C3, &C3, &C3, &C3, &C3, &C3
-  EQUB &F0, &F0, &F0, &F0, &F0, &F0, &F0, &F0, &F0, &F0, &F0, &F0, &F0, &F0, &F0, &F0
-  EQUB &F3, &F3, &F3, &F3, &F3, &F3, &F3, &F3, &F3, &F3, &F3, &F3, &F3, &F3, &F3, &F3
-  EQUB &CC, &CC, &CC, &CC, &CC, &CC, &CC, &CC, &CC, &CC, &CC, &CC, &CC, &CC, &CC, &CC
-  EQUB &CF, &CF, &CF, &CF, &CF, &CF, &CF, &CF, &CF, &CF, &CF, &CF, &CF, &CF, &CF, &CF
-  EQUB &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC
-  EQUB &FF, &FF, &FF, &FF, &FF, &FF, &FF, &FF, &FF, &FF, &FF, &FF, &FF, &FF, &FF, &FF
-\ ... and the right half (pixels 2,2,3,3).
-.poLutR
-  EQUB &00, &03, &30, &33, &0C, &0F, &3C, &3F, &C0, &C3, &F0, &F3, &CC, &CF, &FC, &FF
-  EQUB &00, &03, &30, &33, &0C, &0F, &3C, &3F, &C0, &C3, &F0, &F3, &CC, &CF, &FC, &FF
-  EQUB &00, &03, &30, &33, &0C, &0F, &3C, &3F, &C0, &C3, &F0, &F3, &CC, &CF, &FC, &FF
-  EQUB &00, &03, &30, &33, &0C, &0F, &3C, &3F, &C0, &C3, &F0, &F3, &CC, &CF, &FC, &FF
-  EQUB &00, &03, &30, &33, &0C, &0F, &3C, &3F, &C0, &C3, &F0, &F3, &CC, &CF, &FC, &FF
-  EQUB &00, &03, &30, &33, &0C, &0F, &3C, &3F, &C0, &C3, &F0, &F3, &CC, &CF, &FC, &FF
-  EQUB &00, &03, &30, &33, &0C, &0F, &3C, &3F, &C0, &C3, &F0, &F3, &CC, &CF, &FC, &FF
-  EQUB &00, &03, &30, &33, &0C, &0F, &3C, &3F, &C0, &C3, &F0, &F3, &CC, &CF, &FC, &FF
-  EQUB &00, &03, &30, &33, &0C, &0F, &3C, &3F, &C0, &C3, &F0, &F3, &CC, &CF, &FC, &FF
-  EQUB &00, &03, &30, &33, &0C, &0F, &3C, &3F, &C0, &C3, &F0, &F3, &CC, &CF, &FC, &FF
-  EQUB &00, &03, &30, &33, &0C, &0F, &3C, &3F, &C0, &C3, &F0, &F3, &CC, &CF, &FC, &FF
-  EQUB &00, &03, &30, &33, &0C, &0F, &3C, &3F, &C0, &C3, &F0, &F3, &CC, &CF, &FC, &FF
-  EQUB &00, &03, &30, &33, &0C, &0F, &3C, &3F, &C0, &C3, &F0, &F3, &CC, &CF, &FC, &FF
-  EQUB &00, &03, &30, &33, &0C, &0F, &3C, &3F, &C0, &C3, &F0, &F3, &CC, &CF, &FC, &FF
-  EQUB &00, &03, &30, &33, &0C, &0F, &3C, &3F, &C0, &C3, &F0, &F3, &CC, &CF, &FC, &FF
+\ Multicolour nibble -> the MODE 1 byte for its two pixels.
+\ ONE 16-BYTE TABLE, NOT TWO OF 256. pack() below reads the
+\ top two 2-bit pixels for the left byte and the bottom two
+\ for the right, so each half depends on ONE NIBBLE of the
+\ source and both halves take the same sixteen values:
+\   left  = poLut[b >> 4]      right = poLut[b AND 15]
+\ The two 256-byte tables this replaces were that identity
+\ written out longhand, 512 bytes of bank 7 for 16 bytes of
+\ information. portrait.asm extracts the nibble; a portrait
+\ is drawn once per screen, so the shifts cost nothing.
+.poLut
   EQUB &00, &03, &30, &33, &0C, &0F, &3C, &3F, &C0, &C3, &F0, &F3, &CC, &CF, &FC, &FF
 
