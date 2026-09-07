@@ -820,7 +820,7 @@ note while the pointers are reset under it — do it after and there is a window
 `UninstallIrq`'s `CLI` and the flush in which one garbage note can start. And **it costs a handful
 of charset bytes**, which do not matter: `BuildCharset` repaints the whole set at the next deck
 load, and nothing between the seam and there reads it (the title has its own glyphs, the high-score
-screen has `hsfont`, `PARAFNT` reloads).
+screen reads `textfont`, `PARAFNT` reloads).
 
 **Not caused by this day's work**, though the Q mute is what exposed it — muting is exactly when
 you notice a sound that the mute cannot reach. Nothing in the volume, pause, transfer-button or

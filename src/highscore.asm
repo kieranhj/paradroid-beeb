@@ -1,17 +1,21 @@
 \ ============================================================
-\ highscore.asm — DoHighScore ($E4E5), in the title overlay
+\ highscore.asm — DoHighScore ($E4E5), in SWRAM bank 7
 \ ============================================================
 \ LAYER 11f. The C64's flow is
 \
 \   EndGame ($378B) ──> $3812 j_DoHighScore ──> JMP TitleLoop
 \
 \ so this runs in exactly one place: after the 999 page's hold, before
-\ the title. TitleSeq calls HsEntry with PARTITL just loaded.
+\ the title. TitleSeq calls HsEntry, which is in the PARTITL overlay.
 \
-\ WHY IT IS AN OVERLAY, WHICH TOOK THREE ATTEMPTS TO GET RIGHT.
+\ WHY IT WAS AN OVERLAY, WHICH TOOK THREE ATTEMPTS TO GET RIGHT — and
+\ it is bank 7's now instead (no-load step 3, below). That does not
+\ undo any of the argument: SetupPlain is still what makes the screen
+\ possible at all, and it is now ALSO what keeps PARAFNT alive under
+\ it, which is what lets the glyphs be textfont's.
 \ KC, twice: this is outside the game, so it should not be spending
-\ resident RAM. Two things stood in the way and both turned out to be
-\ removable:
+\ resident MAIN RAM. Two things stood in the way and both turned out
+\ to be removable:
 \
 \  1. The rupture stops VSync, so no filing-system call can load
 \     anything while the 999 page is up.
@@ -21,20 +25,35 @@
 \ SetupPlain (screen.asm, bank 4) replaced the VDU 22 with the six CRTC
 \ registers it was really there for. **The play buffer now survives the
 \ teardown**, so the page is still on screen at the moment a load
-\ becomes legal, and this can be an overlay after all. Measured in
+\ becomes legal, and this could be an overlay after all. Measured in
 \ jsbeeb: the 999 page displays, unruptured, while PARTITL loads.
 \
-\ WHAT IT COSTS RESIDENT: twenty-five bytes of bank 7 for the table
-\ (hstable.asm — it has to remember between games) and three bytes of
-\ main RAM for TitleSeq's JSR. Nothing else.
+\ WHAT IT COSTS IN MAIN RAM: three bytes, TitleSeq's JSR, and that has
+\ not changed through either arrangement. The screen itself is ~570
+\ bytes of bank 7 now rather than ~655 bytes of a disc overlay, beside
+\ the twenty-five of hstable.asm it already had to be near.
 \
-\ AND IT CARRIES ITS OWN ALPHABET, because PARTITL is assembled over the
-\ text font's ground. src/data/hsfont.asm, generated — the same answer
-\ the title screen already gives for its own 36 characters, layer-11
-\ [DECISION 8]. What it does NOT duplicate is FontCell: that lives at
-\ the top of the PARAFNT file, ABOVE this overlay's end, so the 1bpp →
-\ MODE 1 expansion is the game's own routine. The ASSERT on titl_end in
-\ main.asm is what keeps it that way.
+\ IT CARRIED ITS OWN ALPHABET UNTIL 2026-09-07, and no-load step 3 is
+\ what ended that: PARTITL used to be assembled over the text font's
+\ ground, so the screen brought 72 glyphs of its own — and all 72 were
+\ byte-identical to glyphs already in textfont. The overlay is at &0900
+\ now, the font survives the title, and what is left is a 72-byte remap
+\ in src/data/hsremap.asm. See HsGlyph, and tools/export_hsremap.py for
+\ the identity check that runs every build.
+\
+\ THE PRECONDITION THAT REPLACED THE ALPHABET: PARAFNT MUST BE RESIDENT
+\ WHENEVER THIS RUNS. It is — HsEntry only calls HsRun when hsArmed is
+\ set, which only a finished game sets, and GoTitle reaches TitleSeq
+\ through SetupPlain rather than SetupMode precisely so that the VDU 22
+\ does not clear &3000-&7FFF. A cold boot never gets here.
+\
+\ AND THIS FILE IS IN BANK 7 NOW, everything below HsEntry — which
+\ stayed behind in the title overlay, because TitleSeq calls it from
+\ main RAM. HsEntry has always paged SWRAM_XFER around the whole
+\ screen, so nothing here needed a trampoline: it calls FontCell,
+\ keydown, score and textfont out in main RAM, which bank code may do.
+\ FontCell is not duplicated and never was: it lives in the PARAFNT
+\ file, so the 1bpp → MODE 1 expansion is the game's own routine.
 \
 \ IT SPINS, and that is the original's shape rather than the port's.
 \ Every other modal screen here is a per-pass tick because the game is
@@ -67,7 +86,7 @@
 \
 \ AND THERE IS NO CapitalAlpha_t. The C64 needs a 27-byte table because
 \ its capitals are not contiguous — capital I lives at $16, outside the
-\ alphabet's run. export_hsfont.py has already straightened that out, so
+\ alphabet's run. export_hsremap.py has already straightened that out, so
 \ index 0-25 IS the glyph and 26 is a space, by arithmetic.
 
 HS_LETTERS  = 27                \ $E57D's #$1B: A-Z and a space
@@ -90,40 +109,6 @@ HS_COL_GREAT  = 13              \ $E733's prntX
 HS_COL_LOWEST = 5               \ $E742's
 HS_COL_PROMPT = 1               \ $E714's
 HS_COL_INI    = 31              \ $E6E8's
-
-\ ============================================================
-\ HsEntry — TitleSeq's door
-\ ============================================================
-\ Bank 7 holds the table AND the arm flag, so one paging pair covers the
-\ whole screen; nothing in here wants bank 4. At boot hsArmed is zero —
-\ the assembled value — so the sequence runs straight through.
-\ AND IT WEARS THE GAME'S OWN FRAME (KC, 2026-08-22): the entry used
-\ to run on SetupPlain's bare strip — no header. The rupture gives the
-\ 4-row panel, the gap and the 16-row window for free, and it is legal
-\ here because HsRun makes no filing call: loadtitl is done, the next
-\ load is TiShow's, and the teardown below restores VSync first. The
-\ panel still holds the finished game's box — Mobile, logo, the final
-\ score — which is exactly the right header for this screen. The IRQ
-\ must come with it (the rupture is IRQ-driven), and that is safe with
-\ the low overlay absent: the handler and its sound shim live in the
-\ code image and page bank 4 for themselves.
-.HsEntry
-  PAGEBANK SWRAM_XFER
-  LDA hsArmed
-  BEQ hs_en_x
-  LDA #0
-  STA hsArmed
-  JSR SetupRupture              \ panel + gap + window; scroll is parked
-  JSR InstallIrq
-  JSR HsRun
-  JSR UninstallIrq              \ and back to a frame with VSync, BEFORE
-  PAGEBANK SWRAM_DATA           \ the title's loads — SetupPlain is
-  JMP SetupPlain                \ bank 4's, so the data bank first. Its
-                                \ frame is BLANK (R6 = 0 in its table)
-                                \ until TiCRTC shows the title — and RTS
-.hs_en_x
-  PAGEBANK SWRAM_DATA
-  RTS
 
 \ ============================================================
 \ HsRun — $E4E5: the test, and the screen if it passes
@@ -345,7 +330,22 @@ HS_COL_INI    = 31              \ $E6E8's
   RTS
 
 \ A = glyph index. Draws one cell column and steps on.
+\ THE GLYPHS ARE textfont's NOW, THROUGH hsRemap (no-load step 3).
+\ This screen carried its own 72-glyph alphabet until PARTITL came off
+\ &3000, because the text font was the thing PARTITL was loaded over.
+\ All 72 were byte-identical to glyphs already in textfont -- permuted,
+\ which is why a block diff missed them -- so what is left is a 72-byte
+\ remap and these four bytes. tools/export_hsremap.py re-derives both
+\ tables from the C64 listing every run and compares all 1,152 bytes.
+\ A IS AN INDEX IN THIS SCREEN'S SPACE, not textfont's, and it must
+\ stay that way: HsWide does every one of its tests and its wide-half
+\ arithmetic (CMP #HS_UPPER_R, ADC #HS_UPPER_R, the HS_LOWER_M and
+\ HS_W_RIGHT sentinels) before it gets here, so the translation has to
+\ be the LAST thing that happens to the index.
+\ X IS DESTROYED, and was already: FontCell is called twice below.
 .HsGlyph
+  TAX
+  LDA hsRemap,X
   STA swSrc
   LDA #0
   STA swSrc+1
@@ -354,8 +354,8 @@ HS_COL_INI    = 31              \ $E6E8's
   ASL swSrc : ROL swSrc+1
   ASL swSrc : ROL swSrc+1
   CLC
-  LDA swSrc   : ADC #LO(hsGlyphs) : STA swSrc
-  LDA swSrc+1 : ADC #HI(hsGlyphs) : STA swSrc+1
+  LDA swSrc   : ADC #LO(textfont) : STA swSrc
+  LDA swSrc+1 : ADC #HI(textfont) : STA swSrc+1
 
   LDA #HS_INK
   STA fontMask
@@ -376,7 +376,7 @@ HS_COL_INI    = 31              \ $E6E8's
   RTS
 
 \ ---- WIDE IS NOT THE SAME AS CAPITAL -----------------------
-\ DrawChar's own test, and export_hsfont.py's header has the why: the
+\ DrawChar's own test, and export_hsremap.py's header has the why: the
 \ wide set is the capitals minus I, plus lowercase m and w.
 .HsWide
   CMP #HS_LOWER_M

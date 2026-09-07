@@ -1137,6 +1137,10 @@ carrying its own alphabet from `tools/export_hsfont.py`. What stayed resident is
 of bank 7 for the table, which has to remember between games, and three bytes of main RAM for
 `TitleSeq`'s `JSR`.
 
+*(Both halves of that have since moved on, and neither reopens this: no-load step 3, 2026-09-07,
+put the screen itself in bank 7 and replaced the private alphabet with a 72-byte remap into
+`textfont`. The resident cost is unchanged — the same twenty-five bytes and the same `JSR`.)*
+
 So `PN_TABS` is not written by anything of Layer 11f's any more, and the collision cannot recur.
 **Verified in jsbeeb**: 999 page → "Great Score!" and the prompt drawn over it → `A` walked to `G`
 → three initials committed → `hsHiIni` reads G, A, A, `hsArmed` cleared, the low table untouched →

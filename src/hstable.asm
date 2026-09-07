@@ -1,17 +1,22 @@
 \ ============================================================
 \ hstable.asm — the high score itself, and nothing else
 \ ============================================================
-\ LAYER 11f, in SWRAM BANK 7. The high-score SCREEN is in the PARTITL
-\ overlay (src/highscore.asm) because it runs outside the game and has
-\ no business holding resident RAM. This is the part that cannot go with
-\ it: PARTITL is loaded from disc every time it is wanted, so anything
-\ in it is back to its assembled value at every title, and a high score
-\ that forgets itself between games is not a high score.
+\ LAYER 11f, in SWRAM BANK 7. It holds the score itself because it has
+\ to survive a title: PARTITL is loaded from disc every time it is
+\ wanted, so anything in the overlay is back to its assembled value at
+\ every title, and a high score that forgets itself between games is
+\ not a high score.
 \
 \ BANK 7 IS THE ONE KIND OF RAM THAT REMEMBERS. GoTitle reloads PARAFNT,
 \ PARTITL and PARALOW and nothing else, so a bank-7 variable keeps its
 \ value from one game to the next without being saved anywhere. Twenty-
-\ five bytes, and the overlay pages this bank in to reach them.
+\ five bytes, and HsEntry pages this bank in to reach them.
+\
+\ THE SCREEN ITSELF JOINED IT HERE (no-load step 3, 2026-09-07).
+\ src/highscore.asm below HsEntry is bank 7's now, so this table and
+\ its only reader sit in the same bank under the same paging pair;
+\ only HsEntry is still in the overlay, because TitleSeq calls it from
+\ main RAM. What is left in PARTITL is the title driver alone.
 \
 \ The defaults are the original's: $E70C is 00 00 68 09 and $E710 is
 \ 00 00 65 02 — 6809 and 6502, Braybrook's joke — and the initials that

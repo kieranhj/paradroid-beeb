@@ -24,15 +24,35 @@
 \
 \ THE GLYPHS ARE THE TITLE'S OWN, not the deck charset's, because twelve
 \ of its thirty-six characters are not in the ported set — see the
-\ header of tools/export_title.py, and [DECISION 8].
+\ header of tools/export_title.py, and [DECISION 8]. They live in BANK
+\ 7 now, with the RLE stream, and TiPaint pages for them.
 \
 \ A DISC OVERLAY, NOT A BANK RESIDENT. Layer 13d restored [DECISION 6]:
-\ this file assembles at TITLE_ADDR = &3000, over PARAFNT's ground, and
-\ TitleSeq *LOADs it when the title is wanted — at boot, and again on
-\ the way back from a game over — then reloads PARAFNT over it. The two
-\ are never wanted at once. Everything here is main RAM, so there is no
-\ paging anywhere in it; bank 7's free space went to the droid portrait
-\ pool instead.
+\ TitleSeq *LOADs this file when the title is wanted — at boot, and
+\ again on the way back from a game over.
+\
+\ IT IS AT &0900 NOW, NOT &3000 (no-load step 3, 2026-09-07). It used
+\ to be assembled over PARAFNT's ground, which is why the title carried
+\ its own 36 glyphs and the high-score screen carried its own 72: the
+\ text font was the thing this overlay was loaded ON TOP OF. It lands
+\ in the MODE 1 charset's ground instead — &0400-&0C90, reclaimed OS
+\ workspace, dead outside a game and rebuilt by BuildCharset at the
+\ next deck load — so &3000 survives the whole title now. That is what
+\ let hsGlyphs go; docs/no-load.md §6 has the ledger.
+\
+\ &0900 AND NOT &07F4, WHICH IS WHERE THE PLAN PUT IT. &0800-&08FF is
+\ the MOS's sound workspace and the MOS owns IRQ1V through every load
+\ this file makes. main.asm's PARBRF block records the measurement: an
+\ overlay that reached &08B8 verified byte-perfect straight after its
+\ load and was chewed by the time it ran. PARBRF has &0400-&0800 and
+\ this has &0900-&0C90, with the MOS's page untouched between them.
+\ The 912 bytes that leaves are why only the DRIVER is here: the
+\ artwork and everything below HsRun are bank 7's.
+\
+\ WHAT IS STILL MAIN RAM AND WHY. TitleSeq calls TiBootPal, HsEntry and
+\ TiShow directly, and main RAM may only call INTO a bank with that
+\ bank paged — so the three doors have to be here. Everything they
+\ reach past is bank 7's and each door pages for itself.
 
 TI_BASE = &4000                 \ 25 rows x 640; ends &7E7F, clear of &8000
 ASSERT TI_BASE + TITLE_COLS * TITLE_ROWS * 16 <= &8000
@@ -54,7 +74,17 @@ tigd  = svp                     \ and where it lands
                                 \ a filing call, so before any of the
                                 \ display work and long before PageLowIn
   JSR TiCRTC
+\ THE ARTWORK IS BANK 7'S (no-load step 3): titleGlyphs and titleRLE
+\ moved into PARXFER so that this overlay could come off &3000 — see
+\ main.asm's note beside the INCLUDE. TiPaint is the only reader and
+\ it reads them once, so one paging pair covers the whole picture.
+\ THE BANK ON ARRIVAL IS ALWAYS SWRAM_DATA, which is why PgData and
+\ not something remembered: HsEntry runs immediately before this and
+\ BOTH its arms end on the data bank. Put it back, because SetPalPlay
+\ below is main RAM but TiWait's exits are not all ours.
+  JSR PgXfer
   JSR TiPaint
+  JSR PgData
 \ THE PALETTE, BY HAND, because this screen has no rupture to apply it
 \ (2026-08-31): SetPalette builds palPlay and leaves the ULA alone now,
 \ and the next fire 1 is what makes a change live -- see level.asm for
@@ -395,3 +425,49 @@ ASSERT TITLE_R7 >= TITLE_ROWS   \ VSync must fall after the last row shown
 .tiLo   EQUB 0
 .tiHi   EQUB 0
 .tiPage EQUB 0                  \ which of the two 16-bit laps this is
+
+\ ============================================================
+\ HsEntry — TitleSeq's door
+\ ============================================================
+\ IT LIVES HERE, IN THE TITLE OVERLAY, AND THE SCREEN IT OPENS DOES NOT.
+\ no-load step 3 put HsRun and everything below it in bank 7 — 570
+\ bytes of code, the remap, the strings and the state — because this
+\ overlay's 912 bytes could not hold them and bank 7 had room. Nothing
+\ moved that HsEntry did not already cover: it ALREADY paged
+\ SWRAM_XFER around the whole screen for hsArmed and the score table,
+\ so HsRun and its subroutines simply run with the bank they always
+\ ran with, and bank code may call main RAM — FontCell, keydown,
+\ score, textfont — freely. No trampoline anywhere.
+\
+\ THIS HALF CANNOT FOLLOW THEM: TitleSeq is main RAM and calls it
+\ directly, and the PAGEBANK pair has to execute from somewhere that
+\ does not vanish when it fires.
+\ At boot hsArmed is zero — the assembled value — so the sequence runs
+\ straight through.
+\ AND IT WEARS THE GAME'S OWN FRAME (KC, 2026-08-22): the entry used
+\ to run on SetupPlain's bare strip — no header. The rupture gives the
+\ 4-row panel, the gap and the 16-row window for free, and it is legal
+\ here because HsRun makes no filing call: loadtitl is done, the next
+\ load is TiShow's, and the teardown below restores VSync first. The
+\ panel still holds the finished game's box — Mobile, logo, the final
+\ score — which is exactly the right header for this screen. The IRQ
+\ must come with it (the rupture is IRQ-driven), and that is safe with
+\ the low overlay absent: the handler and its sound shim live in the
+\ code image and page bank 4 for themselves.
+.HsEntry
+  PAGEBANK SWRAM_XFER
+  LDA hsArmed
+  BEQ hs_en_x
+  LDA #0
+  STA hsArmed
+  JSR SetupRupture              \ panel + gap + window; scroll is parked
+  JSR InstallIrq
+  JSR HsRun
+  JSR UninstallIrq              \ and back to a frame with VSync, BEFORE
+  PAGEBANK SWRAM_DATA           \ the title's loads — SetupPlain is
+  JMP SetupPlain                \ bank 4's, so the data bank first. Its
+                                \ frame is BLANK (R6 = 0 in its table)
+                                \ until TiCRTC shows the title — and RTS
+.hs_en_x
+  PAGEBANK SWRAM_DATA
+  RTS

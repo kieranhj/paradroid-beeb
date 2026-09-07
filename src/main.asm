@@ -671,12 +671,32 @@ LOW_STAGE = &4A00
 \ ---- the title screen overlay -------------------------------
 \ PARTITL is a seventh disc file, not a resident of bank 7 — [DECISION 6]
 \ of docs/layer-11-sound-title.md, restored in Layer 13d: bank 7's free
-\ space is spoken for by the droid portrait pool. It loads over PARAFNT's
-\ ground, runs there, and is destroyed by PARAFNT's reload the moment the
-\ title is done — the two are never wanted at once. It must end below its
-\ own framebuffer, TI_BASE = &4000 (defined in title.asm, asserted at the
-\ SAVE).
-TITLE_ADDR = &3000
+\ space was spoken for by the droid portrait pool.
+\
+\ IT IS THE DRIVER ONLY NOW, AND IT IS AT &0900 (no-load step 3,
+\ 2026-09-07). It used to load over PARAFNT's ground at &3000, which is
+\ why the title carried its own 36 glyphs and the high-score screen its
+\ own 72: the text font was what this overlay was loaded ON TOP OF.
+\ Bank 7's packing pass left it 3,021 bytes free, so the artwork
+\ (src/data/title.asm, 1,140) and everything from HsRun down went there
+\ and the 1,152-byte hsfont became a 72-byte remap. What is left is the
+\ three doors TitleSeq calls — TiBootPal, HsEntry and TiShow — and the
+\ paint and the wait beneath them, which fits in low RAM.
+\
+\ &0900, INSIDE THE MODE 1 CHARSET'S GROUND. &0400-&0C90 is reclaimed
+\ OS workspace, dead outside a game and rebuilt by BuildCharset at the
+\ next deck load; PARBRF already lives at the bottom of it. THE MOS'S
+\ PAGE IS SKIPPED DELIBERATELY: &0800-&08FF is its sound workspace and
+\ it owns IRQ1V through every load the title makes — see the PARBRF
+\ block below for the measurement that cost. PARBRF has &0400-&0800,
+\ this has &0900-&0C90, and &0C90 is lowbss.
+\
+\ WHAT IT BUYS: &3000 survives the title, which is the precondition for
+\ ever dropping the PARAFNT reload. It does NOT drop it on its own —
+\ ts_loads is shared three ways and BrTimeout stages PARMAN at
+\ DEPK_STREAM inside the font block. docs/no-load.md §5, step 5.
+TITLE_ADDR = &0900
+TITLE_LIMIT = LOWBSS_ADDR       \ &0C90 — 912 bytes, and lowbss above it
 
 \ ---- the boot depacker overlay ------------------------------
 \ PARDEPK is an eighth disc file: the ZX0 decompressor (the same macro
@@ -2819,7 +2839,7 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
 \ reads the glyph data at all. It costs a handful of charset bytes,
 \ which do not matter — BuildCharset repaints the whole set at the next
 \ deck load, and nothing between here and there reads it (the title has
-\ its own glyphs, the high-score screen has hsfont, PARAFNT reloads).
+\ its own glyphs, the high-score screen reads textfont, PARAFNT reloads).
 \
 \ BEFORE UninstallIrq, NOT AFTER, and that ordering is the fix being
 \ airtight rather than nearly: our IRQ is still installed here, so the
@@ -4145,6 +4165,30 @@ INCLUDE "src/data/plandata.asm"
 \ DECISION 14's icon code, BEHIND the ALIGN on purpose — its own
 \ header says why, and moving it in front costs the bank 256 B.
 INCLUDE "src/xfericon.asm"
+\ The title's ARTWORK, but not its code (no-load step 3, 2026-09-07).
+\ 1,140 bytes of glyphs and RLE that TiPaint reads ONCE, in place, with
+\ this bank paged -- so they never needed to be main RAM at all, and
+\ moving them here is what let PARTITL come off &3000 and the text font
+\ survive the title. It cannot be PACKED: there is no arena at title
+\ time (docs/no-load.md §3 -- TI_BASE runs &4000-&7E80 over the tile
+\ map, the panel and the LUTs), so it ships raw.
+\ BEHIND plandata.asm's ALIGN with xfericon.asm, for the same reason:
+\ in front of it the padding rolls a page and the bank pays 256 more.
+\ It must also come BEFORE src/title.asm in file order, because
+\ beebasm resolves constants in file order and title.asm's ASSERTs
+\ read TITLE_COLS and TITLE_ROWS -- the PARTITL block is below.
+INCLUDE "src/data/title.asm"
+\
+\ ...and the high-score SCREEN, all of it below HsEntry (no-load step
+\ 3). HsEntry stays in the PARTITL overlay because TitleSeq calls it
+\ from main RAM; it has always paged SWRAM_XFER around the whole
+\ screen, for hsArmed and the score table in hstable.asm above, so
+\ everything here runs with the bank it already ran with and calls
+\ FontCell, keydown, score and textfont out in main RAM. No trampoline.
+\ hsremap.asm FIRST: highscore.asm reads HS_SPACE, HS_DOT and the wide
+\ sentinels as constants, and beebasm resolves those in file order.
+INCLUDE "src/data/hsremap.asm"
+INCLUDE "src/highscore.asm"
 .xfer_end
 SAVE "PARXFER", xfer_start, xfer_end, DATA_LOAD, DATA_LOAD
 
@@ -4352,29 +4396,34 @@ SAVE "PARAFNT", font_start, font_end, FONT_ADDR, FONT_ADDR
 \ The title screen — the PARTITL disc overlay
 \ ============================================================
 \ [DECISION 6] of docs/layer-11-sound-title.md, restored: the title is
-\ a disc file loaded when it is wanted, not a resident of bank 7 —
-\ bank 7's free space is spoken for by the droid portrait pool. It
-\ assembles over PARAFNT's ground at TITLE_ADDR: the two are never
-\ wanted at once, and TitleSeq reloads PARAFNT the moment the title is
-\ done. It must end below its own framebuffer at TI_BASE = &4000.
-\ Its data comes before its code so the ASSERTs in title.asm can see
+\ a disc file loaded when it is wanted. It is the DRIVER only — the
+\ artwork and the whole high-score screen below HsEntry are bank 7's
+\ since no-load step 3, and src/data/title.asm is included up there,
+\ ahead of this block, so title.asm's ASSERTs can still see
 \ TITLE_COLS and TITLE_ROWS.
-CLEAR TITLE_ADDR, &4000
+\
+\ IT LANDS AT &0900, NOT &3000. See TITLE_ADDR at the top of this file
+\ for the whole argument, and the PARBRF block below for why the MOS's
+\ &0800-&08FF is stepped over rather than used. The consequence worth
+\ stating here is the one that made step 3 worth doing: the text font
+\ at FONT_ADDR is NOT overwritten by this overlay any more, which is
+\ what let the high-score screen's 1,152-byte private alphabet become
+\ a 72-byte remap into textfont.
+\
+\ AND THE PRECONDITION THAT REPLACES IT, WHICH NO ASSERT CAN CHECK:
+\ PARAFNT MUST BE RESIDENT WHENEVER HsRun RUNS. It is — HsRun only
+\ runs when hsArmed is set, which only a finished game sets, and
+\ GoTitle reaches TitleSeq through SetupPlain, which exists precisely
+\ because SetupMode's VDU 22 would clear &3000-&7FFF. At a COLD boot
+\ PARAFNT has never been loaded and that is still safe, for the reason
+\ it always was: hsArmed is zero, so nothing reads a glyph.
+CLEAR TITLE_ADDR, TITLE_LIMIT
 ORG TITLE_ADDR
+GUARD TITLE_LIMIT
 .titl_start
-INCLUDE "src/data/title.asm"
 INCLUDE "src/title.asm"
-\ Layer 11f: DoHighScore runs from here, before the title paints.
-\ Its alphabet comes with it because this block is assembled over
-\ the text font's ground -- see highscore.asm's header.
-INCLUDE "src/data/hsfont.asm"
-INCLUDE "src/highscore.asm"
 .titl_end
-ASSERT titl_end <= TI_BASE
-\ AND below FontCell, which highscore.asm calls rather than carrying a
-\ copy of: PARAFNT is still resident when this overlay runs, and only
-\ the part of it below titl_end has been overwritten.
-ASSERT titl_end <= FONTCODE_ADDR
+ASSERT titl_end <= TITLE_LIMIT
 SAVE "PARTITL", titl_start, titl_end, TITLE_ADDR, TITLE_ADDR
 
 

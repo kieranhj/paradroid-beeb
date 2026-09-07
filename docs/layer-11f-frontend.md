@@ -345,13 +345,18 @@ Two things that had to be measured rather than assumed:
 
 | | | |
 |---|---|---|
-| The screen | `src/highscore.asm`, in the **PARTITL overlay** | 0 resident bytes |
-| Its alphabet | `src/data/hsfont.asm`, from `tools/export_hsfont.py` | 72 glyphs, 1,152 B, in the overlay |
+| The screen | `src/highscore.asm`, **bank 7** since no-load step 3 (`HsEntry` alone stayed in the PARTITL overlay) | 0 resident bytes |
+| Its alphabet | none — `src/data/hsremap.asm`, from `tools/export_hsremap.py` | **72 B of remap into `textfont`**, was 1,152 B of its own glyphs |
 | The table | `src/hstable.asm`, **bank 7** | 25 B — it must outlive a title, and bank 7 is the only RAM that does |
 | The call | `TitleSeq`, after the `PARTITL` load | 3 B of main RAM |
 
-The overlay carries glyphs because PARTITL is assembled over the font's ground — the same answer
-the title already gives for its own 36 characters. It does **not** carry `FontCell`: that sits at
+The overlay CARRIED glyphs because PARTITL was assembled over the font's ground — the same answer
+the title gives for its own 36 characters. **That stopped being true on 2026-09-07**: no-load step
+3 moved PARTITL to `&0900`, in the charset's ground, so `textfont` survives the title and all 72
+glyphs turned out to be duplicates of it. What replaces them is a 72-byte remap, and the invariant
+that replaces the argument is that `PARAFNT` must be resident whenever the entry runs — it is,
+because only a finished game arms it and `GoTitle` goes through `SetupPlain`. See
+`docs/no-load.md` §6. It does **not** carry `FontCell` and never did: that sits at
 the top of the `PARAFNT` file, above the overlay's end, so the 1bpp → MODE 1 expansion is the
 game's own routine. `ASSERT titl_end <= FONTCODE_ADDR` is what keeps that true, and it fired once —
 the full lowercase alphabet put the overlay 80 bytes over, which is why the exporter picks only the

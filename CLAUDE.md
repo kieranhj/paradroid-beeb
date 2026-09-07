@@ -205,7 +205,7 @@ addresses from the `beebasm` output rather than from any document.** In outline:
 | Region | Contents |
 |---|---|
 | ZP `&00–&8F` | All used. The map is in `main.asm`. `&90` up belongs to the OS |
-| `&0400–&0C90` | MODE 1 charset, built at deck load — reclaimed OS workspace. **`&0800–&08FF` inside it is the MOS's sound workspace, channel queues and envelopes**: safe only while we own IRQ1V, so ANY path that hands the machine back must flush the buffers first (`OSBYTE &0F, X=0`) or the MOS plays the charset as notes. `GoTitle` does; `docs/layer-11e-sound.md` §11 |
+| `&0400–&0C90` | MODE 1 charset, built at deck load — reclaimed OS workspace, and **the front end's two overlays live here instead**: `PARBRF` at `&0400–&0800` and (since no-load step 3) `PARTITL` at `&0900–&0A8D`. **`&0800–&08FF` between them is the MOS's sound workspace, channel queues and envelopes**: safe only while we own IRQ1V, so ANY path that hands the machine back must flush the buffers first (`OSBYTE &0F, X=0`) or the MOS plays the charset as notes — and **nothing loaded may sit there at all**, because the MOS owns IRQ1V through every load the front end makes and chews it (measured: a `PARBRF` reaching `&08B8` BRKed). `GoTitle` flushes; `docs/layer-11e-sound.md` §11 |
 | `&0C90–&10FF` | **The low overlay** (`PARALOW`) — resident code and state in reclaimed DFS/OS workspace. `&0D00–&0D5F` (NMI) and `&0DF0–&0DFF` (ROM private workspace) are **excluded**. Nothing may be *loaded* here; it is staged and copied, and that copy **must be the last filing-system call** |
 | `&1100–…` | Code (`PARA`), starting below DFS's `PAGE`. Also carries the one copy of the droid icon data (`droidicon.asm`), read from banks 6 and 7 |
 | `&3000–&3DFF` | The `PARAFNT` block: text font, panel frame, the shared string table, `FontCell`/`DoScore` and the `PN_TABS` mirrors (48 B) |
@@ -217,7 +217,7 @@ addresses from the `beebasm` output rather than from any document.** In outline:
 | SWRAM bank 4 | `PARADAT` — tiles, levels, palettes, droid game data, **the level-draw code, the droid AI, Layer 10's entry/exit and Layer 11e's sound driver**. The char bitmaps ship ZX0-packed; `BuildCharset` unpacks them into the idle sprite save areas at deck load |
 | SWRAM bank 5 | `PARASPR` — the blitter, shifts 0 and 1 px, **the effect blitter (`src/sprfx.asm`, RAM pass DECISION 2) and the rupture handover (`src/ruptalign.asm`), and the tranche prescan (`src/sprscan.asm`, 2026-09-01 — the split decision's geometry half, feeding `sprCls` in lowbss)**. **Evicted for the briefing**, which loads `PARMAN` over it: the manual's text, `briefman.asm`, `keyredef.asm` (the CTRL+R key redefinition, Layer 11f) and the chatter's effect records. Both exits reload the blitter |
 | SWRAM bank 6 | `PARSPR2` — shifts 2 and 3 px, same layout, plus Layer 9's panel/console, Layer 11f's `PnBriefing`, the 912 B `dfsSave` snapshot and the tranche decision's component half (`src/sprsplit.asm` — its geometry moved to bank 5's `sprscan.asm`, 2026-09-01) |
-| SWRAM bank 7 | `PARXFER` — Layer 10's transfer minigame, Layer 8b's lift screen, the console's ship, deck-plan and droid-database pages, and Layer 11's game over. The title is the `PARTITL` disc overlay, and the droid icons are main RAM's now |
+| SWRAM bank 7 | `PARXFER` — Layer 10's transfer minigame, Layer 8b's lift screen, the console's ship, deck-plan and droid-database pages, and Layer 11's game over. Since no-load step 3 it also holds **the title's artwork** (`src/data/title.asm`, raw — `TiPaint` reads it in place) and **the whole high-score screen below `HsEntry`** (`highscore.asm` + `hsremap.asm`). The droid icons are main RAM's |
 
 **RAM was the binding constraint until the RAM recovery pass of 2026-08-25**
 (`docs/ram-pass.md`) bought back room across every region. **Measured from that build** — and
@@ -230,8 +230,9 @@ paragraph:
 | Bank 4 | **13 B** on the gauge (2026-09-03: +2 from hexwab's dead store in `ra_row`; DECISION 6's two hooks took 8 on 2026-09-02, 19 B before) (2026-09-01: +8 net from the black-while-drawing rework, layer-8b §4b; 11 B before) + `colourMap` `ALIGN` pad, **which is SPENT** — 200 B put in front of it cost the bank 259, measured |
 | Bank 5 | **674 B** (2026-09-01: **+668** from the SCANSTEP deferred carry, 168 expansions at 4 B apiece). It was **6 B** immediately before that — the tightest region in the machine — and the 119 B this row used to quote was stale by a build |
 | Bank 6 | **552 B** (2026-09-06: —112 for layer-12 DECISION 6's character filter, the cleared-deck stipple fix; 664 on the gauge before it) (2026-09-02: —75 for layer-9 DECISION 20's `PnEnergy`, and before it —183 for layer-12 DECISION 6 — `LvClearedMark`, the 64 B of `svdecks6.asm` and its scratch; 931 B before). **The bank with room, and the reason DECISION 6 could be built at all** |
-| Bank 7 | **25 B** — MEASURED 2026-09-02 by bisecting a `SKIP` at `.LvStart7`, after DECISION 6's stipple took 65. It was **90 B** before that, itself tighter than the 100-105 measured in August, and neither of hexwab's patches touched this bank. **Still no held reserve frees bank 7** |
-| `PARBRF` (`&0400`, hard ceiling `&0800`) | **18 B** (36 B before `BrTimeout`'s R8 blank, 56 B before the CTRL+R hook) |
+| Bank 7 | **1,181 B** — the `no-load` branch's packing pass took it from 25 B to 3,021 (transfer board, lift screen, portrait pool, `poLut`; `docs/no-load.md` §4), and step 3 then SPENT 1,840 of that on the title artwork and the high-score screen. Before the branch it was 25 B, measured 2026-09-02 by bisecting a `SKIP` at `.LvStart7` |
+| `PARBRF` (`&0400`, hard ceiling `&0800`) | **12 B** (36 B before `BrTimeout`'s R8 blank, 56 B before the CTRL+R hook) |
+| `PARTITL` (`&0900`, ceiling `&0C90` = `LOWBSS_ADDR`) | **515 B** — the overlay is 397 and the region is 912. `&0800–&08FF` is NOT in it; see the note under the disc files below |
 | `PARAFNT` block | **16 B** before `SPR_SAVE` (`KeyDownIx` took 7, DECISION 5's `CN_STRS` 10) |
 | `PARMAN` (bank 5's briefing load; the bound is `DEPK_STREAM + size <= PANEL_ADDR`) | **225 B** — the redefine screen took 893 |
 | Low overlay | `lowcode` **9 B** (its two raw `PAGEBANK`s became `JSR Pg*`), `lowcode2` 3 B, `lowbss` **0 B** (`sprCls` took the last 8, 2026-09-01) |
@@ -254,7 +255,7 @@ load-bearing in pointer arithmetic), and spending one byte past a pad costs 256 
 Quote a bank's pad and tail as a pair, never the tail alone. `docs/ram-pass.md` records what the
 pass took, what it costed and rejected (do not re-litigate the blitter unrolls, `palPanel` or the
 ALIGNs), and what is held in reserve for the next squeeze — `sprsplit.asm` to bank 5 (SPENT 2026-09-01, as the sprscan.asm split), SCANSTEP
-tail folding, `door.asm` to bank 4, the `hsfont` dedup.
+tail folding, `door.asm` to bank 4, the `hsfont` dedup (SPENT 2026-09-07, no-load step 3).
 
 **The `PARBRF` ceiling is measured, not caution**: `&0800-&08FF` is the MOS's sound workspace and
 its IRQ writes there through the front end's loads. Anything of the briefing's that need not be
@@ -328,9 +329,16 @@ reason. A bare `*RUN PARA` finds no magic byte and falls back to 4,5,6,7, so deb
 unchanged. It is assembled AFTER `SAVE "PARA"` because it runs at `&1900`, inside the code image.
 `docs/layer-13-compatibility.md`.
 
-**`PARTITL` is a seventh disc file — the title screen**, assembled at `&3000` over `PARAFNT`'s
-ground and loaded by `TitleSeq` when the title is wanted: at boot, and again on the way back from a
-game over. `PARAFNT` reloads over it the moment it is done; the two are never wanted at once.
+**`PARTITL` is a seventh disc file — the title screen's DRIVER**, 397 bytes, loaded by `TitleSeq`
+when the title is wanted: at boot, and again on the way back from a game over. **It is at `&0900`
+since no-load step 3 (2026-09-07), not `&3000`** — in the MODE 1 charset's ground, above `PARBRF`
+at `&0400–&0800` and deliberately clear of `&0800–&08FF`, which is the MOS's sound workspace and is
+chewed while the MOS owns IRQ1V (the PARBRF block in `main.asm` has the measurement). `&3000` and
+the text font therefore survive the title now, which is what let the high-score screen's private
+1,152-byte alphabet become a 72-byte remap into `textfont`. **The invariant that replaces it, and
+no `ASSERT` can check it: `PARAFNT` must be resident whenever `HsRun` runs.** It is — only a
+finished game arms it, and `GoTitle` reaches `TitleSeq` through `SetupPlain` rather than
+`SetupMode` precisely so the `VDU 22` does not clear `&3000–&7FFF`. `docs/no-load.md` §6.
 
 ## Source organisation (`src/`)
 

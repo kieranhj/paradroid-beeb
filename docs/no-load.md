@@ -114,8 +114,14 @@ Branch `no-load`, off `main` at `eabeffe`.
 | `2c97f43` | portrait pool packed, 8 images a chunk — **1,661** | **3,021** |
 | `b385cd6` | the board depacks before the palette moves | |
 | `7c0c4d5` | BUGS.md 23 and 24 | |
+| *step 3* | title artwork to bank 7 | 1,881 |
+| *step 3* | `hsGlyphs` deleted, high-score screen to bank 7, PARTITL to `&0900` | **1,181** |
 
 **Step 2 is complete: bank 7 went from 7 bytes free to 3,021.** Content saving 3,295.
+
+**Step 3 is complete and it SPENDS 1,840 of that**, as §6 said it would. What it buys is
+stated there: `&3000` is now free of the title, which is the precondition for ever dropping
+the `PARAFNT` reload, and `PARTITL` fell from 3,307 raw bytes to **397**.
 
 `poLut` is the one that beat its estimate by not being a packing job at all: both 256-byte tables
 were one 16-byte table written out longhand, `left = poLut[b >> 4]`, `right = poLut[b AND 15]`.
@@ -129,7 +135,8 @@ and the subset is artwork, not a rule.
 
 Order below is the posted one, with corrections found since.
 
-**Step 3 — `hsfont` dedup + PARTITL relocation.** See §6; it is the next thing.
+**Step 3 — `hsfont` dedup + PARTITL relocation. DONE 2026-09-07.** See §6, which is now the
+record of what was built rather than the plan for it.
 
 **Step 4 — the individual loads**, cheapest first, as space allows.
 
@@ -168,10 +175,11 @@ swap the depacker at the base of the programme and re-derive `FNT_STREAM` twice.
 
 ---
 
-## 6. Step 3 in detail
+## 6. Step 3 — as built, 2026-09-07
 
-**What it is:** delete `hsGlyphs` and relocate PARTITL off `&3000`, so the text font survives the
-title.
+**What it was:** delete `hsGlyphs` and relocate PARTITL off `&3000`, so the text font survives
+the title. Done, and verified in jsbeeb over the whole front-end loop. **The placement changed
+during the work and the reason is §6a below — read that before trusting the addresses here.**
 
 `hsfont` is `HS_GLYPHS = 72` × 16 = 1,152 bytes, and **all 72 glyphs are byte-identical to glyphs
 already in `textfont`** — permuted, not contiguous, which is why a block diff misses them.
@@ -195,25 +203,76 @@ PARTITL is `&3000–&3CEB`. With `hsGlyphs` gone it is 2,227 raw and splits by k
 | `data/title.asm` artwork | 1,140 | nothing — an RLE stream read into `TI_BASE` |
 | remap + hs strings | 139 | nothing — data |
 
-- **The code, 948 + 139, goes to the charset tail** `&07F4–&0C90` (1,180). PARBRF is `&0400–&07F4`
-  and arrives *later*, inside `TiShow` via `TiLoadBrf`, after `TiBootPal` and `HsEntry` have run —
-  so they never overlap, and both die at the next `BuildCharset`.
 - **The artwork goes to bank 7 raw, 1,140**, read in place by `TiPaint` with the bank paged. It
-  cannot be packed: there is no arena at title time (§3).
+  cannot be packed: there is no arena at title time (§3). `TiShow` gains `JSR PgXfer` / `JSR PgData`
+  around `TiPaint` and nothing else — the bank on arrival is always `SWRAM_DATA`, because `HsEntry`
+  runs immediately before it and *both* its arms end on the data bank.
 - Neither `title.asm` nor `highscore.asm` has an `ALIGN` or a hardcoded `&3xxx`; every
   self-modification is `HI(label)`/`LO(label)` and the only absolute tables are `BUF_BASE`-relative.
-  **Both relocate by changing the ORG.**
+  **Both relocate by changing the ORG**, which is what made the three-way split cheap.
 
-**Trap:** PARTITL ends `&3CEB` and `FontCell` starts `&3CED`. That two-byte clearance is
-deliberate — it is how `highscore.asm` can call `FontCell` today. The title destroys `textfont`,
-`panelframe` and `strings` but *not* the 201 bytes of font code.
+**The `FontCell` trap is gone with the move.** PARTITL used to end `&3CEB` against `FontCell` at
+`&3CED`, and that two-byte clearance was load bearing. The overlay is nowhere near `&3xxx` now, so
+`ASSERT titl_end <= FONTCODE_ADDR` has been deleted along with it.
+
+### 6a. THE CHARSET TAIL IS 912 BYTES, NOT 1,180 — and why the split is three ways
+
+The plan above put the code at **`&07F4–&0C90`**. That address is wrong and the evidence was
+already in the tree: **`&0800–&08FF` is the MOS's sound workspace, and the MOS owns IRQ1V through
+every load the title makes.** `main.asm`'s PARBRF block records the measurement — a PARBRF that
+reached `&08B8` *verified byte-perfect immediately after its load* and was chewed by the time the
+briefing painted, running the corrupted `&08xx` into the paged bank and BRKing at `&800E`. `&0400–
+&07FF` really is free; the page above is not.
+
+So PARBRF keeps `&0400–&0800` and the title gets **`&0900–&0C90`, 912 bytes**, with the MOS's page
+stepped over between them. 912 does not hold 1,087, and the answer is to split three ways rather
+than two — **agreed with KC before it was built, 2026-09-07**:
+
+| piece | bytes | where | why it can go there |
+|---|---|---|---|
+| `title.asm` driver + `HsEntry` | **397** | PARTITL, `&0900` | `TitleSeq` is main RAM and calls `TiBootPal`, `HsEntry` and `TiShow` directly; main RAM may only call *into* a bank with that bank paged, so the three doors must stay outside one |
+| artwork (`titleGlyphs` + `titleRLE`) | 1,140 | bank 7, raw | `TiPaint` is the only reader and reads it once |
+| `hsRemap` + the three strings | 139 | bank 7 | data, read under `HsEntry`'s paging |
+| everything from `.HsRun` down | ~570 | bank 7 | **`HsEntry` already paged `SWRAM_XFER` around the whole screen**, for `hsArmed` and `hstable.asm`. So the screen runs with the bank it always ran with, and calls `FontCell`, `keydown`, `score` and `textfont` out in main RAM — which bank code may do freely. **No trampoline anywhere, and not one byte of code image.** |
+
+The one thing that did NOT move is `HsEntry` itself: its `PAGEBANK` pair has to execute from
+somewhere that does not vanish when it fires. It lives at the end of `src/title.asm` now.
+
+**The invariant this creates, and no `ASSERT` can check it:** `PARAFNT` must be resident whenever
+`HsRun` runs, because the glyphs are `textfont`'s now. It is — `HsRun` only runs when `hsArmed` is
+set, which only a finished game sets, and `GoTitle` reaches `TitleSeq` through `SetupPlain`, which
+exists precisely because `SetupMode`'s `VDU 22` would clear `&3000–&7FFF`. A cold boot never gets
+there: `hsArmed` is zero, the assembled value.
 
 **CORRECTION to the posted plan: step 3 does not remove the PARAFNT reload on its own.**
 `ts_loads` is shared three ways — boot, game-over, briefing exit — and the briefing destroys
 `&3000` independently: `BrTimeout` stages PARMAN at `DEPK_STREAM = &3200`, inside the font block.
 `&3000` has two destroyers; step 3 removes one and **step 5 removes the other**. Neither alone
-removes the load. So step 3 today is a ~1,140-byte spend with a deferred payoff, taken because it
+removes the load. So step 3 is a spend with a deferred payoff, taken because it
 is a prerequisite and bank 7 now has room.
+
+**What it actually cost and bought, measured 2026-09-07:**
+
+| | before | after |
+|---|---|---|
+| bank 7 free | 3,021 | **1,181** |
+| PARTITL, raw | 3,307 | **397** |
+| main-RAM code image free | 0 | **0** — step 3 touches no code image at all |
+| disc image, packed | 48,896 | 46,848 |
+
+**How it was verified.** Offline: `tools/export_hsremap.py` re-derives both tables from the C64
+listing and compares all 1,152 bytes against the *committed* `src/data/textfont.asm` on every run,
+so a hand-edited or re-exported font is caught at build time. Mechanically: the beebasm listings
+of `HsRun`→`hsTmp2` were reduced to a (mnemonic, addressing class, length) stream and diffed
+against `HEAD`'s — 279 entries, and **the only difference is the two instructions `TAX` /
+`LDA hsRemap,X` that `HsGlyph` gained**, which proves the move dropped and reordered nothing;
+`TiShow`'s stream differs by exactly the two `JSR`s, and `HsEntry`'s is identical. In jsbeeb: cold
+boot → title → game → ESCAPE → game over → high-score entry (walked A–J and back to capital I, the
+one irregular remap entry, and committed three initials) → title → briefing timeout → briefing →
+fire exit → game, all correct; and `&0900–&0A8D` read back **byte-for-byte identical to the
+`PARTITL` file on disc** after a full title dwell, except for `tiRun`/`tiLo`/`tiHi`/`tiPage`, the
+overlay's own counters. That last one is the measurement that says `&0900` is safe where `&0800`
+is not. The `-Release` build (with the intro) was booted through to the title as well.
 
 ---
 
@@ -267,9 +326,13 @@ fire while *standing on* `CHAR_CONSOLE` (`combat.asm`'s `dcu_console`), not by w
 
 ## 10. State of the tree
 
-**The code image is exactly full** — `code_end == FONT_ADDR == &3000`, zero bytes free, as of
-`b385cd6`. Bank 4 has 8. Bank 7 has 3,021.
+**The code image is exactly full** — `code_end == FONT_ADDR == &3000`, zero bytes free. Bank 4 has
+8. Bank 7 has **1,181** after step 3. `PARBRF` ends `&07F4`; `PARTITL` now runs `&0900–&0A8D`, so
+`&0A8D–&0C90` (515 bytes) is the free tail of the charset region at title time.
 
-Three things all want the same first move — a few bytes back in the code image: step 3, BUGS.md
-**#23** (the transfer entry flash, 3 bytes) and **#24** (the pause word). Step 3 reorganises main
-RAM anyway, so it is the natural place to find them.
+**Step 3 did NOT free any code image, and BUGS.md #23 and #24 are still unfunded.** The hope in an
+earlier draft of this section — that step 3 would find the three bytes #23 needs, because it
+"reorganises main RAM anyway" — turned out to be wrong: everything step 3 moved was overlay or
+bank content, and the code image is untouched at `&3000`. Whatever funds #23 has to come from
+somewhere else. Nothing in this branch's remaining steps obviously does; step 6's DFS reclaim is
+the nearest, and its pieces are all in low RAM rather than the code image.

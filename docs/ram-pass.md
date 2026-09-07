@@ -179,7 +179,13 @@ seeded and checked, and a comment at the site should say which paths were.
   exactly) and at runtime (headless jsbeeb A/B, 400 frames, both `mapHX`
   parities and all eight `line` values). `src/sprite.asm`'s macro header
   carries the invariant — read it before touching SCANSTEP again.
-- **`hsfont.asm` ≡ `textfont.asm`** (1,152 B, byte-identical): deletable
-  if the high-score entry runs while `PARAFNT` is resident (move
-  `highscore.asm`, ~655 B, to bank 5). Buys `PARTITL` headroom and load
-  time, not scarce RAM — needs a boot-sequence decision first.
+- **`hsfont.asm` ≡ `textfont.asm`** (1,152 B, byte-identical): **SPENT
+  2026-09-07**, no-load step 3. The boot-sequence decision this was
+  waiting on turned out to be the PARTITL relocation, not a boot change:
+  move the overlay off `&3000` and `PARAFNT` is simply still resident
+  when the entry runs. `highscore.asm` went to **bank 7**, not bank 5 —
+  `HsEntry` already paged `SWRAM_XFER` around the whole screen for
+  `hstable.asm`, so the move needed no trampoline and no code image.
+  1,152 B became a 72-byte remap. As predicted it bought `PARTITL`
+  headroom and load time rather than scarce RAM: bank 7 went 3,021 →
+  1,181 and `PARTITL` 3,307 → 397. `docs/no-load.md` §6.
