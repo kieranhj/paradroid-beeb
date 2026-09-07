@@ -15,6 +15,7 @@ them.
 | [`docs/memory-map.md`](docs/memory-map.md) | The map, from a label dump — every region of main RAM and all four banks, plus which source file lands where |
 | [`docs/decisions.md`](docs/decisions.md) | **The decision table of record**, plus the reasoning — why MODE 1, the no-HAL rule, and the evidence for which Paradroid the listing is |
 | [`docs/ram-pass.md`](docs/ram-pass.md) | The 2026-08-25 RAM recovery pass — what it bought, what it rejected, the reserves left, and the corrected buffer-diff oracle recipe |
+| [`docs/no-load.md`](docs/no-load.md) | **The `no-load` branch, in progress** — hexwab's issue #2: everything resident, loading once at boot. The arena rule for `&4600`, the ledger, what has landed, and step 3 onwards |
 | [`docs/graphics.md`](docs/graphics.md) | Where the C64's graphics live, which tool reads them, and per section what is ported |
 | [`docs/raster-timing.md`](docs/raster-timing.md) | **Where the main loop sits against the beam** — the frame, what writes the buffer when, and the flicker work |
 | [`docs/human-notes-status.md`](docs/human-notes-status.md) | KC's polish notes, reconciled item by item — nearly all closed; the record of each fix |
