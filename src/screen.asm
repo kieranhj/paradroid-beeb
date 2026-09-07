@@ -508,6 +508,54 @@ ENDIF
   JSR PalBlack                  \ plot invisibly; the closing SetPalette
                                 \ below reveals the finished frame at
                                 \ the next fire 1, in one go
+
+\ ---- the tile map is REBUILT here, not preserved -------------
+\ THE MAP IS A PURE FUNCTION OF THE DECK NUMBER. Doors do not touch
+\ it — door.asm gives each open door a private copy of its tile's 16
+\ definition bytes rather than patching the map — and nothing else
+\ writes &4600-&4A00 after BuildLevel. So the map is scratch for the
+\ whole of any modal screen, and this rebuild is what puts it back.
+\
+\ THAT IS THE POINT: it makes the tile map an ARENA, 1,024 contiguous
+\ bytes, on every screen that is not the deck. A modal screen may
+\ depack into it — issue #2's no-load plan spends it on the transfer
+\ board, the lift side view and the droid portrait pool.
+\
+\ IT IS HERE AND NOT IN ReframeView, and that is not a detail. It was
+\ in ReframeView first, ahead of this call, and the transfer exit
+\ flashed the board in the DECK's palette for one frame (KC, spotted
+\ on the branch): xferExit4 restores palPlay from xfPalSave before it
+\ jumps here, SetPalette leaves the ULA to the next fire 1, and a
+\ BuildLevel in front of PalBlack is ~40k cycles — almost exactly one
+\ field at 2 MHz — so the IRQ had time to apply the deck's colours to
+\ a transfer board still on screen. BELOW PalBlack there is nothing to
+\ see: the play area is already black and the closing SetPalette
+\ reveals the finished frame. The rule is that the rebuild belongs
+\ with the READER of the map, not with the caller.
+\
+\ WHO MAY NOT USE THE ARENA: the console's deck-plan page. ConDeck7
+\ walks the map in place while the page is up (condeck.asm), so that
+\ one screen has the map live. Every other modal screen — transfer,
+\ lift, information, game over — leaves it idle: the modal arms all
+\ JMP ml_modalend before the level draw, AnimTick and AnimScanPass,
+\ and MapGuardSnap is DEBUG_MAPGUARD only.
+\
+\ LOADDECK STILL BUILDS ITS OWN and that call stays: it runs ahead of
+\ DoorInit and DroidsInit, and leaving it there keeps LoadDeck correct
+\ without depending on anything here. The second build is identical
+\ work on the same deck, against a deck load that spends far more.
+\
+\ THE ZERO PAGE IS SAFE. Zx0Unpack borrows the level draw's own
+\ scratch (zx0depack.asm's header), which is idle until the draw runs
+\ — and the draw is the loop below, which sets its own up. Nothing
+\ between PalBlack and here has touched it.
+\
+\ DEBUG_REDRAW: CTRL+R now repairs the map before it redraws, so the
+\ oracle isolates buffer corruption from map corruption rather than
+\ inheriting it. See main.asm's flag block for the recipe.
+  LDA deck
+  JSR BuildLevel
+
   LDA #0 : STA rCount
   LDA mapYr : STA cellY
 
