@@ -180,24 +180,8 @@ def main():
     out.append('SV_CHARS   = %d' % len(codes))
     out.append('SV_RLE_LEN = %d' % rle_len)
     out.append('')
-    out.append('\\ The C64 codes in svChars order; code 0 is the blank. LvBuildGlyphOf')
-    out.append('\\ expands this into the 256-byte code->glyph table at xsGlyphOf.')
-    out.append('.svCode')
-    out.append('  EQUB ' + ', '.join('&%02X' % c for c in codes))
-    out.append('')
-
     normal = [mode1_char(mem, c, False) if c else [0] * 16 for c in codes]
     marked = [mode1_char(mem, c, True) if c else [0] * 16 for c in codes]
-
-    out.append('\\ NORMAL: the embossed art in its own colours. 16 bytes each,')
-    out.append('\\ left half then right.')
-    out.append('.svChars1')
-    for c, data in zip(codes, normal):
-        out.append('  \\ code &%02X' % c)
-        out.append('  EQUB ' + ', '.join('&%02X' % b for b in data))
-    out.append('.svChars1_end')
-    out.append('ASSERT svChars1_end - svChars1 == SV_CHARS * 16')
-    out.append('')
 
     # The shaft-marked set used to be emitted whole, all SV_CHARS of it, and
     # was 592 bytes of bank 7 to say the same thing as svChars1 for all but
@@ -215,34 +199,71 @@ def main():
     out.append('\\ above SV_MARK0 + SV_MARK_N, and this table between.')
     out.append('SV_MARK0  = %d' % first)
     out.append('SV_MARK_N = %d' % (last - first + 1))
-    out.append('.svCharsMk')
-    for i in range(first, last + 1):
-        out.append('  \\ code &%02X' % codes[i])
-        out.append('  EQUB ' + ', '.join('&%02X' % b for b in marked[i]))
-    out.append('.svCharsMk_end')
-    out.append('ASSERT svCharsMk_end - svCharsMk == SV_MARK_N * 16')
     out.append('')
 
-    out.append('\\ SideView_dat ($F180), the RLE stream verbatim - LvDrawPacked is a')
-    out.append('\\ transliteration of DrawPacked ($30A0) and reads it as the C64 does.')
-    out.append('.svData')
+    # ---- ONE ZX0 STREAM, DEPACKED INTO THE TILE MAP -------------
+    # The lift screen and the console's ship page are the only readers
+    # and both are modal, so the tile map is dead while either is up --
+    # doors never patch it and RedrawAll rebuilds it from the deck
+    # number on the way out (screen.asm). The 966 bytes therefore live
+    # here PACKED and LvBuildGlyphOf depacks them into &4600. Issue
+    # #2's no-load plan: bank 7 pays 409 instead of 966.
+    #
+    # THE ORDER BELOW IS THE UNPACKED LAYOUT and the SV_O_* constants
+    # are its offsets; liftview.asm names them off SV_BASE. There are
+    # no data labels left in this file to index.
     raw = [mem[SIDEVIEW + i] for i in range(rle_len)]
-    for i in range(0, len(raw), 16):
-        out.append('  EQUB ' + ', '.join('&%02X' % b for b in raw[i:i+16]))
+
+    def tbl(addr, n):
+        return bytes(mem[addr + i] for i in range(n))
+
+    blocks = [
+        ('CODE', bytes(codes)),
+        ('CHARS1', bytes(b for g in normal for b in g)),
+        ('CHARSMK', bytes(b for i in range(first, last + 1) for b in marked[i])),
+        ('DATA', bytes(raw)),
+        ('DECKY', tbl(DECK_Y, 16)),
+        ('DECKX', tbl(DECK_X, 16)),
+        ('DECKH', tbl(DECK_H, 16)),
+        ('DECKW', tbl(DECK_W, 16)),
+        ('SHAFTX', tbl(SHAFT_X, 8)),
+        ('SHAFTY', tbl(SHAFT_Y, 8)),
+        ('SHAFTH', tbl(SHAFT_H, 8)),
+    ]
+    import zx0
+    image, offs = bytearray(), {}
+    for name, data in blocks:
+        offs[name] = len(image)
+        image += data
+    packed = zx0.compress(bytes(image))
+    if zx0.decompress(packed) != bytes(image):
+        sys.exit('ERROR: sideview zx0 round-trip failed')
+
+    out.append('\\ Offsets into the depacked image at SV_BASE. THE ORDER IS')
+    out.append('\\ THE LAYOUT: change one and you change the other.')
+    for name, _d in blocks:
+        out.append('SV_O_%-7s = %4d' % (name, offs[name]))
+    out.append('SV_UNPACKED = %d' % len(image))
     out.append('')
-
-    def table(name, addr, n, note):
-        out.append('\\ %s' % note)
-        out.append('.%s' % name)
-        out.append('  EQUB ' + ', '.join('%d' % mem[addr + i] for i in range(n)))
-
-    table('svDeckY', DECK_Y, 16, 'lift_DeckY ($F120): highlight row, +10 for the C64 screen row')
-    table('svDeckX', DECK_X, 16, 'lift_DeckX ($F130): highlight column, +1 applied by the code')
-    table('svDeckH', DECK_H, 16, 'lift_DeckHeight ($F140): 1 for most decks, 2-3 for the engine rooms')
-    table('svDeckW', DECK_W, 16, 'lift_DeckWidth ($F150)')
-    table('svShaftX', SHAFT_X, 8, 'liftShaftX ($6CB0): shaft column, +1 applied by the code')
-    table('svShaftY', SHAFT_Y, 8, 'liftShaftY ($6CB8): shaft top row, +10 for the C64 screen row')
-    table('svShaftH', SHAFT_H, 8, 'liftShaftHeight ($6CC0): rows of colour the shaft mark paints')
+    out.append('\\ ...and the names liftview.asm already uses, now pointing at')
+    out.append('\\ the depacked image. Every read site is unchanged. SV_BASE is')
+    out.append("\\ main.asm's, declared beside the INCLUDE so the choice of arena")
+    out.append('\\ is not buried in generated code.')
+    for label, name in (('svCode', 'CODE'), ('svChars1', 'CHARS1'),
+                        ('svCharsMk', 'CHARSMK'), ('svData', 'DATA'),
+                        ('svDeckY', 'DECKY'), ('svDeckX', 'DECKX'),
+                        ('svDeckH', 'DECKH'), ('svDeckW', 'DECKW'),
+                        ('svShaftX', 'SHAFTX'), ('svShaftY', 'SHAFTY'),
+                        ('svShaftH', 'SHAFTH')):
+        out.append('%-9s = SV_BASE + SV_O_%s' % (label, name))
+    out.append('')
+    out.append('\\ The lift screen, ZX0 (v2, forwards): %d bytes packed from %d.'
+               % (len(packed), len(image)))
+    out.append('\\ LvBuildGlyphOf depacks it -- see liftview.asm.')
+    out.append('.svPack')
+    for i in range(0, len(packed), 16):
+        out.append('  EQUB ' + ', '.join('&%02X' % b for b in packed[i:i + 16]))
+    out.append('.svPack_end')
     out.append('')
 
     OUT.parent.mkdir(parents=True, exist_ok=True)

@@ -4060,6 +4060,24 @@ INCLUDE "src/xfer.asm"
 \ Layer 8b's lift screen shares the bank AND the machinery — the shadow
 \ screens, the glyph page, the row tables and the panel-line text are
 \ all xfer.asm's, safe because the two can never be up at once.
+\
+\ AND ITS DATA IS PACKED, into the same arena the board uses. The lift
+\ screen and the console's ship page are its only readers and both are
+\ modal, so the tile map is theirs; LvBuildGlyphOf depacks it, which is
+\ the one routine both entry points start with. SV_BASE is declared
+\ here for XB_BASE's reason -- the arena is a decision, not a detail.
+\
+\ THE TWO NEVER COEXIST, which is what lets them share &4600: the lift
+\ view and the transfer game are the same screen machinery and cannot
+\ both be up, and each depacks its own on the way in.
+\
+\ sideview.asm MOVED HERE, in front of liftview.asm, and out from
+\ behind plandata.asm's ALIGN. It has to be in front because beebasm
+\ resolves constants in file order; the ALIGN is measured, not assumed
+\ -- see the bank gauge.
+SV_BASE = tilemap
+INCLUDE "src/data/sideview.asm"
+ASSERT SV_BASE + SV_UNPACKED <= tilemap_end
 INCLUDE "src/liftview.asm"
 INCLUDE "src/condeck.asm"
 \ The droid database. It needs the console's droid icon a second time —
@@ -4082,10 +4100,10 @@ INCLUDE "src/hstable.asm"       \ Layer 11f: 25 B that outlive a title
 \ database draws the C64's own portrait now.
 INCLUDE "src/data/droidinfo.asm"
 INCLUDE "src/data/plandata.asm"
-\ Layer 11f, placed HERE and not beside infoscr.asm: plandata carries an
-\ ALIGN &100 for planInk, and whatever sits before it pays the padding.
-\ Behind it, this block costs the bank its own size and nothing more.
-INCLUDE "src/data/sideview.asm"
+\ sideview.asm USED TO SIT HERE, behind plandata's ALIGN &100 so that
+\ it cost the bank its own size and nothing more. It is now packed and
+\ has moved up in front of liftview.asm, which reads its constants and
+\ so must follow it -- see the note there.
 \ DECISION 14's icon code, BEHIND the ALIGN on purpose — its own
 \ header says why, and moving it in front costs the bank 256 B.
 INCLUDE "src/xfericon.asm"

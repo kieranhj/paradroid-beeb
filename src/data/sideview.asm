@@ -8,143 +8,72 @@
 SV_CHARS   = 37
 SV_RLE_LEN = 201
 
-\ The C64 codes in svChars order; code 0 is the blank. LvBuildGlyphOf
-\ expands this into the 256-byte code->glyph table at xsGlyphOf.
-.svCode
-  EQUB &00, &80, &81, &82, &83, &84, &85, &86, &87, &88, &89, &8A, &8B, &8C, &8D, &8E, &8F, &90, &91, &92, &93, &94, &95, &96, &97, &98, &99, &9A, &9B, &9C, &9D, &9E, &9F, &A5, &A6, &A7, &A8
-
-\ NORMAL: the embossed art in its own colours. 16 bytes each,
-\ left half then right.
-.svChars1
-  \ code &00
-  EQUB &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00
-  \ code &80
-  EQUB &0F, &0C, &0C, &0C, &0C, &0C, &0C, &F0, &0F, &00, &00, &00, &00, &00, &00, &F0
-  \ code &81
-  EQUB &0F, &00, &00, &00, &00, &00, &00, &F0, &0F, &00, &00, &00, &00, &00, &00, &F0
-  \ code &82
-  EQUB &0F, &00, &00, &00, &00, &00, &00, &F0, &0F, &30, &30, &30, &30, &30, &30, &F0
-  \ code &83
-  EQUB &0F, &0C, &0C, &0C, &0C, &0C, &0C, &0C, &0F, &00, &00, &00, &00, &00, &00, &00
-  \ code &84
-  EQUB &0F, &00, &00, &00, &00, &00, &00, &00, &0F, &00, &00, &00, &00, &00, &00, &00
-  \ code &85
-  EQUB &0F, &00, &00, &00, &00, &00, &00, &00, &0F, &30, &30, &30, &30, &30, &30, &30
-  \ code &86
-  EQUB &0C, &0C, &0C, &0C, &0C, &0C, &0C, &0C, &00, &00, &00, &00, &00, &00, &00, &00
-  \ code &87
-  EQUB &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00
-  \ code &88
-  EQUB &00, &00, &00, &00, &00, &00, &00, &00, &30, &30, &30, &30, &30, &30, &30, &30
-  \ code &89
-  EQUB &0C, &0C, &0C, &0C, &0C, &0C, &0C, &F0, &00, &00, &00, &00, &00, &00, &00, &F0
-  \ code &8A
-  EQUB &00, &00, &00, &00, &00, &00, &00, &F0, &00, &00, &00, &00, &00, &00, &00, &F0
-  \ code &8B
-  EQUB &00, &00, &00, &00, &00, &00, &00, &F0, &30, &30, &30, &30, &30, &30, &30, &F0
-  \ code &8C
-  EQUB &0F, &0C, &0C, &0C, &0C, &0C, &0C, &F0, &0F, &30, &30, &30, &30, &30, &30, &F0
-  \ code &8D
-  EQUB &00, &0C, &03, &30, &00, &00, &00, &F0, &00, &00, &00, &00, &C0, &30, &30, &F0
-  \ code &8E
-  EQUB &03, &03, &03, &03, &03, &03, &03, &03, &C0, &C0, &C0, &C0, &C0, &C0, &C0, &C0
-  \ code &8F
-  EQUB &03, &03, &03, &03, &03, &00, &00, &00, &C0, &C0, &C0, &C0, &C0, &C0, &00, &C0
-  \ code &90
-  EQUB &0F, &3F, &3F, &3F, &3F, &3F, &3F, &F0, &0F, &FF, &FF, &FF, &FF, &FF, &FF, &F0
-  \ code &91
-  EQUB &0F, &FF, &FF, &FF, &FF, &FF, &FF, &F0, &0F, &FF, &FF, &FF, &FF, &FF, &FF, &F0
-  \ code &92
-  EQUB &0F, &FF, &FF, &FF, &FF, &FF, &FF, &F0, &0F, &FC, &FC, &FC, &FC, &FC, &FC, &F0
-  \ code &93
-  EQUB &0F, &3F, &3F, &3F, &3F, &3F, &3F, &3F, &0F, &FF, &FF, &FF, &FF, &FF, &FF, &FF
-  \ code &94
-  EQUB &0F, &FF, &FF, &FF, &FF, &FF, &FF, &FF, &0F, &FF, &FF, &FF, &FF, &FF, &FF, &FF
-  \ code &95
-  EQUB &0F, &FF, &FF, &FF, &FF, &FF, &FF, &FF, &0F, &FC, &FC, &FC, &FC, &FC, &FC, &FC
-  \ code &96
-  EQUB &3F, &3F, &3F, &3F, &3F, &3F, &3F, &3F, &FF, &FF, &FF, &FF, &FF, &FF, &FF, &FF
-  \ code &97
-  EQUB &FF, &FF, &FF, &FF, &FF, &FF, &FF, &FF, &FF, &FF, &FF, &FF, &FF, &FF, &FF, &FF
-  \ code &98
-  EQUB &FF, &FF, &FF, &FF, &FF, &FF, &FF, &FF, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC
-  \ code &99
-  EQUB &3F, &3F, &3F, &3F, &3F, &3F, &3F, &F0, &FF, &FF, &FF, &FF, &FF, &FF, &FF, &F0
-  \ code &9A
-  EQUB &FF, &FF, &FF, &FF, &FF, &FF, &FF, &F0, &FF, &FF, &FF, &FF, &FF, &FF, &FF, &F0
-  \ code &9B
-  EQUB &FF, &FF, &FF, &FF, &FF, &FF, &FF, &F0, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &F0
-  \ code &9C
-  EQUB &0F, &3F, &3F, &3F, &3F, &3F, &3F, &F0, &0F, &FC, &FC, &FC, &FC, &FC, &FC, &F0
-  \ code &9D
-  EQUB &00, &0C, &CF, &FC, &FF, &FF, &FF, &F0, &00, &00, &00, &00, &C0, &FC, &FC, &F0
-  \ code &9E
-  EQUB &03, &00, &03, &03, &03, &03, &03, &03, &00, &00, &00, &C0, &C0, &C0, &C0, &C0
-  \ code &9F
-  EQUB &03, &03, &03, &03, &03, &03, &03, &03, &C0, &C0, &C0, &C0, &C0, &C0, &C0, &C0
-  \ code &A5
-  EQUB &0F, &0C, &0C, &0F, &0F, &0C, &0C, &0F, &3C, &30, &30, &3C, &3C, &30, &30, &3C
-  \ code &A6
-  EQUB &0F, &0C, &0C, &0F, &0F, &0C, &0C, &0F, &3C, &30, &30, &3C, &3C, &30, &30, &3C
-  \ code &A7
-  EQUB &0F, &0C, &0C, &0F, &0F, &0C, &0C, &F0, &3C, &30, &30, &3C, &3C, &30, &30, &F0
-  \ code &A8
-  EQUB &F0, &F0, &F0, &F0, &F0, &F0, &F0, &F0, &F0, &F0, &F0, &F0, &F0, &F0, &F0, &F0
-.svChars1_end
-ASSERT svChars1_end - svChars1 == SV_CHARS * 16
-
 \ SHAFT-MARKED: colour RAM $F9 - forced multicolour, 11s white.
 \ ONLY the glyphs that $F9 actually changes, which is the shaft
 \ rungs and nothing else. LvCell uses svChars1 below SV_MARK0 and
 \ above SV_MARK0 + SV_MARK_N, and this table between.
 SV_MARK0  = 33
 SV_MARK_N = 3
-.svCharsMk
-  \ code &A5
-  EQUB &0F, &0C, &0C, &3F, &3F, &0C, &0C, &3F, &3C, &30, &30, &FC, &FC, &30, &30, &FC
-  \ code &A6
-  EQUB &3F, &0C, &0C, &3F, &3F, &0C, &0C, &3F, &FC, &30, &30, &FC, &FC, &30, &30, &FC
-  \ code &A7
-  EQUB &3F, &0C, &0C, &3F, &3F, &0C, &0C, &F0, &FC, &30, &30, &FC, &FC, &30, &30, &F0
-.svCharsMk_end
-ASSERT svCharsMk_end - svCharsMk == SV_MARK_N * 16
 
-\ SideView_dat ($F180), the RLE stream verbatim - LvDrawPacked is a
-\ transliteration of DrawPacked ($30A0) and reads it as the C64 does.
-.svData
-  EQUB &A9, &49, &25, &01, &0D, &A9, &0B, &00, &25, &0D, &A9, &2F, &26, &81, &06, &02
-  EQUB &29, &29, &25, &81, &04, &26, &81, &04, &02, &29, &29, &25, &0D, &A9, &25, &00
-  EQUB &01, &26, &81, &09, &27, &00, &81, &03, &26, &81, &05, &25, &01, &27, &81, &04
-  EQUB &02, &A9, &1E, &A8, &05, &26, &A8, &03, &25, &84, &07, &05, &00, &01, &26, &81
-  EQUB &05, &26, &81, &08, &02, &A9, &1C, &A8, &05, &26, &A8, &03, &26, &87, &08, &04
-  EQUB &05, &27, &25, &81, &04, &26, &81, &0A, &02, &A9, &1A, &A8, &05, &26, &A8, &03
-  EQUB &26, &8A, &0A, &01, &26, &00, &81, &03, &26, &81, &08, &02, &A9, &1C, &A8, &05
-  EQUB &26, &A8, &03, &26, &84, &0B, &26, &00, &81, &03, &26, &81, &06, &02, &A9, &1E
-  EQUB &A8, &05, &26, &A8, &03, &26, &87, &0B, &26, &00, &26, &01, &01, &27, &01, &01
-  EQUB &02, &A9, &22, &00, &81, &04, &26, &01, &01, &02, &26, &8A, &0B, &26, &00, &26
-  EQUB &01, &02, &A9, &26, &00, &81, &04, &27, &01, &01, &02, &26, &84, &07, &05, &03
-  EQUB &04, &04, &26, &00, &27, &A9, &31, &26, &87, &07, &08, &09, &0A, &0A, &27, &A9
-  EQUB &33, &27, &8A, &07, &0B, &A9, &C0, &A9, &C0
+\ Offsets into the depacked image at SV_BASE. THE ORDER IS
+\ THE LAYOUT: change one and you change the other.
+SV_O_CODE    =    0
+SV_O_CHARS1  =   37
+SV_O_CHARSMK =  629
+SV_O_DATA    =  677
+SV_O_DECKY   =  878
+SV_O_DECKX   =  894
+SV_O_DECKH   =  910
+SV_O_DECKW   =  926
+SV_O_SHAFTX  =  942
+SV_O_SHAFTY  =  950
+SV_O_SHAFTH  =  958
+SV_UNPACKED = 966
 
-\ lift_DeckY ($F120): highlight row, +10 for the C64 screen row
-.svDeckY
-  EQUB 0, 1, 1, 2, 2, 3, 4, 5, 6, 7, 3, 6, 9, 9, 8, 9
-\ lift_DeckX ($F130): highlight column, +1 applied by the code
-.svDeckX
-  EQUB 5, 15, 5, 3, 16, 18, 20, 22, 22, 22, 9, 9, 9, 18, 0, 0
-\ lift_DeckHeight ($F140): 1 for most decks, 2-3 for the engine rooms
-.svDeckH
-  EQUB 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 3, 3, 2, 1, 1
-\ lift_DeckWidth ($F150)
-.svDeckW
-  EQUB 17, 15, 8, 13, 18, 18, 18, 14, 12, 8, 13, 13, 13, 4, 26, 24
-\ liftShaftX ($6CB0): shaft column, +1 applied by the code
-.svShaftX
-  EQUB 5, 9, 20, 28, 26, 23, 15, 21
-\ liftShaftY ($6CB8): shaft top row, +10 for the C64 screen row
-.svShaftY
-  EQUB 0, 3, 0, 1, 2, 7, 1, 4
-\ liftShaftHeight ($6CC0): rows of colour the shaft mark paints
-.svShaftH
-  EQUB 10, 9, 5, 2, 6, 3, 2, 7
+\ ...and the names liftview.asm already uses, now pointing at
+\ the depacked image. Every read site is unchanged. SV_BASE is
+\ main.asm's, declared beside the INCLUDE so the choice of arena
+\ is not buried in generated code.
+svCode    = SV_BASE + SV_O_CODE
+svChars1  = SV_BASE + SV_O_CHARS1
+svCharsMk = SV_BASE + SV_O_CHARSMK
+svData    = SV_BASE + SV_O_DATA
+svDeckY   = SV_BASE + SV_O_DECKY
+svDeckX   = SV_BASE + SV_O_DECKX
+svDeckH   = SV_BASE + SV_O_DECKH
+svDeckW   = SV_BASE + SV_O_DECKW
+svShaftX  = SV_BASE + SV_O_SHAFTX
+svShaftY  = SV_BASE + SV_O_SHAFTY
+svShaftH  = SV_BASE + SV_O_SHAFTH
+
+\ The lift screen, ZX0 (v2, forwards): 409 bytes packed from 966.
+\ LvBuildGlyphOf depacks it -- see liftview.asm.
+.svPack
+  EQUB &05, &25, &00, &80, &81, &82, &83, &84, &85, &86, &87, &88, &89, &8A, &8B, &8C
+  EQUB &8D, &8E, &8F, &90, &91, &92, &93, &94, &95, &96, &97, &98, &99, &9A, &9B, &9C
+  EQUB &9D, &9E, &9F, &A5, &A6, &A7, &A8, &00, &62, &0F, &0C, &19, &87, &F0, &0F, &00
+  EQUB &C1, &F0, &B8, &30, &FE, &BC, &F0, &A0, &A4, &0C, &FC, &FF, &F0, &0B, &30, &9A
+  EQUB &FE, &0C, &5A, &00, &55, &BC, &30, &A0, &69, &F0, &7C, &F0, &0B, &30, &71, &E0
+  EQUB &DD, &C0, &E6, &B1, &0C, &03, &30, &02, &EB, &C0, &E0, &03, &CA, &FE, &C0, &5E
+  EQUB &E6, &3F, &C8, &88, &FE, &21, &00, &C0, &0F, &3F, &98, &F0, &0F, &FF, &7C, &F0
+  EQUB &1B, &FC, &8B, &FE, &F0, &CA, &A0, &3F, &4F, &FF, &C0, &F0, &B9, &FC, &FE, &A5
+  EQUB &3F, &A5, &FF, &5B, &FC, &C6, &A0, &97, &F0, &C0, &F0, &B7, &FC, &E0, &1D, &DD
+  EQUB &C0, &A3, &00, &CF, &FC, &B6, &C0, &00, &7B, &E0, &6D, &29, &03, &C3, &1A, &35
+  EQUB &E0, &CA, &80, &F8, &0F, &F8, &20, &3C, &30, &30, &3C, &E5, &E0, &29, &F0, &6F
+  EQUB &F0, &FE, &5E, &C8, &FB, &05, &F8, &BE, &C8, &25, &F8, &BC, &3F, &E0, &A5, &FC
+  EQUB &29, &F0, &60, &5A, &F0, &A9, &49, &25, &01, &0D, &A9, &0B, &00, &25, &0D, &A9
+  EQUB &2F, &26, &81, &06, &02, &29, &29, &3A, &81, &04, &EF, &04, &0E, &D1, &AE, &25
+  EQUB &01, &E9, &1E, &09, &27, &00, &81, &03, &F3, &EE, &05, &AF, &27, &D0, &85, &FB
+  EQUB &A9, &1E, &A8, &05, &26, &A8, &03, &25, &84, &07, &05, &C7, &D4, &BA, &FB, &08
+  EQUB &D9, &1C, &0E, &B9, &0B, &87, &08, &04, &05, &8B, &80, &0A, &A4, &D9, &1A, &8F
+  EQUB &8A, &0A, &B5, &B9, &80, &B2, &63, &84, &0B, &9A, &DC, &06, &29, &1E, &29, &87
+  EQUB &8F, &26, &01, &41, &EF, &FB, &DB, &22, &C9, &EF, &7F, &EE, &8D, &FA, &D6, &DE
+  EQUB &9A, &26, &27, &0E, &1A, &9E, &03, &04, &04, &E3, &78, &27, &A9, &31, &9D, &79
+  EQUB &07, &08, &09, &0A, &0A, &ED, &A7, &33, &27, &8A, &0B, &A9, &C0, &BA, &FD, &00
+  EQUB &BC, &E5, &02, &C3, &E3, &05, &06, &07, &03, &06, &09, &09, &C7, &05, &0F, &83
+  EQUB &A7, &10, &12, &14, &16, &A2, &FF, &09, &2A, &12, &00, &01, &06, &88, &03, &A1
+  EQUB &02, &01, &88, &11, &0F, &08, &0D, &12, &F9, &0E, &0C, &F3, &FF, &0D, &04, &1A
+  EQUB &18, &05, &09, &14, &1C, &1A, &17, &0F, &15, &00, &78, &CB, &6F, &AE, &07, &01
+  EQUB &0A, &7D, &2F, &02, &06, &ED, &55, &55, &80
+.svPack_end
 

@@ -567,6 +567,30 @@
 \ the transfer, this for the lift. Cheap, and the page is the scarce
 \ thing, not the loop.
 .LvBuildGlyphOf
+\ ---- the screen's data arrives, unpacked into the tile map ---
+\ HERE BECAUSE BOTH ENTRY POINTS START WITH THIS CALL and nothing else
+\ does: LvStart7 for the lift and LvShip7 for the console's ship page.
+\ The fill below is the first read of svCode, and every draw after it
+\ reads svChars1, svCharsMk, svData and the deck tables -- all of them
+\ SV_BASE + an offset now, not bytes in this bank (issue #2's no-load
+\ plan; the bank pays 409 for the stream instead of 966).
+\
+\ THE TILE MAP IS OURS while either screen is up, for the reason the
+\ transfer board has it: doors never patch it, the modal arms jump past
+\ the level draw, and RedrawAll rebuilds it from the deck number on the
+\ way out. The board and this can never be up together -- they are the
+\ same screen machinery -- so they share &4600 and each depacks its own
+\ on entry.
+\
+\ SAFE ON THE LIFT'S NO-LOAD EXIT TOO: lvEntryPos unmoved means no
+\ LoadDeck, but ReframeView still runs and RedrawAll still rebuilds, so
+\ the deck comes back whether or not it changed.
+  LDA #LO(svPack)  : STA src
+  LDA #HI(svPack)  : STA src+1
+  LDA #LO(SV_BASE) : STA mapptr
+  LDA #HI(SV_BASE) : STA mapptr+1
+  JSR Zx0Unpack
+
   LDA #0
   TAX
 .lvb_clear
