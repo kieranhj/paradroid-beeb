@@ -35,9 +35,88 @@ sections below are in neither. **The table is the index; read it first.**
 | **20** | [The player's bullet starves every other collision in the pass](#20-the-players-bullet-starves-every-other-collision-in-the-pass--fixed-2026-09-03) | **Fixed** 2026-09-03 | `DrCollide` scanned from slot 7. The bullet has no `drSlotOwner`, so its pair dead-ended and the whole pass was abandoned. Playtest report #3 |
 | **21** | [Two black squares flicker on the transfer game's central column](#21-two-black-squares-flicker-on-the-transfer-games-central-column--2026-09-03-unreproduced) | **Open, unreproduced** | reported on real hardware, rarely on BeebEm. Two hypotheses, neither tested; the cursor one is a 30-second check |
 | **22** | [Sprite pixels are occasionally left on the deck](#22-sprite-pixels-are-occasionally-left-on-the-deck--2026-09-06-open) | **Open** | reported from play, in a firefight, no repro. The tranche split was the first suspect and is EXONERATED by measurement — `DEBUG_TRCHK` counted zero cross-tranche overlaps through minutes of contrived heavy fire |
+| **23** | [Entering a transfer, the target's information screen flashes in the board's palette](#23-entering-a-transfer-the-targets-information-screen-flashes-in-the-boards-palette--2026-09-07-open) | **Open** | PRE-DATES the no-load branch, proven by diff. The board draw runs with `palPlay` already switched. Fix is 3 bytes of a full code image |
+| **24** | [Unpausing inside the transfer game posts "Transfer" over the board's own panel word](#24-unpausing-inside-the-transfer-game-posts-transfer-over-the-boards-own-panel-word--2026-09-07-open) | **Open** | `DoPause`'s repaint goes through `pnTxtTab`, which knows nothing of the words the transfer writes for itself |
 
 `## Delivered: DEBUG_POS` near the end is not a defect — it is the position bookmark that came out
 of #5, kept with the defects because that is where it is looked for.
+
+---
+
+## 24. Unpausing inside the transfer game posts "Transfer" over the board's own panel word — 2026-09-07, open
+
+Reported by KC, 2026-09-07: *"if the player pauses during the transfer game, the word transfer is
+placed at the top when unpausing, even if that's not the correct text for the panel."*
+
+### The cause
+
+`DoPause` (`main.asm`) repaints the panel word twice, through the panel's own mode field rather
+than by drawing a string:
+
+```
+  LDA #1 : STA paused  : JSR PanelTick     \ "Paused"
+  ...
+  LDA #0 : STA paused  : JSR PanelTick     \ and back
+```
+
+"and back" is the problem. `PanelTick` picks its word out of `pnTxtTab` (`panel.asm`), five
+entries — `Mobile`, `Weapon`, `Transfer`, `Console`, `Pause` — indexed by the game's mode. With a
+transfer running the mode is 2, so the repaint writes `pnTxtXfer`, "Transfer".
+
+But the transfer game does not use `pnTxtTab` at all. It writes its own panel line through
+`XfTextClear` and the words beside it — "Colour? 88", "Finish", "Captured" — which change as the
+game runs. Unpausing therefore restores the mode's *generic* word over whatever the board had
+posted, and the line stays wrong until the transfer next writes it.
+
+### What this is not
+
+Not the pause itself: the panel is correct while paused ("Pause" is the right word) and correct
+before it. Not a teardown — nothing is lost, the wrong word is positively written. The same
+mechanism will apply to any screen that writes the panel line for itself and is pausable; the
+lift view is the other candidate and has not been checked.
+
+### The shape of the fix
+
+Either the transfer's current word becomes a sixth `pnTxtTab` entry that `PanelTick` can restore,
+or `DoPause`'s second `PanelTick` is suppressed for the modal screens that own the line and the
+screen is asked to repaint its own. The second is closer to how the arena rule was settled
+elsewhere on the no-load branch — the owner of a resource restores it — but it costs a test in
+`DoPause`, which is main RAM, and the code image is currently full.
+
+---
+
+## 23. Entering a transfer, the target's information screen flashes in the board's palette — 2026-09-07, open
+
+Reported by KC, 2026-09-07, while testing the no-load branch: *"when going into the transfer game,
+we get to see both droids then the second droid appears in the transfer screen palette just
+briefly before the game starts."*
+
+### The cause
+
+`XferEnter` runs `XferEnter4` and then `XfStart`. `XferEnter4`'s `xe4_pal` loop copies `palXfer`
+into `palPlay` (`droid.asm`), and `SetPalette` leaves the ULA alone — the next fire 1 makes the
+change live. `XfStart` then draws the board, 16 rows × 40 cells of glyph copying, which is several
+fields of work. For all of it the target droid's information screen is still the thing on display,
+now being shown through the board's palette.
+
+### It is NOT the no-load branch, and that was checked rather than assumed
+
+It was first suspected as a regression from the packed board (`b852e43`), which put an 876-byte
+depack — ~34k cycles, near enough a whole field — at the top of `XfStart`, i.e. inside exactly
+this gap. Moving the depack ahead of `XferEnter4` (`b385cd6`) did not fix the flash, and
+`git diff main -- src/xfer.asm` then contained **only additions**: not one instruction of
+`XfStart` was removed or changed, and `XferEnter4` was untouched. So the palette-to-board path is
+byte-for-byte `main`'s and the defect predates the branch. The depack did make the window about a
+field wider while it was there.
+
+### The shape of the fix
+
+Draw first and reveal after, which is the pattern `RedrawAll` already uses — `PalBlack`, draw,
+`SetPalette`. Here that means moving `xe4_pal` out of `XferEnter4` into its own bank-4 routine
+called *after* `XfStart`. `palXfer` is bank 4 data, so bank 7 cannot apply it itself, and the call
+site is main RAM: `JMP PgData` becomes `JSR PgData : JMP XferPal4`. **Three bytes**, and as of
+`b385cd6` the code image is exactly full (`code_end == FONT_ADDR == &3000`). Fold it into whatever
+next reorganises main RAM.
 
 ---
 
