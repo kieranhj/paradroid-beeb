@@ -2536,8 +2536,17 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
                                 \ splits FinishTransfer1 from 2 on it
 
 .XferEnter
+\ THE BOARD IS DEPACKED FIRST, ahead of XferEnter4, because XferEnter4
+\ moves palXfer into palPlay and the IRQ makes that live at the next
+\ fire 1 -- a ~34k-cycle depack between that and XfStart's draw let the
+\ target droid's information screen be repainted in the board's colours
+\ for a frame. See XfBoardIn. It costs three paging calls; the code
+\ image can afford them and the flash is worth more than nine bytes.
+  JSR PgXfer
+  JSR XfBoardIn                 \ bank 7: into the tile map, unseen
+  JSR PgData
   JSR XferEnter4                \ bank 4: gather, flatten, palette, t1i3
-  JSR PgXfer   
+  JSR PgXfer
   JSR XfStart
   JMP PgData     \ tail: its RTS is ours
 

@@ -67,30 +67,42 @@ ASSERT PLAY_VIS_ROWS + 1 == 16  \ the board needs all 16 rows
 \ build the board, and settle into the fire-release wait that stands in
 \ for WaitNoFire ($22AA) — the button that started the transfer is still
 \ down, and the select phase would read it as an instant confirm.
-.XfStart
-\ ---- the board arrives, unpacked into the tile map -----------
-\ FIRST, because XfBuildGlyphOf below reads xbCode and every paint
-\ after it reads xbPool and xbSlot -- all of which are XB_BASE + an
-\ offset now, not bytes in this bank (issue #2's no-load plan; the
-\ bank pays 288 for the stream instead of 876 for the board).
+\ ============================================================
+\ XfBoardIn — the board, unpacked into the tile map
+\ ============================================================
+\ XfBuildGlyphOf reads xbCode and every paint after it reads xbPool and
+\ xbSlot -- all of which are XB_BASE + an offset now, not bytes in this
+\ bank (issue #2's no-load plan; the bank pays 288 for the stream
+\ instead of 876 for the board).
+\
+\ IT IS CALLED BEFORE XferEnter4, NOT FROM XfStart, and that ordering
+\ is the whole point. XferEnter4 copies palXfer into palPlay and the
+\ IRQ makes that live at the next fire 1; XfStart then draws the board.
+\ A depack between those two is ~34k cycles, near enough a whole field,
+\ so the transfer's palette went live while the target droid's
+\ information screen was still on display and the droid flashed in the
+\ board's colours (KC, on the branch). Depacking BEFORE the palette
+\ moves puts the cost where nothing is changing -- the information
+\ screen is up and stays up, and the arena is not displayed.
 \
 \ THE TILE MAP IS OURS FOR THE WHOLE TRANSFER. Doors never patch it --
 \ door.asm keeps a private copy of the tile definition -- and nothing
-\ else writes it while a modal screen is up, because the modal arms
-\ JMP ml_modalend ahead of the level draw and AnimTick. RedrawAll
-\ rebuilds it from the deck number on the way out, so the deck the
-\ player comes back to is built fresh, not preserved.
+\ else writes it while a modal screen is up, because the modal arms JMP
+\ ml_modalend ahead of the level draw and AnimTick. RedrawAll rebuilds
+\ it from the deck number on the way out, so the deck the player comes
+\ back to is built fresh, not preserved.
 \
-\ ONCE PER TRANSFER: XferEnter is the only caller and it enters here
-\ once. Zx0Unpack is main RAM's, which this bank may call freely, and
+\ Zx0Unpack is main RAM's, which this bank may call freely, and
 \ src/mapptr are the pointers it expects -- the same pair BuildLevel
 \ hands it, idle here because no level draw is running.
+.XfBoardIn
   LDA #LO(xbPack)  : STA src
   LDA #HI(xbPack)  : STA src+1
   LDA #LO(XB_BASE) : STA mapptr
   LDA #HI(XB_BASE) : STA mapptr+1
-  JSR Zx0Unpack
+  JMP Zx0Unpack                 \ tail: its RTS is ours
 
+.XfStart
   JSR XfBuildGlyphOf
 
   LDA USR_VIA_T1CL              \ free-running, sampled at an arbitrary
