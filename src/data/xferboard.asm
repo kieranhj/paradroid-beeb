@@ -16,117 +16,50 @@
 XB_CHARS = 17
 XB_COLS  = 40
 
-\ The 17 C64 codes that occur, in xbChars order. XfInit expands
-\ this into the 256-byte code->glyph-index table at xsGlyphOf.
-.xbCode
-  EQUB &00, &D0, &D1, &F1, &F2, &F3, &F4, &F5, &F6, &F7, &F8, &F9, &FA, &FB, &FC, &FD, &FE
-
 XB_GLYPHS = 38
 
-\ The glyph POOL: the distinct 16-byte cells behind the 3 x XB_CHARS
-\ (set, code) slots. 16 bytes each: left half's 8 scanlines then
-\ right's. NOTHING indexes this directly - go through xbSlot.
-.xbPool
-  \ glyph 0
-  EQUB &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00
-  \ glyph 1
-  EQUB &00, &00, &00, &00, &00, &00, &00, &00, &33, &33, &FF, &FF, &FF, &FF, &33, &33
-  \ glyph 2
-  EQUB &CC, &CC, &FF, &FF, &FF, &FF, &CC, &CC, &00, &00, &00, &00, &00, &00, &00, &00
-  \ glyph 3
-  EQUB &00, &00, &00, &FF, &FF, &00, &00, &00, &00, &00, &00, &FF, &FF, &00, &00, &00
-  \ glyph 4
-  EQUB &00, &33, &FF, &FF, &FF, &FF, &33, &00, &00, &FF, &FF, &FF, &FF, &FF, &FF, &00
-  \ glyph 5
-  EQUB &00, &FF, &FF, &FF, &FF, &FF, &FF, &00, &00, &FF, &FF, &FF, &FF, &FF, &FF, &00
-  \ glyph 6
-  EQUB &00, &00, &FF, &FF, &FF, &FF, &FF, &FF, &00, &00, &FF, &FF, &FF, &FF, &FF, &FF
-  \ glyph 7
-  EQUB &FF, &FF, &FF, &FF, &FF, &FF, &FF, &FF, &FF, &FF, &FF, &FF, &FF, &FF, &FF, &FF
-  \ glyph 8
-  EQUB &FF, &FF, &FF, &FF, &FF, &FF, &00, &00, &FF, &FF, &FF, &FF, &FF, &FF, &00, &00
-  \ glyph 9
-  EQUB &00, &33, &FF, &FF, &FF, &FF, &33, &00, &FF, &FF, &FF, &FF, &FF, &FF, &FF, &FF
-  \ glyph 10
-  EQUB &FF, &FF, &FF, &FF, &FF, &FF, &FF, &FF, &00, &CC, &FF, &FF, &FF, &FF, &CC, &00
-  \ glyph 11
-  EQUB &00, &00, &00, &00, &00, &33, &FF, &FF, &00, &00, &00, &00, &00, &CC, &FF, &FF
-  \ glyph 12
-  EQUB &FF, &FF, &33, &00, &00, &00, &00, &00, &FF, &FF, &CC, &00, &00, &00, &00, &00
-  \ glyph 13
-  EQUB &00, &FF, &FF, &FF, &FF, &FF, &FF, &00, &00, &CC, &FF, &FF, &FF, &FF, &CC, &00
-  \ glyph 14
-  EQUB &00, &00, &00, &CF, &FF, &00, &00, &00, &00, &00, &00, &FF, &3F, &00, &00, &00
-  \ glyph 15
-  EQUB &00, &00, &00, &FF, &CF, &00, &00, &00, &00, &00, &00, &3F, &FF, &00, &00, &00
-  \ glyph 16
-  EQUB &00, &33, &FF, &CF, &CF, &FF, &33, &00, &00, &FF, &3F, &3F, &3F, &3F, &FF, &00
-  \ glyph 17
-  EQUB &00, &FF, &CF, &CF, &CF, &CF, &FF, &00, &00, &FF, &3F, &3F, &3F, &3F, &FF, &00
-  \ glyph 18
-  EQUB &00, &00, &FF, &CF, &CF, &CF, &CF, &CF, &00, &00, &FF, &3F, &3F, &3F, &3F, &3F
-  \ glyph 19
-  EQUB &CF, &CF, &CF, &CF, &CF, &CF, &CF, &CF, &3F, &3F, &3F, &3F, &3F, &3F, &3F, &3F
-  \ glyph 20
-  EQUB &CF, &CF, &CF, &CF, &CF, &FF, &00, &00, &3F, &3F, &3F, &3F, &3F, &FF, &00, &00
-  \ glyph 21
-  EQUB &FF, &0F, &0F, &0F, &0F, &0F, &0F, &0F, &FF, &0F, &0F, &0F, &0F, &0F, &0F, &0F
-  \ glyph 22
-  EQUB &00, &33, &FF, &CF, &CF, &FF, &33, &00, &FF, &FF, &3F, &3F, &3F, &3F, &FF, &FF
-  \ glyph 23
-  EQUB &FF, &FF, &CF, &CF, &CF, &CF, &FF, &FF, &00, &CC, &FF, &3F, &3F, &FF, &CC, &00
-  \ glyph 24
-  EQUB &00, &FF, &CF, &CF, &CF, &CF, &FF, &00, &00, &CC, &FF, &3F, &3F, &FF, &CC, &00
-  \ glyph 25
-  EQUB &0F, &0F, &0F, &0F, &0F, &0F, &0F, &FF, &0F, &0F, &0F, &0F, &0F, &0F, &0F, &FF
-  \ glyph 26
-  EQUB &00, &00, &00, &FC, &FF, &00, &00, &00, &00, &00, &00, &FF, &F3, &00, &00, &00
-  \ glyph 27
-  EQUB &00, &00, &00, &FF, &FC, &00, &00, &00, &00, &00, &00, &F3, &FF, &00, &00, &00
-  \ glyph 28
-  EQUB &00, &33, &FF, &FC, &FC, &FF, &33, &00, &00, &FF, &F3, &F3, &F3, &F3, &FF, &00
-  \ glyph 29
-  EQUB &00, &FF, &FC, &FC, &FC, &FC, &FF, &00, &00, &FF, &F3, &F3, &F3, &F3, &FF, &00
-  \ glyph 30
-  EQUB &00, &00, &FF, &FC, &FC, &FC, &FC, &FC, &00, &00, &FF, &F3, &F3, &F3, &F3, &F3
-  \ glyph 31
-  EQUB &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &F3, &F3, &F3, &F3, &F3, &F3, &F3, &F3
-  \ glyph 32
-  EQUB &FC, &FC, &FC, &FC, &FC, &FF, &00, &00, &F3, &F3, &F3, &F3, &F3, &FF, &00, &00
-  \ glyph 33
-  EQUB &FF, &F0, &F0, &F0, &F0, &F0, &F0, &F0, &FF, &F0, &F0, &F0, &F0, &F0, &F0, &F0
-  \ glyph 34
-  EQUB &00, &33, &FF, &FC, &FC, &FF, &33, &00, &FF, &FF, &F3, &F3, &F3, &F3, &FF, &FF
-  \ glyph 35
-  EQUB &FF, &FF, &FC, &FC, &FC, &FC, &FF, &FF, &00, &CC, &FF, &F3, &F3, &FF, &CC, &00
-  \ glyph 36
-  EQUB &00, &FF, &FC, &FC, &FC, &FC, &FF, &00, &00, &CC, &FF, &F3, &F3, &FF, &CC, &00
-  \ glyph 37
-  EQUB &F0, &F0, &F0, &F0, &F0, &F0, &F0, &FF, &F0, &F0, &F0, &F0, &F0, &F0, &F0, &FF
-.xbPool_end
-ASSERT xbPool_end - xbPool == XB_GLYPHS * 16
+\ Offsets into the depacked image at XB_BASE. THE ORDER IS
+\ THE LAYOUT: change one and you change the other.
+XB_O_CODE =    0
+XB_O_POOL =   17
+XB_O_SLOT =  625
+XB_O_TOP  =  676
+XB_O_MID  =  796
+XB_O_BOT  =  836
+XB_UNPACKED = 876
 
-\ (set, code) -> pool glyph. Three runs of XB_CHARS, in the order
-\ the renderer's xfSetOfs names them: neutral, player, CPU.
-.xbSlot
-  \ NEUTRAL
-  EQUB 0, 1, 2, 3, 3, 4, 5, 6, 7, 8, 7, 9, 10, 11, 12, 13, 7
-  \ PLAYER
-  EQUB 0, 1, 2, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 11, 12, 24, 25
-  \ CPU
-  EQUB 0, 1, 2, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 11, 12, 36, 37
-.xbSlot_end
-ASSERT xbSlot_end - xbSlot == XB_CHARS * 3
+\ ...and the names the renderer already uses, now pointing at
+\ the depacked image instead of at bytes in this bank. Every
+\ read site in xfer.asm is unchanged. XB_BASE is main.asm's,
+\ declared beside the INCLUDE so the choice of arena is not
+\ buried in generated code.
+xbCode   = XB_BASE + XB_O_CODE
+xbPool   = XB_BASE + XB_O_POOL
+xbSlot   = XB_BASE + XB_O_SLOT
+xbTop    = XB_BASE + XB_O_TOP
+xbMid    = XB_BASE + XB_O_MID
+xbBottom = XB_BASE + XB_O_BOT
 
-\ Rows as RAW C64 CODES - see the header.
-.xbTop
-  EQUB &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &FB, &FB, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00
-  EQUB &00, &00, &00, &F5, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &D0, &F8, &F8, &D1, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &F5, &00, &00, &00
-  EQUB &00, &00, &00, &F6, &F1, &FD, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &D0, &FE, &FE, &D1, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &F3, &F2, &F6, &00, &00, &00
-
-.xbMid
-  EQUB &00, &FD, &00, &F6, &F1, &F1, &F1, &F1, &F1, &F1, &F1, &F1, &F1, &F1, &F1, &F1, &F1, &F1, &F9, &F8, &F8, &FA, &F2, &F2, &F2, &F2, &F2, &F2, &F2, &F2, &F2, &F2, &F2, &F2, &F2, &F2, &F6, &00, &F3, &00
-
-.xbBottom
-  EQUB &00, &00, &00, &F7, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &FC, &FC, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &F7, &00, &00, &00
+\ The board, ZX0 (v2, forwards): 288 bytes packed from 876.
+\ XfStart depacks it into the tile map -- see xfer.asm.
+.xbPack
+  EQUB &04, &85, &00, &D0, &D1, &F1, &F2, &F3, &F4, &F5, &F6, &F7, &F8, &F9, &FA, &FB
+  EQUB &FC, &FD, &FE, &00, &6A, &33, &9A, &FF, &33, &AF, &CC, &F0, &F9, &F5, &CA, &3E
+  EQUB &E3, &F0, &5E, &B0, &7F, &E4, &F8, &FE, &F0, &0F, &DE, &5F, &FE, &5F, &A2, &5F
+  EQUB &60, &78, &BC, &0D, &9D, &F0, &CE, &C6, &0A, &79, &D8, &A1, &33, &F7, &C8, &DE
+  EQUB &6E, &A0, &4B, &CF, &76, &A0, &DC, &3F, &80, &A4, &CF, &A5, &3F, &88, &CF, &CF
+  EQUB &FF, &C4, &FF, &FB, &DC, &E2, &B8, &DE, &E0, &3C, &DE, &A4, &CF, &E9, &FF, &CF
+  EQUB &7F, &E8, &DF, &E0, &A2, &BD, &3F, &82, &B9, &0F, &FE, &F7, &F0, &DA, &40, &FF
+  EQUB &4F, &FF, &9D, &40, &FA, &60, &42, &97, &CC, &F7, &E3, &E0, &D3, &82, &DA, &CF
+  EQUB &81, &FC, &02, &96, &F3, &92, &FC, &96, &F3, &23, &FC, &FC, &FF, &C4, &FF, &DC
+  EQUB &EE, &E2, &DE, &E0, &E0, &F2, &DE, &93, &FC, &A5, &FF, &FC, &FF, &E8, &E0, &7E
+  EQUB &A2, &F6, &F3, &82, &E7, &F0, &FE, &DF, &F0, &40, &69, &FF, &3E, &FF, &40, &77
+  EQUB &80, &EA, &42, &CC, &5F, &E3, &DF, &E0, &82, &4E, &CF, &00, &E8, &01, &02, &03
+  EQUB &03, &04, &05, &06, &07, &08, &07, &09, &0A, &0B, &0C, &0D, &07, &DE, &48, &0E
+  EQUB &0F, &10, &11, &12, &13, &14, &15, &16, &17, &89, &18, &19, &84, &88, &1A, &1B
+  EQUB &1C, &1D, &1E, &1F, &20, &21, &22, &23, &B8, &24, &25, &FE, &1A, &FB, &A1, &00
+  EQUB &18, &91, &F5, &00, &8A, &D0, &F8, &E4, &D1, &BE, &27, &F6, &F1, &FD, &C2, &B0
+  EQUB &24, &FE, &FE, &66, &F3, &F2, &F6, &0A, &FD, &7C, &FE, &22, &F9, &F8, &89, &FA
+  EQUB &F2, &1E, &B1, &DE, &F3, &F0, &95, &F7, &CF, &FD, &DE, &4F, &BE, &D5, &55, &60
+.xbPack_end
 

@@ -4037,8 +4037,23 @@ SAVE "PARSPR2", spr2_start, spr2_end, DATA_LOAD, DATA_LOAD
 CLEAR SWRAM_BASE, SWRAM_BASE + &4000
 ORG SWRAM_BASE
 .xfer_start
-INCLUDE "src/xfer.asm"
+\ THE BOARD IS PACKED AND LANDS IN THE TILE MAP. XB_BASE is the choice
+\ of arena and it is declared here, not in the generated file: the map
+\ is dead for the whole of any modal screen -- doors never touch it and
+\ RedrawAll rebuilds it on the way out (screen.asm) -- so the transfer
+\ game may have all 1,024 bytes of it. XB_UNPACKED is 876 of them.
+\
+\ xferboard.asm IS INCLUDED FIRST, ahead of the code that reads it, and
+\ that is load bearing: it defines XB_O_* and the xbCode/xbPool/xbSlot
+\ names off them, and beebasm resolves constant assignments in FILE
+\ ORDER -- the other way round the two passes disagree, which is the
+\ trap console.asm's header describes. Nothing else depends on the
+\ order, and the pair sits wholly before plandata.asm's ALIGN either
+\ way, so the padding is unmoved.
+XB_BASE = tilemap
 INCLUDE "src/data/xferboard.asm"
+ASSERT XB_BASE + XB_UNPACKED <= tilemap_end
+INCLUDE "src/xfer.asm"
 \ droidicon7.asm (DECISION 14's second copy of the icon rotor and
 \ digits) is gone AGAIN — the one copy is main RAM's now, beside
 \ sprite.asm, where this bank can see it (RAM pass 3b).

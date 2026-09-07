@@ -132,11 +132,6 @@ def main():
     out.append('XB_COLS  = %d' % COLS)
     out.append('')
 
-    out.append('\\ The %d C64 codes that occur, in xbChars order. XfInit expands' % len(codes))
-    out.append('\\ this into the 256-byte code->glyph-index table at xsGlyphOf.')
-    out.append('.xbCode')
-    out.append('  EQUB ' + ', '.join('&%02X' % c for c in codes))
-    out.append('')
 
     # ---- the three sets, deduplicated into one pool -------------
     # The sets differ only where ownership shows, so a character whose
@@ -163,38 +158,58 @@ def main():
 
     out.append('XB_GLYPHS = %d' % len(pool))
     out.append('')
-    out.append('\\ The glyph POOL: the distinct 16-byte cells behind the 3 x XB_CHARS')
-    out.append("\\ (set, code) slots. 16 bytes each: left half's 8 scanlines then")
-    out.append("\\ right's. NOTHING indexes this directly - go through xbSlot.")
-    out.append('.xbPool')
-    for i, g in enumerate(pool):
-        out.append('  \\ glyph %d' % i)
-        out.append('  EQUB ' + ', '.join('&%02X' % b for b in g))
-    out.append('.xbPool_end')
-    out.append('ASSERT xbPool_end - xbPool == XB_GLYPHS * 16')
-    out.append('')
-    out.append("\\ (set, code) -> pool glyph. Three runs of XB_CHARS, in the order")
-    out.append("\\ the renderer's xfSetOfs names them: neutral, player, CPU.")
-    out.append('.xbSlot')
-    for si, (label, _r) in enumerate(SETS):
-        run = slot[si * len(codes):(si + 1) * len(codes)]
-        out.append('  \\ %s' % label)
-        out.append('  EQUB ' + ', '.join('%d' % v for v in run))
-    out.append('.xbSlot_end')
-    out.append('ASSERT xbSlot_end - xbSlot == XB_CHARS * 3')
-    out.append('')
 
-    def rows(name, data, n):
-        out.append('.%s' % name)
-        for r in range(n):
-            out.append('  EQUB ' + ', '.join('&%02X' % b for b in data[r*COLS:(r+1)*COLS]))
+    # ---- ONE ZX0 STREAM, DEPACKED INTO THE TILE MAP -------------
+    # The board is read only while the transfer game is up, and the
+    # tile map is dead for the whole of any modal screen -- doors never
+    # touch it and RedrawAll rebuilds it on the way out (screen.asm).
+    # So the 876 bytes live here PACKED and XfStart depacks them into
+    # &4600. Issue #2's no-load plan: bank 7 pays 288, not 876.
+    #
+    # THE ORDER BELOW IS THE UNPACKED LAYOUT and the XB_O_* constants
+    # are its offsets, which xfer.asm names off XB_BASE. Nothing may
+    # index this file's bytes directly any more -- there are no data
+    # labels left to index.
+    import zx0
+    blocks = [
+        ('CODE', bytes(codes)),
+        ('POOL', bytes(b for g in pool for b in g)),
+        ('SLOT', bytes(slot)),
+        ('TOP', bytes(top[:3 * COLS])),
+        ('MID', bytes(mid[:COLS])),
+        ('BOT', bytes(bot[:COLS])),
+    ]
+    image, offs = bytearray(), {}
+    for name, data in blocks:
+        offs[name] = len(image)
+        image += data
+    packed = zx0.compress(bytes(image))
+    if zx0.decompress(packed) != bytes(image):
+        sys.exit('ERROR: xferboard zx0 round-trip failed')
 
-    out.append('\\ Rows as RAW C64 CODES - see the header.')
-    rows('xbTop', top, 3)
+    out.append('\\ Offsets into the depacked image at XB_BASE. THE ORDER IS')
+    out.append('\\ THE LAYOUT: change one and you change the other.')
+    for name, _d in blocks:
+        out.append('XB_O_%-4s = %4d' % (name, offs[name]))
+    out.append('XB_UNPACKED = %d' % len(image))
     out.append('')
-    rows('xbMid', mid, 1)
+    out.append('\\ ...and the names the renderer already uses, now pointing at')
+    out.append('\\ the depacked image instead of at bytes in this bank. Every')
+    out.append('\\ read site in xfer.asm is unchanged. XB_BASE is main.asm\'s,')
+    out.append('\\ declared beside the INCLUDE so the choice of arena is not')
+    out.append('\\ buried in generated code.')
+    for label, name in (('xbCode', 'CODE'), ('xbPool', 'POOL'),
+                        ('xbSlot', 'SLOT'), ('xbTop', 'TOP'),
+                        ('xbMid', 'MID'), ('xbBottom', 'BOT')):
+        out.append('%-8s = XB_BASE + XB_O_%s' % (label, name))
     out.append('')
-    rows('xbBottom', bot, 1)
+    out.append('\\ The board, ZX0 (v2, forwards): %d bytes packed from %d.'
+               % (len(packed), len(image)))
+    out.append('\\ XfStart depacks it into the tile map -- see xfer.asm.')
+    out.append('.xbPack')
+    for i in range(0, len(packed), 16):
+        out.append('  EQUB ' + ', '.join('&%02X' % b for b in packed[i:i + 16]))
+    out.append('.xbPack_end')
     out.append('')
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
