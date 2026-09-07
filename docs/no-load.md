@@ -200,11 +200,71 @@ and bank content cannot live there.
 3. **Change step 5's shape.** `keyredef.asm` is the single biggest obstacle and CTRL+R is the
    rarest screen in the game — making it an on-demand overlay of its own trades a rare load for
    1,014 bytes and unblocks the rest.
-4. **Hunt for another packing pass** the way step 2 did. Bank 4 is where the unexamined data now
-   is (levels, tiles, droid tables, `plandata`, `conicons`, `svdecks6`, `effects`, `sounddata`);
-   step 2 found 3,295 bytes in bank 7 by asking "is this generatable?" first. Nobody has asked it
-   of bank 4.
+4. **Hunt for another packing pass** the way step 2 did. **Bank 4 was tried, 2026-09-07, and it
+   yielded 217 bytes — see §4c. It is not a second step 2.**
 5. **Stop.** The branch has already halved the front end's load cost and freed the code image.
+
+### 4c. The bank 4 pass, 2026-09-07 — 217 bytes, and why not more
+
+Bank 4 had **8 bytes free**. It now has **225**. That is the whole yield, and the reason it is not
+thousands is structural rather than a failure of searching.
+
+**Packing bank 4 is not possible, and this is the finding that matters.** Bank 7's 3,295 bytes came
+from streams that are read ONCE, on a modal screen, with the tile map free as an arena to depack
+into. Bank 4 is the resting bank during play and everything in it is read while the game runs, so
+there is nowhere to depack to — and the disc already ZX0s the whole bank (16,376 → 10,780), so
+packing a block inside it buys nothing there either. Measured anyway, for the record:
+
+| block | raw | ZX0 | would save | why it cannot be taken |
+|---|---|---|---|---|
+| `drSprData` | 1,743 | 565 | 1,178 | read by `SprFetchRow`, the wrap fallback, during play |
+| rest of `droidgame` | 1,247 | 907 | 340 | waypoints and type tables, read by the AI |
+| `sounddata` | 521 | 374 | 147 | read by the sound driver every tick |
+| `colours` | 506 | 211 | 295 | see below |
+| `tiledefs` | 512 | 318 | 194 | read by the level draw |
+| `levels` | 2,439 | 2,308 | 95 | **already ZX0** — `BuildLevel` is pointer setup in front of `Zx0Unpack` |
+
+`levels` is the one worth calling out: it looks like the biggest data block in the bank and it is
+already compressed, so a second pass over it recovers 4%. Measuring first is what stopped that
+becoming a day's work.
+
+**What DID pay was redundancy, not compression** — step 2's own lesson. `drSprData` stores 249
+rows of seven bytes and only **173 are distinct**, despite the exporter's header claiming "every
+distinct row". The rotor's 40 rows are 26 pictures and its 16 end rows are 2, because the bottom
+half of the rotor is the top half in reverse row order and the ends alternate; `build_rotor_code`
+has always known this (its "28 distinct rotor rows"), but the flattening that builds `drSprData`
+did not. **Interning them took 249 rows to 218: 217 bytes.**
+
+Only half the table can be interned, and the split is the blitter's:
+
+- `drOfs[]` is an explicit byte offset per (phase, row), so duplicate rotor and end rows share one
+  copy and the table points twice at it. **Safe.**
+- `drDigit[type]` is a BASE the blitter adds `(row-6)*7` to, so a type's eight digit rows must stay
+  contiguous and in order. Interning them would break the arithmetic, and would not pay: 45
+  duplicate digit rows (315 bytes) against 384 for the per-row offset table needed to reach them.
+
+`export_droids.py` now re-derives the expected picture from the C64 listing and asserts it against
+what `drOfs` and `drDigit` point at, for all 168 (phase, row) and 192 (type, digit row) pairs, on
+every run.
+
+#### Costed and REJECTED — do not re-run these
+
+- **`colourMap` deduplication, and it measures +1 byte.** The table is 16 deck rows of 16 and only
+  **7 are distinct**, so sharing them saves 144 and costs a 16-byte index; the read does not even
+  change, only its base (`cmapBase[deck]` replacing four `ASL`s, a byte shorter). It was built, and
+  the bank gauge moved from 225 to **226**. **`tiledefs.asm` opens with its own `ALIGN &100`**, so
+  every byte `colourMap` gives up is swallowed by the next pad — CLAUDE.md's standing rule, "the
+  next ALIGN pads by the same amount", holding exactly. Reverted. The first attempt also put
+  `cmapBase` in FRONT of `colours.asm`'s `ALIGN` and **overflowed the bank by 30 bytes**, which is
+  the other half of the same rule: bank 4's pad is spent, so 16 bytes in front of it cost 256.
+- **2-bit packing of `colourMap`** (it holds only 0-3): saves 192, costs ~28 bytes of bank-4 code
+  for the variable shift, and lands in the same `tiledefs` pad. Worse than the dedup on every axis.
+- **`tiledefs` row indexing**: 128 four-byte rows, 86 distinct — 472 bytes against 512, and one
+  duplicate tile is 16 more. ~40 net, in a table read by the level draw. Not worth the indirection.
+
+**The pass does not unblock anything.** 225 bytes is short of `keyredef`'s 1,014 (§4b) and short of
+the ~650 `door.asm` → bank 4 wants (`docs/ram-pass.md`). It is banked because bank 4 had eight
+bytes, not because it moves the branch on.
 
 ### 4a. Step 4's first item: the title overlay, 2026-09-07
 

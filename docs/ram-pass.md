@@ -152,6 +152,17 @@ seeded and checked, and a comment at the site should say which paths were.
 
 ## Held in reserve (next time RAM runs out)
 
+- **The bank 4 pass is DONE and yielded 217 B — 2026-09-07, `no-load` §4c.**
+  `drSprData` stored 249 rows of which 173 are distinct; the rotor and end
+  rows are reached through `drOfs`, an explicit offset, so duplicates now
+  share one copy. The digit rows cannot follow: `drDigit` is a base the
+  blitter adds to, so a type's eight must stay contiguous. **Packing bank 4
+  is not possible at all** — everything in it is read during play, so there
+  is nowhere to depack to, and the disc already ZX0s the whole bank. Do not
+  re-cost `colourMap` (dedup measured **+1 B**, swallowed by `tiledefs`'
+  `ALIGN`), 2-bit `colourMap` packing, or `tiledefs` row indexing (~40 B).
+
+
 - **`sprsplit.asm` → bank 5** (634 B out of bank 6, zero cycles): one
   `PAGEBANK` constant and the include moves. Its header already certifies
   it reads nothing bank-resident.

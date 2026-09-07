@@ -20,11 +20,11 @@
 
 \ Byte offset of each type's 8 digit rows into drSprData.
 .xdrDigitLo
-  EQUB &88,&C0,&F8,&30,&68,&A0,&D8,&10,&48,&80,&B8,&F0
-  EQUB &28,&60,&98,&D0,&08,&40,&78,&B0,&E8,&20,&58,&90
+  EQUB &B6,&EE,&26,&5E,&96,&CE,&06,&3E,&76,&AE,&E6,&1E
+  EQUB &56,&8E,&C6,&FE,&36,&6E,&A6,&DE,&16,&4E,&86,&BE
 .xdrDigitHi
-  EQUB &01,&01,&01,&02,&02,&02,&02,&03,&03,&03,&03,&03
-  EQUB &04,&04,&04,&04,&05,&05,&05,&05,&05,&06,&06,&06
+  EQUB &00,&00,&01,&01,&01,&01,&02,&02,&02,&02,&02,&03
+  EQUB &03,&03,&03,&03,&04,&04,&04,&04,&05,&05,&05,&05
 
 \ Rotor dispatch, at index (shift AND 1)*80 + phase*10 + n,
 \ where n counts the ten drawn rotor rows in drawing order.

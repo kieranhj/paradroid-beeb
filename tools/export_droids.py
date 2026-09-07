@@ -21,16 +21,27 @@ Rows 5, 14 and 20 are never written, so they stay transparent.
 The rotor is IDENTICAL for every droid - only the number differs. So the rows
 are stored once and shared:
 
-    rotor   5 rows x 8 phases            = 40 rows
-    ends    2 alternating rows x 8 phases = 16 rows
+    rotor   5 rows x 8 phases            = 40 rows, 26 distinct
+    ends    2 alternating rows x 8 phases = 16 rows,  2 distinct
     digits  8 rows x 24 types             = 192 rows
-    blank   1
-                                          = 249 rows x 7 bytes = 1743 bytes
+    blank   1, and it is one of the 26
+                                          = 218 rows x 7 bytes = 1526 bytes
 
 Two lookups instead of one, because the digit rows depend on the droid TYPE
 while the rotor rows depend on the PHASE. A single table indexed by both would
 be 24 x 8 x 21 entries. So the blitter uses drOfs[] for rows 0-5 and 14-20,
 and drDigit[type] + (row-6)*7 for rows 6-13.
+
+AND THAT SPLIT IS WHY ONLY HALF THE TABLE IS INTERNED. drOfs is an explicit
+byte offset, so two identical rotor rows share one copy and the table points
+twice at it - the bottom half of the rotor is the top half in reverse row
+order and the ends alternate between two pictures, so 56 stored rows are 28
+distinct ones. drDigit is a BASE the blitter adds (row-6)*7 to, so a type's
+eight digit rows must stay contiguous and in order; interning them would break
+the arithmetic and would not pay anyway (measured: 45 duplicate digit rows,
+315 bytes, against 384 for the per-row offset table needed to exploit them).
+Interning the rotor and end rows took 249 rows to 218 - 217 bytes of bank 4,
+the bank that had eight free. 2026-09-07.
 
 Colour and resolution
 ---------------------
@@ -770,18 +781,43 @@ def main():
     mem, _ = parse_listing(LST_FILE)
     frames, bottoms = build_rotor(mem)
 
-    # --- flatten every distinct row -----------------------------------------
+    # --- flatten the rows ---------------------------------------------------
     # order: rotor[phase][0..4], rotorend[phase][0..1], digits[type][0..7], blank
+    #
+    # THE ROTOR AND END ROWS ARE INTERNED; THE DIGIT ROWS ARE NOT, and the
+    # difference is how the blitter reaches them. drOfs[] is an explicit byte
+    # offset per (phase, row), so two identical rotor rows can share one copy
+    # and the table simply points twice at it. drDigit[type] is a BASE and the
+    # blitter computes drDigit[type] + (row-6)*7, so a type's eight digit rows
+    # have to stay contiguous and in order - interning them would break the
+    # arithmetic, and it would not pay anyway: measured, the 192 digit rows
+    # hold 45 duplicates (315 bytes) and a per-row offset table to exploit
+    # them would cost 384.
+    #
+    # This header used to claim the table held "every distinct row". It did
+    # not: the rotor's 40 rows are 26 distinct pictures and its 16 end rows
+    # are 2, because the bottom half of the rotor is the top half in reverse
+    # row order and the ends alternate between two. build_rotor_code has
+    # always known that - it is where the "28 distinct rotor rows" in its
+    # docstring comes from - but this flattening did not, and stored all 56.
+    # 2026-09-07, the bank 4 pass.
     rows = []
+    pool = {}                       # row -> index, for the drOfs-reached rows
+
+    def intern(row):
+        key = tuple(row)
+        if key not in pool:
+            pool[key] = len(rows)
+            rows.append(row)
+        return pool[key]
+
     rotor_at, end_at, digit_at = {}, {}, {}
     for phase in range(FRAMES):
         for r in range(5):
-            rotor_at[(phase, r)] = len(rows)
-            rows.append(convert_row(frames[phase][r]))
+            rotor_at[(phase, r)] = intern(convert_row(frames[phase][r]))
     for phase in range(FRAMES):
         for r in range(2):           # 0 = sprite row 19, 1 = sprite row 18
-            end_at[(phase, r)] = len(rows)
-            rows.append(convert_row([0, bottoms[phase][r], 0]))
+            end_at[(phase, r)] = intern(convert_row([0, bottoms[phase][r], 0]))
     numbers = []
     for dtype in range(NUM_TYPES):
         digits, _ = build_digits(mem, dtype)
@@ -789,8 +825,7 @@ def main():
         for r in range(8):
             rows.append(convert_row(digits[r]))
         numbers.append(droid_number(mem, dtype))
-    blank_at = len(rows)
-    rows.append([0] * 7)
+    blank_at = intern([0] * 7)      # reuses a blank rotor/end row if there is one
 
     # --- per-phase offsets for the rows that do NOT depend on type ----------
     def row_index(phase, r):
@@ -808,6 +843,30 @@ def main():
     for phase in range(FRAMES):
         for r in range(SPRITE_ROWS):
             offsets.append(row_index(phase, r) * 7)
+
+    # THE INTERN'S OWN CHECK, re-derived every run. Sharing a row is only safe
+    # if what the blitter READS through the table is unchanged, so rebuild the
+    # expected picture from the source and compare it to what drOfs now points
+    # at, for all 168 (phase, row) pairs and all 192 (type, digit row) pairs.
+    for phase in range(FRAMES):
+        for r in range(SPRITE_ROWS):
+            got = rows[offsets[phase * SPRITE_ROWS + r] // 7]
+            if r < 5:
+                want = convert_row(frames[phase][r])
+            elif r in (5, 14, 20) or r < 14:
+                want = [0] * 7
+            elif r < 18:
+                want = convert_row(frames[phase][19 - r])
+            else:
+                want = convert_row([0, bottoms[phase][19 - r], 0])
+            assert got == want, (
+                'interning changed phase %d row %d: %s != %s' % (phase, r, got, want))
+    for dtype in range(NUM_TYPES):
+        digits, _ = build_digits(mem, dtype)
+        for r in range(8):
+            got = rows[digit_at[dtype] + r]
+            assert got == convert_row(digits[r]), (
+                'digit rows moved: type %d row %d' % (dtype, r))
 
     counts, wp_offsets, wp_blob = collect_waypoints(mem)
     speeds = [mem[DSPEED_T + t] for t in range(NUM_TYPES)]
@@ -891,9 +950,16 @@ def main():
         g.write('\n')
 
         g.write('\\ ---- droid artwork, read only by the wrap fallback --------\n')
-        g.write('\\ Every distinct row, seven bytes each, unshifted; the shift is\n')
-        g.write('\\ done on the fly by SprFetchRow and the masks are derived from\n')
-        g.write('\\ a table, not stored.\n')
+        g.write('\\ Seven bytes a row, unshifted; the shift is done on the fly\n')
+        g.write('\\ by SprFetchRow and the masks are derived from a table, not\n')
+        g.write('\\ stored.\n')
+        g.write('\\\n')
+        g.write('\\ THE ROTOR AND END ROWS ARE INTERNED and the digit rows are\n')
+        g.write('\\ not, because of how the blitter reaches each: drOfs is an\n')
+        g.write('\\ explicit byte offset per (phase, row), so duplicate rotor\n')
+        g.write('\\ rows share one copy, while drDigit is a BASE the blitter\n')
+        g.write('\\ adds to, so the eight digit rows of a type stay contiguous.\n')
+        g.write('\\ The exporter carries the measurement and the reasoning.\n')
         g.write('\\\n')
         g.write('\\ IN THIS BANK RATHER THAN THE SPRITE BANK because SprFetchRow\n')
         g.write('\\ is the only thing that reads it, on about one row in fifty,\n')
