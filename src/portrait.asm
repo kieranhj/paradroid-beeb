@@ -59,6 +59,8 @@ PO_DSTMID = BUF_BASE + PO_UNIT_MID * UNIT_BYTES
 \ PoDraw — the whole portrait for type A
 \ ============================================================
 .PoDraw
+  LDX #&FF                      \ the arena is whatever the last screen
+  STX poChunk                   \ left in it -- see PoImgPtr
   ASL A : ASL A : ASL A
   STA poIdxOfs                  \ type * 8, the record's slice of poIdx
 
@@ -153,20 +155,66 @@ PO_DSTMID = BUF_BASE + PO_UNIT_MID * UNIT_BYTES
 \ ============================================================
 \ PoImgPtr — posrc = poPool + A * 64
 \ ============================================================
+\ THE POOL IS PACKED, in PO_CHUNK_N chunks of PO_CHUNK images, and this
+\ is the only place its address is worked out -- everything downstream
+\ reads through posrc. So the chunk holding the slot is depacked into
+\ the tile map and posrc points there.
+\
+\ EIGHT PER CHUNK MAKES THE INDEXING FREE: chunk = slot >> 3, and the
+\ offset within it is (slot AND 7) * 64, which is the same shift work
+\ the flat pool needed. A chunk is 512 bytes, half the arena.
+\
+\ THE CACHE IS ONE BYTE and PoDraw clears it on entry, which is the
+\ only invalidation needed: nothing rebuilds the tile map inside a
+\ single draw, and every route that DOES rebuild it -- another console
+\ page, leaving for the deck -- goes through PoDraw again before the
+\ next portrait. A record's four slots can straddle chunks, and
+\ pod_ybase walks all four before the draw does, so the cache earns
+\ its keep within one portrait as well as across one.
 .PoImgPtr
   STA poTmp
-  LSR A : LSR A                 \ slot DIV 4 -> pages
-  CLC : ADC #HI(poPool)
-  STA posrc+1
+  LSR A : LSR A : LSR A         \ slot >> 3 = the chunk
+  CMP poChunk
+  BEQ pip_have
+\ X IS THE CALLER'S AND MUST SURVIVE. The flat pool's PoImgPtr was
+\ three shifts and two adds and touched no index register, so
+\ pod_ybase keeps its loop counter in X across the call. Zx0Unpack
+\ destroys both X and Y, so the contract has to be restored by hand --
+\ getting this wrong ran pod_ybase's loop on a garbage counter, which
+\ looked like the whole game hanging on a black screen.
+\ Y needs nothing: both callers reload it straight after.
+  STX poXsv
+  JSR PoUnpack
+  LDX poXsv
+.pip_have
+\ (slot AND 7) * 64 is a NINE BIT number -- 0 to 448 -- and the top bit
+\ of it is the carry the ROR chain shifts out. The flat pool never met
+\ this: it took the page from slot DIV 4 and the offset from slot AND 3
+\ separately, so its CLC before the ADC threw away a carry that carried
+\ nothing. Here the carry IS the ninth bit, so it must reach the high
+\ byte. That costs a CLC and buys the ASSERT below: PO_BASE has to be
+\ page aligned for the low byte to be the offset alone.
   LDA poTmp
-  AND #3
-  LSR A : ROR A : ROR A         \ (slot AND 3) * 64, into bits 7-6
-  CLC : ADC #LO(poPool)
-  STA posrc
-  BCC pip_x
-  INC posrc+1
-.pip_x
+  AND #PO_CHUNK-1
+  LSR A : ROR A : ROR A         \ *64, ninth bit left in carry
+  STA posrc                     \ LO(PO_BASE) is 0 -- see the ASSERT
+  LDA #0
+  ADC #HI(PO_BASE)              \ + the ninth bit
+  STA posrc+1
   RTS
+
+\ ---- fetch chunk A into the arena ----------------------------
+\ Called with A = chunk, and it is A the caller still wants, so the
+\ chunk number goes to poChunk and comes back through poTmp's sibling.
+.PoUnpack
+  STA poChunk
+  TAY
+  CLC
+  LDA poPackLo,Y : ADC #LO(poPack) : STA src
+  LDA poPackHi,Y : ADC #HI(poPack) : STA src+1
+  LDA #LO(PO_BASE) : STA mapptr
+  LDA #HI(PO_BASE) : STA mapptr+1
+  JMP Zx0Unpack                 \ main RAM's; this bank may call it
 
 \ ============================================================
 \ PoMirror — poMirBuf = posrc flipped left-for-right
@@ -347,6 +395,10 @@ PO_DSTMID = BUF_BASE + PO_UNIT_MID * UNIT_BYTES
 .poSrcIx  EQUB 0
 .poMeta   EQUB 0
 .poTmp    EQUB 0
+.poXsv    EQUB 0                \ the caller's X across a chunk depack
+.poChunk  EQUB &FF              \ which pool chunk is in the arena, or
+                                \ &FF for none. PoDraw clears it; see
+                                \ PoImgPtr for why that is enough
 .poX      EQUB 0
 .poB      EQUB 0
 .poE      EQUB 0

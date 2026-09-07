@@ -122,16 +122,53 @@ def main():
         out.append('  EQUB ' + ', '.join('&%02X' % v for v in row) +
                    '   \\ type %d' % t)
     out.append('')
-    out.append('\\ The images, 64 bytes each: 21 rows x 3 bytes, then byte 63 =')
-    out.append('\\ MC flag (bit 7) OR rptLen (bits 0-4).')
-    out.append('.poPool')
+    # ---- the images, ZX0 IN CHUNKS OF EIGHT ---------------------
+    # 63 images of 64 bytes is 4,032, and it was the largest thing in
+    # bank 7. It is read one image at a time through PoImgPtr, which is
+    # the only place the pool's address is computed, so the pool can
+    # live packed and be depacked a chunk at a time into the tile map
+    # (issue #2's no-load plan; the arena screen.asm's RedrawAll keeps
+    # rebuildable).
+    #
+    # EIGHT PER CHUNK because that makes the arithmetic free: chunk is
+    # slot >> 3 and the offset within it is (slot AND 7) * 64. A chunk
+    # is 512 bytes unpacked, half the arena. Measured alternatives, as
+    # total packed bytes: 63/chunk 2,130 but wants a 4,032 arena there
+    # is not; 21 2,215; 9 2,339; 3 2,477; 1 2,742. Eight sits in the
+    # flat of that curve and costs nothing to index.
+    CHUNK = 8
+    pool = []
     for n in imgs:
-        d = [mem[IMG_BASE + n * IMG_SIZE + i] for i in range(IMG_SIZE)]
-        meta = d[63]
-        out.append('\\ slot %d = C64 image &%02X - %s, rptLen %d' %
-                   (slot[n], n, 'MC' if meta & 0x80 else 'hires', meta & 0x1F))
-        for row in rows_of(d):
-            out.append('  EQUB ' + row)
+        pool.append(bytes(mem[IMG_BASE + n * IMG_SIZE + i] for i in range(IMG_SIZE)))
+    chunks = [b"".join(pool[i:i + CHUNK]) for i in range(0, len(pool), CHUNK)]
+    import zx0
+    packs = [zx0.compress(c) for c in chunks]
+    for c, p in zip(chunks, packs):
+        if zx0.decompress(p) != c:
+            sys.exit('ERROR: poPool zx0 round-trip failed')
+
+    out.append('\\ The images, 64 bytes each: 21 rows x 3 bytes, then byte 63 =')
+    out.append('\\ MC flag (bit 7) OR rptLen (bits 0-4). ZX0, %d chunks of %d;'
+               % (len(chunks), CHUNK))
+    out.append('\\ PoImgPtr depacks the one it needs to PO_BASE. NOTHING may')
+    out.append('\\ index these bytes: there is no .poPool any more.')
+    out.append('PO_CHUNK   = %d' % CHUNK)
+    out.append('PO_CHUNK_N = %d' % len(chunks))
+    out.append('PO_CHUNK_SZ = %d' % (CHUNK * IMG_SIZE))
+    ofs = [0]
+    for p in packs[:-1]:
+        ofs.append(ofs[-1] + len(p))
+    out.append('.poPackLo')
+    out.append('  EQUB ' + ', '.join('LO(%d)' % o for o in ofs))
+    out.append('.poPackHi')
+    out.append('  EQUB ' + ', '.join('HI(%d)' % o for o in ofs))
+    out.append('.poPack')
+    for i, (p, c) in enumerate(zip(packs, chunks)):
+        out.append('\\ slots %d-%d: %d bytes packed from %d'
+                   % (i * CHUNK, i * CHUNK + len(c) // IMG_SIZE - 1, len(p), len(c)))
+        for j in range(0, len(p), 16):
+            out.append('  EQUB ' + ', '.join('&%02X' % b for b in p[j:j + 16]))
+    out.append('.poPack_end')
     out.append('')
     out.append('\\ Multicolour nibble -> the MODE 1 byte for its two pixels.')
     out.append('\\ ONE 16-BYTE TABLE, NOT TWO OF 256. pack() below reads the')

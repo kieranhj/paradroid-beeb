@@ -4109,7 +4109,15 @@ INCLUDE "src/condb.asm"
 \ The title screen is NOT here any more: it is the PARTITL disc overlay,
 \ assembled at TITLE_ADDR after the PARAFNT block below. Layer 13d took
 \ it out to fund the droid portrait pool — which is this:
+\ The portrait pool is packed too, and shares the arena with the board
+\ and the lift screen -- none of the three is ever up with another, and
+\ each depacks what it needs on entry. A chunk is half the map.
+PO_BASE = tilemap
 INCLUDE "src/data/portraits.asm"
+ASSERT PO_BASE + PO_CHUNK_SZ <= tilemap_end
+ASSERT (PO_BASE AND &FF) == 0   \ PoImgPtr builds the low byte from the
+                                \ offset alone and lets the ninth bit
+                                \ carry into the page -- see its header
 INCLUDE "src/portrait.asm"
 
 \ Layer 11d, AFTER condb.asm and portrait.asm: it is built out of their
