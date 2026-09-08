@@ -8,6 +8,12 @@ analysis; this file is the working copy, kept current as the branch lands.
 **Read the arena rule below before touching `&4600`.** It is the only invariant on the branch and
 it has already been broken twice.
 
+**STATUS, 2026-09-08: RESUMED, and §10's test list is cleared** (all but real hardware, the
+transfer's lose path and a systematic rotor walk). **§11 is the current plan** — the goal is reachable; §1a's
+"~1,200 short" missed two supplies worth ~1,800 (`dfsSave`'s 912 bytes of bank 6, and main-RAM
+reclaim being convertible to bank space after all). Read §11 before §4b and §5, both of which it
+supersedes on ordering and on "the next move is a decision, not a task".
+
 **STATUS, 2026-09-07: PAUSED, AND NOT READY FOR `main`.** Steps 2, 3 and the first item of step 4
 have landed — one post-boot load fewer and 14 bytes of code image back. The rest is blocked, and
 **§1a is the important read**: the founding table in §1 was wrong in both directions, and adding
@@ -580,21 +586,24 @@ is not. The `-Release` build (with the intro) was booted through to the title as
 screen is ~165 frames after it and is the cheapest portrait test. The console opens by pressing
 fire while *standing on* `CHAR_CONSOLE` (`combat.asm`'s `dcu_console`), not by walking onto it.
 `type_input` is too fast for the direct keyboard scan — use discrete `key_down`/`run_frames`/
-`key_up`. jsbeeb has no key name for `[` or `]`, so `DEBUG_DECK` cannot be driven.
+`key_up`. ~~jsbeeb has no key name for `[` or `]`, so `DEBUG_DECK` cannot be driven.~~
+**Out of date since jsbeeb-mcp 3.4.0**: `key_down` takes `inkey:` (or `internal:`, or `col`+`row`),
+so any key the game's own `KEY_` constants name can be pressed directly — `[` is `inkey: -57` and
+`]` is `-89`, and `DEBUG_DECK` is drivable.
 
 ## 9. Outstanding verification
 
-**Superseded by §10's list, which is longer.** These two are the ones that were outstanding when
-step 2 finished; they are still outstanding, and the KC sign-offs quoted in them PRE-DATE steps 3
-and 4 and the bank 4 pass, so the reassurance in the brackets no longer covers the current build.
+**BOTH CLOSED 2026-09-08 in jsbeeb** — see §10's checklist, which is where the detail is. They
+were outstanding from step 2, and the KC sign-offs quoted in them pre-dated steps 3 and 4 and the
+bank 4 pass; the runs on 2026-09-08 are against the current build.
 
 - **A droid type whose four portrait slots straddle a chunk boundary.** Types **12** (slots 15, 37,
-  38, 39), **13** (55–58) and **17** (7, 8, 11, 9, 10). The droid database shows them. *(KC checked
-  the droid info page 2026-09-07 and it is good; the straddling types specifically are still
-  unconfirmed.)*
+  38, 39), **13** (55–58) and **17** (7, 8, 11, 9, 10). **DONE 2026-09-08**: all three drawn from
+  the console's database page (493, 516 and 615), clean, by poking `dbType` in bank 7.
 - **The lift's no-load exit** — take a lift, return to the same deck. The one path where
-  `sideview`'s depack trashes the map and `RedrawAll` must restore it. *(Lift screen and console
-  ship page confirmed good by KC 2026-09-07; the no-load exit specifically was not called out.)*
+  `sideview`'s depack trashes the map and `RedrawAll` must restore it. **DONE 2026-09-08**: the
+  view drew, fire committed, and the deck came back fully redrawn with the player intact. Reached
+  by poking `liftMode` = 1, so `LiftFind` — the lift *selection* — was not exercised.
 
 ## 10. WHERE WE ARE — paused 2026-09-07, NOT READY TO MERGE
 
@@ -617,6 +626,10 @@ Steps 2, 3 and the first item of step 4 are complete. **Steps 4 (the rest), 5 an
 
 ### What has been verified, and in what
 
+**2026-09-08: the list below was cleared in jsbeeb** — see the checklist at the end of this
+section. Everything except real hardware, the transfer's lose path and a systematic rotor-phase
+walk has now been looked at on the current build.
+
 In jsbeeb, repeatedly, after each of steps 3 and 4: cold boot → title → game → ESCAPE → game over
 → high-score entry (walking the alphabet, capital I, three initials committed) → title → briefing
 timeout → briefing → fire exit → game. Plus, for the bank 4 pass, 900 frames scrolling right and
@@ -638,19 +651,45 @@ and the bank 4 pass. Those three changes moved bank 7's whole layout (the transf
 the console pages and the portrait pool all live there), rewrote `drSprData` (every droid sprite),
 and shifted the code image by 14 bytes. **None of those screens has been looked at since.**
 
-- [ ] **The transfer minigame** — entry, play, win and lose. Bank 7's biggest tenant.
-- [ ] **The lift**, including the no-load exit: take a lift and return to the same deck. Still the
-      §9 item, now also a bank-7 regression check.
-- [ ] **The console** — ship page, deck plan, droid database.
-- [ ] **A droid type whose portrait slots straddle a chunk boundary** — types 12, 13, 17 (§9).
-- [ ] **Droid sprites at every rotor phase and several types**, because the rotor rows are now
-      shared. The offline proof says no reachable pixel changed; this is the runtime confirmation.
-- [ ] **CTRL+R, the redefine screen**, which nothing this session touched but which lives in the
-      briefing's overlay.
-- [ ] **Sound**, not listened to once this session.
-- [ ] **The `-Release` build booted**, not merely built. It was booted through to the title after
-      step 3; after step 4 and the bank 4 pass it has only been assembled.
+- [x] **The transfer minigame** — entry, both info screens, the board, play, **win**, exit.
+      Bank 7's biggest tenant. *(2026-09-08. The LOSE path is still untested.)*
+- [x] **The lift**, including the no-load exit: the view, then fire, then back to the same deck
+      with the tile map restored. The §9 item, now also a bank-7 regression check.
+- [x] **The console** — main screen, droid database, deck plan, ship page, **and the exit back to
+      the deck**. The deck plan was opened twice in a row without passing through `RedrawAll`,
+      which is the case §2's second half exists for.
+- [x] **A droid type whose portrait slots straddle a chunk boundary** — types 12 (493), 13 (516)
+      and 17 (615) all drew clean. §9's first outstanding item, closed.
+- [~] **Droid sprites at every rotor phase and several types.** Seen in play across the 001 and
+      476 sprites and several AI droids, animating, with no corruption — but not walked
+      systematically through all eight phases and 24 types. The offline proof remains the strong
+      one.
+- [x] **CTRL+R, the redefine screen** — reached from the briefing, the table drew, and rebinding
+      Left to `A` took and advanced the prompt to Right.
+- [~] **Sound.** Not listened to; *captured*. 77 SN76489 writes over 25 fields during a shot:
+      one group a field, a coherent two-channel descending sweep, `atten=15` at the end of the
+      effect and a new effect opening at `atten=10`. That says the driver, its bank-4 data and
+      the IRQ tick are all correct; it does not say the effects SOUND right, which still wants
+      KC's ears.
+- [x] **The `-Release` build booted**, not merely built: `Release Candidate #5` in the boot stamp
+      (and no `DEBUG:` line), `PINTRO` ran, a keypress chained it, and the title and play came up.
 - [ ] **Real hardware.** Everything here is jsbeeb.
+
+**How this sweep was driven, because it is reusable.** Walking to a console or a droid by
+holding keys is slow and unreliable; every screen above was reached by poking the game's own
+trigger and then playing it normally:
+
+| screen | lever |
+|---|---|
+| transfer | `xferDroid` (`&148A`) = a live droid index; the next pass takes the arm |
+| console | the tile under the player read from a breakpoint at the `CMP #CHAR_CONSOLE` site (`&1F92`, A = 65), then that operand poked to 65 so fire opens it where you stand |
+| lift | `liftMode` (`&2720`) = 1 — note this SKIPS `LiftFind`, so the lift *selection* is not exercised, only the view, the arena and the exit |
+| database type | `dbType` (`&9D9E`, **bank 7** — `write_memory` with `bank: 7`) set to N-1, then DOWN |
+| transfer win | `DEBUG_XFERWIN`'s CTRL+W, **after** a side has been chosen — it does nothing on the "Colour?" prompt |
+
+`key_down` takes `inkey:` numbers, so the game's own `KEY_` constants drive it directly
+(Z -98, X -67, K -71, M -102, L -87) and **`DEBUG_DECK`'s CTRL+`[` / CTRL+`]` are drivable after
+all** — §8's note that jsbeeb has no key name for them is out of date.
 
 **The honest caveat this branch inherited still applies**: three of its first four defects were
 found at runtime, after static analysis said the change was sound, and all of them at the seams
@@ -678,3 +717,145 @@ site; going resident reclaims those too.
 the arithmetic and the five options; the short version is that `PARALOW` is the only stream that
 fits anywhere, it would leave bank 7 with about four bytes, and step 5 is short by ~2,300 because
 `keyredef.asm` has to move too and nothing can hold it.
+
+---
+
+## 11. THE PLAN AS IT STANDS NOW — re-audited 2026-09-08
+
+**The goal is reachable. §1a's "~1,200 short" was pessimistic by about 1,800 bytes**, because the
+supply column never counted two things — one of them sitting in bank 6 with a comment on it. This
+section supersedes §4b's "the next move is a decision, not a task" and §5's ordering; §1a's
+*demand* arithmetic survives unchanged and is still the ledger to argue with.
+
+### 11a. The byte map, measured 2026-09-08
+
+Before anything else, this is where the machine's RAM actually is. Taken by assembling a copy of
+`main.asm` with a `PRINT "MARK <file>", ~P%` after every `INCLUDE`, so the assembler reports where
+each included file ended; differences between consecutive marks are the file's size. Thirty
+seconds of work and the first byte map the port has had — **do this again rather than reasoning
+about sizes from source.**
+
+| bank | free | what is in it |
+|---|---|---|
+| 4 (data) | **225** | `droid` 5,262 · `droidgame` 2,773 · `levels` 2,359 · `screen` 928 · `sound` 925 · `chardata` 878 · `scroll` 698 · `level` 565 · `sounddata` 521 · `tiledefs` 512 · `colours` 506 |
+| 5 (spr) | **665** | **`droids.asm` 11,727** · `effects` 2,977 · `sprscan` 538 · `sprfx` 419 · `ruptalign` 58 |
+| 6 (spr2) | **552** | **`droids2.asm` 12,050** · `console` 1,391 · **`dfsSave` 912** · `panel` 918 · `sprsplit` 372 · `conicons` 189 |
+| 7 (xfer) | **759** | `xfer` 4,060 · `portraits` 2,579 · `condb` 1,559 · `title` artwork 1,140 · `plandata` 1,032 · `liftview` 922 · `droidinfo` 711 · `portrait` 676 · `highscore` 561 · `infoscr` 505 |
+| code image | **14** | `&1100–&2FF2` |
+
+**The compiled shifts are 23,777 bytes — 24% of the machine's RAM — and they hold about 2,400
+bytes of entropy** (§5 measured the four shifts packing to 12.6%). That is where the RAM went, and
+§11d says why touching it is still not the answer.
+
+### 11b. Two supplies the ledger never counted
+
+**1. `dfsSave` is 912 bytes of bank 6 and it is pure load-support.** `main.asm:4094`, a `SKIP` at
+the tail of the bank holding the DFS workspace snapshot (`&0D60–&0DEF` and `&0E00–&10FF`) that
+`SaveDfsWs` takes before `PageLowIn` and `RestoreDfsWs` puts back for the game-over loads. **No
+post-boot filing call means no snapshot**: the buffer goes, and its two helpers (74 bytes of code
+image) with it. §6 measured the *main-RAM* DFS reclaim carefully and never looked at the bank.
+
+It is a **terminal dividend** — it only pays when the LAST load goes, not the first — and that
+changes the shape of the endgame: **the plan may be ~900 bytes short right up to the final step
+and still land**, provided the final step is the one that removes every remaining filing call.
+
+**2. "Bank content cannot live in main RAM" (§4b) is wrong, and it writes off ~869 bytes.** Main
+RAM is visible from every bank; **bank code may call and read main RAM freely** — the one-way rule
+in `CLAUDE.md` is the other direction, main RAM calling *into* a bank. So freeing main RAM
+converts to bank space at **1:1**, by relocating a bank routine out of a bank and into the freed
+image. Candidates of the right size are already in the byte map above: `panel.asm` 918,
+`sprsplit` 372, `condeck` 361, `xfericon` 307 — and a move like that usually *saves* a few bytes
+by shedding a `PAGEBANK` pair.
+
+The reason this looked worthless is real but temporary: main RAM has **14 bytes** today, so there
+is nothing to relocate *into*. The conversion only exists after step 6 — which is precisely why
+step 6 has to move to the front of the queue rather than staying at the back of it.
+
+### 11c. The revised arithmetic
+
+| supply | bytes |
+|---|---|
+| free now, four banks (225 / 665 / 552 / 759) | 2,201 |
+| SCANSTEP tail folding, ~1,050 in each of banks 5 and 6 | 2,100 |
+| `dfsSave`, **terminal** | 912 |
+| step 6's main-RAM reclaim, via relocation (§11b) | ~869 |
+| **total** | **~6,080** |
+
+against **~5,790** of demand — §1a's 8,051, less the 2,262 already spent on the PARTITL
+relocation.
+
+**It closes by roughly 300 bytes, not misses by 1,200.** That margin is thin enough to be wrong in
+either direction, and every figure in it except the first row is an estimate. What has changed is
+the *sign*, and with it the answer to "is this possible": yes, on paper, without the PARBRF
+concession — and with the concession (§1a's option, one load kept at the title) there is about a
+thousand bytes of slack instead of three hundred.
+
+### 11d. What NOT to do, with the measurement
+
+**Do not build a runtime generator for the compiled shifts.** It is tempting — 23,777 bytes of
+almost pure redundancy, and the emit pattern is regular enough to make it genuinely feasible: 373
+identical fifteen-byte groups per bank (`LDY #imm` / `LDA (bufp),Y` / `STA (svp),Y` / `AND #imm` /
+`ORA colPix+n` / `STA (bufp),Y`), plus `SCANSTEP` tails and `RTS`. Counted 2026-09-08.
+
+It does not pay, and the reason is worth stating because the temptation will recur. A generator
+would make banks 5 and 6 *regenerable*, which removes the cost of restoring bank 5 after the
+briefing evicts it. But **the demand is dominated by STORING the briefing's content**, which is
+irreducible however bank 5 is restored: the content has to exist somewhere resident whether it is
+depacked into an evicted bank 5 or lives unpacked in banks 6 and 7. Netted out, the generator
+saves ~200-300 bytes against step 5's shape, for a rewrite of the one area `docs/ram-pass.md`
+tells us not to re-litigate. **Keep it as a reserve; it is the largest single lever in the machine
+and it is the wrong lever for this problem.**
+
+(§5's own "ruled out" entry rejected the generator on *disc size* — "ZX0 already exploits the
+redundancy a generator would". That argument does not apply to residency, so it was rejected for
+the wrong reason and needed re-answering. This is the re-answer.)
+
+### 11e. Two changes to step 5's shape
+
+**`keyredef` depacks into the tile map and runs there.** At 1,014 unpacked it exceeds every free
+block in the machine and always will; that single fact is what §4b means by "step 5 does not even
+start". Packed it is 776, and **the map is 1,024** — so it is stored packed wherever there is
+room, depacked into the arena on CTRL+R, and run from there. This is the branch's own arena rule
+(§2) applied to *code* for the first time, and the screen qualifies on both halves of it: nothing
+reads the map while the redefine screen is up, and `RedrawAll` rebuilds it on the way out.
+
+**Every briefing depack goes through the map, not through `DEPK_STREAM`.** Store each piece as its
+own stream of at most 1,024 packed — five text pages at ~561 each, `keyredef` 776, `briefman`
+~350, `sndchat` 15 — and transit bank → map → destination. `&3200` staging is what destroys
+`&3000` at briefing entry, and it is `PARAFNT`'s **second** destroyer (§6a's correction: step 3
+removed the first). Doing this means `PARAFNT`'s reload dies inside step 5 rather than needing a
+step of its own.
+
+### 11f. The order, and what funds what
+
+1. **Clear §10's test list.** Seven screens have not been looked at since bank 7 was rearranged
+   under them and every droid sprite row was re-interned. Building further on that is compounding
+   risk. Cheaper now than it was: the `beeb-*` skills are installed, and jsbeeb-mcp's `key_down`
+   takes internal key numbers, so **`DEBUG_DECK`'s CTRL+`[` is drivable at last** — §8's note that
+   it is not, is out of date.
+2. **Step 6, the DFS reclaim — moved to the FRONT.** ~869 bytes of main RAM, banked as *bank*
+   space by relocating a bank routine into the freed image (§11b). Everything after it is funded
+   by it, which is why it can no longer be last.
+3. **Step 5, with §11e's two changes.** The big one: it removes both of `&3000`'s destroyers and
+   the bank-5 eviction, which is 5,459 of the original ledger.
+4. **SCANSTEP tail folding.** No longer optional (§1a). ~480 cycles a pass, ~1% of the blit
+   window. `beeb-buffer-oracle` is the check — the mechanical listing diff explicitly cannot
+   validate it — and `beeb-frame-drops` confirms 50/100 still holds afterwards.
+5. **`PARBRF` and `PARALOW`**, funded in part by `dfsSave`'s 912 falling out as the last load goes.
+6. **zx02, last, as posted.** Its ~130 bytes of code image now convert to bank space under step 6,
+   and its decode speed matters more in a design that depacks on every screen transition.
+
+**Fallback if the margin evaporates:** §1a's concession — keep one load at the title (`PARBRF`,
+769) and take everything else resident. One load, at a screen the player is already waiting on.
+
+### 11g. Where the estimates could be wrong
+
+- **The ~869 of step 6 is in six pieces, the largest 374.** Relocation needs a bank routine that
+  fits a piece; the byte map says several do, but each move is its own small job and the last
+  hundred bytes may not be spendable.
+- **SCANSTEP folding's ~1,050 per bank is `ram-pass.md`'s estimate**, not a measurement of today's
+  tree, and the deferred carry has changed the code it folds.
+- **`briefman` and the text pages are quoted packed at ratios not yet measured** on the actual
+  streams.
+- **Fragmentation is not in the totals.** Nothing can span a bank (§1a), and the arithmetic above
+  is a sum.
