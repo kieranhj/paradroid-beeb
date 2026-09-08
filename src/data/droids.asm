@@ -43,73 +43,73 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
 \ This bank holds shifts 0 and 1 px; the other holds the
 \ other two, at the same addresses with its own contents.
 .drSeqLo
-  EQUB LO(drD0_00),LO(drD0_02),LO(drD0_04),LO(drD0_05),LO(drD0_06),LO(drD0_06),LO(drD0_05),LO(drD0_04),LO(drD0_03),LO(drD0_01)
-  EQUB LO(drD0_00),LO(drD0_02),LO(drD0_07),LO(drD0_08),LO(drD0_09),LO(drD0_09),LO(drD0_08),LO(drD0_07),LO(drD0_03),LO(drD0_01)
-  EQUB LO(drD0_00),LO(drD0_02),LO(drD0_10),LO(drD0_11),LO(drD0_12),LO(drD0_12),LO(drD0_11),LO(drD0_10),LO(drD0_03),LO(drD0_01)
-  EQUB LO(drD0_00),LO(drD0_02),LO(drD0_13),LO(drD0_14),LO(drD0_15),LO(drD0_15),LO(drD0_14),LO(drD0_13),LO(drD0_03),LO(drD0_01)
-  EQUB LO(drD0_01),LO(drD0_03),LO(drD0_16),LO(drD0_17),LO(drD0_18),LO(drD0_18),LO(drD0_17),LO(drD0_16),LO(drD0_02),LO(drD0_00)
-  EQUB LO(drD0_01),LO(drD0_03),LO(drD0_19),LO(drD0_20),LO(drD0_21),LO(drD0_21),LO(drD0_20),LO(drD0_19),LO(drD0_02),LO(drD0_00)
-  EQUB LO(drD0_01),LO(drD0_03),LO(drD0_22),LO(drD0_23),LO(drD0_24),LO(drD0_24),LO(drD0_23),LO(drD0_22),LO(drD0_02),LO(drD0_00)
-  EQUB LO(drD0_01),LO(drD0_03),LO(drD0_25),LO(drD0_26),LO(drD0_27),LO(drD0_27),LO(drD0_26),LO(drD0_25),LO(drD0_02),LO(drD0_00)
-  EQUB LO(drD1_00),LO(drD1_02),LO(drD1_04),LO(drD1_05),LO(drD1_06),LO(drD1_06),LO(drD1_05),LO(drD1_04),LO(drD1_03),LO(drD1_01)
-  EQUB LO(drD1_00),LO(drD1_02),LO(drD1_07),LO(drD1_08),LO(drD1_09),LO(drD1_09),LO(drD1_08),LO(drD1_07),LO(drD1_03),LO(drD1_01)
-  EQUB LO(drD1_00),LO(drD1_02),LO(drD1_10),LO(drD1_11),LO(drD1_12),LO(drD1_12),LO(drD1_11),LO(drD1_10),LO(drD1_03),LO(drD1_01)
-  EQUB LO(drD1_00),LO(drD1_02),LO(drD1_13),LO(drD1_14),LO(drD1_15),LO(drD1_15),LO(drD1_14),LO(drD1_13),LO(drD1_03),LO(drD1_01)
-  EQUB LO(drD1_01),LO(drD1_03),LO(drD1_16),LO(drD1_17),LO(drD1_18),LO(drD1_18),LO(drD1_17),LO(drD1_16),LO(drD1_02),LO(drD1_00)
-  EQUB LO(drD1_01),LO(drD1_03),LO(drD1_19),LO(drD1_20),LO(drD1_21),LO(drD1_21),LO(drD1_20),LO(drD1_19),LO(drD1_02),LO(drD1_00)
-  EQUB LO(drD1_01),LO(drD1_03),LO(drD1_22),LO(drD1_23),LO(drD1_24),LO(drD1_24),LO(drD1_23),LO(drD1_22),LO(drD1_02),LO(drD1_00)
-  EQUB LO(drD1_01),LO(drD1_03),LO(drD1_25),LO(drD1_26),LO(drD1_27),LO(drD1_27),LO(drD1_26),LO(drD1_25),LO(drD1_02),LO(drD1_00)
+  EQUB LO(drD0_00),LO(drD0_00),LO(drD0_04),LO(drD0_05),LO(drD0_06),LO(drD0_06),LO(drD0_05),LO(drD0_04),LO(drD0_01),LO(drD0_01)
+  EQUB LO(drD0_00),LO(drD0_00),LO(drD0_07),LO(drD0_08),LO(drD0_09),LO(drD0_09),LO(drD0_08),LO(drD0_07),LO(drD0_01),LO(drD0_01)
+  EQUB LO(drD0_00),LO(drD0_00),LO(drD0_10),LO(drD0_11),LO(drD0_12),LO(drD0_12),LO(drD0_11),LO(drD0_10),LO(drD0_01),LO(drD0_01)
+  EQUB LO(drD0_00),LO(drD0_00),LO(drD0_13),LO(drD0_14),LO(drD0_15),LO(drD0_15),LO(drD0_14),LO(drD0_13),LO(drD0_01),LO(drD0_01)
+  EQUB LO(drD0_01),LO(drD0_01),LO(drD0_16),LO(drD0_17),LO(drD0_18),LO(drD0_18),LO(drD0_17),LO(drD0_16),LO(drD0_00),LO(drD0_00)
+  EQUB LO(drD0_01),LO(drD0_01),LO(drD0_19),LO(drD0_20),LO(drD0_21),LO(drD0_21),LO(drD0_20),LO(drD0_19),LO(drD0_00),LO(drD0_00)
+  EQUB LO(drD0_01),LO(drD0_01),LO(drD0_22),LO(drD0_23),LO(drD0_24),LO(drD0_24),LO(drD0_23),LO(drD0_22),LO(drD0_00),LO(drD0_00)
+  EQUB LO(drD0_01),LO(drD0_01),LO(drD0_25),LO(drD0_26),LO(drD0_27),LO(drD0_27),LO(drD0_26),LO(drD0_25),LO(drD0_00),LO(drD0_00)
+  EQUB LO(drD0_00),LO(drD0_00),LO(drD1_04),LO(drD1_05),LO(drD1_06),LO(drD1_06),LO(drD1_05),LO(drD1_04),LO(drD1_01),LO(drD1_01)
+  EQUB LO(drD0_00),LO(drD0_00),LO(drD1_07),LO(drD1_08),LO(drD1_09),LO(drD1_09),LO(drD1_08),LO(drD1_07),LO(drD1_01),LO(drD1_01)
+  EQUB LO(drD0_00),LO(drD0_00),LO(drD1_10),LO(drD1_11),LO(drD1_12),LO(drD1_12),LO(drD1_11),LO(drD1_10),LO(drD1_01),LO(drD1_01)
+  EQUB LO(drD0_00),LO(drD0_00),LO(drD1_13),LO(drD1_14),LO(drD1_15),LO(drD1_15),LO(drD1_14),LO(drD1_13),LO(drD1_01),LO(drD1_01)
+  EQUB LO(drD1_01),LO(drD1_01),LO(drD1_16),LO(drD1_17),LO(drD1_18),LO(drD1_18),LO(drD1_17),LO(drD1_16),LO(drD0_00),LO(drD0_00)
+  EQUB LO(drD1_01),LO(drD1_01),LO(drD1_19),LO(drD1_20),LO(drD1_21),LO(drD1_21),LO(drD1_20),LO(drD1_19),LO(drD0_00),LO(drD0_00)
+  EQUB LO(drD1_01),LO(drD1_01),LO(drD1_22),LO(drD1_23),LO(drD1_24),LO(drD1_24),LO(drD1_23),LO(drD1_22),LO(drD0_00),LO(drD0_00)
+  EQUB LO(drD1_01),LO(drD1_01),LO(drD1_25),LO(drD1_26),LO(drD1_27),LO(drD1_27),LO(drD1_26),LO(drD1_25),LO(drD0_00),LO(drD0_00)
 .drSeqHi
-  EQUB HI(drD0_00),HI(drD0_02),HI(drD0_04),HI(drD0_05),HI(drD0_06),HI(drD0_06),HI(drD0_05),HI(drD0_04),HI(drD0_03),HI(drD0_01)
-  EQUB HI(drD0_00),HI(drD0_02),HI(drD0_07),HI(drD0_08),HI(drD0_09),HI(drD0_09),HI(drD0_08),HI(drD0_07),HI(drD0_03),HI(drD0_01)
-  EQUB HI(drD0_00),HI(drD0_02),HI(drD0_10),HI(drD0_11),HI(drD0_12),HI(drD0_12),HI(drD0_11),HI(drD0_10),HI(drD0_03),HI(drD0_01)
-  EQUB HI(drD0_00),HI(drD0_02),HI(drD0_13),HI(drD0_14),HI(drD0_15),HI(drD0_15),HI(drD0_14),HI(drD0_13),HI(drD0_03),HI(drD0_01)
-  EQUB HI(drD0_01),HI(drD0_03),HI(drD0_16),HI(drD0_17),HI(drD0_18),HI(drD0_18),HI(drD0_17),HI(drD0_16),HI(drD0_02),HI(drD0_00)
-  EQUB HI(drD0_01),HI(drD0_03),HI(drD0_19),HI(drD0_20),HI(drD0_21),HI(drD0_21),HI(drD0_20),HI(drD0_19),HI(drD0_02),HI(drD0_00)
-  EQUB HI(drD0_01),HI(drD0_03),HI(drD0_22),HI(drD0_23),HI(drD0_24),HI(drD0_24),HI(drD0_23),HI(drD0_22),HI(drD0_02),HI(drD0_00)
-  EQUB HI(drD0_01),HI(drD0_03),HI(drD0_25),HI(drD0_26),HI(drD0_27),HI(drD0_27),HI(drD0_26),HI(drD0_25),HI(drD0_02),HI(drD0_00)
-  EQUB HI(drD1_00),HI(drD1_02),HI(drD1_04),HI(drD1_05),HI(drD1_06),HI(drD1_06),HI(drD1_05),HI(drD1_04),HI(drD1_03),HI(drD1_01)
-  EQUB HI(drD1_00),HI(drD1_02),HI(drD1_07),HI(drD1_08),HI(drD1_09),HI(drD1_09),HI(drD1_08),HI(drD1_07),HI(drD1_03),HI(drD1_01)
-  EQUB HI(drD1_00),HI(drD1_02),HI(drD1_10),HI(drD1_11),HI(drD1_12),HI(drD1_12),HI(drD1_11),HI(drD1_10),HI(drD1_03),HI(drD1_01)
-  EQUB HI(drD1_00),HI(drD1_02),HI(drD1_13),HI(drD1_14),HI(drD1_15),HI(drD1_15),HI(drD1_14),HI(drD1_13),HI(drD1_03),HI(drD1_01)
-  EQUB HI(drD1_01),HI(drD1_03),HI(drD1_16),HI(drD1_17),HI(drD1_18),HI(drD1_18),HI(drD1_17),HI(drD1_16),HI(drD1_02),HI(drD1_00)
-  EQUB HI(drD1_01),HI(drD1_03),HI(drD1_19),HI(drD1_20),HI(drD1_21),HI(drD1_21),HI(drD1_20),HI(drD1_19),HI(drD1_02),HI(drD1_00)
-  EQUB HI(drD1_01),HI(drD1_03),HI(drD1_22),HI(drD1_23),HI(drD1_24),HI(drD1_24),HI(drD1_23),HI(drD1_22),HI(drD1_02),HI(drD1_00)
-  EQUB HI(drD1_01),HI(drD1_03),HI(drD1_25),HI(drD1_26),HI(drD1_27),HI(drD1_27),HI(drD1_26),HI(drD1_25),HI(drD1_02),HI(drD1_00)
+  EQUB HI(drD0_00),HI(drD0_00),HI(drD0_04),HI(drD0_05),HI(drD0_06),HI(drD0_06),HI(drD0_05),HI(drD0_04),HI(drD0_01),HI(drD0_01)
+  EQUB HI(drD0_00),HI(drD0_00),HI(drD0_07),HI(drD0_08),HI(drD0_09),HI(drD0_09),HI(drD0_08),HI(drD0_07),HI(drD0_01),HI(drD0_01)
+  EQUB HI(drD0_00),HI(drD0_00),HI(drD0_10),HI(drD0_11),HI(drD0_12),HI(drD0_12),HI(drD0_11),HI(drD0_10),HI(drD0_01),HI(drD0_01)
+  EQUB HI(drD0_00),HI(drD0_00),HI(drD0_13),HI(drD0_14),HI(drD0_15),HI(drD0_15),HI(drD0_14),HI(drD0_13),HI(drD0_01),HI(drD0_01)
+  EQUB HI(drD0_01),HI(drD0_01),HI(drD0_16),HI(drD0_17),HI(drD0_18),HI(drD0_18),HI(drD0_17),HI(drD0_16),HI(drD0_00),HI(drD0_00)
+  EQUB HI(drD0_01),HI(drD0_01),HI(drD0_19),HI(drD0_20),HI(drD0_21),HI(drD0_21),HI(drD0_20),HI(drD0_19),HI(drD0_00),HI(drD0_00)
+  EQUB HI(drD0_01),HI(drD0_01),HI(drD0_22),HI(drD0_23),HI(drD0_24),HI(drD0_24),HI(drD0_23),HI(drD0_22),HI(drD0_00),HI(drD0_00)
+  EQUB HI(drD0_01),HI(drD0_01),HI(drD0_25),HI(drD0_26),HI(drD0_27),HI(drD0_27),HI(drD0_26),HI(drD0_25),HI(drD0_00),HI(drD0_00)
+  EQUB HI(drD0_00),HI(drD0_00),HI(drD1_04),HI(drD1_05),HI(drD1_06),HI(drD1_06),HI(drD1_05),HI(drD1_04),HI(drD1_01),HI(drD1_01)
+  EQUB HI(drD0_00),HI(drD0_00),HI(drD1_07),HI(drD1_08),HI(drD1_09),HI(drD1_09),HI(drD1_08),HI(drD1_07),HI(drD1_01),HI(drD1_01)
+  EQUB HI(drD0_00),HI(drD0_00),HI(drD1_10),HI(drD1_11),HI(drD1_12),HI(drD1_12),HI(drD1_11),HI(drD1_10),HI(drD1_01),HI(drD1_01)
+  EQUB HI(drD0_00),HI(drD0_00),HI(drD1_13),HI(drD1_14),HI(drD1_15),HI(drD1_15),HI(drD1_14),HI(drD1_13),HI(drD1_01),HI(drD1_01)
+  EQUB HI(drD1_01),HI(drD1_01),HI(drD1_16),HI(drD1_17),HI(drD1_18),HI(drD1_18),HI(drD1_17),HI(drD1_16),HI(drD0_00),HI(drD0_00)
+  EQUB HI(drD1_01),HI(drD1_01),HI(drD1_19),HI(drD1_20),HI(drD1_21),HI(drD1_21),HI(drD1_20),HI(drD1_19),HI(drD0_00),HI(drD0_00)
+  EQUB HI(drD1_01),HI(drD1_01),HI(drD1_22),HI(drD1_23),HI(drD1_24),HI(drD1_24),HI(drD1_23),HI(drD1_22),HI(drD0_00),HI(drD0_00)
+  EQUB HI(drD1_01),HI(drD1_01),HI(drD1_25),HI(drD1_26),HI(drD1_27),HI(drD1_27),HI(drD1_26),HI(drD1_25),HI(drD0_00),HI(drD0_00)
 .drRSeqLo
-  EQUB LO(drR0_00),LO(drR0_00),LO(drR0_02),LO(drR0_02),LO(drR0_03),LO(drR0_03),LO(drR0_02),LO(drR0_02),LO(drR0_01),LO(drR0_01)
-  EQUB LO(drR0_00),LO(drR0_00),LO(drR0_02),LO(drR0_02),LO(drR0_03),LO(drR0_03),LO(drR0_02),LO(drR0_02),LO(drR0_01),LO(drR0_01)
-  EQUB LO(drR0_00),LO(drR0_00),LO(drR0_02),LO(drR0_02),LO(drR0_03),LO(drR0_03),LO(drR0_02),LO(drR0_02),LO(drR0_01),LO(drR0_01)
-  EQUB LO(drR0_00),LO(drR0_00),LO(drR0_02),LO(drR0_02),LO(drR0_03),LO(drR0_03),LO(drR0_02),LO(drR0_02),LO(drR0_01),LO(drR0_01)
-  EQUB LO(drR0_01),LO(drR0_01),LO(drR0_02),LO(drR0_02),LO(drR0_03),LO(drR0_03),LO(drR0_02),LO(drR0_02),LO(drR0_00),LO(drR0_00)
-  EQUB LO(drR0_01),LO(drR0_01),LO(drR0_02),LO(drR0_02),LO(drR0_03),LO(drR0_03),LO(drR0_02),LO(drR0_02),LO(drR0_00),LO(drR0_00)
-  EQUB LO(drR0_01),LO(drR0_01),LO(drR0_02),LO(drR0_02),LO(drR0_03),LO(drR0_03),LO(drR0_02),LO(drR0_02),LO(drR0_00),LO(drR0_00)
-  EQUB LO(drR0_01),LO(drR0_01),LO(drR0_02),LO(drR0_02),LO(drR0_03),LO(drR0_03),LO(drR0_02),LO(drR0_02),LO(drR0_00),LO(drR0_00)
-  EQUB LO(drR1_00),LO(drR1_00),LO(drR1_02),LO(drR1_02),LO(drR1_03),LO(drR1_03),LO(drR1_02),LO(drR1_02),LO(drR1_01),LO(drR1_01)
-  EQUB LO(drR1_00),LO(drR1_00),LO(drR1_02),LO(drR1_02),LO(drR1_03),LO(drR1_03),LO(drR1_02),LO(drR1_02),LO(drR1_01),LO(drR1_01)
-  EQUB LO(drR1_00),LO(drR1_00),LO(drR1_02),LO(drR1_02),LO(drR1_03),LO(drR1_03),LO(drR1_02),LO(drR1_02),LO(drR1_01),LO(drR1_01)
-  EQUB LO(drR1_00),LO(drR1_00),LO(drR1_02),LO(drR1_02),LO(drR1_03),LO(drR1_03),LO(drR1_02),LO(drR1_02),LO(drR1_01),LO(drR1_01)
-  EQUB LO(drR1_01),LO(drR1_01),LO(drR1_02),LO(drR1_02),LO(drR1_03),LO(drR1_03),LO(drR1_02),LO(drR1_02),LO(drR1_00),LO(drR1_00)
-  EQUB LO(drR1_01),LO(drR1_01),LO(drR1_02),LO(drR1_02),LO(drR1_03),LO(drR1_03),LO(drR1_02),LO(drR1_02),LO(drR1_00),LO(drR1_00)
-  EQUB LO(drR1_01),LO(drR1_01),LO(drR1_02),LO(drR1_02),LO(drR1_03),LO(drR1_03),LO(drR1_02),LO(drR1_02),LO(drR1_00),LO(drR1_00)
-  EQUB LO(drR1_01),LO(drR1_01),LO(drR1_02),LO(drR1_02),LO(drR1_03),LO(drR1_03),LO(drR1_02),LO(drR1_02),LO(drR1_00),LO(drR1_00)
+  EQUB LO(drD0_00),LO(drD0_00),LO(drR0_02),LO(drR0_02),LO(drR0_03),LO(drR0_03),LO(drR0_02),LO(drR0_02),LO(drR0_01),LO(drR0_01)
+  EQUB LO(drD0_00),LO(drD0_00),LO(drR0_02),LO(drR0_02),LO(drR0_03),LO(drR0_03),LO(drR0_02),LO(drR0_02),LO(drR0_01),LO(drR0_01)
+  EQUB LO(drD0_00),LO(drD0_00),LO(drR0_02),LO(drR0_02),LO(drR0_03),LO(drR0_03),LO(drR0_02),LO(drR0_02),LO(drR0_01),LO(drR0_01)
+  EQUB LO(drD0_00),LO(drD0_00),LO(drR0_02),LO(drR0_02),LO(drR0_03),LO(drR0_03),LO(drR0_02),LO(drR0_02),LO(drR0_01),LO(drR0_01)
+  EQUB LO(drR0_01),LO(drR0_01),LO(drR0_02),LO(drR0_02),LO(drR0_03),LO(drR0_03),LO(drR0_02),LO(drR0_02),LO(drD0_00),LO(drD0_00)
+  EQUB LO(drR0_01),LO(drR0_01),LO(drR0_02),LO(drR0_02),LO(drR0_03),LO(drR0_03),LO(drR0_02),LO(drR0_02),LO(drD0_00),LO(drD0_00)
+  EQUB LO(drR0_01),LO(drR0_01),LO(drR0_02),LO(drR0_02),LO(drR0_03),LO(drR0_03),LO(drR0_02),LO(drR0_02),LO(drD0_00),LO(drD0_00)
+  EQUB LO(drR0_01),LO(drR0_01),LO(drR0_02),LO(drR0_02),LO(drR0_03),LO(drR0_03),LO(drR0_02),LO(drR0_02),LO(drD0_00),LO(drD0_00)
+  EQUB LO(drD0_00),LO(drD0_00),LO(drR0_02),LO(drR0_02),LO(drR0_03),LO(drR0_03),LO(drR0_02),LO(drR0_02),LO(drR0_01),LO(drR0_01)
+  EQUB LO(drD0_00),LO(drD0_00),LO(drR0_02),LO(drR0_02),LO(drR0_03),LO(drR0_03),LO(drR0_02),LO(drR0_02),LO(drR0_01),LO(drR0_01)
+  EQUB LO(drD0_00),LO(drD0_00),LO(drR0_02),LO(drR0_02),LO(drR0_03),LO(drR0_03),LO(drR0_02),LO(drR0_02),LO(drR0_01),LO(drR0_01)
+  EQUB LO(drD0_00),LO(drD0_00),LO(drR0_02),LO(drR0_02),LO(drR0_03),LO(drR0_03),LO(drR0_02),LO(drR0_02),LO(drR0_01),LO(drR0_01)
+  EQUB LO(drR0_01),LO(drR0_01),LO(drR0_02),LO(drR0_02),LO(drR0_03),LO(drR0_03),LO(drR0_02),LO(drR0_02),LO(drD0_00),LO(drD0_00)
+  EQUB LO(drR0_01),LO(drR0_01),LO(drR0_02),LO(drR0_02),LO(drR0_03),LO(drR0_03),LO(drR0_02),LO(drR0_02),LO(drD0_00),LO(drD0_00)
+  EQUB LO(drR0_01),LO(drR0_01),LO(drR0_02),LO(drR0_02),LO(drR0_03),LO(drR0_03),LO(drR0_02),LO(drR0_02),LO(drD0_00),LO(drD0_00)
+  EQUB LO(drR0_01),LO(drR0_01),LO(drR0_02),LO(drR0_02),LO(drR0_03),LO(drR0_03),LO(drR0_02),LO(drR0_02),LO(drD0_00),LO(drD0_00)
 .drRSeqHi
-  EQUB HI(drR0_00),HI(drR0_00),HI(drR0_02),HI(drR0_02),HI(drR0_03),HI(drR0_03),HI(drR0_02),HI(drR0_02),HI(drR0_01),HI(drR0_01)
-  EQUB HI(drR0_00),HI(drR0_00),HI(drR0_02),HI(drR0_02),HI(drR0_03),HI(drR0_03),HI(drR0_02),HI(drR0_02),HI(drR0_01),HI(drR0_01)
-  EQUB HI(drR0_00),HI(drR0_00),HI(drR0_02),HI(drR0_02),HI(drR0_03),HI(drR0_03),HI(drR0_02),HI(drR0_02),HI(drR0_01),HI(drR0_01)
-  EQUB HI(drR0_00),HI(drR0_00),HI(drR0_02),HI(drR0_02),HI(drR0_03),HI(drR0_03),HI(drR0_02),HI(drR0_02),HI(drR0_01),HI(drR0_01)
-  EQUB HI(drR0_01),HI(drR0_01),HI(drR0_02),HI(drR0_02),HI(drR0_03),HI(drR0_03),HI(drR0_02),HI(drR0_02),HI(drR0_00),HI(drR0_00)
-  EQUB HI(drR0_01),HI(drR0_01),HI(drR0_02),HI(drR0_02),HI(drR0_03),HI(drR0_03),HI(drR0_02),HI(drR0_02),HI(drR0_00),HI(drR0_00)
-  EQUB HI(drR0_01),HI(drR0_01),HI(drR0_02),HI(drR0_02),HI(drR0_03),HI(drR0_03),HI(drR0_02),HI(drR0_02),HI(drR0_00),HI(drR0_00)
-  EQUB HI(drR0_01),HI(drR0_01),HI(drR0_02),HI(drR0_02),HI(drR0_03),HI(drR0_03),HI(drR0_02),HI(drR0_02),HI(drR0_00),HI(drR0_00)
-  EQUB HI(drR1_00),HI(drR1_00),HI(drR1_02),HI(drR1_02),HI(drR1_03),HI(drR1_03),HI(drR1_02),HI(drR1_02),HI(drR1_01),HI(drR1_01)
-  EQUB HI(drR1_00),HI(drR1_00),HI(drR1_02),HI(drR1_02),HI(drR1_03),HI(drR1_03),HI(drR1_02),HI(drR1_02),HI(drR1_01),HI(drR1_01)
-  EQUB HI(drR1_00),HI(drR1_00),HI(drR1_02),HI(drR1_02),HI(drR1_03),HI(drR1_03),HI(drR1_02),HI(drR1_02),HI(drR1_01),HI(drR1_01)
-  EQUB HI(drR1_00),HI(drR1_00),HI(drR1_02),HI(drR1_02),HI(drR1_03),HI(drR1_03),HI(drR1_02),HI(drR1_02),HI(drR1_01),HI(drR1_01)
-  EQUB HI(drR1_01),HI(drR1_01),HI(drR1_02),HI(drR1_02),HI(drR1_03),HI(drR1_03),HI(drR1_02),HI(drR1_02),HI(drR1_00),HI(drR1_00)
-  EQUB HI(drR1_01),HI(drR1_01),HI(drR1_02),HI(drR1_02),HI(drR1_03),HI(drR1_03),HI(drR1_02),HI(drR1_02),HI(drR1_00),HI(drR1_00)
-  EQUB HI(drR1_01),HI(drR1_01),HI(drR1_02),HI(drR1_02),HI(drR1_03),HI(drR1_03),HI(drR1_02),HI(drR1_02),HI(drR1_00),HI(drR1_00)
-  EQUB HI(drR1_01),HI(drR1_01),HI(drR1_02),HI(drR1_02),HI(drR1_03),HI(drR1_03),HI(drR1_02),HI(drR1_02),HI(drR1_00),HI(drR1_00)
+  EQUB HI(drD0_00),HI(drD0_00),HI(drR0_02),HI(drR0_02),HI(drR0_03),HI(drR0_03),HI(drR0_02),HI(drR0_02),HI(drR0_01),HI(drR0_01)
+  EQUB HI(drD0_00),HI(drD0_00),HI(drR0_02),HI(drR0_02),HI(drR0_03),HI(drR0_03),HI(drR0_02),HI(drR0_02),HI(drR0_01),HI(drR0_01)
+  EQUB HI(drD0_00),HI(drD0_00),HI(drR0_02),HI(drR0_02),HI(drR0_03),HI(drR0_03),HI(drR0_02),HI(drR0_02),HI(drR0_01),HI(drR0_01)
+  EQUB HI(drD0_00),HI(drD0_00),HI(drR0_02),HI(drR0_02),HI(drR0_03),HI(drR0_03),HI(drR0_02),HI(drR0_02),HI(drR0_01),HI(drR0_01)
+  EQUB HI(drR0_01),HI(drR0_01),HI(drR0_02),HI(drR0_02),HI(drR0_03),HI(drR0_03),HI(drR0_02),HI(drR0_02),HI(drD0_00),HI(drD0_00)
+  EQUB HI(drR0_01),HI(drR0_01),HI(drR0_02),HI(drR0_02),HI(drR0_03),HI(drR0_03),HI(drR0_02),HI(drR0_02),HI(drD0_00),HI(drD0_00)
+  EQUB HI(drR0_01),HI(drR0_01),HI(drR0_02),HI(drR0_02),HI(drR0_03),HI(drR0_03),HI(drR0_02),HI(drR0_02),HI(drD0_00),HI(drD0_00)
+  EQUB HI(drR0_01),HI(drR0_01),HI(drR0_02),HI(drR0_02),HI(drR0_03),HI(drR0_03),HI(drR0_02),HI(drR0_02),HI(drD0_00),HI(drD0_00)
+  EQUB HI(drD0_00),HI(drD0_00),HI(drR0_02),HI(drR0_02),HI(drR0_03),HI(drR0_03),HI(drR0_02),HI(drR0_02),HI(drR0_01),HI(drR0_01)
+  EQUB HI(drD0_00),HI(drD0_00),HI(drR0_02),HI(drR0_02),HI(drR0_03),HI(drR0_03),HI(drR0_02),HI(drR0_02),HI(drR0_01),HI(drR0_01)
+  EQUB HI(drD0_00),HI(drD0_00),HI(drR0_02),HI(drR0_02),HI(drR0_03),HI(drR0_03),HI(drR0_02),HI(drR0_02),HI(drR0_01),HI(drR0_01)
+  EQUB HI(drD0_00),HI(drD0_00),HI(drR0_02),HI(drR0_02),HI(drR0_03),HI(drR0_03),HI(drR0_02),HI(drR0_02),HI(drR0_01),HI(drR0_01)
+  EQUB HI(drR0_01),HI(drR0_01),HI(drR0_02),HI(drR0_02),HI(drR0_03),HI(drR0_03),HI(drR0_02),HI(drR0_02),HI(drD0_00),HI(drD0_00)
+  EQUB HI(drR0_01),HI(drR0_01),HI(drR0_02),HI(drR0_02),HI(drR0_03),HI(drR0_03),HI(drR0_02),HI(drR0_02),HI(drD0_00),HI(drD0_00)
+  EQUB HI(drR0_01),HI(drR0_01),HI(drR0_02),HI(drR0_02),HI(drR0_03),HI(drR0_03),HI(drR0_02),HI(drR0_02),HI(drD0_00),HI(drD0_00)
+  EQUB HI(drR0_01),HI(drR0_01),HI(drR0_02),HI(drR0_02),HI(drR0_03),HI(drR0_03),HI(drR0_02),HI(drR0_02),HI(drD0_00),HI(drD0_00)
 
 .drPrgLo
   EQUB LO(drPrg0_0),LO(drPrg0_0),LO(drPrg0_0),LO(drPrg0_0),LO(drPrg0_0),LO(drPrg0_0),LO(drPrg0_0),LO(drPrg0_0),LO(drPrg0_0),LO(drPrg0_0)
@@ -147,38 +147,38 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   EQUB HI(drPrg1_7),HI(drPrg1_7),HI(drPrg1_7),HI(drPrg1_7),HI(drPrg1_7),HI(drPrg1_7),HI(drPrg1_7),HI(drPrg1_7),HI(drPrg1_7),HI(drPrg1_7)
 .drRPrgLo
   EQUB LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0)
-  EQUB LO(drRPrg0_1),LO(drRPrg0_1),LO(drRPrg0_1),LO(drRPrg0_1),LO(drRPrg0_1),LO(drRPrg0_1),LO(drRPrg0_1),LO(drRPrg0_1),LO(drRPrg0_1),LO(drRPrg0_1)
-  EQUB LO(drRPrg0_2),LO(drRPrg0_2),LO(drRPrg0_2),LO(drRPrg0_2),LO(drRPrg0_2),LO(drRPrg0_2),LO(drRPrg0_2),LO(drRPrg0_2),LO(drRPrg0_2),LO(drRPrg0_2)
-  EQUB LO(drRPrg0_3),LO(drRPrg0_3),LO(drRPrg0_3),LO(drRPrg0_3),LO(drRPrg0_3),LO(drRPrg0_3),LO(drRPrg0_3),LO(drRPrg0_3),LO(drRPrg0_3),LO(drRPrg0_3)
+  EQUB LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0)
+  EQUB LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0)
+  EQUB LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0)
   EQUB LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4)
-  EQUB LO(drRPrg0_5),LO(drRPrg0_5),LO(drRPrg0_5),LO(drRPrg0_5),LO(drRPrg0_5),LO(drRPrg0_5),LO(drRPrg0_5),LO(drRPrg0_5),LO(drRPrg0_5),LO(drRPrg0_5)
-  EQUB LO(drRPrg0_6),LO(drRPrg0_6),LO(drRPrg0_6),LO(drRPrg0_6),LO(drRPrg0_6),LO(drRPrg0_6),LO(drRPrg0_6),LO(drRPrg0_6),LO(drRPrg0_6),LO(drRPrg0_6)
-  EQUB LO(drRPrg0_7),LO(drRPrg0_7),LO(drRPrg0_7),LO(drRPrg0_7),LO(drRPrg0_7),LO(drRPrg0_7),LO(drRPrg0_7),LO(drRPrg0_7),LO(drRPrg0_7),LO(drRPrg0_7)
-  EQUB LO(drRPrg1_0),LO(drRPrg1_0),LO(drRPrg1_0),LO(drRPrg1_0),LO(drRPrg1_0),LO(drRPrg1_0),LO(drRPrg1_0),LO(drRPrg1_0),LO(drRPrg1_0),LO(drRPrg1_0)
-  EQUB LO(drRPrg1_1),LO(drRPrg1_1),LO(drRPrg1_1),LO(drRPrg1_1),LO(drRPrg1_1),LO(drRPrg1_1),LO(drRPrg1_1),LO(drRPrg1_1),LO(drRPrg1_1),LO(drRPrg1_1)
-  EQUB LO(drRPrg1_2),LO(drRPrg1_2),LO(drRPrg1_2),LO(drRPrg1_2),LO(drRPrg1_2),LO(drRPrg1_2),LO(drRPrg1_2),LO(drRPrg1_2),LO(drRPrg1_2),LO(drRPrg1_2)
-  EQUB LO(drRPrg1_3),LO(drRPrg1_3),LO(drRPrg1_3),LO(drRPrg1_3),LO(drRPrg1_3),LO(drRPrg1_3),LO(drRPrg1_3),LO(drRPrg1_3),LO(drRPrg1_3),LO(drRPrg1_3)
-  EQUB LO(drRPrg1_4),LO(drRPrg1_4),LO(drRPrg1_4),LO(drRPrg1_4),LO(drRPrg1_4),LO(drRPrg1_4),LO(drRPrg1_4),LO(drRPrg1_4),LO(drRPrg1_4),LO(drRPrg1_4)
-  EQUB LO(drRPrg1_5),LO(drRPrg1_5),LO(drRPrg1_5),LO(drRPrg1_5),LO(drRPrg1_5),LO(drRPrg1_5),LO(drRPrg1_5),LO(drRPrg1_5),LO(drRPrg1_5),LO(drRPrg1_5)
-  EQUB LO(drRPrg1_6),LO(drRPrg1_6),LO(drRPrg1_6),LO(drRPrg1_6),LO(drRPrg1_6),LO(drRPrg1_6),LO(drRPrg1_6),LO(drRPrg1_6),LO(drRPrg1_6),LO(drRPrg1_6)
-  EQUB LO(drRPrg1_7),LO(drRPrg1_7),LO(drRPrg1_7),LO(drRPrg1_7),LO(drRPrg1_7),LO(drRPrg1_7),LO(drRPrg1_7),LO(drRPrg1_7),LO(drRPrg1_7),LO(drRPrg1_7)
+  EQUB LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4)
+  EQUB LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4)
+  EQUB LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4)
+  EQUB LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0)
+  EQUB LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0)
+  EQUB LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0)
+  EQUB LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0),LO(drRPrg0_0)
+  EQUB LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4)
+  EQUB LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4)
+  EQUB LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4)
+  EQUB LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4),LO(drRPrg0_4)
 .drRPrgHi
   EQUB HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0)
-  EQUB HI(drRPrg0_1),HI(drRPrg0_1),HI(drRPrg0_1),HI(drRPrg0_1),HI(drRPrg0_1),HI(drRPrg0_1),HI(drRPrg0_1),HI(drRPrg0_1),HI(drRPrg0_1),HI(drRPrg0_1)
-  EQUB HI(drRPrg0_2),HI(drRPrg0_2),HI(drRPrg0_2),HI(drRPrg0_2),HI(drRPrg0_2),HI(drRPrg0_2),HI(drRPrg0_2),HI(drRPrg0_2),HI(drRPrg0_2),HI(drRPrg0_2)
-  EQUB HI(drRPrg0_3),HI(drRPrg0_3),HI(drRPrg0_3),HI(drRPrg0_3),HI(drRPrg0_3),HI(drRPrg0_3),HI(drRPrg0_3),HI(drRPrg0_3),HI(drRPrg0_3),HI(drRPrg0_3)
+  EQUB HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0)
+  EQUB HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0)
+  EQUB HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0)
   EQUB HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4)
-  EQUB HI(drRPrg0_5),HI(drRPrg0_5),HI(drRPrg0_5),HI(drRPrg0_5),HI(drRPrg0_5),HI(drRPrg0_5),HI(drRPrg0_5),HI(drRPrg0_5),HI(drRPrg0_5),HI(drRPrg0_5)
-  EQUB HI(drRPrg0_6),HI(drRPrg0_6),HI(drRPrg0_6),HI(drRPrg0_6),HI(drRPrg0_6),HI(drRPrg0_6),HI(drRPrg0_6),HI(drRPrg0_6),HI(drRPrg0_6),HI(drRPrg0_6)
-  EQUB HI(drRPrg0_7),HI(drRPrg0_7),HI(drRPrg0_7),HI(drRPrg0_7),HI(drRPrg0_7),HI(drRPrg0_7),HI(drRPrg0_7),HI(drRPrg0_7),HI(drRPrg0_7),HI(drRPrg0_7)
-  EQUB HI(drRPrg1_0),HI(drRPrg1_0),HI(drRPrg1_0),HI(drRPrg1_0),HI(drRPrg1_0),HI(drRPrg1_0),HI(drRPrg1_0),HI(drRPrg1_0),HI(drRPrg1_0),HI(drRPrg1_0)
-  EQUB HI(drRPrg1_1),HI(drRPrg1_1),HI(drRPrg1_1),HI(drRPrg1_1),HI(drRPrg1_1),HI(drRPrg1_1),HI(drRPrg1_1),HI(drRPrg1_1),HI(drRPrg1_1),HI(drRPrg1_1)
-  EQUB HI(drRPrg1_2),HI(drRPrg1_2),HI(drRPrg1_2),HI(drRPrg1_2),HI(drRPrg1_2),HI(drRPrg1_2),HI(drRPrg1_2),HI(drRPrg1_2),HI(drRPrg1_2),HI(drRPrg1_2)
-  EQUB HI(drRPrg1_3),HI(drRPrg1_3),HI(drRPrg1_3),HI(drRPrg1_3),HI(drRPrg1_3),HI(drRPrg1_3),HI(drRPrg1_3),HI(drRPrg1_3),HI(drRPrg1_3),HI(drRPrg1_3)
-  EQUB HI(drRPrg1_4),HI(drRPrg1_4),HI(drRPrg1_4),HI(drRPrg1_4),HI(drRPrg1_4),HI(drRPrg1_4),HI(drRPrg1_4),HI(drRPrg1_4),HI(drRPrg1_4),HI(drRPrg1_4)
-  EQUB HI(drRPrg1_5),HI(drRPrg1_5),HI(drRPrg1_5),HI(drRPrg1_5),HI(drRPrg1_5),HI(drRPrg1_5),HI(drRPrg1_5),HI(drRPrg1_5),HI(drRPrg1_5),HI(drRPrg1_5)
-  EQUB HI(drRPrg1_6),HI(drRPrg1_6),HI(drRPrg1_6),HI(drRPrg1_6),HI(drRPrg1_6),HI(drRPrg1_6),HI(drRPrg1_6),HI(drRPrg1_6),HI(drRPrg1_6),HI(drRPrg1_6)
-  EQUB HI(drRPrg1_7),HI(drRPrg1_7),HI(drRPrg1_7),HI(drRPrg1_7),HI(drRPrg1_7),HI(drRPrg1_7),HI(drRPrg1_7),HI(drRPrg1_7),HI(drRPrg1_7),HI(drRPrg1_7)
+  EQUB HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4)
+  EQUB HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4)
+  EQUB HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4)
+  EQUB HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0)
+  EQUB HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0)
+  EQUB HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0)
+  EQUB HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0),HI(drRPrg0_0)
+  EQUB HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4)
+  EQUB HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4)
+  EQUB HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4)
+  EQUB HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4),HI(drRPrg0_4)
 
 \ Sprite row -> position in that sequence; &FF means the row is
 \ not the rotor's (a digit row, or one of the three blank ones).
@@ -238,16 +238,6 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
 .drD0_00
   JMP ScanStepRts
 .drD0_01
-  LDY #2*UNIT_BYTES
-  LDA (bufp),Y : STA (svp),Y
-  AND #&CC : ORA colPix+2 : STA (bufp),Y
-  LDY #3*UNIT_BYTES
-  LDA (bufp),Y : STA (svp),Y
-  AND #&77 : ORA colPix+6 : STA (bufp),Y
-  JMP ScanStepRts
-.drD0_02
-  JMP ScanStepRts
-.drD0_03
   LDY #2*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&CC : ORA colPix+2 : STA (bufp),Y
@@ -639,8 +629,6 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDA (bufp),Y : STA (svp),Y
   AND #&77 : ORA colPix+6 : STA (bufp),Y
   JMP ScanStepRts
-.drR0_00
-  JMP ScanStepRts
 .drR0_01
   LDY #2*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
@@ -660,19 +648,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #5*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   JMP ScanStepRts
 \ ---- shift 1 px -------------------------------------
-.drD1_00
-  JMP ScanStepRts
 .drD1_01
-  LDY #2*UNIT_BYTES
-  LDA (bufp),Y : STA (svp),Y
-  AND #&EE : ORA colPix+0 : STA (bufp),Y
-  LDY #3*UNIT_BYTES
-  LDA (bufp),Y : STA (svp),Y
-  AND #&33 : ORA colPix+8 : STA (bufp),Y
-  JMP ScanStepRts
-.drD1_02
-  JMP ScanStepRts
-.drD1_03
   LDY #2*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&EE : ORA colPix+0 : STA (bufp),Y
@@ -1064,26 +1040,6 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDA (bufp),Y : STA (svp),Y
   AND #&BB : ORA colPix+3 : STA (bufp),Y
   JMP ScanStepRts
-.drR1_00
-  JMP ScanStepRts
-.drR1_01
-  LDY #2*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  JMP ScanStepRts
-.drR1_02
-  LDY #1*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #2*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  JMP ScanStepRts
-.drR1_03
-  LDY #0*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #1*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #2*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #5*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  JMP ScanStepRts
 
 \ Five rows of restore inlined. Only the column set matters, and
 \ that depends on shift and phase>>2 alone - so eight of these
@@ -1176,97 +1132,10 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   SCANSTEP
   JMP ScanStepRts
-.drRHalf1_0_0
-  SCANSTEP
-  SCANSTEP
-  LDY #1*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #2*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  SCANSTEP
-  LDY #1*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #2*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  SCANSTEP
-  LDY #0*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #1*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #2*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #5*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  JMP ScanStepRts
-.drRHalf1_0_1
-  LDY #0*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #1*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #2*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #5*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  SCANSTEP
-  LDY #1*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #2*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  SCANSTEP
-  LDY #1*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #2*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  SCANSTEP
-  LDY #2*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  SCANSTEP
-  LDY #2*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  RTS
-.drRHalf1_1_0
-  LDY #2*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  SCANSTEP
-  LDY #2*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  SCANSTEP
-  LDY #1*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #2*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  SCANSTEP
-  LDY #1*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #2*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  SCANSTEP
-  LDY #0*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #1*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #2*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #5*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  JMP ScanStepRts
-.drRHalf1_1_1
-  LDY #0*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #1*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #2*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #5*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  SCANSTEP
-  LDY #1*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #2*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  SCANSTEP
-  LDY #1*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #2*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  SCANSTEP
-  JMP ScanStepRts
 
 .drPrg0_0
   JSR drD0_00
-  JSR drD0_02
+  JSR drD0_00
   JSR drD0_04
   JSR drD0_05
   JSR drD0_06
@@ -1276,11 +1145,11 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   JSR drD0_06
   JSR drD0_05
   JSR drD0_04
-  JSR drD0_03
+  JSR drD0_01
   JMP drD0_01
 .drPrg0_1
   JSR drD0_00
-  JSR drD0_02
+  JSR drD0_00
   JSR drD0_07
   JSR drD0_08
   JSR drD0_09
@@ -1290,11 +1159,11 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   JSR drD0_09
   JSR drD0_08
   JSR drD0_07
-  JSR drD0_03
+  JSR drD0_01
   JMP drD0_01
 .drPrg0_2
   JSR drD0_00
-  JSR drD0_02
+  JSR drD0_00
   JSR drD0_10
   JSR drD0_11
   JSR drD0_12
@@ -1304,11 +1173,11 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   JSR drD0_12
   JSR drD0_11
   JSR drD0_10
-  JSR drD0_03
+  JSR drD0_01
   JMP drD0_01
 .drPrg0_3
   JSR drD0_00
-  JSR drD0_02
+  JSR drD0_00
   JSR drD0_13
   JSR drD0_14
   JSR drD0_15
@@ -1318,11 +1187,11 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   JSR drD0_15
   JSR drD0_14
   JSR drD0_13
-  JSR drD0_03
+  JSR drD0_01
   JMP drD0_01
 .drPrg0_4
   JSR drD0_01
-  JSR drD0_03
+  JSR drD0_01
   JSR drD0_16
   JSR drD0_17
   JSR drD0_18
@@ -1332,11 +1201,11 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   JSR drD0_18
   JSR drD0_17
   JSR drD0_16
-  JSR drD0_02
+  JSR drD0_00
   JMP drD0_00
 .drPrg0_5
   JSR drD0_01
-  JSR drD0_03
+  JSR drD0_01
   JSR drD0_19
   JSR drD0_20
   JSR drD0_21
@@ -1346,11 +1215,11 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   JSR drD0_21
   JSR drD0_20
   JSR drD0_19
-  JSR drD0_02
+  JSR drD0_00
   JMP drD0_00
 .drPrg0_6
   JSR drD0_01
-  JSR drD0_03
+  JSR drD0_01
   JSR drD0_22
   JSR drD0_23
   JSR drD0_24
@@ -1360,11 +1229,11 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   JSR drD0_24
   JSR drD0_23
   JSR drD0_22
-  JSR drD0_02
+  JSR drD0_00
   JMP drD0_00
 .drPrg0_7
   JSR drD0_01
-  JSR drD0_03
+  JSR drD0_01
   JSR drD0_25
   JSR drD0_26
   JSR drD0_27
@@ -1374,11 +1243,11 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   JSR drD0_27
   JSR drD0_26
   JSR drD0_25
-  JSR drD0_02
+  JSR drD0_00
   JMP drD0_00
 .drPrg1_0
-  JSR drD1_00
-  JSR drD1_02
+  JSR drD0_00
+  JSR drD0_00
   JSR drD1_04
   JSR drD1_05
   JSR drD1_06
@@ -1388,11 +1257,11 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   JSR drD1_06
   JSR drD1_05
   JSR drD1_04
-  JSR drD1_03
+  JSR drD1_01
   JMP drD1_01
 .drPrg1_1
-  JSR drD1_00
-  JSR drD1_02
+  JSR drD0_00
+  JSR drD0_00
   JSR drD1_07
   JSR drD1_08
   JSR drD1_09
@@ -1402,11 +1271,11 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   JSR drD1_09
   JSR drD1_08
   JSR drD1_07
-  JSR drD1_03
+  JSR drD1_01
   JMP drD1_01
 .drPrg1_2
-  JSR drD1_00
-  JSR drD1_02
+  JSR drD0_00
+  JSR drD0_00
   JSR drD1_10
   JSR drD1_11
   JSR drD1_12
@@ -1416,11 +1285,11 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   JSR drD1_12
   JSR drD1_11
   JSR drD1_10
-  JSR drD1_03
+  JSR drD1_01
   JMP drD1_01
 .drPrg1_3
-  JSR drD1_00
-  JSR drD1_02
+  JSR drD0_00
+  JSR drD0_00
   JSR drD1_13
   JSR drD1_14
   JSR drD1_15
@@ -1430,11 +1299,11 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   JSR drD1_15
   JSR drD1_14
   JSR drD1_13
-  JSR drD1_03
+  JSR drD1_01
   JMP drD1_01
 .drPrg1_4
   JSR drD1_01
-  JSR drD1_03
+  JSR drD1_01
   JSR drD1_16
   JSR drD1_17
   JSR drD1_18
@@ -1444,11 +1313,11 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   JSR drD1_18
   JSR drD1_17
   JSR drD1_16
-  JSR drD1_02
-  JMP drD1_00
+  JSR drD0_00
+  JMP drD0_00
 .drPrg1_5
   JSR drD1_01
-  JSR drD1_03
+  JSR drD1_01
   JSR drD1_19
   JSR drD1_20
   JSR drD1_21
@@ -1458,11 +1327,11 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   JSR drD1_21
   JSR drD1_20
   JSR drD1_19
-  JSR drD1_02
-  JMP drD1_00
+  JSR drD0_00
+  JMP drD0_00
 .drPrg1_6
   JSR drD1_01
-  JSR drD1_03
+  JSR drD1_01
   JSR drD1_22
   JSR drD1_23
   JSR drD1_24
@@ -1472,11 +1341,11 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   JSR drD1_24
   JSR drD1_23
   JSR drD1_22
-  JSR drD1_02
-  JMP drD1_00
+  JSR drD0_00
+  JMP drD0_00
 .drPrg1_7
   JSR drD1_01
-  JSR drD1_03
+  JSR drD1_01
   JSR drD1_25
   JSR drD1_26
   JSR drD1_27
@@ -1486,28 +1355,10 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   JSR drD1_27
   JSR drD1_26
   JSR drD1_25
-  JSR drD1_02
-  JMP drD1_00
+  JSR drD0_00
+  JMP drD0_00
 
 .drRPrg0_0
-  JSR drRHalf0_0_0
-  SCANSTEP
-  JSR SprBlkRest
-  SCANSTEP
-  JMP drRHalf0_0_1
-.drRPrg0_1
-  JSR drRHalf0_0_0
-  SCANSTEP
-  JSR SprBlkRest
-  SCANSTEP
-  JMP drRHalf0_0_1
-.drRPrg0_2
-  JSR drRHalf0_0_0
-  SCANSTEP
-  JSR SprBlkRest
-  SCANSTEP
-  JMP drRHalf0_0_1
-.drRPrg0_3
   JSR drRHalf0_0_0
   SCANSTEP
   JSR SprBlkRest
@@ -1519,72 +1370,6 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   JSR SprBlkRest
   SCANSTEP
   JMP drRHalf0_1_1
-.drRPrg0_5
-  JSR drRHalf0_1_0
-  SCANSTEP
-  JSR SprBlkRest
-  SCANSTEP
-  JMP drRHalf0_1_1
-.drRPrg0_6
-  JSR drRHalf0_1_0
-  SCANSTEP
-  JSR SprBlkRest
-  SCANSTEP
-  JMP drRHalf0_1_1
-.drRPrg0_7
-  JSR drRHalf0_1_0
-  SCANSTEP
-  JSR SprBlkRest
-  SCANSTEP
-  JMP drRHalf0_1_1
-.drRPrg1_0
-  JSR drRHalf1_0_0
-  SCANSTEP
-  JSR SprBlkRest
-  SCANSTEP
-  JMP drRHalf1_0_1
-.drRPrg1_1
-  JSR drRHalf1_0_0
-  SCANSTEP
-  JSR SprBlkRest
-  SCANSTEP
-  JMP drRHalf1_0_1
-.drRPrg1_2
-  JSR drRHalf1_0_0
-  SCANSTEP
-  JSR SprBlkRest
-  SCANSTEP
-  JMP drRHalf1_0_1
-.drRPrg1_3
-  JSR drRHalf1_0_0
-  SCANSTEP
-  JSR SprBlkRest
-  SCANSTEP
-  JMP drRHalf1_0_1
-.drRPrg1_4
-  JSR drRHalf1_1_0
-  SCANSTEP
-  JSR SprBlkRest
-  SCANSTEP
-  JMP drRHalf1_1_1
-.drRPrg1_5
-  JSR drRHalf1_1_0
-  SCANSTEP
-  JSR SprBlkRest
-  SCANSTEP
-  JMP drRHalf1_1_1
-.drRPrg1_6
-  JSR drRHalf1_1_0
-  SCANSTEP
-  JSR SprBlkRest
-  SCANSTEP
-  JMP drRHalf1_1_1
-.drRPrg1_7
-  JSR drRHalf1_1_0
-  SCANSTEP
-  JSR SprBlkRest
-  SCANSTEP
-  JMP drRHalf1_1_1
 .drGlyph0_0
   LDY drYcol0,X
   LDA (rowp+0),Y : STA (rowq+0),Y

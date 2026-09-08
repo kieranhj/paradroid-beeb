@@ -995,3 +995,33 @@ The recipe that works, and it is worth keeping:
 
 The third is the one that also proves the **restore** path: `SPR_SAVE` is what the restore routines
 write, and 32 of the 70 folded routines are restores.
+
+### 11k. Interning the duplicate compiled blocks, 2026-09-08 — +2,368 bytes, no cycles
+
+Straight after §11j, and it is the bigger of the two. **Every compiled block is reached only
+through a dispatch table**, so pointing two table entries at one copy costs nothing at all: no
+indirection, no cycles, just a different byte in a table that was always going to be there. It is
+§4c's bank-4 finding — *what pays is redundancy, not compression* — applied to the compiled code.
+
+`emit_rotor_code` now writes every block through a pool keyed on the block's own text, and hands
+back the label that already holds an identical body. What that catches:
+
+| | |
+|---|---|
+| **The two shifts' restore halves are identical** | a 1 px shift does not change WHICH columns a row touches, and a restore is keyed on the column set. 8 `drRHalf` blocks a bank become 4 |
+| **The eight restore programs of a shift are two** | the sequence depends on `phase >> 2`, so phases 0–3 share one and 4–7 the other |
+| **and then the programs collapse across shifts too** | once the halves are shared the two shifts' `drRPrg` bodies are textually identical. The saving compounds — which is why it came out at 2,368 rather than the 2,318 the duplicate-body scan predicted |
+| a handful of blank draw rows | all now a bare `JMP <tail>`, so they are one block |
+
+| | before (post-fold) | after |
+|---|---|---|
+| bank 5 | ends `&BA73`, 1,421 free | ends **`&B5A6`, 2,650 free** (+1,229) |
+| bank 6 | ends `&BAE4`, 1,308 free | ends **`&B671`, 2,447 free** (+1,139) |
+
+**Free bank space is now 225 / 2,650 / 2,447 / 759 = 6,081**, and step 5's 3,955 fits with room
+for the first time.
+
+**Verified the same way as §11j, and against the PRE-FOLD baseline**, so the two changes are
+proved together: seed pinned at `gs_seeded`, aligned on `gameTick`, both stopped at `&111E`, and
+`&3E00–&8000` (18,944 bytes — sprite save areas, tile map, panel, LUTs, strip) compared at two
+checkpoints. **0 differences at both.** Frame lock still **50 passes in 100 fields**.

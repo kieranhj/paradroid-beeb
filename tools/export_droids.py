@@ -406,6 +406,9 @@ def emit_rotor_code(tab, f, rows, slots, row_slot, shifts, pfx):
     """
     labels = {}                     # (shift, key) -> draw label
     rest_labels = {}                # (shift, cols) -> restore label
+    half_labels = {}                # (shift, arr, half) -> restore-half label
+    prg_labels = {}                 # (shift, phase) -> draw-program label
+    rprg_labels = {}                # (shift, phase) -> restore-program label
     draw_bytes = rest_bytes = 0
 
     # THE SHARED TAIL. Every compiled row - 28 draws and 4 restores a shift,
@@ -424,30 +427,58 @@ def emit_rotor_code(tab, f, rows, slots, row_slot, shifts, pfx):
     f.write('  RTS\n')
     tail_bytes = 14
 
+    # INTERNING. Every block below is reached ONLY through a dispatch table,
+    # so pointing two table entries at one copy costs nothing at all - no
+    # indirection, no cycles, just a different byte in a table that was
+    # always going to be there. It is docs/ram-pass.md's bank-4 finding
+    # (no-load §4c) applied to the compiled code: what pays is REDUNDANCY,
+    # not compression.
+    #
+    # What it catches, measured 2026-09-08: the two shifts' restore halves
+    # are identical (a 1 px shift does not change WHICH columns a row
+    # touches, and a restore is keyed on the column set); the eight restore
+    # programs of a shift are two distinct ones, since the sequence depends
+    # on phase>>2; and a handful of blank draw rows collapse onto the same
+    # bare `JMP <tail>`. Interning the halves then makes the programs that
+    # call them textually identical too, so the saving compounds.
+    pool = {}                       # body text -> the label that holds it
+
+    def emit(label, body):
+        """Write `body` under `label`, or nothing at all if a byte-identical
+        body is already out. Returns (label to reference, was it new)."""
+        key = ''.join(body)
+        if key in pool:
+            return pool[key], False
+        pool[key] = label
+        f.write('.%s\n' % label)
+        f.writelines(body)
+        return label, True
+
     for shift in shifts:
         f.write('\\ ---- shift %d px -------------------------------------\n'
                 % shift)
         for n, (key, row) in enumerate(sorted(rows.items())):
             data = shift_row(row, shift)
-            label = 'drD%d_%02d' % (shift, n)
-            labels[(shift, key)] = label
-            f.write('.%s\n' % label)
+            body, cost = [], 3
             for col, b in enumerate(data):
                 if not b:
                     continue        # transparent: not drawn, and not saved
                 m = mode1_mask(b)
-                f.write('  LDY #%d*UNIT_BYTES\n' % col)
-                f.write('  LDA (bufp),Y : STA (svp),Y\n')
+                body.append('  LDY #%d*UNIT_BYTES\n' % col)
+                body.append('  LDA (bufp),Y : STA (svp),Y\n')
                 if m == 0:
                     # every pixel opaque, so the background contributes nothing
-                    f.write('  LDA %s : STA (bufp),Y\n' % colpix(b))
-                    draw_bytes += 10
+                    body.append('  LDA %s : STA (bufp),Y\n' % colpix(b))
+                    cost += 10
                 else:
-                    f.write('  AND #&%02X : ORA %s : STA (bufp),Y\n'
-                            % (m, colpix(b)))
-                    draw_bytes += 12
-            f.write('  JMP %sScanStepRts\n' % pfx)   # the walk, shared
-            draw_bytes += 3
+                    body.append('  AND #&%02X : ORA %s : STA (bufp),Y\n'
+                                % (m, colpix(b)))
+                    cost += 12
+            body.append('  JMP %sScanStepRts\n' % pfx)   # the walk, shared
+            lab, is_new = emit('drD%d_%02d' % (shift, n), body)
+            labels[(shift, key)] = lab
+            if is_new:
+                draw_bytes += cost
 
         sets = []
         for key, row in sorted(rows.items()):
@@ -456,15 +487,16 @@ def emit_rotor_code(tab, f, rows, slots, row_slot, shifts, pfx):
             if cols not in sets:
                 sets.append(cols)
         for n, cols in enumerate(sets):
-            label = 'drR%d_%02d' % (shift, n)
-            rest_labels[(shift, cols)] = label
-            f.write('.%s\n' % label)
+            body, cost = [], 3
             for col in cols:
-                f.write('  LDY #%d*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y\n'
-                        % col)
-                rest_bytes += 6
-            f.write('  JMP %sScanStepRts\n' % pfx)   # the walk, shared
-            rest_bytes += 3
+                body.append('  LDY #%d*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y\n'
+                            % col)
+                cost += 6
+            body.append('  JMP %sScanStepRts\n' % pfx)   # the walk, shared
+            lab, is_new = emit('drR%d_%02d' % (shift, n), body)
+            rest_labels[(shift, cols)] = lab
+            if is_new:
+                rest_bytes += cost
 
     def rest_for(shift, key):
         data = shift_row(rows[key], shift)
@@ -532,7 +564,7 @@ def emit_rotor_code(tab, f, rows, slots, row_slot, shifts, pfx):
         for arr in (0, 1):
             phase = arr * 4
             for half, half_rows in ((0, seq_rows[:5]), (1, seq_rows[5:])):
-                f.write('.drRHalf%d_%d_%d\n' % (shift, arr, half))
+                half_lab = 'drRHalf%d_%d_%d' % (shift, arr, half)
                 # Buffered rather than written straight out, so that the
                 # tail fold can see whether the block ENDS with a SCANSTEP.
                 # Six of the sixteen do - half 0 always, and the two halves
@@ -555,42 +587,48 @@ def emit_rotor_code(tab, f, rows, slots, row_slot, shifts, pfx):
                 else:
                     out.append('  RTS\n')
                     rest_bytes += 1
-                for line in out:
-                    f.write(line)
+                half_labels[(shift, arr, half)], _ = emit(half_lab, out)
 
     f.write('\n')
     for shift in shifts:
         for phase in range(FRAMES):
-            f.write('.drPrg%d_%d\n' % (shift, phase))
+            body = []
             for n, r in enumerate(seq_rows):
                 if n == 5:
-                    f.write('  SCANSTEP\n')                 # row 5, blank
-                    f.write('  JSR SprDigitBlock\n')         # rows 6-13
-                    f.write('  SCANSTEP\n')                 # row 14, blank
+                    body.append('  SCANSTEP\n')              # row 5, blank
+                    body.append('  JSR SprDigitBlock\n')     # rows 6-13
+                    body.append('  SCANSTEP\n')              # row 14, blank
                 op = 'JMP' if n == len(seq_rows) - 1 else 'JSR'
-                f.write('  %s %s\n' % (op, labels[(shift, slots[phase][row_slot[r]])]))
+                body.append('  %s %s\n'
+                            % (op, labels[(shift, slots[phase][row_slot[r]])]))
+            prg_labels[(shift, phase)], _ = emit('drPrg%d_%d' % (shift, phase),
+                                                 body)
 
     f.write('\n')
     for shift in shifts:
         for phase in range(FRAMES):
-            f.write('.drRPrg%d_%d\n' % (shift, phase))
-            f.write('  JSR drRHalf%d_%d_0\n' % (shift, phase >> 2))
-            f.write('  SCANSTEP\n')
-            f.write('  JSR SprBlkRest\n')
-            f.write('  SCANSTEP\n')
-            f.write('  JMP drRHalf%d_%d_1\n' % (shift, phase >> 2))
+            body = ['  JSR %s\n' % half_labels[(shift, phase >> 2, 0)],
+                    '  SCANSTEP\n',
+                    '  JSR SprBlkRest\n',
+                    '  SCANSTEP\n',
+                    '  JMP %s\n' % half_labels[(shift, phase >> 2, 1)]]
+            rprg_labels[(shift, phase)], _ = emit('drRPrg%d_%d'
+                                                  % (shift, phase), body)
 
     # Indexed by the SAME sprSeqBase the fallback uses, so entering a program
     # costs a table read and a poke and no arithmetic at all. Only every tenth
     # entry can be reached; the rest are filled to keep the table square.
     tab.write('\n')
-    for name, kind, half in (('drPrgLo', 'drPrg', 'LO'), ('drPrgHi', 'drPrg', 'HI'),
-                             ('drRPrgLo', 'drRPrg', 'LO'), ('drRPrgHi', 'drRPrg', 'HI')):
+    for name, which, half in (('drPrgLo', prg_labels, 'LO'),
+                              ('drPrgHi', prg_labels, 'HI'),
+                              ('drRPrgLo', rprg_labels, 'LO'),
+                              ('drRPrgHi', rprg_labels, 'HI')):
         tab.write('.%s%s\n' % (pfx, name))
         for shift in shifts:
             for phase in range(FRAMES):
                 tab.write('  EQUB ' + ','.join(
-                    ['%s(%s%d_%d)' % (half, kind, shift, phase)] * len(seq_rows)) + '\n')
+                    ['%s(%s)' % (half, which[(shift, phase)])]
+                    * len(seq_rows)) + '\n')
 
     tab.write('\n')
     tab.write('\\ Sprite row -> position in that sequence; &FF means the row is\n'
