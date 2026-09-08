@@ -408,6 +408,22 @@ def emit_rotor_code(tab, f, rows, slots, row_slot, shifts, pfx):
     rest_labels = {}                # (shift, cols) -> restore label
     draw_bytes = rest_bytes = 0
 
+    # THE SHARED TAIL. Every compiled row - 28 draws and 4 restores a shift,
+    # 70 routines a bank - used to end with SCANSTEP expanded inline and its
+    # own RTS: 13 bytes of walk plus 1, seventy times over. They end `JMP
+    # <tail>` instead, which is 3, so each site gives back 11 and the bank
+    # pays 14 once. The cost is the JMP: 3 cycles per row DRAWN, on a path
+    # that was already a JSR away from its caller.
+    #
+    # It has to be per-bank (hence pfx) because only one bank is paged at a
+    # time and a JMP cannot reach the other. It is at the TOP of the code
+    # section, which is safe because the code section is only ever entered
+    # through the tables - see this function's docstring.
+    f.write('.%sScanStepRts\n' % pfx)
+    f.write('  SCANSTEP\n')
+    f.write('  RTS\n')
+    tail_bytes = 14
+
     for shift in shifts:
         f.write('\\ ---- shift %d px -------------------------------------\n'
                 % shift)
@@ -430,9 +446,8 @@ def emit_rotor_code(tab, f, rows, slots, row_slot, shifts, pfx):
                     f.write('  AND #&%02X : ORA %s : STA (bufp),Y\n'
                             % (m, colpix(b)))
                     draw_bytes += 12
-            f.write('  SCANSTEP\n')      # C: the walk lives in the row
-            f.write('  RTS\n')
-            draw_bytes += 18
+            f.write('  JMP %sScanStepRts\n' % pfx)   # the walk, shared
+            draw_bytes += 3
 
         sets = []
         for key, row in sorted(rows.items()):
@@ -448,9 +463,8 @@ def emit_rotor_code(tab, f, rows, slots, row_slot, shifts, pfx):
                 f.write('  LDY #%d*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y\n'
                         % col)
                 rest_bytes += 6
-            f.write('  SCANSTEP\n')      # C: the walk lives in the row
-            f.write('  RTS\n')
-            rest_bytes += 18
+            f.write('  JMP %sScanStepRts\n' % pfx)   # the walk, shared
+            rest_bytes += 3
 
     def rest_for(shift, key):
         data = shift_row(rows[key], shift)
@@ -519,17 +533,30 @@ def emit_rotor_code(tab, f, rows, slots, row_slot, shifts, pfx):
             phase = arr * 4
             for half, half_rows in ((0, seq_rows[:5]), (1, seq_rows[5:])):
                 f.write('.drRHalf%d_%d_%d\n' % (shift, arr, half))
+                # Buffered rather than written straight out, so that the
+                # tail fold can see whether the block ENDS with a SCANSTEP.
+                # Six of the sixteen do - half 0 always, and the two halves
+                # whose last row restores no columns - and those six can end
+                # `JMP <tail>` like every compiled row does. The other ten
+                # end on a restore and keep their own RTS.
+                out = []
                 for n, r in enumerate(half_rows):
                     key = slots[phase][row_slot[r]]
                     for col in rest_cols(shift, key):
-                        f.write('  LDY #%d*UNIT_BYTES : LDA (svp),Y'
-                                ' : STA (bufp),Y\n' % col)
+                        out.append('  LDY #%d*UNIT_BYTES : LDA (svp),Y'
+                                   ' : STA (bufp),Y\n' % col)
                         rest_bytes += 6
                     if not (half == 1 and n == len(half_rows) - 1):
-                        f.write('  SCANSTEP\n')
+                        out.append('  SCANSTEP\n')
                         rest_bytes += 17
-                f.write('  RTS\n')
-                rest_bytes += 1
+                if out and out[-1] == '  SCANSTEP\n':
+                    out[-1] = '  JMP %sScanStepRts\n' % pfx
+                    rest_bytes += 3 - 17
+                else:
+                    out.append('  RTS\n')
+                    rest_bytes += 1
+                for line in out:
+                    f.write(line)
 
     f.write('\n')
     for shift in shifts:
@@ -579,7 +606,7 @@ def emit_rotor_code(tab, f, rows, slots, row_slot, shifts, pfx):
     emit_bytes(tab, [len(seq_rows) * p for p in range(FRAMES)], per_line=FRAMES)
     tab.write('\n')
 
-    return draw_bytes, rest_bytes
+    return draw_bytes + tail_bytes, rest_bytes
 
 
 def emit_glyph_code(tab, f, mem, shifts, pfx):

@@ -166,13 +166,18 @@ seeded and checked, and a comment at the site should say which paths were.
 - **`sprsplit.asm` → bank 5** (634 B out of bank 6, zero cycles): one
   `PAGEBANK` constant and the include moves. Its header already certifies
   it reads nothing bank-resident.
-- **SCANSTEP tail folding in `tools/export_droids.py`** (~1,050 B in EACH
-  of banks 5 and 6 for ~480 cycles/pass, ~1% of the blit window): the 70
-  compiled rows per bank ending `SCANSTEP:RTS` can end `JMP ScanStepRts`
-  instead. The mechanical-diff check cannot validate it — use the oracle.
-  **Cheaper and less needed since 2026-09-01:** the deferred carry below
-  left a cycle surplus this would spend out of, and took the two banks to
-  674 B and 925 B, so the pressure that made it attractive is off.
+- **SCANSTEP tail folding in `tools/export_droids.py` — SPENT 2026-09-08**,
+  as the first move of `docs/no-load.md` §11. The 70 compiled rows per bank
+  that ended `SCANSTEP` + `RTS` (14 bytes) end `JMP <tail>` (3) instead, with
+  one 14-byte shared tail per bank. **+756 B in EACH of banks 5 and 6** —
+  not the ~1,050 estimated here, because the deferred carry below shortened
+  SCANSTEP from 15 bytes to 13 after this entry was written and the estimate
+  was never re-derived. Cost: **3 cycles per compiled row DRAWN**, so ~120 a
+  pass with two sprites up and ~480 with a full pool — 0.6% of the
+  79,872-cycle pass, and 50/100 still holds. The mechanical diff cannot
+  validate it; it was verified by an A/B differential against the previous
+  build instead — `docs/no-load.md` §11j has the recipe, including the seed
+  pin without which the comparison is noise.
 - **`door.asm` → bank 4** (~610 B of main RAM, high effort): most of
   `door.asm` is called only from bank-4 code and reads `doorDef`; it needs
   ~650 B free in bank 4 first, which SCANSTEP folding (via bank 5 taking

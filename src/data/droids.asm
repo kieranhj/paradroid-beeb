@@ -231,10 +231,12 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   EQUB &01,&08,&04,&05,&09,&01,&02,&01,&01,&04,&03,&09
 
 \ ==== code: sizes differ between the banks ================
-\ ---- shift 0 px -------------------------------------
-.drD0_00
+.ScanStepRts
   SCANSTEP
   RTS
+\ ---- shift 0 px -------------------------------------
+.drD0_00
+  JMP ScanStepRts
 .drD0_01
   LDY #2*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -242,11 +244,9 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #3*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&77 : ORA colPix+6 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD0_02
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD0_03
   LDY #2*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -254,8 +254,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #3*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&77 : ORA colPix+6 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD0_04
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -269,8 +268,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&77 : ORA colPix+6 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD0_05
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -284,8 +282,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&11 : ORA colPix+9 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD0_06
   LDY #0*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -305,8 +302,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&77 : ORA colPix+6 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD0_07
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -320,8 +316,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&77 : ORA colPix+6 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD0_08
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -335,8 +330,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&11 : ORA colPix+9 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD0_09
   LDY #0*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -356,8 +350,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&77 : ORA colPix+6 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD0_10
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -371,8 +364,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&77 : ORA colPix+6 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD0_11
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -386,8 +378,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&11 : ORA colPix+9 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD0_12
   LDY #0*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -407,8 +398,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&77 : ORA colPix+6 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD0_13
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -422,8 +412,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&77 : ORA colPix+6 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD0_14
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -437,8 +426,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&11 : ORA colPix+9 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD0_15
   LDY #0*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -458,8 +446,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&77 : ORA colPix+6 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD0_16
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -473,8 +460,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&77 : ORA colPix+6 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD0_17
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -488,8 +474,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&11 : ORA colPix+9 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD0_18
   LDY #0*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -509,8 +494,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&77 : ORA colPix+6 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD0_19
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -524,8 +508,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&77 : ORA colPix+6 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD0_20
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -539,8 +522,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&11 : ORA colPix+9 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD0_21
   LDY #0*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -560,8 +542,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&77 : ORA colPix+6 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD0_22
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -575,8 +556,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&77 : ORA colPix+6 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD0_23
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -590,8 +570,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&99 : ORA colPix+4 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD0_24
   LDY #0*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -611,8 +590,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&77 : ORA colPix+6 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD0_25
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -626,8 +604,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&77 : ORA colPix+6 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD0_26
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -641,8 +618,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&DD : ORA colPix+1 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD0_27
   LDY #0*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -662,23 +638,19 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&77 : ORA colPix+6 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drR0_00
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drR0_01
   LDY #2*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drR0_02
   LDY #1*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #2*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drR0_03
   LDY #0*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #1*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
@@ -686,12 +658,10 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #5*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 \ ---- shift 1 px -------------------------------------
 .drD1_00
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD1_01
   LDY #2*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -699,11 +669,9 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #3*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&33 : ORA colPix+8 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD1_02
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD1_03
   LDY #2*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -711,8 +679,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #3*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&33 : ORA colPix+8 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD1_04
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -726,8 +693,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&33 : ORA colPix+8 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD1_05
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -741,8 +707,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   LDA colPix+10 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD1_06
   LDY #0*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -762,8 +727,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&33 : ORA colPix+8 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD1_07
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -777,8 +741,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&33 : ORA colPix+8 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD1_08
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -792,8 +755,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   LDA colPix+10 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD1_09
   LDY #0*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -813,8 +775,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&33 : ORA colPix+8 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD1_10
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -828,8 +789,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&33 : ORA colPix+8 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD1_11
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -843,8 +803,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   LDA colPix+10 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD1_12
   LDY #0*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -864,8 +823,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&33 : ORA colPix+8 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD1_13
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -879,8 +837,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&33 : ORA colPix+8 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD1_14
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -894,8 +851,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   LDA colPix+10 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD1_15
   LDY #0*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -915,8 +871,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&33 : ORA colPix+8 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD1_16
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -930,8 +885,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&33 : ORA colPix+8 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD1_17
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -945,8 +899,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   LDA colPix+10 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD1_18
   LDY #0*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -966,8 +919,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&33 : ORA colPix+8 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD1_19
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -981,8 +933,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&33 : ORA colPix+8 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD1_20
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -996,8 +947,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&88 : ORA colPix+5 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD1_21
   LDY #0*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -1017,8 +967,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&33 : ORA colPix+8 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD1_22
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -1032,8 +981,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&33 : ORA colPix+8 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD1_23
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -1047,8 +995,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&CC : ORA colPix+2 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD1_24
   LDY #0*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -1068,8 +1015,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&33 : ORA colPix+8 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD1_25
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -1083,8 +1029,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&BB : ORA colPix+3 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD1_26
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -1098,8 +1043,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&66 : ORA colPix+7 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drD1_27
   LDY #0*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -1119,23 +1063,19 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&BB : ORA colPix+3 : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drR1_00
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drR1_01
   LDY #2*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drR1_02
   LDY #1*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #2*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drR1_03
   LDY #0*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #1*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
@@ -1143,8 +1083,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #5*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 
 \ Five rows of restore inlined. Only the column set matters, and
 \ that depends on shift and phase>>2 alone - so eight of these
@@ -1169,8 +1108,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #5*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drRHalf0_0_1
   LDY #0*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #1*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
@@ -1218,8 +1156,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #5*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drRHalf0_1_1
   LDY #0*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #1*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
@@ -1238,8 +1175,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   SCANSTEP
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drRHalf1_0_0
   SCANSTEP
   SCANSTEP
@@ -1259,8 +1195,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #5*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drRHalf1_0_1
   LDY #0*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #1*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
@@ -1308,8 +1243,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #5*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 .drRHalf1_1_1
   LDY #0*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #1*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
@@ -1328,8 +1262,7 @@ DR_COLPAT_N = 11                 \ colPix entries, asserted against SPR_COLPATS
   LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   SCANSTEP
-  SCANSTEP
-  RTS
+  JMP ScanStepRts
 
 .drPrg0_0
   JSR drD0_00

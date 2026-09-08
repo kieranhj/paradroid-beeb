@@ -776,7 +776,7 @@ step 6 has to move to the front of the queue rather than staying at the back of 
 | supply | bytes |
 |---|---|
 | free now, four banks (225 / 665 / 552 / 759) | 2,201 |
-| SCANSTEP tail folding, ~1,050 in each of banks 5 and 6 | 2,100 |
+| ~~SCANSTEP tail folding, ~1,050 in each of banks 5 and 6~~ **SPENT 2026-09-08, and it was 756 each, not 1,050** (§11j) | ~~2,100~~ **1,512** |
 | `dfsSave`, **terminal** | 912 |
 | step 6's main-RAM reclaim, via relocation (§11b) | ~869 |
 | **total** | **~6,080** |
@@ -784,7 +784,14 @@ step 6 has to move to the front of the queue rather than staying at the back of 
 against **~5,790** of demand — §1a's 8,051, less the 2,262 already spent on the PARTITL
 relocation.
 
-**It closes by roughly 300 bytes, not misses by 1,200.** That margin is thin enough to be wrong in
+**It closes by roughly 300 bytes, not misses by 1,200.** **Both corrections since have gone the
+wrong way** — §11h took 628 off step 6 and §11j 588 off the folding — so on today's measurements
+the sum is about **540 SHORT** rather than 300 over, and §1a's concession (keep one load at the
+title, 769) is what closes it. That is still a different problem from "~1,200 short before the
+reserve is even spent". Every figure except the first row was an estimate; the two that have since
+been measured both came in low, which is the pattern to expect from the rest.
+
+That margin is thin enough to be wrong in
 either direction, and every figure in it except the first row is an estimate. What has changed is
 the *sign*, and with it the answer to "is this possible": yes, on paper, without the PARBRF
 concession — and with the concession (§1a's option, one load kept at the title) there is about a
@@ -837,7 +844,7 @@ step of its own.
    Step 6 yields **241** bytes today, not 869: most of its rows are load-support that cannot go
    until the last load does. It goes back to the endgame, with `dfsSave`'s 912. **SCANSTEP tail
    folding takes its place at the front** — ~2,100 bytes, available today, nothing needed first,
-   and it is what funds step 5.
+   and it is what funds step 5. **DONE 2026-09-08, and it gave 1,512 rather than 2,100 — §11j.**
 3. **Step 5, with §11e's two changes.** The big one: it removes both of `&3000`'s destroyers and
    the bank-5 eviction, which is 5,459 of the original ledger.
 4. **SCANSTEP tail folding.** No longer optional (§1a). ~480 cycles a pass, ~1% of the blit
@@ -916,3 +923,75 @@ From the raw SSD (`build/PARADROID-raw.ssd`, whose `PARMAN` is uncompressed) thr
 §1a's 4,290 for the same content held unpacked. The two ways of holding it are 335 apart, which
 is the measured version of §11d's "the generator saves ~200-300": it is the packing that saves,
 not where the depack lands.
+
+### 11j. SCANSTEP tail folding — as built, 2026-09-08. +1,512 bytes
+
+**The first move of §11f, and `docs/ram-pass.md`'s held reserve is now spent.**
+
+Every compiled rotor row used to end with the `SCANSTEP` macro expanded inline and its own `RTS`:
+
+```
+  INC svp : INC bufp : LDA bufp : AND #7 : BNE P%+5 : JSR SprScanRow   \ 13 bytes
+  RTS                                                                  \  1
+```
+
+They end `JMP <tail>` instead — 3 bytes — and each bank carries one copy of the tail. **70 sites a
+bank**, so 70 × 11 = 770 back, less 14 for the tail: **756 a bank, 1,512 in all.**
+
+| | before | after |
+|---|---|---|
+| bank 5 (`spr`) | ends `&BD67`, **665** free | ends `&BA73`, **1,421** free |
+| bank 6 (`spr2`) | ends `&BDD8`, **552** free | ends `&BAE4`, **1,308** free |
+
+**Not the ~2,100 `ram-pass.md` promised.** That entry predates the SCANSTEP deferred carry
+(2026-09-01), which took the macro from 15 bytes to 13 and therefore took 2 bytes off what each
+fold could give back. The estimate was never re-derived; 756 a bank is the measured figure.
+
+Where the 70 come from: 28 draw rows + 4 restore rows per shift, two shifts a bank, is 64 — plus
+**6 `drRHalf` blocks whose last row emits a `SCANSTEP` immediately before the block's `RTS`**. The
+emitter buffers each `drRHalf` block now so it can see whether it ends that way; the other ten end
+on a restore and keep their own `RTS`.
+
+**The cost is 3 cycles per compiled row DRAWN**, and nothing else — the JMP is on a path that was
+already a JSR from its caller. Ten rotor rows drawn and ten restored per sprite makes 20 a sprite a
+pass: ~120 cycles with two sprites up, ~480 with a full pool of eight. Against a 79,872-cycle pass
+that is **0.6% at worst**, and the frame lock is unchanged: **50 passes in 100 fields on both
+builds**, measured the same way on each.
+
+#### How it was verified, and the trap that makes it work
+
+The mechanical listing diff cannot validate this (it changes instructions by design), and the
+buffer oracle checks the TILE layer with the sprite draws NOPed — so it cannot see this either.
+The check that fits is an **A/B differential against the previous build**: same ship, same pass,
+compare what was drawn.
+
+**The trap: two builds do not play the same game.** `TiBootPal` seeds `drSeed` from `TiWait`'s
+title dwell, and the two builds boot at different speeds because their disc images differ in size —
+so the same key presses at the same frame counts give a different seed, a different starting deck
+and a different droid layout. The first attempt scored **1,672 of 10,240** on a build that is
+provably correct, entirely from that.
+
+The recipe that works, and it is worth keeping:
+
+1. Boot both, **breakpoint at `gs_seeded`** (`&A795`, bank 4 — `droid.asm`, just past the LFSR
+   mix), press fire at the title and let each machine stop there.
+2. **Poke `drSeed` to the same constant in both** (`&B5B6`, `write_memory` with `bank: 4`), then
+   continue. Both then generate the identical ship — confirmed by reading `drType` back through
+   `bank: 4` and comparing.
+3. Drive both with the same input sequence, then **align on `gameTick` (`&2E4C`), never on frames**:
+   the counter starts at the game, so equal `gameTick` means equal passes played.
+4. **Stop both at the top of the main loop** (`&111E`) so the dumps are taken at the same point
+   within the pass, and confirm the sprite pool (`sprActive`/`sprUnit`/`sprShift`/`sprScrY`/
+   `sprFrame`, `&2CFC`) matches before trusting the buffer.
+5. `save_memory` and `cmp`.
+
+**The result: three checkpoints, zero differences.**
+
+| checkpoint | region | bytes | differences |
+|---|---|---|---|
+| at rest, 2 sprites up, shift 1 | play buffer `&5800` | 10,240 | **0** |
+| after 150 frames right + 110 down, player at shift 2 (so bank 6's compiled code) | play buffer | 10,240 | **0** |
+| after a further 63 frames left | `&3E00–&8000` — sprite save areas, tile map, panel, LUTs and the strip | 18,944 | **0** |
+
+The third is the one that also proves the **restore** path: `SPR_SAVE` is what the restore routines
+write, and 32 of the 70 folded routines are restores.
