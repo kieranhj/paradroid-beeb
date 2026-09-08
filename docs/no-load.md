@@ -833,9 +833,11 @@ step of its own.
    risk. Cheaper now than it was: the `beeb-*` skills are installed, and jsbeeb-mcp's `key_down`
    takes internal key numbers, so **`DEBUG_DECK`'s CTRL+`[` is drivable at last** — §8's note that
    it is not, is out of date.
-2. **Step 6, the DFS reclaim — moved to the FRONT.** ~869 bytes of main RAM, banked as *bank*
-   space by relocating a bank routine into the freed image (§11b). Everything after it is funded
-   by it, which is why it can no longer be last.
+2. ~~**Step 6, the DFS reclaim — moved to the FRONT.**~~ **WRONG, and §11h is the measurement.**
+   Step 6 yields **241** bytes today, not 869: most of its rows are load-support that cannot go
+   until the last load does. It goes back to the endgame, with `dfsSave`'s 912. **SCANSTEP tail
+   folding takes its place at the front** — ~2,100 bytes, available today, nothing needed first,
+   and it is what funds step 5.
 3. **Step 5, with §11e's two changes.** The big one: it removes both of `&3000`'s destroyers and
    the bank-5 eviction, which is 5,459 of the original ledger.
 4. **SCANSTEP tail folding.** No longer optional (§1a). ~480 cycles a pass, ~1% of the blit
@@ -859,3 +861,58 @@ step of its own.
   streams.
 - **Fragmentation is not in the totals.** Nothing can span a bank (§1a), and the arithmetic above
   is a sum.
+
+### 11h. Step 6 measured, 2026-09-08 — it yields 241 bytes today, not 869
+
+**§11f put step 6 at the front because it funds everything after it. That was too optimistic and
+the seed run says so.** Most of §5's 869 bytes only come back when the LAST load goes, and the
+three main-RAM spans were quoted as whole spans without checking what is in them.
+
+Measured by `beeb-bss-bugs`'s recipe on the DEV build: hard reset to BASIC, seed `&0100-&017F`,
+`&0300-&03DF` and `&0D01-&0D8F` with `&A5`, **soft** reset with SHIFT, then boot → title → the
+briefing on its timeout (which loads `PARMAN`) → fire out of the briefing (which reloads
+`PARASPR`, `PARAFNT` and `PARALOW`) → play. So every post-boot load is exercised before the
+readback.
+
+| span | §5 claimed | measured free | what is in the rest |
+|---|---|---|---|
+| `&0100-&017F` stack page | 128 | **128** | nothing — every byte still `&A5` |
+| `&0300-&03DF` | 224 | **96** | `&0300-&037E` is the MOS's VDU workspace and is comprehensively written. `&037F-&03DF` survives, **except one byte at `&03D1`** (read back as 25) |
+| `&0D01-&0D8F` | 143 | **17** | `&0D01-&0D4E` is DFS's NMI handler, written when DFS claims NMI. `&0D60` up is **already the game's own `lowcode2`** — §5 counted space the port has spent |
+| | **495** | **241** | |
+
+The other six rows of §5's table (`SaveDfsWs`/`RestoreDfsWs` 74, the OSCLI strings 52, their call
+sites ~40, `UnpackBankIn`+`BootBanks`+strings 113, `PageCopyAt`/`PageLowIn` 65, `.start` 30 = 374)
+are all code image, and **all of them are load-support that cannot go while any post-boot load
+remains**. `UnpackBankIn` in particular is not boot-only: the briefing exit calls it.
+
+**So step 6 is not the funding step and cannot come first.** What is genuinely boot-only and
+evictable today is `.start` (30 B) and `BootBanks` (124 B) — hexwab's step 1, ~154 bytes — plus
+these 241 of scattered workspace, and the largest contiguous piece of any of it is the stack
+page's 128, which is not loadable from disc and would have to be copied down.
+
+**The stack-page measurement did get stronger, though.** `docs/ram-pass.md` lists the transfer,
+the lift and the briefing as paths its 2026-08-31 run never exercised. This run went through the
+briefing and both of its loads, and all 128 bytes came back `&A5`.
+
+**Revised order:** SCANSTEP tail folding (§11f step 4) moves to the FRONT. It is ~2,100 bytes,
+it is available today, it needs nothing else first, and it is what actually funds step 5 — which
+was always its role in §1a. Step 6 moves back to where §5 had it, as part of the endgame with
+`dfsSave`'s 912.
+
+### 11i. The briefing's pieces, packed — measured, not estimated
+
+From the raw SSD (`build/PARADROID-raw.ssd`, whose `PARMAN` is uncompressed) through
+`bin/zx0.exe`, 2026-09-08:
+
+| piece | raw | ZX0 | |
+|---|---|---|---|
+| briefing text + `sndchat` (`&8000-&920F`) | 4,623 | **2,474** | 53.5% — as ONE stream; §5's five page streams cost **2,805**, so splitting costs 331 and buys a 1,082-byte buffer instead of a 4,623-byte one |
+| `briefman` (`&920F-&93D7`) | 456 | **374** | 82.0% |
+| `keyredef` (`&93D7-&97CD`) | 1,014 | **776** | 76.5% — confirms §1a's figure exactly |
+| `PARMAN` whole | 6,093 | **3,595** | 59.0% — confirms §4b |
+
+**Step 5's storage demand, stored as separable streams: 2,805 + 374 + 776 = 3,955 bytes**, against
+§1a's 4,290 for the same content held unpacked. The two ways of holding it are 335 apart, which
+is the measured version of §11d's "the generator saves ~200-300": it is the packing that saves,
+not where the depack lands.
