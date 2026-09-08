@@ -60,3 +60,6 @@ __pycache__/
 .claude/settings.local.json
 .labels.json
 docs/Kieran's Human Notes.txt
+
+# Claude Code scheduled-task lock
+.claude/scheduled_tasks.lock

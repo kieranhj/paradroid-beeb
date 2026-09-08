@@ -73,8 +73,44 @@ tiles into a scrolled buffer), and expect legitimate diffs from doors animating 
 `docs/ram-pass.md` §"The oracle recipe changed" has the full checklist.
 
 For a change meant to be purely mechanical, there is a faster check that is also stronger: reduce
-both builds' beebasm listings to a stream of (mnemonic, addressing class) and compare. A match
-proves no instruction was added, removed or reordered.
+both builds' beebasm listings to a stream of one entry per emitted instruction and compare. A
+match proves no instruction was added, removed or reordered. **`tools/listing_stream.py` is that
+reducer** — checked in 2026-09-08, after being written inline and thrown away every time it was
+wanted, so no two runs were comparable. Today's tree is **23,528 instructions**. It is blind to
+an operand's VALUE by design (a constant changed 8 → 4 diffs clean), so compare the disc images
+byte for byte first and reach for the stream only when the addresses were MEANT to move.
+
+**The verification procedures are skills, in `.claude/skills/beeb-*`.** They came from
+`C:\Users\khcon\OneDrive\BEEB\Repos\beeb-port-kit` — KC's kit distilled from this port and
+Edge Grinder — and were adapted to this project on 2026-09-08: `beeb-smoke-test`,
+`beeb-buffer-oracle`, `beeb-cycle-timing`, `beeb-frame-drops`, `beeb-identical-build`,
+`beeb-measure-fact`, `beeb-key-numbers`, `beeb-sound-verify`, `beeb-bss-bugs`,
+`beeb-cross-emulator`, `beeb-close-layer`. Each is the checklist with the exact MCP calls and
+this project's parameters filled in; read the relevant one before measuring something rather than
+reconstructing the method from the prose here. **The kit itself has moved to the Baron assembler
+and this project has not** — ignore Baron, `--check` and `tools/listing.py` in anything read
+from the kit; beebasm is what is tried and tested here. The kit is upstream: a genuine
+improvement goes back to it too.
+
+**jsbeeb-mcp is on 3.4.0 and two long-standing complaints are fixed** (both measured here
+2026-09-08, on the shipping image):
+
+- **`read_memory` / `write_memory` / `save_memory` take `bank:` (0-15)** and sample that bank
+  whatever ROMSEL says, putting the map back afterwards and reporting the `paging` they read
+  through. So a bank-4 variable can be read mid-pass while the blitter has bank 5 up —
+  `bank: 7` returned PARXFER's head while `paging.romsel` read 5. Without `bank:`, a read above
+  `&8000` is still whatever happens to be paged.
+- **The screenshot no longer misrenders the rupture.** Title, briefing and play all captured
+  correctly (the capture is taken in the `paint_ext` vsync callback now). It is good enough for
+  "did it boot and is the frame the right shape" and nothing more: the buffer is still the
+  oracle, for the older and separate reason that screenshots have said "fine" when it was not.
+
+Also worth knowing: `run_frames` steps painted frames and is what to use for anything
+frame-oriented (`run_for_cycles` drifts, a field being 39,936 cycles and the MOS frame 40,000);
+`save_state` / `restore_state` snapshot the whole machine server-side, so a prepared machine can
+be reached once and restored between attempts — but **the keyboard is not in the snapshot**, so
+release what you were holding; and `key_down` takes `internal:` / `inkey:` / `col`+`row` as well
+as a name, and reports the matrix key that moved, which measures a key number in one call.
 
 ## Target
 
