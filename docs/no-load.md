@@ -8,6 +8,11 @@ analysis; this file is the working copy, kept current as the branch lands.
 **Read the arena rule below before touching `&4600`.** It is the only invariant on the branch and
 it has already been broken twice.
 
+**STATUS, 2026-09-09: §12 IS THE HANDOVER — read it first.** Four commits on the night of
+2026-09-08 took free bank space from 2,201 to **6,081**, so **step 5 fits for the first time** and
+space is no longer the blocker. What is left is architectural and §12a lists the three choices it
+needs.
+
 **STATUS, 2026-09-08: RESUMED, and §10's test list is cleared** (all but real hardware, the
 transfer's lose path and a systematic rotor walk). **§11 is the current plan** — the goal is reachable; §1a's
 "~1,200 short" missed two supplies worth ~1,800 (`dfsSave`'s 912 bytes of bank 6, and main-RAM
@@ -1025,3 +1030,88 @@ for the first time.
 proved together: seed pinned at `gs_seeded`, aligned on `gameTick`, both stopped at `&111E`, and
 `&3E00–&8000` (18,944 bytes — sprite save areas, tile map, panel, LUTs, strip) compared at two
 checkpoints. **0 differences at both.** Frame lock still **50 passes in 100 fields**.
+
+---
+
+## 12. WHERE THE NIGHT OF 2026-09-08 GOT TO — read this first
+
+Four commits, each verified and each with its own section above. **The branch is in a good state:
+it builds, it plays, and every change is proved byte-identical in what it draws.**
+
+| | |
+|---|---|
+| `dc62e8c` | §11: the plan re-audited. §10's test list cleared in jsbeeb |
+| `7236ba2` | §11h/§11i: step 6 measured (241 bytes, not 869) and the briefing's pieces packed |
+| `bd6a4f3` | §11j: SCANSTEP tail folding — **+1,512** |
+| `4304843` | §11k: interning the duplicate compiled blocks — **+2,368**, and free |
+
+**Free bank space went from 2,201 to 6,081 in a night**, all of it in the two sprite banks and
+**none of it costing a cycle** except the folding's 3-per-row (0.6% of a pass at worst; the frame
+lock still measures 50 passes in 100 fields).
+
+| bank | at the start of the night | now |
+|---|---|---|
+| 4 (data) | 225 | 225 |
+| 5 (spr) | 665 | **2,650** |
+| 6 (spr2) | 552 | **2,447** |
+| 7 (xfer) | 759 | 759 |
+| **total** | **2,201** | **6,081** |
+
+### The ledger, restated
+
+**Step 5's demand is 3,955** (§11i, measured: 2,805 of page streams + 374 `briefman` + 776
+`keyredef`) **against 6,081 of supply. It fits for the first time, with 2,126 to spare.** Space is
+no longer what blocks the no-load goal.
+
+That also means **further byte-hunting is no longer the priority** — it was, right up until
+tonight. What remains is architectural, and §12a is the part that wants a decision rather than
+more measuring.
+
+### 12a. What is left, and what it needs from KC
+
+**Step 5 is a real rearrangement and it is where I stopped.** The shape is §11e's and the space is
+now there, but every option below changes where things live and how the briefing is fed, and
+`CLAUDE.md` says that is agreed before it is built rather than after. The choices:
+
+1. **Where each piece lives.** `briefman` (456, must be unpacked to run) and the five page streams
+   (2,805 packed) and `keyredef` (776 packed) have to be distributed across banks 5 and 6, and
+   nothing may span a bank. There is room for several arrangements; the one that matters is
+   whether the briefing's code and the text it walks end up in the SAME bank, because only one is
+   visible at a time.
+2. **Which buffer the pages depack into.** The tile map is 1,024 and §5's largest page is 1,082 —
+   **56 bytes too big**. Either the exporter splits the text into six or seven streams instead of
+   five (costing a little more packed size but fitting the map exactly), or the buffer becomes the
+   map plus something else, which is not contiguous. My recommendation is more, smaller streams:
+   it keeps the arena rule (§2) intact and unchanged.
+3. **`keyredef` runs from the map.** 1,014 unpacked against the map's 1,024 — ten bytes of margin,
+   and it grows if the redefine screen ever gains a line.
+
+**`PARBRF` and `PARALOW` looked like the easy pair and they are not.** Both would now fit in a bank
+raw (1,012 and 919, and there is room), which would take the post-boot loads from five to three
+without touching the briefing at all. The obstacle is mechanical: `PARTITL` rides in bank 7 via
+`COPYBLOCK`, which works **only because bank 7's block is the last one assembled**, so nothing
+overwrites `&8000` before its `SAVE`. Bank 6's `SAVE` cannot be deferred the same way — bank 7's
+block re-uses the same addresses immediately after it. Options are to reorder the bank blocks (the
+`ALIGN` pads and `xfericon.asm`'s position are load-bearing, so this is not free), to assemble the
+low overlay inside bank 6's block before the `COPYBLOCK` (beebasm resolves constants in file order,
+so this risks a forward-reference tangle), or to add a two-pass build step. **Each is a build
+change and none should be picked unattended.**
+
+### 12b. What was NOT done, and is still true from §10
+
+Real hardware. The transfer's LOSE path. A systematic walk of all eight rotor phases and 24 types
+(the A/B differential covers what is drawn far better than eyes would, but only for the sprites
+that happened to be on screen).
+
+### 12c. Two things worth keeping from the method
+
+**The A/B differential recipe (§11j) is now the tool for anything that changes the compiled code**,
+and it is cheap to re-run: pin the seed at `gs_seeded`, align on `gameTick`, stop both machines at
+`&111E`, compare `&3E00-&8000`. It found nothing wrong tonight in four checkpoint pairs, but the
+first attempt — before the seed was pinned — reported 1,672 wrong bytes on a provably correct
+build, which is exactly the false positive that would have cost a session.
+
+**The estimates in this document have been running low.** Three have now been measured against
+their guesses: step 6 (869 -> 241), the tail folding (2,100 -> 1,512) and the duplicate-block
+interning (2,318 -> 2,368, the only one that came in high, and only because the saving compounds).
+Treat the rest of §11c the same way: measure before spending.
