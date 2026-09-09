@@ -4263,22 +4263,13 @@ INCLUDE "src/dbgpanel.asm"     \ the debug readouts, beside the panel they draw 
 \ Nothing to do with the panel: it is here because bank 6 has the room
 \ and because every byte it reads is main RAM or zero page, so it can
 \ answer the question without bank 4. sprite.asm holds the bridge.
-\ ITS GEOMETRY HALF IS BANK 5's SINCE 2026-09-01: SprScanCls fills the
-\ per-slot class table (sprCls, low overlay) before this runs — see
-\ src/sprscan.asm.
-\ ---- the tranche decision's geometry half, back home --------
-\ SprScanCls WAS SPLIT OUT OF sprsplit.asm INTO BANK 5 ON 2026-09-01 and
-\ came back on 2026-09-09. The split was never a design: the whole file
-\ is 634 B, it fitted no bank's free space, and this bank had seven bytes
-\ left - so the geometry went to bank 5 and the answer crossed the page
-\ flip in sprCls. Unfolding bank 6's SCANSTEP tail left the room, and
-\ bank 5 needed the 538 back to unfold its own (docs/no-load.md 11m).
-\ IT COSTS A PAGE FLIP LESS THAN THE SPLIT DID. SprSplitOK used to page
-\ bank 5, call the geometry, page bank 6 and call the decision; now it
-\ pages this bank once and calls both. Every byte SprScanCls reads is
-\ main RAM, zero page or the low overlay, which is what made it movable
-\ in the first place and is just as true here.
-INCLUDE "src/sprscan.asm"
+\ IT WAS TWO FILES UNTIL 2026-09-09 and is one again: SprScanCls was
+\ split out into bank 5 on 2026-09-01 because the whole file (634 B)
+\ fitted no bank's free space and this one had seven bytes left. It came
+\ home when the SCANSTEP tail unfolded (docs/no-load.md 11m), sat beside
+\ sprsplit.asm as a second file for a day, and went back into it - the
+\ split was never a design (21e). SprSplitOK pages this bank once and
+\ calls both halves, which is a page flip less than the split cost.
 INCLUDE "src/sprsplit.asm"
 
 \ The string table is NOT here any more: it is main RAM's, in PARAFNT,

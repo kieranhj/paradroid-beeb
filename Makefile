@@ -110,7 +110,7 @@ ASM = \
   src/lowbss.asm src/lowcode.asm src/lowcode2.asm src/panel.asm \
   src/player.asm src/portrait.asm src/ruptalign.asm src/rupture.asm \
   src/screen.asm src/scroll.asm src/sound.asm src/sprfx.asm \
-  src/sprite.asm src/sprscan.asm src/sprsplit.asm src/swram.asm \
+  src/sprite.asm src/sprsplit.asm src/swram.asm \
   src/title.asm src/xfer.asm src/xfericon.asm src/zx0depack.asm
 
 # Converted C64 data, committed so the tree assembles without a local
