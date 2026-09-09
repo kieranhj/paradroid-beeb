@@ -219,17 +219,16 @@
   EQUB &01,&08,&04,&05,&09,&01,&02,&01,&01,&04,&03,&09
 
 \ ==== code: sizes differ between the banks ================
-.xScanStepRts
-  SCANSTEP
-  RTS
 \ ---- shift 2 px -------------------------------------
 .drD2_00
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD2_01
   LDY #3*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&11 : ORA colPix+9 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD2_04
   LDY #2*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -240,7 +239,8 @@
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&11 : ORA colPix+9 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD2_05
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -257,7 +257,8 @@
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&77 : ORA colPix+6 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD2_06
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -274,7 +275,8 @@
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&11 : ORA colPix+9 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD2_07
   LDY #2*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -285,7 +287,8 @@
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&11 : ORA colPix+9 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD2_08
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -302,7 +305,8 @@
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&77 : ORA colPix+6 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD2_09
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -319,7 +323,8 @@
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&11 : ORA colPix+9 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD2_10
   LDY #2*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -330,7 +335,8 @@
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&11 : ORA colPix+9 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD2_11
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -347,7 +353,8 @@
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&77 : ORA colPix+6 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD2_12
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -364,7 +371,8 @@
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&11 : ORA colPix+9 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD2_13
   LDY #2*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -375,7 +383,8 @@
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&11 : ORA colPix+9 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD2_14
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -392,7 +401,8 @@
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&77 : ORA colPix+6 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD2_15
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -409,7 +419,8 @@
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&11 : ORA colPix+9 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD2_16
   LDY #2*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -420,7 +431,8 @@
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&11 : ORA colPix+9 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD2_17
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -437,7 +449,8 @@
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&77 : ORA colPix+6 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD2_18
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -454,7 +467,8 @@
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&11 : ORA colPix+9 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD2_19
   LDY #2*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -465,7 +479,8 @@
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&11 : ORA colPix+9 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD2_20
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -482,7 +497,8 @@
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&77 : ORA colPix+6 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD2_21
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -499,7 +515,8 @@
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&11 : ORA colPix+9 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD2_22
   LDY #2*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -510,7 +527,8 @@
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&99 : ORA colPix+4 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD2_23
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -527,7 +545,8 @@
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&77 : ORA colPix+6 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD2_24
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -544,7 +563,8 @@
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&11 : ORA colPix+9 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD2_25
   LDY #2*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -555,7 +575,8 @@
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&DD : ORA colPix+1 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD2_26
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -572,7 +593,8 @@
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&77 : ORA colPix+6 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD2_27
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -589,28 +611,33 @@
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&DD : ORA colPix+1 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drR2_01
   LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drR2_02
   LDY #2*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drR2_03
   LDY #1*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #2*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #5*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 \ ---- shift 3 px -------------------------------------
 .drD3_01
   LDY #3*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&88 : ORA colPix+5 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD3_04
   LDY #2*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -621,7 +648,8 @@
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   LDA colPix+10 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD3_05
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -638,7 +666,8 @@
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&33 : ORA colPix+8 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD3_06
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -655,7 +684,8 @@
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   LDA colPix+10 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD3_07
   LDY #2*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -666,7 +696,8 @@
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   LDA colPix+10 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD3_08
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -683,7 +714,8 @@
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&33 : ORA colPix+8 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD3_09
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -700,7 +732,8 @@
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   LDA colPix+10 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD3_10
   LDY #2*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -711,7 +744,8 @@
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   LDA colPix+10 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD3_11
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -728,7 +762,8 @@
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&33 : ORA colPix+8 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD3_12
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -745,7 +780,8 @@
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   LDA colPix+10 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD3_13
   LDY #2*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -756,7 +792,8 @@
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   LDA colPix+10 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD3_14
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -773,7 +810,8 @@
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&33 : ORA colPix+8 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD3_15
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -790,7 +828,8 @@
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   LDA colPix+10 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD3_16
   LDY #2*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -801,7 +840,8 @@
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   LDA colPix+10 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD3_17
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -818,7 +858,8 @@
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&33 : ORA colPix+8 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD3_18
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -835,7 +876,8 @@
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   LDA colPix+10 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD3_19
   LDY #2*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -846,7 +888,8 @@
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&88 : ORA colPix+5 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD3_20
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -863,7 +906,8 @@
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&33 : ORA colPix+8 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD3_21
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -880,7 +924,8 @@
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   LDA colPix+10 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD3_22
   LDY #2*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -891,7 +936,8 @@
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&CC : ORA colPix+2 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD3_23
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -908,7 +954,8 @@
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&33 : ORA colPix+8 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD3_24
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -925,7 +972,8 @@
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&88 : ORA colPix+5 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD3_25
   LDY #2*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -936,7 +984,8 @@
   LDY #4*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&66 : ORA colPix+7 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD3_26
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -953,7 +1002,8 @@
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&BB : ORA colPix+3 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drD3_27
   LDY #1*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
@@ -970,7 +1020,8 @@
   LDY #5*UNIT_BYTES
   LDA (bufp),Y : STA (svp),Y
   AND #&EE : ORA colPix+0 : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 
 \ Five rows of restore inlined. Only the column set matters, and
 \ that depends on shift and phase>>2 alone - so eight of these
@@ -994,7 +1045,8 @@
   LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #5*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drRHalf2_0_1
   LDY #1*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #2*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
@@ -1036,7 +1088,8 @@
   LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #5*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 .drRHalf2_1_1
   LDY #1*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #2*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
@@ -1054,7 +1107,8 @@
   LDY #3*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   LDY #4*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y
   SCANSTEP
-  JMP xScanStepRts
+  SCANSTEP
+  RTS
 
 .drPrg2_0
   JSR drD2_00

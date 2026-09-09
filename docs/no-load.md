@@ -1037,6 +1037,74 @@ checkpoints. **0 differences at both.** Frame lock still **50 passes in 100 fiel
 
 ---
 
+### 11l. Selling bank 6's tail fold back, 2026-09-09 — −613 bytes, +3 cycles a compiled row
+
+**§11j's numbers are wrong and had been since the day they were written.** It records 70 sites a
+bank and **756 bytes**; §11k's interning landed the same day, collapsed 13 of those sites onto
+shared copies, and nobody netted the two off. Counted and then measured on 2026-09-09:
+
+| | sites a bank | bytes a bank |
+|---|---|---|
+| §11j as recorded | 70 | 756 |
+| **actual, after §11k** | **57** | **613** |
+
+Measured, not derived: the exporter was unfolded wholesale, the bank-limit `ASSERT`s commented
+out, and the gauge read. Bank 5 `&BFA8` → `&C21B` and bank 6 `&BB9A` → `&BE0D`, both **627** —
+which is 613 plus the 14-byte tail that is then dead. 57 × 11 = 627 exactly.
+
+**The cycle side is unchanged by any of this**, because interning changed which copies exist and
+not how many rows execute: 3 cycles per compiled row **drawn**, 20 rows a sprite a pass, so ~120
+with two sprites up and **~480 with a full pool of eight** — 0.6% of a 79,872-cycle pass.
+
+#### The decision (KC, 2026-09-09): unfold bank 6, keep bank 5 folded
+
+`tools/export_droids.py` grows a `FOLD_TAIL` tuple of bank indices; it is `(0,)`. The two banks
+are asymmetric because their free space is:
+
+| | free before | free after | fold |
+|---|---|---|---|
+| bank 5, `droids.asm`, shifts 0/1 px | 88 | **88** | kept — unfolding is 613 and there are 88 |
+| bank 6, `droids2.asm`, shifts 2/3 px | 1,126 | **513** | **sold back** |
+
+A sprite picks its bank on sub-pixel X, so about half the pool draws through the faster copy:
+**~240 cycles a pass at eight slots** rather than the ~480 unfolding both would give.
+
+**Nothing in the blitter cares which way a bank went.** The tails were already per-bank (a `JMP`
+cannot reach the other bank), every compiled block is entered through a dispatch table, and the
+tables are the same size in both files by construction — which is what `main.asm`'s address
+asserts check, and they pass.
+
+#### Why unfolding bank 5 as well does not fit, and what would make it
+
+Bank 5 needs **525** more than it has. Its only movable content is a briefing page stream —
+`brstream2` (574 packed) or `brstream3` (566) — and moving one gives bank 5 654, so it unfolds
+with 41 to spare. **The evicted stream then has nowhere to land**: bank 6 after its own unfold has
+513, bank 7 has 171, bank 4 has 225. `brstream3` is **53 bytes too big for the largest hole.**
+
+That is a bin-packing failure and not a space one — total machine slack after unfolding both banks
+is 384 bytes. Fifty-three bytes moved out of bank 6 into bank 7 or bank 4 closes it (`svdecks6.asm`
+is 64 B and a candidate, subject to which bank is paged when it is read). The alternative is to let
+`make_briefing.py` split a page into two streams that depack back-to-back into `BR_RECS`, which
+turns the packing into arithmetic but costs the clean *no stream may span a bank* invariant.
+
+**It was not done, and the reason is worth keeping:** the port holds 50 passes in 100 fields, so
+240 more cycles a pass buys headroom and nothing visible. Taking banks 5 and 6 back to 41 and ~0
+bytes — the state this whole branch spent three weeks climbing out of — is not worth 240 cycles
+until something specific wants them.
+
+#### How it was verified
+
+Not by the buffer oracle (which NOPs the sprite draws and so cannot see this) and not by the
+listing stream (which changes instructions by design). **By textual equivalence, which is stronger
+than either**: expand every `JMP xScanStepRts` in the OLD `droids2.asm` into `SCANSTEP` + `RTS`,
+drop the now-dead tail, and diff against the new file. 2,388 lines → 2,442, and **identical to the
+new file's 2,442**. The generated code is provably the same program.
+
+`droids.asm` is byte-identical to before, which git confirms. Then built and played: title, into a
+deck, and a long run right with the deck scrolling clean behind the droid — bank 6's shifts draw
+and restore correctly.
+
+
 ## 12. WHERE THE NIGHT OF 2026-09-08 GOT TO — read this first
 
 Four commits, each verified and each with its own section above. **The branch is in a good state:

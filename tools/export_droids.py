@@ -373,7 +373,7 @@ def build_rotor_code(mem, frames, bottoms):
     return rows, slots, row_slot
 
 
-def emit_rotor_code(tab, f, rows, slots, row_slot, shifts, pfx):
+def emit_rotor_code(tab, f, rows, slots, row_slot, shifts, pfx, fold):
     """Compiled draw and restore routines for every distinct rotor row.
 
     TWO OUTPUTS, and which one a thing goes to is load-bearing. `tab` is the
@@ -411,21 +411,36 @@ def emit_rotor_code(tab, f, rows, slots, row_slot, shifts, pfx):
     rprg_labels = {}                # (shift, phase) -> restore-program label
     draw_bytes = rest_bytes = 0
 
-    # THE SHARED TAIL. Every compiled row - 28 draws and 4 restores a shift,
-    # 70 routines a bank - used to end with SCANSTEP expanded inline and its
-    # own RTS: 13 bytes of walk plus 1, seventy times over. They end `JMP
-    # <tail>` instead, which is 3, so each site gives back 11 and the bank
-    # pays 14 once. The cost is the JMP: 3 cycles per row DRAWN, on a path
-    # that was already a JSR away from its caller.
+    # THE SHARED TAIL, AND IT IS NOW PER BANK - see FOLD_TAIL below for
+    # which bank folds and why. Every compiled row ends with the walk; a
+    # FOLDED bank writes `JMP <tail>` (3 bytes) and pays 14 once for the
+    # tail, an UNFOLDED one expands SCANSTEP inline and keeps its own RTS
+    # (13 + 1). So a fold gives back 11 a site, less the tail.
     #
-    # It has to be per-bank (hence pfx) because only one bank is paged at a
-    # time and a JMP cannot reach the other. It is at the TOP of the code
-    # section, which is safe because the code section is only ever entered
-    # through the tables - see this function's docstring.
-    f.write('.%sScanStepRts\n' % pfx)
-    f.write('  SCANSTEP\n')
-    f.write('  RTS\n')
-    tail_bytes = 14
+    # MEASURED, on the tree of 2026-09-09: 57 sites a bank, so 613 bytes a
+    # bank. NOT the 756 that docs/no-load.md 11j records - that figure is
+    # from before 11k's interning, which collapsed 13 of the 70 sites onto
+    # shared copies the same day and was never netted off against it.
+    #
+    # The cost of folding is 3 cycles per compiled row DRAWN, on a path
+    # that was already a JSR away from its caller: ~480 a pass with a full
+    # pool of eight, 0.6% of a 79,872-cycle pass.
+    #
+    # A tail has to be per-bank (hence pfx) because only one bank is paged
+    # at a time and a JMP cannot reach the other. It is at the TOP of the
+    # code section, which is safe because the code section is only ever
+    # entered through the tables - see this function's docstring.
+    if fold:
+        f.write('.%sScanStepRts\n' % pfx)
+        f.write('  SCANSTEP\n')
+        f.write('  RTS\n')
+        tail_bytes = 14
+        walk_end = '  JMP %sScanStepRts\n' % pfx
+        walk_bytes = 3
+    else:
+        tail_bytes = 0
+        walk_end = '  SCANSTEP\n  RTS\n'
+        walk_bytes = 14
 
     # INTERNING. Every block below is reached ONLY through a dispatch table,
     # so pointing two table entries at one copy costs nothing at all - no
@@ -459,7 +474,7 @@ def emit_rotor_code(tab, f, rows, slots, row_slot, shifts, pfx):
                 % shift)
         for n, (key, row) in enumerate(sorted(rows.items())):
             data = shift_row(row, shift)
-            body, cost = [], 3
+            body, cost = [], walk_bytes
             for col, b in enumerate(data):
                 if not b:
                     continue        # transparent: not drawn, and not saved
@@ -474,7 +489,7 @@ def emit_rotor_code(tab, f, rows, slots, row_slot, shifts, pfx):
                     body.append('  AND #&%02X : ORA %s : STA (bufp),Y\n'
                                 % (m, colpix(b)))
                     cost += 12
-            body.append('  JMP %sScanStepRts\n' % pfx)   # the walk, shared
+            body.append(walk_end)          # folded or inline
             lab, is_new = emit('drD%d_%02d' % (shift, n), body)
             labels[(shift, key)] = lab
             if is_new:
@@ -487,12 +502,12 @@ def emit_rotor_code(tab, f, rows, slots, row_slot, shifts, pfx):
             if cols not in sets:
                 sets.append(cols)
         for n, cols in enumerate(sets):
-            body, cost = [], 3
+            body, cost = [], walk_bytes
             for col in cols:
                 body.append('  LDY #%d*UNIT_BYTES : LDA (svp),Y : STA (bufp),Y\n'
                             % col)
                 cost += 6
-            body.append('  JMP %sScanStepRts\n' % pfx)   # the walk, shared
+            body.append(walk_end)          # folded or inline
             lab, is_new = emit('drR%d_%02d' % (shift, n), body)
             rest_labels[(shift, cols)] = lab
             if is_new:
@@ -580,10 +595,12 @@ def emit_rotor_code(tab, f, rows, slots, row_slot, shifts, pfx):
                         rest_bytes += 6
                     if not (half == 1 and n == len(half_rows) - 1):
                         out.append('  SCANSTEP\n')
-                        rest_bytes += 17
-                if out and out[-1] == '  SCANSTEP\n':
+                        rest_bytes += 13
+                if fold and out and out[-1] == '  SCANSTEP\n':
+                    # Six of the sixteen end on the walk and can fold; the
+                    # other ten end on a restore and keep their own RTS.
                     out[-1] = '  JMP %sScanStepRts\n' % pfx
-                    rest_bytes += 3 - 17
+                    rest_bytes += 3 - 13
                 else:
                     out.append('  RTS\n')
                     rest_bytes += 1
@@ -842,6 +859,36 @@ def collect_waypoints(mem):
     return counts, offsets, blob
 
 
+# WHICH BANK FOLDS ITS SCANSTEP TAIL. Bank index, 0 = droids.asm (SWRAM
+# bank 5, shifts 0 and 1 px), 1 = droids2.asm (bank 6, shifts 2 and 3).
+#
+# THIS IS A MEMORY DECISION, NOT A CODE ONE, and it is asymmetric because
+# the two banks are. Folding buys 613 bytes and costs 3 cycles per compiled
+# row drawn; unfolding is the reverse. Measured 2026-09-09, on the tree
+# after no-load step 5:
+#
+#     bank 5   ends &BFA8,    88 free   - CANNOT unfold, 525 short
+#     bank 6   ends &BB9A, 1,126 free   - unfolds with 513 to spare
+#
+# So bank 6 takes the cycles back and bank 5 keeps the bytes. A sprite uses
+# one bank or the other on its sub-pixel X, so about half the pool draws
+# through the faster copy: ~240 cycles a pass at eight slots rather than
+# the ~480 unfolding both would give.
+#
+# NOTHING IN THE BLITTER CARES which way a bank went. The tails are already
+# per-bank (a JMP cannot reach the other bank), every compiled block is
+# entered through a dispatch table, and the tables are the same size in
+# both files by construction - which is what main.asm's address asserts
+# check. The only thing that changes is how each block ends.
+#
+# To unfold bank 5 as well, empty this tuple and find it 525 bytes; the
+# only movable content is a briefing page stream (566 or 574) and the
+# largest hole to put one in is bank 6's 513 after ITS unfold, so it is 53
+# bytes short and needs something small out of bank 6 first. docs/no-load.md
+# 11j has the working.
+FOLD_TAIL = (0,)
+
+
 def main():
     mem, _ = parse_listing(LST_FILE)
     frames, bottoms = build_rotor(mem)
@@ -954,7 +1001,8 @@ def main():
                                                 ((2, 3), 'x', 'droids2.asm'))):
         tab, code = io.StringIO(), io.StringIO()
         code_d, code_r = emit_rotor_code(tab, code, rotor_rows, rotor_slots,
-                                         rotor_rowslot, shifts, pfx)
+                                         rotor_rowslot, shifts, pfx,
+                                         bank in FOLD_TAIL)
         code_g = emit_glyph_code(tab, code, mem, shifts, pfx)
         sizes[bank] = (code_d, code_r, code_g)
         with open(OUT_DIR / name, 'w') as f:
