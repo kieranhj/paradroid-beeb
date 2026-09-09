@@ -3291,9 +3291,29 @@ ENDIF                           \ other close: no band may outlive a pass
   JSR keydown                   \ pauses straight back
   BEQ pau_rel2
 
-  LDA #0                        \ $3C08's repaint: clearing the flag is
-  STA paused                    \ all it takes — PanelUpdate's shadow
-  JSR PanelTick                 \ byte sees the index move back
+  LDA #0                        \ $3C08's repaint. Clearing the flag is all
+  STA paused                    \ it takes for the four modes panel.asm's
+                                \ pnTxtTab knows: PanelUpdate's shadow byte
+                                \ sees the index move back and repaints.
+\
+\ BUT TWO SCREENS OWN THIS FIELD AND ARE NOT IN THAT TABLE, and
+\ the mode word is positively wrong for both - the transfer game
+\ (mode still 2, so the repaint posted "Transfer" over its own
+\ "Colour? 88") and the lift's side view. Both write the
+\ line themselves, both live in bank 7, and both repaint
+\ themselves through the one shim below. BUGS.md #24, KC 2026-09-07.
+  LDA xferActive
+  BNE pau_own
+  LDA liftMode
+  CMP #2
+  BEQ pau_own
+  JSR PanelTick
+  JMP pau_snd
+.pau_own
+  JSR PgXfer
+  JSR XfPauseWord
+  JSR PgData
+.pau_snd
   LDA #&12                      \ $3C0F
   STA sndState
 
@@ -4480,6 +4500,11 @@ INCLUDE "src/data/plandata.asm"
 \ DECISION 14's icon code, BEHIND the ALIGN on purpose — its own
 \ header says why, and moving it in front costs the bank 256 B.
 INCLUDE "src/xfericon.asm"
+\ BUGS.md #24's pause repaint, BEHIND THE ALIGN for the same reason
+\ and not by choice: 37 bytes against xfer.asm's 33-byte ride in the
+\ pad, so in front of it the bank overflowed. Its header has the
+\ measurement and everything else about it.
+INCLUDE "src/xfpause.asm"
 \ The title's ARTWORK, but not its code (no-load step 3, 2026-09-07).
 \ 1,140 bytes of glyphs and RLE that TiPaint reads ONCE, in place, with
 \ this bank paged -- so they never needed to be main RAM at all, and

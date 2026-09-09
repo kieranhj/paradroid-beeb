@@ -35,15 +35,15 @@ sections below are in neither. **The table is the index; read it first.**
 | **20** | [The player's bullet starves every other collision in the pass](#20-the-players-bullet-starves-every-other-collision-in-the-pass--fixed-2026-09-03) | **Fixed** 2026-09-03 | `DrCollide` scanned from slot 7. The bullet has no `drSlotOwner`, so its pair dead-ended and the whole pass was abandoned. Playtest report #3 |
 | **21** | [Two black squares flicker on the transfer game's central column](#21-two-black-squares-flicker-on-the-transfer-games-central-column--2026-09-03-unreproduced) | **Open, unreproduced** | reported on real hardware, rarely on BeebEm. Two hypotheses, neither tested; the cursor one is a 30-second check |
 | **22** | [Sprite pixels are occasionally left on the deck](#22-sprite-pixels-are-occasionally-left-on-the-deck--2026-09-06-open) | **Open** | reported from play, in a firefight, no repro. The tranche split was the first suspect and is EXONERATED by measurement — `DEBUG_TRCHK` counted zero cross-tranche overlaps through minutes of contrived heavy fire |
-| **23** | [Entering a transfer, the target's information screen flashes in the board's palette](#23-entering-a-transfer-the-targets-information-screen-flashes-in-the-boards-palette--2026-09-07-open) | **Open** | PRE-DATES the no-load branch, proven by diff. The board draw runs with `palPlay` already switched. Fix is 3 bytes of a full code image |
-| **24** | [Unpausing inside the transfer game posts "Transfer" over the board's own panel word](#24-unpausing-inside-the-transfer-game-posts-transfer-over-the-boards-own-panel-word--2026-09-07-open) | **Open** | `DoPause`'s repaint goes through `pnTxtTab`, which knows nothing of the words the transfer writes for itself |
+| **23** | [Entering a transfer, the target's information screen flashes in the board's palette](#23-entering-a-transfer-the-targets-information-screen-flashes-in-the-boards-palette--2026-09-07-open) | **Open** | PRE-DATES the no-load branch, proven by diff. The board draw runs with `palPlay` already switched. Fix is 3 bytes, and the code image is not full any more — 43 B free after #24 |
+| **24** | [Unpausing inside the transfer game posts "Transfer" over the board's own panel word](#24-unpausing-inside-the-transfer-game-posts-transfer-over-the-boards-own-panel-word--2026-09-07-fixed-2026-09-09) | **Fixed** 2026-09-09, bar a third owner | `DoPause`'s repaint went through `pnTxtTab`, which knows nothing of the words the transfer and the lift view write for themselves. Both repaint their own now (`xfpause.asm`). **Still open for the two information screens in front of the board**, where "Captured" is on the line and `xferActive` is 0 — the entry says why that gate was not widened |
 
 `## Delivered: DEBUG_POS` near the end is not a defect — it is the position bookmark that came out
 of #5, kept with the defects because that is where it is looked for.
 
 ---
 
-## 24. Unpausing inside the transfer game posts "Transfer" over the board's own panel word — 2026-09-07, open
+## 24. Unpausing inside the transfer game posts "Transfer" over the board's own panel word — 2026-09-07, **FIXED 2026-09-09**
 
 Reported by KC, 2026-09-07: *"if the player pauses during the transfer game, the word transfer is
 placed at the top when unpausing, even if that's not the correct text for the panel."*
@@ -68,20 +68,62 @@ But the transfer game does not use `pnTxtTab` at all. It writes its own panel li
 game runs. Unpausing therefore restores the mode's *generic* word over whatever the board had
 posted, and the line stays wrong until the transfer next writes it.
 
+**And the mode word is the only thing that ever repaints it during a transfer**, which is why
+nothing else caught this: the main loop's transfer arm calls no `PanelTick` at all, on purpose
+(`ml_noxfer`'s header — "the game owns the panel's text line"), so `DoPause`'s two are the only
+ones there are.
+
+### The fix — THE OWNER REPAINTS, 2026-09-09
+
+`src/xfpause.asm`, bank 7. `DoPause`'s exit tests `xferActive` and `liftMode` and, for either,
+calls `XfPauseWord` through the bank-7 shim instead of `PanelTick`:
+
+- **the transfer** re-posts whatever `XfMessage` last wrote. `XfMessage` already remembers it —
+  it writes the pointer into its own `xmg_get` operand before walking the string — so reading
+  that back costs nothing and covers every phase: "Colour?" and "Finish" through the two clocked
+  ones, both verdicts and the tie's "Short circuit". The countdown goes back too, but only in the
+  two clocked phases: `XF_COL_TIME` is inside the eleven cells `XfTextClear` blanks, and the
+  verdicts show the word alone as the C64 does;
+- **the lift's side view** repaints its "Lift". That cost nothing at all: `LvStart7b` already
+  painted it, so `liftview.asm` gained a label — `.LvPanelWord` — and no code.
+
+`xfpause.asm` is a file of its own and sits **behind `plandata.asm`'s `ALIGN`**, beside
+`xfericon.asm`. That is not taste: at the foot of `xfer.asm`, where it belongs, its 35 bytes went
+4 past the 33-byte pad `xfer.asm` rides in front of that `ALIGN`, the padding rolled a page and
+bank 7 overflowed by 256 — measured, on the first build of it.
+
+Cost: **24 B of code image** (67 free → 43) and **35 B of bank 7** (171 free → 136, the pad
+untouched at 33).
+
+### Verified, in jsbeeb on the shipping image, `B-DFS1.2`
+
+A transfer entered by poking `xferDroid`, through both information screens to the board:
+
+1. "Colour? 79" on the line, CTRL+P → **"Pause"**, P → **"Colour? 78"**. The countdown had run on
+   under the pause and comes back with the right value, not the one it had when it was covered;
+2. the lift arm exercised directly — paused again, `xferActive` poked to 0 and `liftMode` to 2,
+   unpaused → **"Lift"**. The board underneath is still the transfer's, which is expected: this
+   forces the arm, it does not enter a lift.
+
+### The remaining case, and it is a THIRD owner
+
+`IsStart` posts "Captured" into the same field for the two information screens in front of the
+board (`infoscr.asm`, layer 11d — it is `$22A0`'s position and the C64 leaves it up through both).
+`xferActive` is still 0 there and `liftMode` is 0, so `DoPause` takes neither new arm and a pause
+on those two screens still comes back reading "Transfer".
+
+**Not folded in, deliberately.** Gating on `infoActive` would suppress the mode-word restore for
+*every* information screen, and for the others — the 001 screen, the deck screens, `IS_BLANK` —
+the mode word is exactly what should come back, so the test would have to be `infoActive` AND the
+screen being `IS_SCR_XFER1`. That is more main RAM than the whole fix above cost, for two screens
+that are up for as long as it takes to press fire twice. `XfPanelWord` would restore them
+correctly if it were reached — "Captured" goes through `XfMessage` like everything else — so if it
+is ever worth doing, the routine is already there and only the gate has to change.
+
 ### What this is not
 
 Not the pause itself: the panel is correct while paused ("Pause" is the right word) and correct
-before it. Not a teardown — nothing is lost, the wrong word is positively written. The same
-mechanism will apply to any screen that writes the panel line for itself and is pausable; the
-lift view is the other candidate and has not been checked.
-
-### The shape of the fix
-
-Either the transfer's current word becomes a sixth `pnTxtTab` entry that `PanelTick` can restore,
-or `DoPause`'s second `PanelTick` is suppressed for the modal screens that own the line and the
-screen is asked to repaint its own. The second is closer to how the arena rule was settled
-elsewhere on the no-load branch — the owner of a resource restores it — but it costs a test in
-`DoPause`, which is main RAM, and the code image is currently full.
+before it. Not a teardown — nothing was lost, the wrong word was positively written.
 
 ---
 

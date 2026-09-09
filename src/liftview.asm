@@ -56,6 +56,11 @@
   RTS
 .LvStart7b
   JSR LvRepaintAll
+\ THE PANEL HALF IS A SUBROUTINE, and the label is all it costs:
+\ DoPause's exit has to repaint this field when the pause is taken
+\ with the side view up, because panel.asm's mode word is not what
+\ is on the line here. BUGS.md #24; XfPauseWord routes to it.
+.LvPanelWord
 
   JSR XfTextClear               \ the panel line: "Lift" and the deck
   LDA #XF_COL_MSG
