@@ -1510,6 +1510,26 @@ ORG &1100
 \ header has the measurement.
   JSR SetupMode
 
+\ ---- the text font, ONCE AND ONLY HERE (no-load step 5) ----
+\ THE LAST POST-BOOT LOAD, AND IT IS NOT ONE ANY MORE. This used to
+\ live in ts_loads, which every route to the front end runs — boot,
+\ the game-over title and the briefing's fire exit — because the title
+\ overlay was MODE 1 artwork at &3000 and ate the font every time it
+\ was shown. no-load step 3 moved that overlay to &0900, and step 5
+\ took away the last thing that staged over &3000 (PARMAN's stream, at
+\ DEPK_STREAM). Nothing has destroyed the font since, so it is loaded
+\ once, here, and lives for the session.
+\ AFTER SetupMode BECAUSE VDU 22 CLEARS &3000-&7FFF, and after
+\ BootBanks because PARADAT's stream stages from &3200 to &5C0F, right
+\ over this. Before TitleSeq because the MOS must still own the machine
+\ for a filing call — the same rule that puts every load before
+\ InstallIrq — and because it makes PARAFNT resident for HsEntry, which
+\ was an invariant no ASSERT could check and is now trivially true.
+  LDX #LO(loadfnt)
+  LDY #HI(loadfnt)
+  JSR OSCLI
+  JSR UnpackFont
+
 \ ---- the title, and everything that rebuilds after it ------
 \ TitleSeq is shared with the game-over seam (GoTitle): load PARTITL,
 \ show the title, reload PARAFNT and PARALOW over it, rebuild every
@@ -2305,57 +2325,18 @@ ENDIF                           \ other close: no band may outlive a pass
   LDX #LOW_PAGES
   JMP PageCopyAt
 
-\ ---- the DFS workspace snapshot -----------------------------
-\ The low overlay buries TWO things the filing system cannot live
-\ without: &0E00-&10FF is DFS's own workspace (under lowcode), and
-\ lowcode2 at &0D60-&0DCB sits on the MOS's EXTENDED VECTOR TABLE at
-\ &0D9F — which is how DFS 1.2 routes FILEV into its ROM. A
-\ filing-system call made with the overlay down goes FILEV ->
-\ extended-vector stub -> a vector made of our code bytes -> garbage;
-\ measured in jsbeeb as a crash into zero page, and *DISC does not
-\ recover it. So TitleSeq snapshots both spans into bank 6 (dfsSave,
-\ 912 B) after its last *LOAD, and GoTitle puts them back before the
-\ game-over loads: a byte-for-byte restore of a state the MOS and DFS
-\ were actually in — extended vectors, ROM workspace bytes, catalogue
-\ cache and all. &0D00-&0D5F (NMI) and &0DF0-&0DFF are NOT in the
-\ snapshot: nothing of ours ever writes them. Bank 6 is paged around
-\ the copy — safe here because neither routine runs from inside a bank.
-DFSWS2_ADDR = &0D60             \ lowcode2's span, extended vectors under it
-DFSWS2_LEN  = &0DF0 - &0D60     \ 144 bytes
-DFSWS_ADDR  = &0E00
-DFSWS_PAGES = 3                 \ &0E00-&10FF
-.SaveDfsWs
-  JSR PgSpr2   
-  LDY #0
-.sdw_lo
-  LDA DFSWS2_ADDR,Y
-  STA dfsSave,Y
-  INY
-  CPY #DFSWS2_LEN
-  BNE sdw_lo
-  LDA #LO(DFSWS_ADDR) : STA swSrc
-  LDA #HI(DFSWS_ADDR) : STA swSrc+1
-  LDA #LO(dfsSave + DFSWS2_LEN) : STA swDst
-  LDA #HI(dfsSave + DFSWS2_LEN) : STA swDst+1
-  BNE dws_copy                  \ always: the HI is never zero
-
-.RestoreDfsWs
-  JSR PgSpr2   
-  LDY #0
-.rdw_lo
-  LDA dfsSave,Y
-  STA DFSWS2_ADDR,Y
-  INY
-  CPY #DFSWS2_LEN
-  BNE rdw_lo
-  LDA #LO(dfsSave + DFSWS2_LEN) : STA swSrc
-  LDA #HI(dfsSave + DFSWS2_LEN) : STA swSrc+1
-  LDA #LO(DFSWS_ADDR) : STA swDst
-  LDA #HI(DFSWS_ADDR) : STA swDst+1
-.dws_copy
-  LDX #DFSWS_PAGES
-  JSR PageCopyAt
-  JMP PgData     \ tail: its RTS is ours
+\ ---- the DFS workspace snapshot IS GONE (no-load step 5) ----
+\ SaveDfsWs, RestoreDfsWs and the 912-byte dfsSave in bank 6 existed
+\ for one reason: the low overlay buries &0E00-&10FF (DFS's own
+\ workspace) and, via lowcode2, &0D9F (the MOS's extended vector table,
+\ which is how DFS 1.2 routes FILEV into its ROM), so any filing call
+\ made after PageLowIn crashed through them — measured in jsbeeb, and
+\ *DISC did not recover it. TitleSeq snapshotted both spans after its
+\ last *LOAD and GoTitle put them back before the game-over loads.
+\ THERE ARE NO LOADS AFTER PageLowIn ANY MORE. Every filing call the
+\ game makes is in .start, before the first PageLowIn: the four bank
+\ files and the font. So the rule still holds and nothing has to obey
+\ it. This is the terminal dividend docs/no-load.md §11h measured.
 
 \ ============================================================
 \ Layer 9 lives in BANK 6 and cannot see bank 4 — the bridge
@@ -2672,7 +2653,7 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
 \ 4): bank 7 holds the image and TiResident lands it at TITLE_ADDR. The
 \ bank is paged explicitly rather than assumed — boot arrives here with
 \ SWRAM_XFER up, because UnpackBankIn on it is boot's last act, but the
-\ game-over path arrives from GoTitle's RestoreDfsWs and does not.
+\ game-over path arrives from GoTitle, which pages nothing, and does not.
   JSR PgXfer
   JSR TiResident
   JSR TiBootPal                 \ KC 2026-08-24: at a COLD boot only, a
@@ -2693,24 +2674,14 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
 \ this same tail rather than carrying a copy. BrTimeout also RTSes to
 \ here, because it is entered by JMP from TiWait with TiShow's return
 \ address still on the stack. See briefing.asm.
+\ THE FONT LOAD IS NOT HERE ANY MORE (no-load step 5): it happens once,
+\ in .start, because nothing destroys &3000 any more. THIS ROUTINE NOW
+\ MAKES NO FILING CALL AT ALL, which is what makes the low overlay's
+\ old rule — the copy-down must be the last filing call — vacuous.
 .ts_loads
-  LDX #LO(loadfnt)              \ the text font, straight back onto the
-  LDY #HI(loadfnt)              \ ground the title borrowed -- ZX0 since
-  JSR OSCLI                     \ 2026-08-29, 14 sectors down to 8, and
-  JSR UnpackFont                \ this seam runs on boot, on every title
-                                \ and on the briefing exit
-
   JSR PgSpr2                    \ the low overlay, staged at LOW_STAGE —
   JSR LowResident               \ FROM BANK 6, not from disc (2026-09-09).
-                                \ It ends on PgData. The rule it used to
-                                \ obey — the copy-down must be the last
-                                \ filing call — is now trivially true:
-                                \ PARAFNT above is the only call left here
-
-  JSR SaveDfsWs                 \ snapshot DFS's workspace (&0E00-&10FF)
-                                \ into bank 7 while it is still DFS's:
-                                \ PageLowIn is about to bury it, and
-                                \ GoTitle needs it back for its loads
+                                \ It ends on PgData
   JSR PageLowIn
 
   JSR PgData              \ the data bank is the resting state
@@ -2914,14 +2885,11 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
   JSR SetupPlain                \ NOT SetupMode: its VDU 22 would clear
                                 \ &3000-&7FFF and take the 999 page and
                                 \ the font with it. Layer 11f
-\ Put DFS's workspace back before the first load. The low overlay has
-\ been sitting on &0E00-&10FF — DFS's own variables — since the last
-\ PageLowIn, and a filing-system call against that garbage hangs in the
-\ 8271 retry loop (measured; *DISC does not recover it either). TitleSeq
-\ snapshotted the real thing into bank 7 just before PageLowIn trampled
-\ it, so this is a byte-for-byte restore of a state DFS was actually in.
-\ Boot does not need it: its loads all run before the first PageLowIn.
-  JSR RestoreDfsWs
+\ NO DFS WORKSPACE RESTORE (no-load step 5). This used to put
+\ &0D60-&0DEF and &0E00-&10FF back from bank 6's snapshot, because the
+\ low overlay is sitting on them and TitleSeq was about to make filing
+\ calls. TitleSeq makes none now — the font is loaded once, in .start,
+\ before the first PageLowIn — so there is nothing to protect.
   JSR TitleSeq
   JMP BrDispatch                \ Layer 11f: the briefing if the title
                                 \ timed out, GameStartInfo if it fired —
@@ -4248,17 +4216,9 @@ INCLUDE "src/data/conicons.asm"
 \ The droid icon (droidicon.asm) is NOT here any more either — same
 \ story as the string table: bank 7 needed the same 110 bytes, so one
 \ copy lives in main RAM now, read by both banks (RAM pass 3b).
-\ The DFS workspace snapshot — the two spans the low overlay buries and
-\ the filing system cannot live without: &0D60-&0DEF (the extended
-\ vector table DFS 1.2 routes FILEV through, under lowcode2) and
-\ &0E00-&10FF (DFS's own workspace, under lowcode). Captured by
-\ SaveDfsWs after TitleSeq's last *LOAD, put back by RestoreDfsWs for
-\ the game-over loads. In THIS bank because it is pure data touched
-\ only by those two main-RAM helpers, which page the bank around the
-\ copy — and bank 6 was the free space nothing else could use. Written
-\ before it is read; it ships as zeroes and bank space is what it costs.
-.dfsSave
-  SKIP DFSWS2_LEN + DFSWS_PAGES * &100
+\ dfsSave IS GONE (no-load step 5): 912 bytes of this bank that held a
+\ snapshot of DFS's workspace for the sake of loads that no longer
+\ happen. See the note where SaveDfsWs used to be.
 
 \ ---- the two front-end overlays ride here -------------------
 \ PARBRF and PARALOW stopped being disc files (no-load, 2026-09-09).

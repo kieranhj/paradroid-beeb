@@ -1611,3 +1611,78 @@ first*.
 and needs a flag or a split. **That is the last load**, and after it the terminal dividend of §11h
 — `dfsSave`'s 912 bytes of bank 6, `SaveDfsWs`/`RestoreDfsWs`, the OSCLI strings and
 `UnpackBankIn`/`BootBanks` — comes due.
+
+---
+
+## 18. NO LOADS AFTER BOOT — 2026-09-09. The goal of the branch
+
+**`PARAFNT` is loaded once, in `.start`, and every filing-system call the game makes now happens
+before the first `PageLowIn`.** Stages 4 and 5 landed together because stage 4 forces stage 5.
+
+### 18a. The font goes boot-only
+
+The load lived in `ts_loads`, which **every** route to the front end runs — boot, the game-over
+title and the briefing's fire exit — and it lived there because the title overlay was MODE 1
+artwork at `&3000` and ate the font every time it was shown. no-load step 3 moved that overlay to
+`&0900`; step 5 took away the last thing that staged over `&3000`, which was `PARMAN`'s stream at
+`DEPK_STREAM`. **Nothing has destroyed the font since**, so it is loaded once and lives for the
+session.
+
+It sits between `SetupMode` and `TitleSeq`, and each side is load-bearing: after `SetupMode`
+because `VDU 22` clears `&3000-&7FFF`, after `BootBanks` because `PARADAT`'s stream stages from
+`&3200` to `&5C0F` straight over it, and before `TitleSeq` because a filing call needs the MOS to
+still own the machine. It also makes `PARAFNT` resident for `HsEntry`, which was an invariant no
+`ASSERT` could check (`CLAUDE.md` says so) and is now trivially true.
+
+### 18b. …which kills the DFS workspace snapshot, and it had to
+
+`SaveDfsWs` had exactly one call site, in `ts_loads`, and removing it would have left
+`RestoreDfsWs` restoring a snapshot nobody took — writing garbage over `&0D60-&0DEF` and
+`&0E00-&10FF`. So the whole machinery goes together:
+
+| gone | where it was |
+|---|---|
+| `SaveDfsWs`, `RestoreDfsWs`, the `DFSWS*` constants | the code image |
+| the `RestoreDfsWs` calls | `GoTitle` and `BrDispatch` |
+| `dfsSave` | **912 bytes of bank 6** |
+
+The rule they enforced still holds — the low overlay does still bury DFS's workspace and the MOS's
+extended vector table, and a filing call made after `PageLowIn` would still crash through them.
+**Nothing has to obey it, because nothing makes one.** `UnpackBankIn` and `BootBanks` stay: they
+are the boot loads themselves.
+
+### 18c. The ledger
+
+| | at §17 | now |
+|---|---|---|
+| **filing calls after boot** | 1 | **0** |
+| disc files | 8 | 8 |
+| disc image | 45,312 | 45,312 |
+| main-RAM code image free | 28 | **108** (`code_end` `&2FE4` → `&2F94`) |
+| bank 4 | 225 | 225 |
+| bank 5 | 88 | 88 |
+| bank 6 | 212 | **1,126** |
+| bank 7 | 171 | 171 |
+
+**+80 of code image and +914 of bank 6.** §11h estimated the terminal dividend at 241 bytes of
+scattered main RAM; the 80 measured here is what it actually yields, because
+`UnpackBankIn`/`BootBanks` and the `loadfnt` string all survive — the boot loads still need them.
+The 912 in bank 6 is the figure that held up exactly.
+
+### 18d. Verified
+
+Two cold boots on the shipping image in jsbeeb, `B-DFS1.2`:
+
+1. boot → title → **fire → game** → ESCAPE → death → game over → high-score entry → three
+   initials → **title again** (through `GoTitle`, now with no `RestoreDfsWs` in front of it) →
+   fire → **game again**, which runs `ts_loads` and `PageLowIn` a second time;
+2. boot → **title → timeout → briefing**, which is `BrTimeout` RTSing into the font-less
+   `ts_loads` — the seam stage 4 changed.
+
+### 18e. What is left on the branch
+
+Step 5 is complete. What §10's list still carries, and §12b restated, is unchanged and none of it
+is about loading: **real hardware**, the transfer game's LOSE path, and a systematic walk of all
+eight rotor phases and 24 droid types. `docs/no-load.md` §8's rule stands — the emulator half is
+the expensive one and it is where every real defect on this branch was found, including both of
+§17's.

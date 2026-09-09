@@ -40,8 +40,8 @@
 \      read is the fix.
 \
 \ SOLIDISK IS DETECTED AND REFUSED, not supported (KC, 2026-08-29): the
-\ game's own writes into sideways RAM — UnpackBankIn at boot, SaveDfsWs
-\ at the game-over seam — go through ROMSEL alone, so a board that needs
+\ game's own writes into sideways RAM — UnpackBankIn's, at boot —
+\ go through ROMSEL alone, so a board that needs
 \ the latches would pass detection and then fail to hold the game. The
 \ second probe runs ONLY when the first has already failed to find four
 \ banks, so an ordinary machine never touches the User VIA at all.

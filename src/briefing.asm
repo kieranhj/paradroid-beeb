@@ -126,7 +126,6 @@ BR_EXIT_OFF   = 1               \ off the end of the last page: the title
                                 \ in its own table — so the reload shows
                                 \ nothing; SetupRupture (fire) or TiCRTC
                                 \ (title) gives the display back
-  JSR RestoreDfsWs
 
 \ AND NO PARASPR RELOAD EITHER, SINCE no-load STEP 5. Both exits used
 \ to fetch the blitter back, because the briefing's text had been

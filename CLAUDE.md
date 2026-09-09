@@ -273,7 +273,7 @@ addresses from the `beebasm` output rather than from any document.** In outline:
 | `&5800–&7FFF` | Play buffer: circular strip, 16 rows × 640 |
 | SWRAM bank 4 | `PARADAT` — tiles, levels, palettes, droid game data, **the level-draw code, the droid AI, Layer 10's entry/exit and Layer 11e's sound driver**. The char bitmaps ship ZX0-packed; `BuildCharset` unpacks them into the idle sprite save areas at deck load |
 | SWRAM bank 5 | `PARASPR` — the blitter, shifts 0 and 1 px, **the effect blitter (`src/sprfx.asm`, RAM pass DECISION 2) and the rupture handover (`src/ruptalign.asm`), and the tranche prescan (`src/sprscan.asm`, 2026-09-01 — the split decision's geometry half, feeding `sprCls` in lowbss)**. **NOT evicted any more** (no-load step 5, 2026-09-09): it also holds the briefing's resident half — `briefman.asm`, `sndchat`, `brExtra`, `keyredef` as a ZX0 stream and two of the five page streams — where `PARMAN` used to be loaded over it, and neither briefing exit reloads anything |
-| SWRAM bank 6 | `PARSPR2` — shifts 2 and 3 px, same layout, plus Layer 9's panel/console, Layer 11f's `PnBriefing`, the 912 B `dfsSave` snapshot and the tranche decision's component half (`src/sprsplit.asm` — its geometry moved to bank 5's `sprscan.asm`, 2026-09-01) |
+| SWRAM bank 6 | `PARSPR2` — shifts 2 and 3 px, same layout, plus Layer 9's panel/console, Layer 11f's `PnBriefing`, two of the briefing's five page streams and the tranche decision's component half (`src/sprsplit.asm` — its geometry moved to bank 5's `sprscan.asm`, 2026-09-01) |
 | SWRAM bank 7 | `PARXFER` — Layer 10's transfer minigame, Layer 8b's lift screen, the console's ship, deck-plan and droid-database pages, and Layer 11's game over. Since no-load step 3 it also holds **the title's artwork** (`src/data/title.asm`, raw — `TiPaint` reads it in place) and **the whole high-score screen below `HsEntry`** (`highscore.asm` + `hsremap.asm`). The droid icons are main RAM's |
 
 **RAM was the binding constraint until the RAM recovery pass of 2026-08-25**
@@ -359,8 +359,10 @@ system. See `docs/loader-compression.md`.
 **`PARALOW` AND `PARBRF` ARE NOT DISC FILES ANY MORE (2026-09-09), and both ship ZX0-packed
 (§16's pack pass).** Both ride in bank 6 —
 `lowImg` and `brfImg` — and `LowResident` / `BrfResident`, which live in that bank like
-`TiResident` lives in bank 7, copy them down. **Post-boot loads are 1: `PARAFNT`**; `PARMAN` and the
-briefing's `PARASPR` reload went with no-load step 5 (`docs/no-load.md` §17). What made THAT
+`TiResident` lives in bank 7, copy them down. **THERE ARE NO LOADS AFTER BOOT AT ALL** (no-load step 5, `docs/no-load.md` §17-§18):
+`PARMAN` and the briefing's `PARASPR` reload went, and `PARAFNT` is loaded once in `.start`,
+between `SetupMode` (whose `VDU 22` would clear it) and `TitleSeq` (which needs the MOS still to
+own the machine). What made THAT
 possible is that both overlays are **assembled ABOVE bank 6's block**, so the pack pass can take
 their bytes and bank 6 can hold the stream: only the last bank block can be filled after the fact,
 because each block `CLEAR`s and re-`ORG`s the same `&8000`, and bank 7 (the last) had 759 bytes
@@ -373,11 +375,10 @@ their old homes (`BR_PO_ROW0` is step 5's, when `briefman.asm` went bank-residen
 
 The low overlay still lands on DFS's own workspace at `&0E00–&10FF` **and, via `lowcode2`, on the
 MOS's extended vector table at `&0D9F+` — the route DFS 1.2's FILEV takes into its ROM**, so the
-rule that made it a disc file in the first place still binds the OTHER two loads: make ANY
-filing-system call after `PageLowIn` and it crashes through the trampled vectors. The game-over →
-title seam does exactly that, which is why `SaveDfsWs` snapshots `&0D60–&0DEF` and `&0E00–&10FF`
-into bank 6 (`dfsSave`, 912 B) right before `PageLowIn` and `GoTitle` restores them before its
-loads. `PARALOW` still stages on the panel at `LOW_STAGE` — the copier writes there and
+rule still holds: make ANY filing-system call after `PageLowIn` and it crashes through the
+trampled vectors. **Nothing has to obey it any more, because nothing makes one** — every load is
+in `.start`, before the first `PageLowIn`. `SaveDfsWs`, `RestoreDfsWs` and the 912-byte `dfsSave`
+snapshot in bank 6 are gone with the loads they protected (step 5, 2026-09-09). `PARALOW` still stages on the panel at `LOW_STAGE` — the copier writes there and
 `PageLowIn` takes it down from there, exactly as when `*LOAD` filled it.
 
 **`pdloader/` IS A VENDORED DROP AND IS KEPT VERBATIM.** It is scarybeasts' loading intro and
