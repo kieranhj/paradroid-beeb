@@ -15,7 +15,7 @@
 \ asserts they do, and sndFxChat ships holding them.
 \ ============================================================
 
-BR_CHAT_PRE = 5
+ASSERT BR_CHAT_PRE == 5
 
 .brChatTab
   EQUB &0E,&00,&20,&00,&E8  \ 29: briefing chatter blip A (triangle)

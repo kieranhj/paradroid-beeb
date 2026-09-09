@@ -176,8 +176,8 @@ code. Redirecting **stdout** alone is safe, which is how `build.ps1` captures th
 
 **beebasm's `SAVE` writes a loose host file whenever it has no disc image to put it in**, so any
 run without a working `-do` drops `PARA`, `PARADAT`, `PARASPR`, `PARSPR2`, `PARXFER`, `PARAFNT`,
-`PARALOW`, `PARBRF`, `PARMAN` and `PARSWR` in the project root (`PARTITL` was one of them until
-no-load step 4 stopped `SAVE`ing it). They are gitignored. Two things follow: a `-do` path that cannot be written leaves a
+`PARMAN` and `PARSWR` in the project root (`PARTITL` was one of them until no-load step 4
+stopped `SAVE`ing it, and `PARBRF` and `PARALOW` until 2026-09-09 did the same). They are gitignored. Two things follow: a `-do` path that cannot be written leaves a
 build that *looks* like it worked, and the symbol dump below litters unless you give it one.
 
 Symbol addresses come from
@@ -265,12 +265,12 @@ paragraph:
 
 | Region | Free (measured 2026-09-02, after layer-9 DECISION 20 and layer-12 DECISION 6) |
 |---|---|
-| Main RAM code image | **14 B** on the `no-load` branch — `code_end` `&2FF2`. It was **0** from `b385cd6` until no-load step 4, which deleted `loadtitl`'s OSCLI and its string and gave 14 back; that is what funds BUGS.md #23. The pre-branch history: **25 B**, `code_end` `&2FE7`. hexwab's `sTmp` `EQUB` gave 1 back on 2026-09-03. Layer-9 DECISION 20's energy bar took 7 on 2026-09-02 (`pmEnergy` and its mirror); 31 B before. Layer-12 DECISION 6 took 51 the same day (two bank-6 trampolines, the 16-byte `DECK_DONE` and its clear); it was 82 B after hexwab's two patches and **3 B** before them. Historically the binding constraint |
+| Main RAM code image | **28 B** on the `no-load` branch — `code_end` `&2FE4`, after `PARBRF` and `PARALOW` stopped being disc files on 2026-09-09 and took their OSCLI strings with them (it was 14 B, `&2FF2`). It was **0** from `b385cd6` until no-load step 4, which deleted `loadtitl`'s OSCLI and its string and gave 14 back; that is what funds BUGS.md #23. The pre-branch history: **25 B**, `code_end` `&2FE7`. hexwab's `sTmp` `EQUB` gave 1 back on 2026-09-03. Layer-9 DECISION 20's energy bar took 7 on 2026-09-02 (`pmEnergy` and its mirror); 31 B before. Layer-12 DECISION 6 took 51 the same day (two bank-6 trampolines, the 16-byte `DECK_DONE` and its clear); it was 82 B after hexwab's two patches and **3 B** before them. Historically the binding constraint |
 | Bank 4 | **225 B** on the `no-load` branch — the pass of 2026-09-07 interned `drSprData`'s duplicate rotor and end rows for **+217** (`docs/no-load.md` §4c); it had **8**. **Packing bank 4 is not possible**: everything in it is read during play, so there is nowhere to depack to, and the disc already ZX0s the whole bank. `colourMap` dedup was built and measured **+1** — `tiledefs.asm`'s own `ALIGN` swallows every byte it frees — and reverted. Pre-branch history: 13 B on the gauge (2026-09-03) + `colourMap` `ALIGN` pad, **which is SPENT** (200 B in front of it cost the bank 259, measured; 16 B in front of it overflowed it in 2026-09-07's first attempt) |
 | Bank 5 | **2,650 B** (2026-09-08: **+1,229** from interning the duplicate compiled blocks, `docs/no-load.md` §11k, and before it **+756** from SCANSTEP tail folding, 70 compiled rows ending `JMP <tail>` rather than an inline `SCANSTEP` + `RTS`; `docs/no-load.md` §11j. It was 665 on the gauge before it) (2026-09-01: **+668** from the SCANSTEP deferred carry, 168 expansions at 4 B apiece; it was **6 B** immediately before that, the tightest region in the machine) |
-| Bank 6 | **2,447 B** (2026-09-08: **+1,139** from the same interning as bank 5, and **+756** before it from the tail folding) (2026-09-06: —112 for layer-12 DECISION 6's character filter, the cleared-deck stipple fix; 664 on the gauge before it) (2026-09-02: —75 for layer-9 DECISION 20's `PnEnergy`, and before it —183 for layer-12 DECISION 6 — `LvClearedMark`, the 64 B of `svdecks6.asm` and its scratch; 931 B before). **The bank with room, and the reason DECISION 6 could be built at all** |
+| Bank 6 | **442 B** (2026-09-09: —2,005 for `brfImg` and `lowImg`, the two front-end overlays and their copiers, which is what made them resident) (2026-09-08: **+1,139** from the same interning as bank 5, and **+756** before it from the tail folding) (2026-09-06: —112 for layer-12 DECISION 6's character filter, the cleared-deck stipple fix; 664 on the gauge before it) (2026-09-02: —75 for layer-9 DECISION 20's `PnEnergy`, and before it —183 for layer-12 DECISION 6 — `LvClearedMark`, the 64 B of `svdecks6.asm` and its scratch; 931 B before). **The bank with room, and the reason DECISION 6 could be built at all** |
 | Bank 7 | **759 B** — the `no-load` branch's packing pass took it from 25 B to 3,021 (transfer board, lift screen, portrait pool, `poLut`; `docs/no-load.md` §4); step 3 SPENT 1,840 on the title artwork and the high-score screen, and step 4 a further 422 on the title overlay's image and `TiResident`. Before the branch it was 25 B, measured 2026-09-02 by bisecting a `SKIP` at `.LvStart7` |
-| `PARBRF` (`&0400`, hard ceiling `&0800`) | **12 B** (36 B before `BrTimeout`'s R8 blank, 56 B before the CTRL+R hook) |
+| `PARBRF` (`&0400`, hard ceiling `&0800`) — **no longer a disc file, 2026-09-09: it rides in bank 6 as `brfImg` and `BrfResident` copies it down** | **12 B** (36 B before `BrTimeout`'s R8 blank, 56 B before the CTRL+R hook) |
 | The title overlay (`&0900`, ceiling `&0C90` = `LOWBSS_ADDR`) | **515 B** — the overlay is 397 and the region is 912. `&0800–&08FF` is NOT in it; see the note under the disc files below. Not a disc file since no-load step 4: the image is bank 7's |
 | `PARAFNT` block | **16 B** before `SPR_SAVE` (`KeyDownIx` took 7, DECISION 5's `CN_STRS` 10) |
 | `PARMAN` (bank 5's briefing load; the bound is `DEPK_STREAM + size <= PANEL_ADDR`) | **225 B** — the redefine screen took 893 |
@@ -339,14 +339,25 @@ uncompressed, because the MOS has the DFS ROM paged in there during a filing-sys
 must also happen **before** `InstallIrq` — taking over IRQ1V stops the MOS servicing the filing
 system. See `docs/loader-compression.md`.
 
-**`PARALOW` is a sixth disc file and is loaded LAST, after `PARAFNT`.** It carries the low overlay,
-which lands on DFS's own workspace at `&0E00–&10FF` **and, via `lowcode2`, on the MOS's extended
-vector table at `&0D9F+` — the route DFS 1.2's FILEV takes into its ROM**. Copy it down before the
-last `*LOAD` and that load hangs in the 8271 poll; make ANY filing-system call after `PageLowIn`
-and it crashes through the trampled vectors. The game-over → title seam does exactly that, which is
-why `SaveDfsWs` snapshots `&0D60–&0DEF` and `&0E00–&10FF` into bank 6 (`dfsSave`, 912 B) right
-before `PageLowIn` and `GoTitle` restores them before its loads. `PARALOW` stages on the panel rather than at `&3000`,
-because `PARAFNT` owns `&3000` and has to load first.
+**`PARALOW` AND `PARBRF` ARE NOT DISC FILES ANY MORE (2026-09-09).** Both ride in bank 6 —
+`lowImg` and `brfImg` — and `LowResident` / `BrfResident`, which live in that bank like
+`TiResident` lives in bank 7, copy them down. **Post-boot loads are 3: `PARAFNT`, `PARMAN` and
+`PARASPR`.** What made it possible is that both overlays are now **assembled ABOVE bank 6's
+block**, so `COPYBLOCK` can take their bytes: only the last bank block can be filled after the
+fact, because each block `CLEAR`s and re-`ORG`s the same `&8000`, and bank 7 (the last) had 759
+bytes against the 1,931 these need. The move cost seven constants their homes — beebasm resolves
+constant assignments in file order — so `BR_PAGES`/`BR_ROW_LO`/`BR_ROW_HI`/`BR_XTRA0` are
+generated into **`src/data/briefconst.asm`**, which `main.asm` includes from its header, and
+`BR_CHAT_PRE`/`BR_PO_UNIT`/`BR_PO_OFS` sit beside `UNIT_BYTES` with `ASSERT`s at their old homes.
+
+The low overlay still lands on DFS's own workspace at `&0E00–&10FF` **and, via `lowcode2`, on the
+MOS's extended vector table at `&0D9F+` — the route DFS 1.2's FILEV takes into its ROM**, so the
+rule that made it a disc file in the first place still binds the OTHER two loads: make ANY
+filing-system call after `PageLowIn` and it crashes through the trampled vectors. The game-over →
+title seam does exactly that, which is why `SaveDfsWs` snapshots `&0D60–&0DEF` and `&0E00–&10FF`
+into bank 6 (`dfsSave`, 912 B) right before `PageLowIn` and `GoTitle` restores them before its
+loads. `PARALOW` still stages on the panel at `LOW_STAGE` — the copier writes there and
+`PageLowIn` takes it down from there, exactly as when `*LOAD` filled it.
 
 **`pdloader/` IS A VENDORED DROP AND IS KEPT VERBATIM.** It is scarybeasts' loading intro and
 its three-channel sample player — his source, his style, his binaries — so that his next version

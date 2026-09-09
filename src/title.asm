@@ -77,9 +77,11 @@ tigd  = svp                     \ and where it lands
 \ TiShow — the whole title, with this bank paged
 \ ============================================================
 .TiShow
-  JSR TiLoadBrf                 \ Layer 11f: the briefing driver, FIRST —
-                                \ a filing call, so before any of the
-                                \ display work and long before PageLowIn
+  JSR PgSpr2                    \ Layer 11f: the briefing driver, from
+  JSR BrfResident               \ BANK 6 since 2026-09-09 — no longer a
+                                \ filing call at all, and it ends on
+                                \ PgData, which is the bank TiShow is
+                                \ entered with anyway
   JSR TiCRTC
 \ THE ARTWORK IS BANK 7'S (no-load step 3): titleGlyphs and titleRLE
 \ moved into PARXFER so that this overlay could come off &3000 — see
@@ -115,13 +117,6 @@ tigd  = svp                     \ and where it lands
 \ here, unconditionally, is what makes that true; it is ~1 K, and the
 \ timed-out path loads PARMAN separately (BrTimeout). The OSCLI is this
 \ overlay's rather than main RAM's because main RAM has two bytes left.
-.TiLoadBrf
-  LDX #LO(tiLoadBrf)
-  LDY #HI(tiLoadBrf)
-  JMP OSCLI                     \ and its RTS
-.tiLoadBrf
-  EQUS "LOAD PARBRF"
-  EQUB 13
 
 \ ============================================================
 \ TiBootPal — the front end's palette at a COLD BOOT

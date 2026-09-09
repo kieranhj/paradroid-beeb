@@ -1115,3 +1115,83 @@ build, which is exactly the false positive that would have cost a session.
 their guesses: step 6 (869 -> 241), the tail folding (2,100 -> 1,512) and the duplicate-block
 interning (2,318 -> 2,368, the only one that came in high, and only because the saving compounds).
 Treat the rest of §11c the same way: measure before spending.
+
+---
+
+## 13. PARBRF AND PARALOW GO RESIDENT — 2026-09-09. Post-boot loads 5 → 3
+
+§12a said this pair "looked like the easy pair and are not", and named the obstacle: `PARTITL`'s
+`COPYBLOCK` works only because bank 7 is the LAST bank block assembled, and bank 6's `SAVE` cannot
+be deferred the same way. **The 4A experiment answered it, and the answer was yes.**
+
+### 13a. The experiment
+
+Move the two overlays' assembly ABOVE bank 6's block, so bank 6 can `COPYBLOCK` them and still
+`SAVE` before bank 7 reuses `&8000`. beebasm resolves constant assignments in file order, so the
+question was how many constants the overlays use that are defined later.
+
+**Answer: six** — and a static probe found them in one pass rather than by rebuilding six times.
+`BR_EXIT_FIRE`, `BR_EXIT_OFF`, `BR_TRAVEL`, `LAMP_OFF` and `ALERT_LAMP_CHAR` looked late but are
+defined *inside the overlays themselves*, so they travel with them.
+
+| constant | was defined in | now |
+|---|---|---|
+| `BR_PAGES`, `BR_ROW_LO`, `BR_ROW_HI`, `BR_XTRA0` | `src/data/briefing.asm` (generated) | **`src/data/briefconst.asm`**, a second generated file `main.asm` includes from its header |
+| `BR_CHAT_PRE` | `src/data/sndchat.asm` (generated) | `main.asm`, beside `UNIT_BYTES`; the old home `ASSERT`s it |
+| `BR_PO_UNIT`, `BR_PO_OFS` | `src/briefman.asm` | the same, with `ASSERT`s |
+
+A first attempt moved the whole PARMAN block up instead, to bring the `BR_*` constants with it.
+That failed on `BR_PO_ROW0 = DB_IMG_ROW`, which reaches into **bank 7** (`condb.asm`) — so the
+dependency chain would have dragged bank 7 up too, defeating the point. Splitting the four
+generated constants into their own file is what avoids that: `BR_PO_ROW0` stays in `briefman.asm`,
+late, where it is happy.
+
+**The move itself was proved inert before anything was built on it:** with the blocks moved and
+the constants hoisted, **every file in the disc catalogue was byte-identical** to the build before
+it — `PARA`, `PARADAT`, `PARASPR`, `PARSPR2`, `PARXFER`, `PARAFNT`, `PARMAN`, `PARSWR`, and
+`PARBRF` and `PARALOW` themselves — with `!BOOT` the only difference, which carries the build
+stamp. That is `beeb-identical-build`'s step 4, and it is the strongest thing that could be said
+about a pure reordering.
+
+### 13b. What was then built
+
+`brfImg` and `lowImg` are `SKIP brf_end - brf_start` and `SKIP low_end - low2_start` at the tail
+of bank 6, filled by `COPYBLOCK`. **No hand-maintained size constant** — the overlays are assembled
+before the bank now, so the assembler knows their lengths; `PARTITL` could not do that and pays for
+it with `TITL_BYTES`.
+
+`BrfResident` and `LowResident` live **in bank 6**, like `TiResident` lives in bank 7, so they cost
+the code image nothing; both end in main RAM's `PgData` for `TiResident`'s reason — a `PAGEBANK`
+executed in the bank would swap the `RTS` out from under itself. Three whole pages then a tail,
+because neither image is a round number of pages and over-copying either would be a write into
+somebody's live memory.
+
+Call sites: `TiShow` (`JSR PgSpr2` / `JSR BrfResident` in place of `TiLoadBrf`) and `ts_loads`
+(the same pair in place of the `*LOAD PARALOW` OSCLI).
+
+| | before | after |
+|---|---|---|
+| post-boot loads | 5 | **3** — `PARAFNT`, `PARMAN`, `PARASPR` |
+| disc files | 11 | **9** |
+| disc image, packed | 46,336 | **45,568** |
+| main-RAM code image free | 14 | **28** (the two OSCLI strings and their call sites) |
+| bank 6 free | 2,447 | **442** |
+| bank 7 free | 759 | **775** (the title overlay lost `TiLoadBrf`: 397 → 381 bytes, so `titlImg` shrank) |
+
+**Verified in jsbeeb, the whole front-end loop on the shipping image:** cold boot → title →
+fire → game (which is `LowResident`; the low overlay carries the IRQ, the rupture and the keyboard,
+so a bad copy does not get as far as a screen) → ESCAPE → death → game over → high-score entry →
+three initials → **title again** → briefing on the timeout → fire → game. The second title is the
+one that matters for `BrfResident`: it arrives through `GoTitle`, after `RestoreDfsWs`, and
+`BrDispatch` — which every post-title path runs through — lives in the bytes it copies.
+
+### 13c. What is left
+
+**Two loads and the briefing.** `PARMAN` and `PARASPR` are step 5's, and `PARAFNT` becomes
+boot-only once step 5 stops staging at `DEPK_STREAM`. The decisions in §12a stand unchanged; only
+decision 4 is now answered and spent.
+
+Bank 6 has 442 left, bank 5 has 2,650, bank 7 775, bank 4 225 — **4,092 free**, against step 5's
+~4,360 under §12a's recommended shape (2B + 3B). **That is ~270 short**, so step 5 wants either
+the packed `keyredef` (3A, which gives back 238 and reinstates the ten-byte margin) or ~300 bytes
+from somewhere. `dfsSave`'s 912 is still the terminal dividend and still cannot be spent early.

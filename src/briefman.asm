@@ -26,8 +26,8 @@ bmp = chp                       \ the record pointer, briefing.asm's brp
 \ BuildIntroSprites puts the briefing droid at sprite X = 40, which is
 \ 16 px in from the visible edge — unit 4. Text columns 2-7; the score
 \ table's text starts at column 10, so nothing overlaps.
-BR_PO_UNIT = 4                  \ text columns 2-7: 48 px, the width
-BR_PO_OFS  = BR_PO_UNIT * UNIT_BYTES
+ASSERT BR_PO_UNIT == 4                  \ text columns 2-7: 48 px, the width
+ASSERT BR_PO_OFS  == BR_PO_UNIT * UNIT_BYTES
 BR_PO_ROW0 = DB_IMG_ROW         \ PoDraw's own rows, unmoved
 BR_PO_ROWS = 11                 \ 84 scanlines and the row they end in
 BR_PO_SPAN = 12 * UNIT_BYTES    \ one row's slice of the rectangle

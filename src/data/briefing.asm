@@ -4,14 +4,8 @@
 \ From src/data/briefing.txt, the hand-editable text. Edit THAT
 \ and rebuild; do not edit this. Format and rules: the tool.
 
-BR_PAGES     = 5
-BR_ROW_LO    = 1
-BR_ROW_HI    = 57
-BR_ROWS      = BR_ROW_HI - BR_ROW_LO + 1
-
-\ Characters the shared font has not got; the renderer plots an
-\ index of BR_XTRA0 or above from brExtra, not from the font.
-BR_XTRA0     = 104
+\ The shape constants are in src/data/briefconst.asm, which
+\ main.asm includes from its header - see OUT_CONST above.
 
 \ A row list is (col, glyphs..., $FE) per record, then $FF.
 \ Rows with nothing on them are one byte: $FF.

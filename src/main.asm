@@ -575,6 +575,18 @@ ASSERT (BUF_END == &8000)
 PLAY_UNITS = 80                 \ CRTC units across (4 px each) = 320 px
 PLAY_ROWS  = 16                 \ character rows = 128 px
 UNIT_BYTES = 8
+
+\ ---- the briefing's shape, hoisted (4A experiment) ---------
+\ These six live here for FILE ORDER and nothing else: the PARBRF
+\ overlay is assembled above bank 6 so that bank 6 can COPYBLOCK it,
+\ and beebasm resolves constant assignments in file order, so the
+\ files that used to own them come too late. Their old homes ASSERT
+\ these values rather than defining them, so a regenerated briefing
+\ or chatter still fails the build if it disagrees.
+INCLUDE "src/data/briefconst.asm"   \ BR_PAGES, BR_ROW_LO/HI, BR_XTRA0
+BR_CHAT_PRE = 5                 \ was src/data/sndchat.asm
+BR_PO_UNIT  = 4                 \ was src/briefman.asm
+BR_PO_OFS   = BR_PO_UNIT * UNIT_BYTES
 ROW_BYTES  = 640
 VIA_PORTB  = &FE40
 
@@ -709,7 +721,7 @@ TITLE_LIMIT = LOWBSS_ADDR       \ &0C90 — 912 bytes, and lowbss above it
 \ bank block needs the size long before the overlay is assembled, and
 \ beebasm resolves constants in file order. If the ASSERT fires, put the
 \ number it names here.
-TITL_BYTES = 397
+TITL_BYTES = 381
 ASSERT TITL_BYTES > 256         \ TiResident copies one whole page and
 ASSERT TITL_BYTES < 512         \ then a tail; both must be non-empty
 
@@ -2172,9 +2184,6 @@ ENDIF                           \ other close: no band may outlive a pass
 .loadfnt
   EQUS "LOAD PARAFNT"
   EQUB 13
-.loadlow
-  EQUS "LOAD PARALOW"
-  EQUB 13
 \ loadtitl is gone with no-load step 4: the title overlay is bank 7's
 \ image now and TitleSeq copies it down instead of loading it.
 
@@ -2662,9 +2671,12 @@ DFSWS_PAGES = 3                 \ &0E00-&10FF
   JSR UnpackFont                \ this seam runs on boot, on every title
                                 \ and on the briefing exit
 
-  LDX #LO(loadlow)              \ the low overlay, staged at LOW_STAGE;
-  LDY #HI(loadlow)              \ its copy-down must be the last
-  JSR OSCLI                     \ filing-system call — see PageLowIn
+  JSR PgSpr2                    \ the low overlay, staged at LOW_STAGE —
+  JSR LowResident               \ FROM BANK 6, not from disc (2026-09-09).
+                                \ It ends on PgData. The rule it used to
+                                \ obey — the copy-down must be the last
+                                \ filing call — is now trivially true:
+                                \ PARAFNT above is the only call left here
 
   JSR SaveDfsWs                 \ snapshot DFS's workspace (&0E00-&10FF)
                                 \ into bank 7 while it is still DFS's:
@@ -4042,6 +4054,64 @@ INCLUDE "src/sprscan.asm"
 .spr_end
 SAVE "PARASPR", spr_start, spr_end, DATA_LOAD, DATA_LOAD
 
+\ ---- 4A EXPERIMENT: the two overlays assemble HERE, above bank 6,
+\ ---- so bank 6 can COPYBLOCK them and still SAVE before bank 7
+\ ---- reuses &8000. Revert with git checkout src/.
+\ ============================================================
+\ The briefing driver — the PARBRF disc file, at &0400
+\ ============================================================
+\ Loaded where it runs: &0400-&0C90 is the MODE 1 charset, built at
+\ deck load and dead outside a game — 2,192 bytes of free lower RAM at
+\ title and briefing time. TiShow *LOADs this on every title, so
+\ BrDispatch and BrTimeout are always valid where they are reached.
+\ See briefing.asm's header, and §4c of docs/layer-11f-frontend.md.
+\ THE CEILING IS &0800 AND IT IS MEASURED, NOT CAUTION. &0800-&08FF is
+\ the MOS's sound workspace, channel buffers and printer buffer (NAUG
+\ §6.6), and the MOS IRQ WRITES into it while it still owns the
+\ machine — which it does through every load TiShow and BrTimeout make.
+\ A PARBRF that reached &08B8 verified byte-perfect immediately after
+\ its load and was chewed by the time the briefing painted: the CPU
+\ ran the corrupted &08xx code into the paged bank and BRKed at &800E.
+\ &0400-&07FF really is free — it is the language workspace and no
+\ language is resident — but the page above belongs to a live MOS.
+\ Overflow goes to briefman.asm in bank 5 instead.
+BRF_ADDR = &0400
+BRF_END  = &0800
+CLEAR BRF_ADDR, BRF_END
+ORG BRF_ADDR
+GUARD BRF_END
+.brf_start
+INCLUDE "src/briefing.asm"
+.brf_end
+
+\ ============================================================
+\ The low-RAM overlay — resident code at &0E00
+\ ============================================================
+\ Assembled where it runs, but SAVEd with a catalogue load address of
+\ DATA_LOAD so that *LOAD stages it and PageLowIn copies it down: DFS is
+\ using &0E00-&10FF as its own workspace for the duration of the load
+\ that delivers it, so it cannot be loaded in place. See LOW_ADDR.
+\ It is main RAM, so bank 4 may call it and so may the code image, and
+\ neither needs anything paged. That is the whole point of it.
+ORG LOW2_ADDR
+.low2_start
+INCLUDE "src/lowcode2.asm"
+.low2_end
+ASSERT low2_end <= LOW2_LIMIT
+
+\ The sixteen bytes PageLowIn does not copy. They are in the file so
+\ that the two halves are one contiguous image and the second copy's
+\ source is a constant; nothing ever reads them.
+ORG LOW2_LIMIT
+  SKIP &0E00 - LOW2_LIMIT
+
+ORG LOW_ADDR
+.low_start
+INCLUDE "src/lowcode.asm"
+.low_end
+ASSERT low_end <= LOW_LIMIT
+ASSERT low_end - low_start <= LOW_PAGES * 256
+
 \ ---- the second sprite bank: shifts 2 and 3 px --------------
 \ A compiled shift is ~5.5K of code and there are four of them, so they
 \ do not fit in one bank. This one is laid out exactly like the last:
@@ -4093,6 +4163,67 @@ INCLUDE "src/data/conicons.asm"
 \ before it is read; it ships as zeroes and bank space is what it costs.
 .dfsSave
   SKIP DFSWS2_LEN + DFSWS_PAGES * &100
+
+\ ---- the two front-end overlays ride here -------------------
+\ PARBRF and PARALOW stopped being disc files (no-load, 2026-09-09).
+\ They are copied down from this bank instead, which is the PARTITL
+\ arrangement of no-load step 4 with one difference that made it
+\ possible: both overlays are ASSEMBLED ABOVE THIS BANK now, so
+\ `brf_end - brf_start` is a known quantity here and COPYBLOCK can
+\ take the bytes straight out of the image. PARTITL could not do that
+\ — bank 7's block comes before the title overlay — and pays for it
+\ with the hand-maintained TITL_BYTES.
+\
+\ WHY BANK 6 AND NOT 7: only the LAST bank block may be filled after
+\ the fact, because each block CLEARs and re-ORGs the same &8000. The
+\ overlays were moved above bank 6 for exactly this reason, and the
+\ six briefing constants they need went to main.asm's header with the
+\ rest of the geometry (see UNIT_BYTES). Bank 7 was the other
+\ candidate and has 759 bytes; this needs 1,931.
+BRF_IMG_BYTES = brf_end - brf_start
+LOW_IMG_BYTES = low_end - low2_start
+.brfImg
+  SKIP BRF_IMG_BYTES
+.lowImg
+  SKIP LOW_IMG_BYTES
+COPYBLOCK brf_start, brf_end, brfImg
+COPYBLOCK low2_start, low_end, lowImg
+
+\ Both copiers live in the BANK, like TiResident, so they cost the code
+\ image nothing — and both end in main RAM's PgData for TiResident's
+\ reason: a PAGEBANK executed here would swap the RTS out from under
+\ itself. Three whole pages then a tail, because neither image is a
+\ round number of pages and over-copying either would be a write into
+\ somebody's live memory.
+.BrfResident
+  LDX #0
+.brr_page
+  LDA brfImg,X       : STA BRF_ADDR,X
+  LDA brfImg+256,X   : STA BRF_ADDR+256,X
+  LDA brfImg+512,X   : STA BRF_ADDR+512,X
+  INX
+  BNE brr_page
+.brr_tail
+  LDA brfImg+768,X   : STA BRF_ADDR+768,X
+  INX
+  CPX #BRF_IMG_BYTES-768
+  BNE brr_tail
+  JMP PgData
+
+.LowResident
+  LDX #0
+.lwr_page
+  LDA lowImg,X       : STA LOW_STAGE,X
+  LDA lowImg+256,X   : STA LOW_STAGE+256,X
+  LDA lowImg+512,X   : STA LOW_STAGE+512,X
+  INX
+  BNE lwr_page
+.lwr_tail
+  LDA lowImg+768,X   : STA LOW_STAGE+768,X
+  INX
+  CPX #LOW_IMG_BYTES-768
+  BNE lwr_tail
+  JMP PgData
 .spr2_end
 SAVE "PARSPR2", spr2_start, spr2_end, DATA_LOAD, DATA_LOAD
 
@@ -4523,62 +4654,6 @@ PARMAN_PAGES = (man_end - man_start + &FF) DIV &100
 \ after the briefing, the panel is not.
 ASSERT DEPK_STREAM + (man_end - man_start) <= PANEL_ADDR
 
-\ ============================================================
-\ The briefing driver — the PARBRF disc file, at &0400
-\ ============================================================
-\ Loaded where it runs: &0400-&0C90 is the MODE 1 charset, built at
-\ deck load and dead outside a game — 2,192 bytes of free lower RAM at
-\ title and briefing time. TiShow *LOADs this on every title, so
-\ BrDispatch and BrTimeout are always valid where they are reached.
-\ See briefing.asm's header, and §4c of docs/layer-11f-frontend.md.
-\ THE CEILING IS &0800 AND IT IS MEASURED, NOT CAUTION. &0800-&08FF is
-\ the MOS's sound workspace, channel buffers and printer buffer (NAUG
-\ §6.6), and the MOS IRQ WRITES into it while it still owns the
-\ machine — which it does through every load TiShow and BrTimeout make.
-\ A PARBRF that reached &08B8 verified byte-perfect immediately after
-\ its load and was chewed by the time the briefing painted: the CPU
-\ ran the corrupted &08xx code into the paged bank and BRKed at &800E.
-\ &0400-&07FF really is free — it is the language workspace and no
-\ language is resident — but the page above belongs to a live MOS.
-\ Overflow goes to briefman.asm in bank 5 instead.
-BRF_ADDR = &0400
-BRF_END  = &0800
-CLEAR BRF_ADDR, BRF_END
-ORG BRF_ADDR
-GUARD BRF_END
-.brf_start
-INCLUDE "src/briefing.asm"
-.brf_end
-SAVE "PARBRF", brf_start, brf_end, BRF_ADDR, BRF_ADDR
-
-\ ============================================================
-\ The low-RAM overlay — resident code at &0E00
-\ ============================================================
-\ Assembled where it runs, but SAVEd with a catalogue load address of
-\ DATA_LOAD so that *LOAD stages it and PageLowIn copies it down: DFS is
-\ using &0E00-&10FF as its own workspace for the duration of the load
-\ that delivers it, so it cannot be loaded in place. See LOW_ADDR.
-\ It is main RAM, so bank 4 may call it and so may the code image, and
-\ neither needs anything paged. That is the whole point of it.
-ORG LOW2_ADDR
-.low2_start
-INCLUDE "src/lowcode2.asm"
-.low2_end
-ASSERT low2_end <= LOW2_LIMIT
-
-\ The sixteen bytes PageLowIn does not copy. They are in the file so
-\ that the two halves are one contiguous image and the second copy's
-\ source is a constant; nothing ever reads them.
-ORG LOW2_LIMIT
-  SKIP &0E00 - LOW2_LIMIT
-
-ORG LOW_ADDR
-.low_start
-INCLUDE "src/lowcode.asm"
-.low_end
-ASSERT low_end <= LOW_LIMIT
-ASSERT low_end - low_start <= LOW_PAGES * 256
-SAVE "PARALOW", low2_start, low_end, LOW_STAGE, LOW_STAGE
 
 ASSERT CON_TYPES == DR_TYPES    \ console.asm is in bank 4 and cannot see
                                 \ the sprite bank's count when it needs it
