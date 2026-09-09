@@ -28,6 +28,15 @@
 \ becomes legal, and this could be an overlay after all. Measured in
 \ jsbeeb: the 999 page displays, unruptured, while PARTITL loads.
 \
+\ AND THAT WHOLE ARGUMENT IS HISTORY AS OF 2026-09-09, though the
+\ conclusion stands. There is no load between the 999 page and this
+\ screen any more, so GoTitle no longer tears the rupture down in
+\ front of it and SetupPlain no longer runs before it: HsEntry
+\ inherits the rupture the game over left up, draws on it, and does
+\ the teardown ITSELF on the way out, for the title. **SetupPlain is
+\ not what makes this screen possible any more - it is what closes
+\ it.** docs/no-load.md 20 has the seam and the measurement.
+\
 \ WHAT IT COSTS IN MAIN RAM: three bytes, TitleSeq's JSR, and that has
 \ not changed through either arrangement. The screen itself is ~570
 \ bytes of bank 7 now rather than ~655 bytes of a disc overlay, beside

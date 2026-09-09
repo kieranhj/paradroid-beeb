@@ -1943,3 +1943,86 @@ entry UNTOUCHED, with the MOS owning the machine. That is independent corroborat
 claim for `&A0-&A8` on this build, and it puts the re-seed in the right category - belt and
 braces, not load-bearing. It is not a measurement of the whole `&A0-&E6` range, which the next
 user of this space should make for itself with the `beeb-bss-bugs` method.
+
+## 20. THE GAME-OVER SEAM STOPS TEARING THE RUPTURE DOWN - 2026-09-09
+
+KC: *"there used to be a load here but now they share the same shape, so there's no reason to tear
+down the rupture and set it back up again."*
+
+Between "Transmission Terminated" and "Lowest Score of the Day!" the display went down and came
+back: `GoTitle` did `UninstallIrq` + `SetupPlain`, and `HsEntry` then did `SetupRupture` +
+`InstallIrq` before drawing a screen of **exactly the same shape** - panel, gap, window - onto the
+**same buffer** the 999 page had just left there. A blank plain frame, then the rupture re-locking,
+between two screens that are visually a continuation of each other.
+
+It was not gratuitous. A LOAD sat between them - `PARTITL`, and the font after it - and the
+rupture stops VSync, which hangs the 8271 poll (`paradroid-jsbeeb-needs-vsync-for-disc`). The
+teardown was what made the load legal.
+
+### 20a. What the branch changed under it
+
+**There are no loads after boot** (SS17-18). `TitleSeq` makes no filing call at all any more, so
+nothing between the 999 page and the entry screen needs VSync, the MOS's IRQ, or a plain frame.
+The teardown moves to the one place that still genuinely wants all three: `HsEntry`'s tail, before
+`TiShow` - a 25-row picture, and `TiWait`'s keydown goes through `OSBYTE`.
+
+### 20b. The invariant that makes it safe, and it is single-site
+
+`GoTitle` is reached **only** from `InfoHigh`'s `IS_ACT_TITLE` arm; `IS_ACT_TITLE` appears
+**exactly once** in `isActFor` - the 999 page - and that page's `IsDone` sets `hsArmed` one
+instruction earlier. So
+
+> **`hsArmed` set** = **came from a game over** = **the rupture is up**
+
+and `HsEntry`'s existing test of `hsArmed` is the whole of the teardown's gate. Boot reaches
+`TitleSeq` with `hsArmed` clear and nothing installed, and tears nothing down - which is right,
+because `UninstallIrq` there would restore `oldIrq1V` from uninitialised BSS. **Add a second
+`IS_ACT_TITLE` and this breaks**; the header on `GoTitle` says so.
+
+### 20c. Nothing else in the seam minds - checked, not assumed
+
+`TitleSeq`'s head clears `disrFlash`, pages bank 7 and copies `TiResident` down to `&0900`. None
+of it is displayed and the IRQ pages for itself. `SetupRupture` would have redone `scrollS = 0`,
+`SetCRTCStart` and `RuptInit`: **`IsStart` already did the first two for the 999 page**
+(`infoscr.asm`, the flatten at its head), and `RuptInit` on a locked rupture is the disruptive
+thing rather than the helpful one. `t1i3Hi` is untouched either way - `GoWashStart` sets it for
+the sixteenth row and `SetupRupture` never reset it.
+
+### 20d. The SEI had to move, and that is the part that could have bitten
+
+`GoTitle` masked interrupts around `SndSilence` - "so no tick interleaves the port A
+save/restore". That was free when `UninstallIrq` came two instructions later. **It is not free
+with the rupture running**: `SndSilence` is four chip writes with ~15 us holds plus a cache wipe,
+of the order of 400 cycles, and a 400-cycle mask is three scanlines of a rupture deadline. The
+port's one other deliberate mask is the keyboard scan's **26** cycles, measured to cost the
+rupture nothing; 400 is not in that class and was never measured.
+
+It does not have to be masked at all. `sndState = 0` is a **request the tick answers itself**:
+`SndTick`'s state-0 arm calls `SndSilence` once, inside the handler, where its cost is already
+budgeted (`stk_x` in `sound.asm`). So `GoTitle` is now one `STA` and the chip is quiet within a
+field with nothing masked. The belt-and-braces `SndSilence`, and the `OSBYTE &0F` buffer flush
+that keeps the MOS from playing the charset as notes, moved to `HsEntry`'s tail with the
+`UninstallIrq` they protect - where masking is free again for the same reason it used to be.
+
+### 20e. Verified, in jsbeeb on the shipping image, `B-DFS1.2`
+
+Two game overs in one session, both through ESCAPE:
+
+1. **entry screen shown**: "Transmission Terminated" -> "Lowest Score of the Day!" with no blank
+   frame between them, three initials entered, title follows. Panel, window and palette all
+   correct;
+2. **entry screen NOT shown** (the score equalled the stored low, so `HsRun` returns at `$E50E`
+   without drawing): breakpoints on `GoTitle` and `UninstallIrq` put the **whole seam at 10,670
+   cycles - a quarter of one field**, with `fieldCount` unchanged across it because less than a
+   field elapsed. That path used to spend a blank frame and a re-lock on a screen it then did not
+   draw.
+
+Then title -> briefing -> game -> game over again, twice more, to exercise the re-entry.
+
+### 20f. What it cost
+
+**Nothing - it gave.** 17 bytes back to the code image (43 free -> 60): `GoTitle` lost more than
+`HsEntry` gained, and `HsEntry`'s gain is in the title overlay, which is bank 7's. `TITL_BYTES`
+went 381 -> 386 and bank 7 5 bytes; the overlay's region has 509 free. `highscore.asm`'s header
+carries a correction: `SetupPlain` is no longer what makes the screen possible, it is what closes
+it.

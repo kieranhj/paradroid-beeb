@@ -733,7 +733,7 @@ TITLE_LIMIT = LOWBSS_ADDR       \ &0C90 — 912 bytes, and lowbss above it
 \ bank block needs the size long before the overlay is assembled, and
 \ beebasm resolves constants in file order. If the ASSERT fires, put the
 \ number it names here.
-TITL_BYTES = 381
+TITL_BYTES = 386
 ASSERT TITL_BYTES > 256         \ TiResident copies one whole page and
 ASSERT TITL_BYTES < 512         \ then a tail; both must be non-empty
 
@@ -2876,58 +2876,53 @@ ENDIF                           \ other close: no band may outlive a pass
                                 \ falls straight out again
 
 .GoTitle
-  LDA #0                        \ Layer 11e: UninstallIrq stops the sound
-  STA sndState                  \ ticks, so whatever the chip holds would
-  SEI                           \ drone through the whole title. Silence it
-  JSR SndSilence                \ NOW — SWRAM_DATA is paged (GoTick7), and
-                                \ masked so no tick interleaves the port A
-                                \ save/restore. UninstallIrq CLIs at its end
 \ ============================================================
-\ AND FLUSH THE MOS'S BUFFERS BEFORE GIVING IT THE IRQ BACK
+\ THE RUPTURE STAYS UP THROUGH THIS SEAM (KC, 2026-09-09)
 \ ============================================================
-\ THE CHARSET IS SITTING ON THE MOS'S SOUND WORKSPACE. &0400-&0C90 is
-\ the MODE 1 charset (reclaimed OS workspace, and the whole point of
-\ putting it there) and &0800-&08FF inside it is the MOS's: &800-&83F
-\ its sound workspace, &840-&87F the four channel queues, &8C0-&8FF the
-\ envelope definitions. While we own IRQ1V nothing reads any of it and
-\ the overlap is free. The moment UninstallIrq hands the machine back,
-\ the MOS's 100 Hz sound driver wakes up, finds queue pointers and
-\ buffers full of character bitmaps, and plays them: a quiet endless
-\ sweep of rising notes under the game over, the high-score entry and
-\ the title, until the next real effect takes the chip back.
+\ This used to be UninstallIrq + SetupPlain, and HsEntry then put the
+\ rupture straight back with SetupRupture + InstallIrq before drawing
+\ a screen of exactly the same SHAPE - panel, gap, window - onto the
+\ same buffer the 999 page had just left there. The cost was visible:
+\ a blank plain frame while the picture rolled, then the rupture
+\ re-locking, between "Transmission Terminated" and the entry screen.
 \
-\ KC HEARD IT 2026-08-26. It is not new — nothing about the charset's
-\ address or this seam has changed in months — but the Q mute is what
-\ made it obvious, because muting is exactly when you notice a sound
-\ that Q cannot touch. It cannot: Q sets sndVolume, and sndVolume only
-\ gates OUR driver's writes. This one is the OS's.
+\ It was not gratuitous. It was there because a LOAD sat between the
+\ two - PARTITL, and the font after it - and the rupture stops VSync,
+\ which hangs the 8271 poll. THERE ARE NO LOADS AFTER BOOT any more
+\ (docs/no-load.md 17-18), so the reason has gone and the teardown
+\ can move to the one place that still needs it: HsEntry's tail, where
+\ the title genuinely does want a plain frame and the MOS's IRQ.
 \
-\ OSBYTE &0F, X=0 flushes every buffer, which is the OS's own answer to
-\ "the queue is nonsense": it resets the pointers, so the IRQ never
-\ reads the glyph data at all. It costs a handful of charset bytes,
-\ which do not matter — BuildCharset repaints the whole set at the next
-\ deck load, and nothing between here and there reads it (the title has
-\ its own glyphs, the high-score screen reads textfont, PARAFNT reloads).
+\ THE INVARIANT THAT MAKES IT SAFE, and it is single-site: this
+\ routine is reached ONLY from InfoHigh's IS_ACT_TITLE arm, and
+\ IS_ACT_TITLE appears exactly once in isActFor - the 999 page - whose
+\ IsDone sets hsArmed one instruction earlier. So "hsArmed is set" and
+\ "the rupture is up because we came from a game over" are the same
+\ fact, and HsEntry's existing test of it is all the teardown needs.
+\ Boot reaches TitleSeq with hsArmed clear and nothing installed, and
+\ tears nothing down. Add a second IS_ACT_TITLE and this breaks.
 \
-\ BEFORE UninstallIrq, NOT AFTER, and that ordering is the fix being
-\ airtight rather than nearly: our IRQ is still installed here, so the
-\ MOS's sound IRQ is definitively not running and cannot be halfway
-\ through draining a note while we reset the pointers under it. Do it
-\ after and there is a window between UninstallIrq's CLI and this call
-\ where one garbage note can start.
-  LDA #&0F
-  LDX #0
-  JSR OSBYTE
+\ NOTHING ELSE IN THE SEAM MINDS. TitleSeq's head clears disrFlash,
+\ pages bank 7 and copies TiResident down to &0900 - none of it
+\ displayed, and the IRQ pages for itself. IsStart already flattened
+\ scrollS, line and iline and called SetCRTCStart for the 999 page,
+\ which is everything SetupRupture would have redone bar RuptInit, and
+\ RuptInit on a locked rupture is the disruptive thing, not the
+\ helpful one.
+\
+\ AND THE SOUND NEEDS NO SEI HERE ANY MORE. It used to be
+\ SEI : SndSilence, masked so no tick could interleave the port A
+\ save/restore - which was free when the IRQ was about to be
+\ uninstalled anyway and is NOT free now, because a ~400-cycle mask is
+\ three scanlines of a rupture deadline. It does not have to be: the
+\ tick is still running, and sndState = 0 is the request it answers by
+\ calling SndSilence itself, once, inside the handler (stk_x's arm in
+\ sound.asm). The chip is quiet within a field and nothing is masked.
+\ The belt-and-braces SndSilence and the MOS buffer flush moved with
+\ the UninstallIrq they protect.
+  LDA #0
+  STA sndState
 
-  JSR UninstallIrq
-  JSR SetupPlain                \ NOT SetupMode: its VDU 22 would clear
-                                \ &3000-&7FFF and take the 999 page and
-                                \ the font with it. Layer 11f
-\ NO DFS WORKSPACE RESTORE (no-load step 5). This used to put
-\ &0D60-&0DEF and &0E00-&10FF back from bank 6's snapshot, because the
-\ low overlay is sitting on them and TitleSeq was about to make filing
-\ calls. TitleSeq makes none now — the font is loaded once, in .start,
-\ before the first PageLowIn — so there is nothing to protect.
   JSR TitleSeq
   JMP BrDispatch                \ Layer 11f: the briefing if the title
                                 \ timed out, GameStartInfo if it fired —

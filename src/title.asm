@@ -462,14 +462,44 @@ ASSERT TITLE_R7 >= TITLE_ROWS   \ VSync must fall after the last row shown
   BEQ hs_en_x
   LDA #0
   STA hsArmed
-  JSR SetupRupture              \ panel + gap + window; scroll is parked
-  JSR InstallIrq
+\ NO SetupRupture AND NO InstallIrq (KC, 2026-09-09). They were here
+\ because GoTitle had just torn both down for a load that no longer
+\ happens; the rupture is still up and still locked, and this screen
+\ has the same shape as the 999 page it draws over. GoTitle's header
+\ has the argument and the invariant.
   JSR HsRun
-  JSR UninstallIrq              \ and back to a frame with VSync, BEFORE
-  PAGEBANK SWRAM_DATA           \ the title's loads — SetupPlain is
-  JMP SetupPlain                \ bank 4's, so the data bank first. Its
-                                \ frame is BLANK (R6 = 0 in its table)
-                                \ until TiCRTC shows the title — and RTS
+
+\ ---- and THIS is the teardown, for the title ----------------
+\ It is still needed, just not twice: TiShow wants a plain 25-row
+\ frame and TiWait's keydown goes through OSBYTE, so the MOS has to
+\ have its IRQ back. GoTitle's sound teardown came with it.
+  PAGEBANK SWRAM_DATA            \ SndSilence and SetupPlain are bank 4
+  SEI                            \ SndSilence saves and restores port A
+  JSR SndSilence                 \ and no tick may interleave it. Masking
+                                 \ is free HERE and was not in GoTitle:
+                                 \ UninstallIrq is two instructions away
+\ FLUSH THE MOS'S BUFFERS BEFORE GIVING IT THE IRQ BACK, and this is
+\ the whole of why it is here rather than earlier. The MODE 1 charset
+\ is &0400-&0C90 and &0800-&08FF inside it is the MOS's sound
+\ workspace, channel queues and envelopes. While we own IRQ1V nothing
+\ reads them; the moment UninstallIrq hands the machine back, the
+\ MOS's 100 Hz driver finds queue pointers full of character bitmaps
+\ and plays them - a quiet endless sweep of rising notes under the
+\ title that Q cannot mute, because Q gates OUR driver. KC heard it
+\ 2026-08-26. OSBYTE &0F, X=0 resets the pointers, so the IRQ never
+\ reads the glyphs at all; the charset bytes it costs do not matter,
+\ BuildCharset repaints the set at the next deck load.
+\ BEFORE UninstallIrq, NOT AFTER, and that is the fix being airtight
+\ rather than nearly: our IRQ is still installed, so the MOS's sound
+\ IRQ is definitively not halfway through draining a note while we
+\ reset the pointers under it.
+  LDA #&0F
+  LDX #0
+  JSR OSBYTE
+  JSR UninstallIrq               \ CLIs at its end
+  JMP SetupPlain                 \ bank 4. Its frame is BLANK (R6 = 0 in
+                                 \ its table) until TiCRTC shows the
+                                 \ title - and its RTS is ours
 .hs_en_x
   PAGEBANK SWRAM_DATA
   RTS
