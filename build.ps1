@@ -57,9 +57,32 @@ if ((Test-Path $palJson) -and (Test-Path $palAsm)) {
 # $ErrorActionPreference even though the assembly succeeded. See CLAUDE.md.
 # -opt 3 makes the disc *EXEC !BOOT on SHIFT+BREAK; main.asm assembles
 # its own !BOOT (with the build timestamp) rather than using -boot.
-& $beebasm -i (Join-Path $root 'src\main.asm') -do $raw -opt 3 -title PARADROID -D $relDef -v |
-    Out-File -FilePath $listing -Encoding utf8
-if ($LASTEXITCODE -ne 0) { throw "beebasm failed ($LASTEXITCODE)" }
+#
+# THE PACK LOOP. beebasm cannot compress its own output, and two of the
+# things bank 6 carries are assembled code copied down to run elsewhere -
+# the PARBRF driver and the low overlay. main.asm SAVEs each block under an
+# X-name; tools/pack_overlays.py reads those back out, ZX0s them and writes
+# src/data/brfimg.asm and lowimg.asm for the NEXT assembly to INCLUDE. It
+# exits 10 when it rewrote one, so the loop assembles again - a stream that
+# changed SIZE has moved the bank around under the very block it came from.
+# IN THE STEADY STATE THIS IS ONE ASSEMBLY: the first pass extracts what is
+# already there, finds it unchanged and exits 0.
+python (Join-Path $root 'tools\pack_overlays.py') --ensure $raw
+if ($LASTEXITCODE -ne 0) { throw "pack_overlays --ensure failed ($LASTEXITCODE)" }
+$packed = $false
+for ($pass = 1; $pass -le 4; $pass++) {
+    & $beebasm -i (Join-Path $root 'src\main.asm') -do $raw -opt 3 -title PARADROID -D $relDef -v |
+        Out-File -FilePath $listing -Encoding utf8
+    if ($LASTEXITCODE -ne 0) { throw "beebasm failed ($LASTEXITCODE)" }
+
+    python (Join-Path $root 'tools\pack_overlays.py') $raw
+    $rc = $LASTEXITCODE
+    if ($rc -eq 0) { $packed = $true; break }
+    if ($rc -ne 10) { throw "pack_overlays failed ($rc)" }
+}
+if (-not $packed) {
+    throw "pack_overlays did not settle in 4 passes - the overlays' own bytes depend on the bank layout their size decides"
+}
 
 # -Intro: a second beebasm pass over scarybeasts' intro, which brings its own
 # SAVE and eleven PUTFILEs. IT MUST RUN FROM pdloader/: those PUTFILE paths are

@@ -1409,3 +1409,85 @@ exactly where the fragility is.
 The briefing paints and scrolls exactly as before, which is the whole of the check stage 1 can
 carry: nothing reads the streams yet, so this is a build-time change and `verify_brstreams.py` is
 where its proof lives.
+
+---
+
+## 16. THE BUILD GROWS A PACK PASS — 2026-09-09
+
+**Two decisions from KC, both forced by measurement rather than chosen freely.**
+
+### 16a. Stages 2 and 3 cannot be separated
+
+The handover's stage 2 — "the renderer reads the buffer; `PARMAN` still loads and `briefman` is
+still inside it" — **cannot be built**. `PARMAN` is loaded OVER bank 5, and three of the five page
+streams have to live in bank 5, because bank 5 is the only bank with a hole big enough for
+`keyredef`'s 776 and the streams are what keep the rest of it usable. The load that delivers the
+renderer would evict the text the renderer reads.
+
+So the page streams, the renderer change, the bank-residency of `briefman`/`sndchat`/`brExtra`/
+`keyredef` and the removal of both loads all land in one step. **KC agreed 2026-09-09.**
+
+### 16b. The budget is short again, and the fix was already required
+
+Packing measured against the real bin sizes, and it does not fit. Bank 4's 225 can hold nothing
+(the smallest stream is 313) and bank 6's 442 absorbs exactly one mid-size item, so at best
+banks 6 and 7 together take ~1,013 of the 3,242 that can go anywhere, leaving bank 5 needing
+2,229 of the 2,035 it has after `briefman` and friends. **194 short.**
+
+**The fix is a build pass that step 5 needed anyway.** §12a's 3A — `keyredef` shipped packed —
+is impossible inside one beebasm run: beebasm cannot compress its own output, and `keyredef` is
+assembled code. So the extra pass was never optional; §14c's `brfImg`/`lowImg` packing is the
+same mechanism applied to two more blocks, and it lands in banks 6 and 7, exactly where the
+fragility is. **KC took it.**
+
+### 16c. As built — the pack loop
+
+`tools/pack_overlays.py`. `main.asm` `SAVE`s each block under an X-name (`XBRF`, `XLOW`); the
+tool reads them back out of the disc image, ZX0s them with `bin/zx0.exe`, round-trips each
+through `tools/zx0.py` and writes one generated file per overlay for the next assembly to
+`INCLUDE`. `build.ps1` loops on its exit code — **0 nothing changed, 10 a stream was rewritten,
+assemble again**.
+
+**The loop is not belt and braces.** A stream that changes SIZE moves the bank around under the
+very block it came from, so the extracted bytes could be from a layout that no longer exists.
+The exit code makes convergence a build-time fact rather than an assumption. Measured from a
+cold start (both generated files deleted): **stub, assemble, pack, assemble, unchanged — two
+assemblies, and the second confirms the overlays' bytes did NOT depend on the bank layout.**
+In the steady state it is **one** assembly: the first pass extracts what is already there.
+
+Two details worth keeping:
+
+- **The X-files never reach the disc.** `make_disc.py` writes only the names in its `LAYOUT`, so
+  they are dropped for free and no rule had to be added.
+- **The size `ASSERT` lives in the generated file, not in `main.asm`.** The bootstrap stub cannot
+  know the size it will eventually hold, so it omits the assert and still assembles; every real
+  stream carries `ASSERT BRF_IMG_UNPACKED == brf_end - brf_start`. A stale generated file still
+  fails the build.
+
+`BrfResident` and `LowResident` become depacks rather than three-page-and-a-tail copies — half
+the code, and the tail arithmetic goes with it. `Zx0Unpack` is main RAM, so calling it from bank 6
+is the ordinary direction and the stream it reads stays paged throughout.
+
+### 16d. What it bought, and what it cost
+
+| | before | after |
+|---|---|---|
+| `brfImg` | 1,012 | **769** |
+| `lowImg` | 919 | **731** |
+| bank 6 free | 33 | **494** |
+
+**+461** — 431 from the packing and 30 from the shorter copiers.
+
+**It costs disc space: the image went 47,872 -> 50,176, +2,304 bytes.** A ZX0 stream inside
+`PARSPR2`'s own ZX0 stream compresses worse than the raw code did, which is the standard
+double-compression penalty and the price of the bank bytes. Boot time was not re-measured.
+
+### 16e. Verified
+
+**The whole front-end loop, on the shipping image in jsbeeb, `B-DFS1.2`** — and it is the right
+test, because `LowResident` delivers the IRQ, the rupture and the keyboard, and `BrfResident`
+delivers `BrDispatch`, which every post-title path runs through:
+
+cold boot -> title -> fire -> **game** (the panel reads "Mobile", the deck is drawn, the player
+is on it) -> ESCAPE -> death -> game over -> high-score entry -> three initials -> **title
+again**, through `GoTitle` after `RestoreDfsWs` -> **briefing on the timeout**, scrolling.

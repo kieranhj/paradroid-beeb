@@ -153,7 +153,20 @@ lives only in `build.ps1`.
 
 DFS filenames are max 7 characters — the executable on disc is `PARA`.
 
-**The build is two stages: beebasm, then `tools/make_disc.py`.** The tool ZX0-compresses the four
+**The build is a PACK LOOP and then `tools/make_disc.py` (no-load step 5, 2026-09-09).** Some of
+what bank 6 carries is assembled code copied down to run elsewhere — the `PARBRF` briefing driver
+at `&0400` and the low overlay at `&0E00` — and **beebasm cannot compress its own output**, so
+`main.asm` `SAVE`s each block under an X-name, `tools/pack_overlays.py` reads them back out of the
+image, ZX0s them and writes `src/data/brfimg.asm` / `lowimg.asm` for the NEXT assembly, and
+`build.ps1` assembles again if anything changed (exit 10). **In the steady state that is still one
+assembly**; from a cold start it is two, and the loop is what makes convergence a build-time fact
+rather than an assumption — a stream that changes size moves the bank around under the very block
+it came from. The X-files never reach the disc: `make_disc.py` writes only the names in its
+`LAYOUT`. Each generated file carries its own size `ASSERT`, so a stale one fails the build; the
+bootstrap stub omits it, which is the only reason a fresh clone assembles at all. This pass exists
+because `keyredef` cannot ship packed without it — `docs/no-load.md` §16.
+
+**Then `tools/make_disc.py`.** The tool ZX0-compresses the four
 bank files **and `PARMAN` and `PARAFNT`** with `bin/zx0.exe` (sources and build line in `tools/zx0src/`; round-trip-verified
 through `tools/zx0.py` every build), moves their catalogue load address to `DEPK_STREAM`, and lays
 the disc out physically in boot access order. The loader (`UnpackBankIn`, resident in the code

@@ -4122,6 +4122,13 @@ GUARD BRF_END
 .brf_start
 INCLUDE "src/briefing.asm"
 .brf_end
+\ ---- and out again for tools/pack_overlays.py ---------------
+\ THIS IS THE EXTRA BUILD PASS. beebasm cannot compress its own
+\ output, so the only way this block can ship packed is for the tool
+\ to read the assembled bytes back out and hand the next assembly a
+\ ZX0 stream. The X-name never reaches the disc: make_disc.py writes
+\ only the names in its LAYOUT. See src/data/brfimg.asm.
+SAVE "XBRF", brf_start, brf_end, 0, 0
 
 \ ============================================================
 \ The low-RAM overlay — resident code at &0E00
@@ -4148,6 +4155,7 @@ ORG LOW_ADDR
 .low_start
 INCLUDE "src/lowcode.asm"
 .low_end
+SAVE "XLOW", low2_start, low_end, 0, 0   \ the pack pass; see XBRF above
 ASSERT low_end <= LOW_LIMIT
 ASSERT low_end - low_start <= LOW_PAGES * 256
 
@@ -4219,14 +4227,21 @@ INCLUDE "src/data/conicons.asm"
 \ six briefing constants they need went to main.asm's header with the
 \ rest of the geometry (see UNIT_BYTES). Bank 7 was the other
 \ candidate and has 759 bytes; this needs 1,931.
-BRF_IMG_BYTES = brf_end - brf_start
-LOW_IMG_BYTES = low_end - low2_start
-.brfImg
-  SKIP BRF_IMG_BYTES
-.lowImg
-  SKIP LOW_IMG_BYTES
-COPYBLOCK brf_start, brf_end, brfImg
-COPYBLOCK low2_start, low_end, lowImg
+\ AND SINCE no-load STEP 5 THEY SHIP PACKED. They used to be SKIP
+\ reservations filled by COPYBLOCK -- 1,012 and 919 bytes of this bank
+\ for two blocks of code that are read exactly once each. beebasm has
+\ no compressor, so the build gained a pass: main.asm SAVEs each block
+\ under an X-name, tools/pack_overlays.py ZX0s what it finds and writes
+\ the two files below for the NEXT assembly, and build.ps1 loops until
+\ nothing changes (one assembly in the steady state). 1,931 -> 1,499.
+\ The same pass is what lets keyredef ship packed at all, which is the
+\ reason it exists -- docs/no-load.md 16.
+\ Each generated file carries its OWN size ASSERT against the block it
+\ came from, so a stale one cannot pass -- and so the bootstrap stub,
+\ which cannot know the size, can leave the assert out and still
+\ assemble. See tools/pack_overlays.py's OVERLAYS table.
+INCLUDE "src/data/brfimg.asm"
+INCLUDE "src/data/lowimg.asm"
 
 \ ---- and briefing page 1 (no-load step 5) -------------------
 \ Here rather than in bank 5 because bank 5 is being kept whole for
@@ -4240,34 +4255,27 @@ INCLUDE "src/data/brstream0.asm"
 \ itself. Three whole pages then a tail, because neither image is a
 \ round number of pages and over-copying either would be a write into
 \ somebody's live memory.
+\ ...and both are DEPACKS now, not page copies: half the code the
+\ three-page-and-a-tail loops were, and the tail arithmetic that made
+\ them fiddly is gone with them. Zx0Unpack is MAIN RAM, so calling it
+\ from here is the ordinary bank-to-main-RAM direction and the stream
+\ it reads stays paged throughout.
+\ src/mapptr are the level draw's, idle at title time -- the same
+\ argument UnpackBankIn makes at boot and the briefing makes per page.
 .BrfResident
-  LDX #0
-.brr_page
-  LDA brfImg,X       : STA BRF_ADDR,X
-  LDA brfImg+256,X   : STA BRF_ADDR+256,X
-  LDA brfImg+512,X   : STA BRF_ADDR+512,X
-  INX
-  BNE brr_page
-.brr_tail
-  LDA brfImg+768,X   : STA BRF_ADDR+768,X
-  INX
-  CPX #BRF_IMG_BYTES-768
-  BNE brr_tail
+  LDA #LO(brfImg)   : STA src
+  LDA #HI(brfImg)   : STA src+1
+  LDA #LO(BRF_ADDR) : STA mapptr
+  LDA #HI(BRF_ADDR) : STA mapptr+1
+  JSR Zx0Unpack
   JMP PgData
 
 .LowResident
-  LDX #0
-.lwr_page
-  LDA lowImg,X       : STA LOW_STAGE,X
-  LDA lowImg+256,X   : STA LOW_STAGE+256,X
-  LDA lowImg+512,X   : STA LOW_STAGE+512,X
-  INX
-  BNE lwr_page
-.lwr_tail
-  LDA lowImg+768,X   : STA LOW_STAGE+768,X
-  INX
-  CPX #LOW_IMG_BYTES-768
-  BNE lwr_tail
+  LDA #LO(lowImg)   : STA src
+  LDA #HI(lowImg)   : STA src+1
+  LDA #LO(LOW_STAGE): STA mapptr
+  LDA #HI(LOW_STAGE): STA mapptr+1
+  JSR Zx0Unpack
   JMP PgData
 .spr2_end
 SAVE "PARSPR2", spr2_start, spr2_end, DATA_LOAD, DATA_LOAD
