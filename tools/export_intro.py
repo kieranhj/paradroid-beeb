@@ -28,9 +28,7 @@ Output:
   tools/output/intro_bbc_flash_N.png  each colourway at peak
 """
 
-import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 try:
@@ -41,6 +39,7 @@ except ImportError:
 
 sys.path.insert(0, str(Path(__file__).parent))
 import zx0
+import zx0tool
 import rip_intro as rip
 
 PROJECT = rip.PROJECT
@@ -172,15 +171,9 @@ def main():
     bmp = pack_mode1(img)
     (OUT_DIR / 'intro_bbc.bin').write_bytes(bmp)
 
-    with tempfile.TemporaryDirectory() as td:
-        src = Path(td) / 'in.bin'
-        dst = Path(td) / 'out.zx0'
-        src.write_bytes(bmp)
-        subprocess.run([str(PROJECT / 'bin' / 'zx0.exe'), '-f',
-                        str(src), str(dst)], check=True, capture_output=True)
-        packed = dst.read_bytes()
+    packed = zx0tool.run_zx0(zx0tool.find_zx0(), bmp)
     if zx0.decompress(packed) != bmp:
-        raise SystemExit("zx0.exe stream fails zx0.py round-trip")
+        raise SystemExit("stream fails the zx0.py round-trip")
     (OUT_DATA / 'introscr.zx0').write_bytes(packed)
     print(f"  introscr.zx0  {len(bmp)} -> {len(packed)} bytes")
 

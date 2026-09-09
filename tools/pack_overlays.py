@@ -11,7 +11,8 @@ full size in a bank.
 
 THIS IS THE EXTRA BUILD PASS THAT LETS THEM SHIP PACKED. main.asm
 SAVEs each block to the disc image under an X-name; this reads those
-back out, ZX0s them with bin/zx0.exe (round-tripped through
+back out, ZX0s them with the compressor tools/zx0tool.py finds (round-
+tripped through
 tools/zx0.py, as make_disc.py does), and writes one generated file per
 overlay for the NEXT assembly to INCLUDE.
 
@@ -37,16 +38,14 @@ does not recognise, which is how an --intro build carries PINTRO's data,
 so relying on LAYOUT alone shipped all four.
 """
 
-import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import zx0                       # noqa: E402
+import zx0tool                   # noqa: E402
 
 PROJECT = Path(__file__).resolve().parent.parent
-ZX0_EXE = PROJECT / 'bin' / 'zx0.exe'
 SECTOR = 256
 
 # disc name -> (generated file, label, size constant, what it is).
@@ -79,15 +78,10 @@ def catalogue(img):
     return files
 
 
-def pack(raw, name):
-    with tempfile.TemporaryDirectory() as td:
-        src, dst = Path(td) / 'in.bin', Path(td) / 'out.zx0'
-        src.write_bytes(raw)
-        subprocess.run([str(ZX0_EXE), '-f', str(src), str(dst)],
-                       check=True, capture_output=True)
-        packed = dst.read_bytes()
+def pack(raw, name, zx0_exe):
+    packed = zx0tool.run_zx0(zx0_exe, raw)
     if zx0.decompress(packed) != raw:
-        raise SystemExit('%s: zx0.exe stream fails zx0.py round-trip' % name)
+        raise SystemExit('%s: stream fails the zx0.py round-trip' % name)
     return packed
 
 
@@ -120,6 +114,7 @@ def emit(path, label, const, what, raw, packed):
 
 def main():
     args = sys.argv[1:]
+    zx0_arg = zx0tool.take_zx0_arg(args)
     # --ensure: write a stub for any generated file that does not exist yet
     # and stop. beebasm cannot INCLUDE a missing file, so a fresh clone has
     # to get past the first assembly somehow; the loop fills them in.
@@ -129,15 +124,15 @@ def main():
     if not args:
         raise SystemExit(__doc__)
     img_path = Path(args[0])
-    if not ZX0_EXE.exists():
-        raise SystemExit('%s missing - build it from tools/zx0src/' % ZX0_EXE)
+    zx0_exe = zx0tool.find_zx0(zx0_arg)
 
     if ensure:
         for fname, label, const, what in OVERLAYS.values():
             path = PROJECT / 'src' / 'data' / fname
             if not path.exists():
                 stub = bytes(1)
-                emit(path, label, const, what, stub, pack(stub, fname))
+                emit(path, label, const, what, stub,
+                     pack(stub, fname, zx0_exe))
                 print('pack_overlays: stubbed %s' % fname)
         return
 
@@ -152,10 +147,10 @@ def main():
             # produces the real bytes, and the loop then runs again.
             if not path.exists():
                 stub = bytes(1)
-                emit(path, label, const, what, stub, pack(stub, disc))
+                emit(path, label, const, what, stub, pack(stub, disc, zx0_exe))
                 changed.append(disc)
             continue
-        packed = pack(raw, disc)
+        packed = pack(raw, disc, zx0_exe)
         report.append('%s %d->%d' % (disc, len(raw), len(packed)))
         if emit(path, label, const, what, raw, packed):
             changed.append(disc)

@@ -30,6 +30,12 @@ bin/
 # Copyright Andrew Braybrook / Hewson Consultants. Supply these locally;
 # they are inputs to the tools in tools/, not part of this project.
 *.lst
+# ...except paradroid_ce.lst, which IS committed as of 2026-09-09 (KC, on
+# issue #3): src/data is generated from it, so without it in the tree
+# `make data` and `make world` cannot run and the build is not reproducible
+# from source. hexwab's point stands - it is no more of a copyright
+# question than the converted data already committed under src/data.
+!paradroid_ce.lst
 *.prg
 *.zip
 extracted/

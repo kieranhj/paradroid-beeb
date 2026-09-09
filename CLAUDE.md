@@ -131,6 +131,29 @@ as a name, and reports the matrix key that moved, which measures a key number in
 .\build.ps1 -Release  # THE BUILD FOR OTHER PEOPLE: -Intro, every DEBUG_ flag off
 ```
 
+**THERE IS A SECOND IMPLEMENTATION OF THE SAME PIPELINE AND BOTH MUST BE KEPT IN STEP.** The
+`Makefile` (hexwab's issue #3, 2026-09-09) builds the project on any POSIX system - `make`,
+`make -j4`, `make release`, `make run`, `make data`, `make world`, `make help` - and produces a
+byte-identical disc, which `make check-ps1` proves through `tools/compare_ssd.py` (per file out
+of the DFS catalogue, masking `!BOOT`'s timestamp). `docs/build.md` is the whole story: what is
+overridable, the three parts of the pipeline that are NOT a DAG and what was done about each,
+and the timings (`make -j4` from clean 9.2 s against build.ps1's 7.9; a no-op `make` 0.23 s).
+**A change to the pipeline has to land in both**, and **adding a file to `src/` means adding it
+to `ASM` in the Makefile** - there is no wildcard, deliberately.
+
+Tools come from `$PATH` unless overridden (`PYTHON`, `BEEBASM`, `ZX0`, `EMU`, `BUILD`), and
+**nothing writes a `.exe` suffix any more**: `tools/zx0tool.py` resolves the compressor for all
+five Python tools that shell out to it (`$ZX0`, then `bin/`, then `$PATH`), and `build.ps1` reads
+`$env:PYTHON` / `$env:BEEBASM`. `make.bat` and `make.sh` are unchanged and still wrap `build.ps1`.
+
+**`paradroid_ce.lst` IS COMMITTED as of 2026-09-09** (KC, on issue #3) - `make data` regenerates
+`src/data` from it and `make world` does that and then builds. **Neither is part of the default
+build**: the rules live in `mk/data.mk` precisely so they cannot creep into it, and `src/data`
+stays committed for the reasons in the gitignore. `make data` needs Pillow. It has already paid
+for itself - the first real run caught `src/data/sndchat.asm` carrying a hand edit that
+`export_sound.py` did not know about, which would have defined `BR_CHAT_PRE` twice.
+
+
 **`RELEASE` is a beebasm command-line symbol and every build passes it.** beebasm has no
 `IFDEF` and refuses a symbol defined twice, so `main.asm` cannot carry a default of its own:
 `build.ps1` passes `-D RELEASE=0`, or `-D RELEASE=1` on `-Release`, and `main.asm`'s `DEV` is
@@ -478,6 +501,8 @@ Both worked around locally; extending the shared set is the better fix and moves
 - `PLAN.md` — the live plan; state of the port, memory map, layer summaries, open items
 - `docs/` — per-layer working notes for everything already done, linked from `PLAN.md`.
   `decisions.md` also carries the evidence for which Paradroid the listing is
+- `docs/build.md` — the two builds (`build.ps1` and the `Makefile`), what is overridable,
+  the parts of the pipeline that are not a DAG, and the timings
 - `docs/graphics.md` — where the C64's graphics data lives, what format it is in, and which tool
   reads it. Each section says what has actually been ported and what has not
 - `BUGS.md` — open defects, with the evidence and what has been ruled out. It used to warn that the

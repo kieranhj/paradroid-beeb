@@ -28,13 +28,12 @@ offset 0). The overlap and size assertions below catch the gross cases.
 Usage: python tools/make_intro_data.py [outdir]     (default: build/)
 """
 
-import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 import zx0
+import zx0tool
 
 BANK_SIZE = 0x4000
 BANK_BASE = 0x8000
@@ -56,17 +55,13 @@ SCREEN = "screen"
 
 
 def compress(zx0_exe, raw, name):
-    """bin/zx0.exe, round-trip-verified through tools/zx0.py. Same rule as
-    make_disc.py: the reference compressor writes it, our decoder proves
-    it, and src/zx0depack.asm is what reads it on the Beeb."""
-    with tempfile.TemporaryDirectory() as td:
-        src, dst = Path(td) / "in.bin", Path(td) / "out.zx0"
-        src.write_bytes(raw)
-        subprocess.run([str(zx0_exe), "-f", str(src), str(dst)],
-                       check=True, capture_output=True)
-        packed = dst.read_bytes()
+    """The reference compressor, round-trip-verified through tools/zx0.py.
+    Same rule as make_disc.py: the reference compressor writes it, our
+    decoder proves it, and src/zx0depack.asm is what reads it on the
+    Beeb. tools/zx0tool.py decides which binary that is."""
+    packed = zx0tool.run_zx0(zx0_exe, raw)
     if zx0.decompress(packed) != raw:
-        raise SystemExit(f"{name}: zx0.exe stream fails the zx0.py round-trip")
+        raise SystemExit(f"{name}: stream fails the zx0.py round-trip")
     return packed
 
 
@@ -97,9 +92,7 @@ def main():
     out_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else root / "build"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    zx0_exe = root / "bin" / "zx0.exe"
-    if not zx0_exe.exists():
-        raise SystemExit(f"{zx0_exe} missing - build it from tools/zx0src/")
+    zx0_exe = zx0tool.find_zx0()
 
     print("make_intro_data: the sideways-RAM image")
     bank = build_bank(src_dir)

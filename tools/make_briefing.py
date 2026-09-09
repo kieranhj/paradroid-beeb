@@ -61,13 +61,12 @@ back to ASCII and diffs it against the input, so a mapping slip cannot
 survive.
 """
 
-import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import zx0                       # noqa: E402  - the round-trip check
+import zx0tool                   # noqa: E402  - which compressor to run
 
 PROJECT = Path(__file__).resolve().parent.parent
 SRC = PROJECT / 'src' / 'data' / 'briefing.txt'
@@ -86,7 +85,6 @@ OUT_STREAM = PROJECT / 'src' / 'data' / 'brstream%d.asm'
 # away, while these glyphs are read by the live renderer and have to be in
 # the briefing's own bank.
 OUT_EXTRA = PROJECT / 'src' / 'data' / 'brextra.asm'
-ZX0_EXE = PROJECT / 'bin' / 'zx0.exe'
 
 # WHERE A DEPACKED PAGE LANDS, and the reason the pointer tables can ride
 # inside the stream: the blob is assembled below as if it were AT this
@@ -202,20 +200,14 @@ def page_blob(pages, extras, p, rows):
 
 
 def zx0_pack(raw, name):
-    """bin/zx0.exe, then tools/zx0.py's decompressor over what it wrote.
-    make_disc.py does the same for the banks and for the same reason: the
-    stream the 6502 depacker eats is zx0.py's format, so a compressor
-    that drifted from it would ship silently."""
-    if not ZX0_EXE.exists():
-        raise SystemExit('%s missing - build it from tools/zx0src/' % ZX0_EXE)
-    with tempfile.TemporaryDirectory() as td:
-        src, dst = Path(td) / 'in.bin', Path(td) / 'out.zx0'
-        src.write_bytes(raw)
-        subprocess.run([str(ZX0_EXE), '-f', str(src), str(dst)],
-                       check=True, capture_output=True)
-        packed = dst.read_bytes()
+    """The reference compressor, then tools/zx0.py's decompressor over
+    what it wrote. make_disc.py does the same for the banks and for the
+    same reason: the stream the 6502 depacker eats is zx0.py's format, so
+    a compressor that drifted from it would ship silently. Which binary
+    that is, tools/zx0tool.py decides - $ZX0, then bin/, then $PATH."""
+    packed = zx0tool.run_zx0(zx0tool.find_zx0(), raw)
     if zx0.decompress(packed) != raw:
-        raise SystemExit('%s: zx0.exe stream fails zx0.py round-trip' % name)
+        raise SystemExit('%s: stream fails the zx0.py round-trip' % name)
     return packed
 
 

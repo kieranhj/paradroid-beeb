@@ -16,6 +16,7 @@ them.
 | [`docs/decisions.md`](docs/decisions.md) | **The decision table of record**, plus the reasoning — why MODE 1, the no-HAL rule, and the evidence for which Paradroid the listing is |
 | [`docs/ram-pass.md`](docs/ram-pass.md) | The 2026-08-25 RAM recovery pass — what it bought, what it rejected, the reserves left, and the corrected buffer-diff oracle recipe |
 | [`docs/no-load.md`](docs/no-load.md) | **The `no-load` branch, in progress** — hexwab's issue #2: everything resident, loading once at boot. The arena rule for `&4600`, the ledger, what has landed, and step 3 onwards |
+| [`docs/build.md`](docs/build.md) | **The two builds** — hexwab's issue #3: `build.ps1` and the POSIX `Makefile`, proven to produce the same disc. What is overridable, the three parts of the pipeline that are not a DAG, and the timings |
 | [`docs/graphics.md`](docs/graphics.md) | Where the C64's graphics live, which tool reads them, and per section what is ported |
 | [`docs/raster-timing.md`](docs/raster-timing.md) | **Where the main loop sits against the beam** — the frame, what writes the buffer when, and the flicker work |
 | [`docs/human-notes-status.md`](docs/human-notes-status.md) | KC's polish notes, reconciled item by item — nearly all closed; the record of each fix |

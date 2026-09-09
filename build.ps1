@@ -13,8 +13,14 @@ if ($Release) { $Intro = $true }
 # passed on EVERY build, and a bare beebasm invocation has to pass it too -
 # the symbol dump in CLAUDE.md does. main.asm's DEV is what the flags read.
 $relDef = if ($Release) { 'RELEASE=1' } else { 'RELEASE=0' }
+# The interpreter and the two binaries are overridable, so that the
+# Makefile (issue #3) can hand this script the same tools it is using and
+# `make check-ps1` can prove the two builds agree. Unset, everything is
+# exactly what it always was: `python` and the checked-out bin/.
+$python  = if ($env:PYTHON)  { $env:PYTHON }  else { 'python' }
 $root    = $PSScriptRoot
-$beebasm = Join-Path $root 'bin\beebasm.exe'
+$beebasm = if ($env:BEEBASM) { $env:BEEBASM }
+           else { Join-Path $root ('bin' + [IO.Path]::DirectorySeparatorChar + 'beebasm.exe') }
 $build   = Join-Path $root 'build'
 $raw     = Join-Path $build 'PARADROID-raw.ssd'
 $ssd     = Join-Path $build 'PARADROID.SSD'
@@ -27,7 +33,7 @@ if (-not (Test-Path $build)) { New-Item -ItemType Directory -Path $build | Out-N
 # The briefing text is hand-editable (src/data/briefing.txt) and converted
 # every build - the one exporter build.ps1 DOES run, because its input is a
 # checked working file rather than the C64 listing. See tools/make_briefing.py.
-python (Join-Path $root 'tools\make_briefing.py')
+& $python (Join-Path $root 'tools\make_briefing.py')
 if ($LASTEXITCODE -ne 0) { throw "make_briefing failed ($LASTEXITCODE)" }
 
 # The OTHER exporters are not run here, because their input is the C64 listing
@@ -67,7 +73,7 @@ if ((Test-Path $palJson) -and (Test-Path $palAsm)) {
 # changed SIZE has moved the bank around under the very block it came from.
 # IN THE STEADY STATE THIS IS ONE ASSEMBLY: the first pass extracts what is
 # already there, finds it unchanged and exits 0.
-python (Join-Path $root 'tools\pack_overlays.py') --ensure $raw
+& $python (Join-Path $root 'tools\pack_overlays.py') --ensure $raw
 if ($LASTEXITCODE -ne 0) { throw "pack_overlays --ensure failed ($LASTEXITCODE)" }
 $packed = $false
 for ($pass = 1; $pass -le 4; $pass++) {
@@ -75,7 +81,7 @@ for ($pass = 1; $pass -le 4; $pass++) {
         Out-File -FilePath $listing -Encoding utf8
     if ($LASTEXITCODE -ne 0) { throw "beebasm failed ($LASTEXITCODE)" }
 
-    python (Join-Path $root 'tools\pack_overlays.py') $raw
+    & $python (Join-Path $root 'tools\pack_overlays.py') $raw
     $rc = $LASTEXITCODE
     if ($rc -eq 0) { $packed = $true; break }
     if ($rc -ne 10) { throw "pack_overlays failed ($rc)" }
@@ -94,7 +100,7 @@ if ($Intro) {
     # image and one for the 20K screen, 33,912 bytes of loose files down to
     # 5,451. Unlike the other exporters this one IS run here - its input is
     # pdloader's own checked-in binaries, not the C64 listing.
-    python (Join-Path $root 'tools\make_intro_data.py')
+    & $python (Join-Path $root 'tools\make_intro_data.py')
     if ($LASTEXITCODE -ne 0) { throw "make_intro_data failed ($LASTEXITCODE)" }
 
     $introRaw = Join-Path $build 'PINTRO-raw.ssd'
@@ -114,7 +120,7 @@ if ($Intro) {
 # DEPK_STREAM. Never hand $raw to an emulator. See tools/make_disc.py.
 $discArgs = @($raw, $ssd, $padded)
 if ($introRaw) { $discArgs += @('--intro', $introRaw) }
-python (Join-Path $root 'tools\make_disc.py') @discArgs
+& $python (Join-Path $root 'tools\make_disc.py') @discArgs
 if ($LASTEXITCODE -ne 0) { throw "make_disc failed ($LASTEXITCODE)" }
 
 if ($Release) { "RELEASE build: intro on, every DEBUG_ flag off" }

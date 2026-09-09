@@ -621,7 +621,15 @@ def main():
         "\\ asserts they do, and sndFxChat ships holding them.",
         "\\ ============================================================",
         "",
-        "BR_CHAT_PRE = " + str(CHAT_PRE),
+        # ASSERT, not a definition. BR_CHAT_PRE moved to main.asm on
+        # 2026-09-09 (no-load step 5) because briefman.asm went
+        # bank-resident and needed it earlier than this file is
+        # included; its old home checks the value instead, so a
+        # regenerated chatter table that disagreed would still fail the
+        # build. THE EXPORTER WAS NOT UPDATED WITH THE FILE - the tree
+        # carried a hand edit here until `make data` reverted it and
+        # beebasm refused the duplicate symbol (issue #3, 2026-09-09).
+        "ASSERT BR_CHAT_PRE == " + str(CHAT_PRE),
         "",
         ".brChatTab",
     ]

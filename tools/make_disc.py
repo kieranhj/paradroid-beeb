@@ -20,21 +20,34 @@ never seeks backwards during a load: DFS files are contiguous, and
 beebasm's own order (SAVE statement order) put !BOOT and PARA at the END
 of the disc, costing a full-disc seek out and back at boot.
 
-The compressor is bin/zx0.exe - the reference ZX0 by Einar Saukas, built
-from tools/zx0src/ (see the README there). Its output is byte-identical
-to tools/zx0.py, which is the format src/zx0depack.asm decodes; zx0.py
-verifies every stream by decompression before the image is written.
+The compressor is the reference ZX0 by Einar Saukas, built from
+tools/zx0src/ (see the README there) and located by tools/zx0tool.py -
+$ZX0, then bin/, then $PATH, with no `.exe` written down anywhere. Its
+output is byte-identical to tools/zx0.py, which is the format
+src/zx0depack.asm decodes; zx0.py verifies every stream by decompression
+before the image is written, whoever compressed it.
 
 Usage: python tools/make_disc.py RAW.SSD OUT.SSD [PADDED.SSD]
+                                 [--intro PINTRO.ssd] [--zx0 PATH]
+                                 [--packed-dir DIR]
+       python tools/make_disc.py --extract-file NAME DIR RAW.SSD
+
+--extract-file and --packed-dir are the two halves of ONE compression,
+split so that a make -j build can run the five compressors at once:
+--extract-file drops a bank out of the raw image as DIR/NAME.bin, make
+turns each .bin into a .zx0 by its own inference rule, and --packed-dir
+takes those streams instead of compressing. The result is byte-identical
+either way, and it is checked - a stream from --packed-dir goes through
+the same zx0.py round-trip and the same in-place margin test, so a stale
+.zx0 is a build failure rather than a broken disc.
 """
 
-import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 import zx0
+import zx0tool
 
 DEPK_STREAM = 0x3200            # must match main.asm
 FNT_STREAM  = 0x3700            # must match main.asm
@@ -172,19 +185,36 @@ def read_catalogue(img):
     return files
 
 
-def compress(zx0_exe, raw, name):
-    with tempfile.TemporaryDirectory() as td:
-        src = Path(td) / "in.bin"
-        dst = Path(td) / "out.zx0"
-        src.write_bytes(raw)
-        subprocess.run([str(zx0_exe), "-f", str(src), str(dst)],
-                       check=True, capture_output=True)
-        packed = dst.read_bytes()
+def check_stream(packed, raw, name):
+    """The two guards every stream passes, however it was produced.
+
+    They are HERE and not in the compressor call because --packed-dir
+    takes streams the Makefile compressed in a separate process: a stream
+    handed in from outside gets exactly the same scrutiny as one this
+    tool made itself, including the case that matters most - a stale
+    .zx0 left over from a previous build, which decompresses perfectly
+    well but not to THIS build's bank.
+    """
     if zx0.decompress(packed) != raw:
-        raise SystemExit(f"{name}: zx0.exe stream fails zx0.py round-trip")
+        raise SystemExit(f"{name}: stream does not decompress to this "
+                         "build's file - stale .zx0, or a compressor whose "
+                         "output is not the format zx0depack.asm decodes")
     if DEPK_STREAM + len(packed) > 0x8000:
         raise SystemExit(f"{name}: compressed stream overruns main RAM")
     return packed
+
+
+def compress(zx0_exe, raw, name):
+    return check_stream(zx0tool.run_zx0(zx0_exe, raw), raw, name)
+
+
+def load_packed(packed_dir, raw, name):
+    """A stream the caller compressed for us - the Makefile's `-j` path."""
+    path = Path(packed_dir) / (name + ".zx0")
+    if not path.exists():
+        raise SystemExit(f"{path} missing - --packed-dir wants one .zx0 per "
+                         "compressed file, made from --extract-file's .bin")
+    return check_stream(path.read_bytes(), raw, name)
 
 
 def build_image(files, title, cycle, opt):
@@ -235,8 +265,40 @@ def build_image(files, title, cycle, opt):
     return img
 
 
+def extract_file(name, out_dir, raw_path):
+    """Write ONE compressed-file-to-be out of the raw image, uncompressed.
+
+    One file per invocation rather than all five at once, so that each
+    .bin is a make target with its own rule and no stamp file stands
+    between the raw image and the compressor. Reading a DFS catalogue
+    costs nothing; a stamp file would cost correctness, because a stamp
+    touched after the files it describes makes them look stale forever.
+    """
+    if name not in COMPRESSED:
+        raise SystemExit(f"{name} is not one of the compressed files: "
+                         + ", ".join(COMPRESSED))
+    files = read_catalogue(raw_path.read_bytes())
+    if name not in files:
+        raise SystemExit(f"{raw_path} lacks {name}")
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / (name + ".bin")).write_bytes(files[name]["data"])
+
+
 def main():
     argv = sys.argv[1:]
+    zx0_arg = zx0tool.take_zx0_arg(argv)
+    packed_dir = None
+    if "--packed-dir" in argv:              # streams compressed elsewhere
+        i = argv.index("--packed-dir")
+        packed_dir = argv[i + 1]
+        del argv[i:i + 2]
+    if "--extract-file" in argv:            # one raw file out, then stop
+        i = argv.index("--extract-file")
+        if len(argv) < i + 4:
+            raise SystemExit("--extract-file NAME DIR RAW.SSD")
+        extract_file(argv[i + 1], argv[i + 2], Path(argv[i + 3]))
+        return
     intro_path = None
     if "--intro" in argv:                   # docs/intro.md §4: -Intro builds
         i = argv.index("--intro")
@@ -247,11 +309,9 @@ def main():
     raw_path, out_path = Path(argv[0]), Path(argv[1])
     padded_path = Path(argv[2]) if len(argv) > 2 else None
 
-    root = Path(__file__).parent.parent
-    zx0_exe = root / "bin" / "zx0.exe"
-    if not zx0_exe.exists():
-        raise SystemExit(f"{zx0_exe} missing - build it from tools/zx0src/ "
-                         "(see the README there)")
+    # Only needed when we are doing the compressing ourselves; with
+    # --packed-dir there may be no compressor on this machine at all.
+    zx0_exe = None if packed_dir else zx0tool.find_zx0(zx0_arg)
 
     img = raw_path.read_bytes()
     files = read_catalogue(img)
@@ -303,7 +363,8 @@ def main():
     report = []
     for name, stream in COMPRESSED.items():
         raw = files[name]["data"]
-        packed = compress(zx0_exe, raw, name)
+        packed = (load_packed(packed_dir, raw, name) if packed_dir
+                  else compress(zx0_exe, raw, name))
         dest = UNPACK_DEST.get(name)
         note = ""
         if dest is not None:
@@ -325,7 +386,8 @@ def main():
     if padded_path:
         padded_path.write_bytes(out.ljust(200 * 1024, b"\0"))
 
-    print("make_disc: banks compressed")
+    print("make_disc: banks compressed"
+          + (" (streams from %s)" % packed_dir if packed_dir else ""))
     print("\n".join(report))
     print(f"  image   {len(img):6d} -> {len(out):6d}")
 
