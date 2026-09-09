@@ -63,3 +63,15 @@ docs/Kieran's Human Notes.txt
 
 # Claude Code scheduled-task lock
 .claude/scheduled_tasks.lock
+
+# ---- the pack pass's output (no-load step 5) ----
+# tools/pack_overlays.py rewrites these from the assembled bytes of the
+# blocks main.asm SAVEs as XBRF/XLOW/XKR. They are COMPILER output, not
+# exporter output, and they differ between a DEV build and a -Release one
+# (the debug flags change the code inside them), so committing them meant
+# `git status` was dirty after every -Release. A fresh clone gets stubs
+# from `pack_overlays.py --ensure`, which build.ps1 runs first, and the
+# loop fills them in on the second pass.
+src/data/brfimg.asm
+src/data/lowimg.asm
+src/data/krimg.asm

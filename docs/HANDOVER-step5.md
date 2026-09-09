@@ -4,8 +4,9 @@
 Branch `no-load`. Written 2026-09-09 by the session that did §11-§14 of `docs/no-load.md`, which
 ran low on context. Everything below is measured; nothing in it needs re-deriving.
 
-**STAGES 1-3 ARE DONE. Read `docs/no-load.md` §15, §16 and §17 before this file; only stage 4
-(`PARAFNT` boot-only) and stage 5 (the terminal dividend) are left, and §17g restates them.**
+**STEP 5 IS COMPLETE — every stage. Read `docs/no-load.md` §15-§18 instead of this file; it is
+kept only for the measurements §15-§18 did not supersede.** The game now makes NO filing-system
+call after boot: main RAM 108 B free, banks 225/88/1,126/171, eight disc files, 45,312 bytes.
 The three sections also correct this file: §6's stage 2 could not be built as written (PARMAN
 loads over bank 5, which three of the streams live in), the budget in §3 was 17 bytes short
 rather than 67 spare, and the build grew a pack pass because `keyredef` cannot ship packed
