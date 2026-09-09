@@ -1195,3 +1195,74 @@ Bank 6 has 442 left, bank 5 has 2,650, bank 7 775, bank 4 225 — **4,092 free**
 ~4,360 under §12a's recommended shape (2B + 3B). **That is ~270 short**, so step 5 wants either
 the packed `keyredef` (3A, which gives back 238 and reinstates the ten-byte margin) or ~300 bytes
 from somewhere. `dfsSave`'s 912 is still the terminal dividend and still cannot be spent early.
+
+---
+
+## 14. STEP 5, MEASURED AND DESIGNED — 2026-09-09
+
+KC chose **1C, 2B and 3A** from §12a. The measurements below settle the design, and **one of the
+three turns out to be unnecessary**.
+
+### 14a. The pages are not the size §5 said
+
+Measured from the generated `src/data/briefing.asm`, per page: 57 row records plus a 114-byte
+pair of pointer tables (`brRowLo_p` / `brRowHi_p`).
+
+| page | records | + tables | ZX0 (records only) | ZX0 (with tables) |
+|---|---|---|---|---|
+| 0 | 624 | 738 | 409 | 474 |
+| 1 | **967** | **1,081** | 604 | 671 |
+| 2 | 962 | 1,076 | 574 | 643 |
+| 3 | 932 | 1,046 | 566 | 634 |
+| 4 | 435 | 549 | 292 | 356 |
+| | 3,920 | 4,490 | **2,445** | **2,778** |
+
+**§5's "the buffer needed is 1,082" is the page WITH its pointer tables.** The records alone top
+out at 967, which already fits the 1,024-byte map — so **2B's split is not needed**, and the
+briefing keeps its five pages exactly as the original has them. What to do with the 114-byte
+tables is the only real question, and it is worth 337 bytes: 2,445 + 5 x 114 = 3,015 resident if
+they stay in a bank, against **2,778** if each page is ONE stream with its tables inside it.
+
+The tables hold absolute addresses, so the second only works if the depack lands at a **fixed
+base** — which it does. The exporter assembles each page as if it lived at the buffer, so the
+pointers are correct by construction and nothing has to be relocated at run time.
+
+### 14b. The arena is bigger than the map, measured
+
+Seeded `&4220-&460F` with `&A5` at the title, ran the briefing, read it back:
+**296 bytes written, all of them `&4220-&4347`; `&4348-&4600` came back untouched.** That span is
+contiguous with the tile map, so the briefing's arena is **`&4348-&4A00`, 1,720 bytes** rather
+than the map's 1,024.
+
+The 296 is more than `BmSnap`'s rectangle (`BR_PO_ROWS` 11 x `BR_PO_SPAN` 96 = 1,056, ending at
+`&4220`) and **has not been explained**, so the design does not spend to the line: the buffer
+starts at **`&4500`**, 440 bytes clear of the observed high-water mark, and still holds the
+largest page (1,081) with 199 to spare.
+
+### 14c. The budget, and it fits
+
+| | bytes |
+|---|---|
+| five page streams, tables inside (14a) | 2,778 |
+| `briefman` + `sndchat`, unpacked because they run | 471 |
+| `keyredef` packed (3A), depacked into the arena on CTRL+R | 776 |
+| **demand** | **4,025** |
+| free: bank 4 225 + bank 5 2,650 + bank 6 442 + bank 7 775 | **4,092** |
+| **spare** | **67** |
+
+Thin, and every figure in it is now measured rather than estimated. If it needs more, the next
+432 are in **packing `brfImg` and `lowImg`** (§13 stores them raw: 1,012 and 919 against 769 and
+730 packed) — which needs the build pass of §12a's option 4C.
+
+### 14d. The design that follows
+
+- **The text is main RAM's during the briefing.** One ZX0 stream a page, assembled at `&4500`,
+  depacked there on each page turn. The renderer walks main RAM and needs no paging at all for
+  text, which is simpler than today.
+- **`keyredef` shares the same arena** (3A): 1,014 unpacked into `&4500`, which the page it
+  replaces was using. CTRL+R already repaints on return, so the page is simply re-depacked.
+- **`briefman` and `sndchat` stay bank-resident code**, and the page streams are distributed
+  across banks 4-7 by a per-page bank byte (1C) — nothing spans a bank.
+- **Both loads go**: `BrTimeout` stops loading `PARMAN` and `BrDispatch` stops reloading
+  `PARASPR`, because bank 5 is never evicted. `PARAFNT` then has no destroyer left and can
+  become boot-only, which is the third and last load.
