@@ -4,9 +4,10 @@ pack_overlays.py - ZX0 the overlays that are ASSEMBLED CODE.
 
 no-load step 5. Some of what the game keeps in a bank is not data but
 code assembled at a fixed address and copied down to run there: the
-PARBRF briefing driver at &0400 and the low overlay at &0E00. beebasm
+PARBRF briefing driver at &0400, the low overlay at &0E00 and the
+keyredef screen, which depacks over the briefing's page. beebasm
 cannot compress its own output, so they shipped raw and cost their
-full size in bank 6.
+full size in a bank.
 
 THIS IS THE EXTRA BUILD PASS THAT LETS THEM SHIP PACKED. main.asm
 SAVEs each block to the disc image under an X-name; this reads those
@@ -16,6 +17,7 @@ overlay for the NEXT assembly to INCLUDE.
 
     XBRF -> src/data/brfimg.asm   .brfImg   BRF_IMG_UNPACKED
     XLOW -> src/data/lowimg.asm   .lowImg   LOW_IMG_UNPACKED
+    XKR  -> src/data/krimg.asm    .krImg    KR_IMG_UNPACKED
 
 CONVERGENCE, and why the build loop is shaped as it is: a pass whose
 generated streams are a different SIZE from the ones it produces has
@@ -29,8 +31,10 @@ exit code says whether anything changed -
 - and build.ps1 loops on it. In the steady state that is ONE assembly:
 the first pass extracts what is already there and exits 0.
 
-The X-files are dropped from the shipping image for free, because
-make_disc.py writes only the names in its LAYOUT.
+The X-files are dropped from the shipping image by make_disc.py's
+BUILD_ONLY set. That has to be explicit: build_image appends any file it
+does not recognise, which is how an --intro build carries PINTRO's data,
+so relying on LAYOUT alone shipped all four.
 """
 
 import subprocess
@@ -45,18 +49,21 @@ PROJECT = Path(__file__).resolve().parent.parent
 ZX0_EXE = PROJECT / 'bin' / 'zx0.exe'
 SECTOR = 256
 
-# disc name -> (generated file, label, size constant, what it is, the
-# beebasm expression the size is ASSERTed against). The assert is emitted
-# INTO the generated file rather than written in main.asm, so that the
-# bootstrap stub - which cannot know the size - can leave it out and still
-# assemble; every real stream carries it.
+# disc name -> (generated file, label, size constant, what it is).
+#
+# THERE IS NO SIZE ASSERT, and that was tried: an
+# `ASSERT BRF_IMG_UNPACKED == brf_end - brf_start` in the generated file
+# makes a CHANGED overlay unbuildable, because the assembly that would
+# produce the new bytes is the one the stale assert stops. The loop's
+# byte-for-byte comparison is the guard, and it is the stronger one - it
+# checks the content, not just the length, on every build.
 OVERLAYS = {
     'XBRF': ('brfimg.asm', 'brfImg', 'BRF_IMG_UNPACKED',
-             'the PARBRF briefing driver, copied down to &0400',
-             'brf_end - brf_start'),
+             'the PARBRF briefing driver, copied down to &0400'),
     'XLOW': ('lowimg.asm', 'lowImg', 'LOW_IMG_UNPACKED',
-             'the low overlay, staged at LOW_STAGE and copied to &0E00',
-             'low_end - low2_start'),
+             'the low overlay, staged at LOW_STAGE and copied to &0E00'),
+    'XKR':  ('krimg.asm', 'krImg', 'KR_IMG_UNPACKED',
+             "the keyredef screen, depacked over the briefing's page"),
 }
 
 
@@ -84,7 +91,7 @@ def pack(raw, name):
     return packed
 
 
-def emit(path, label, const, what, raw, packed, check=None):
+def emit(path, label, const, what, raw, packed):
     bs = chr(92)
     out = [
         bs + ' ============================================================',
@@ -97,10 +104,8 @@ def emit(path, label, const, what, raw, packed, check=None):
         bs + ' it holds changes, and the build assembles again when it is.',
         '',
         '%-16s = %d' % (const, len(raw)),
+        '.%s' % label,
     ]
-    if check:
-        out.append('ASSERT %s == %s' % (const, check))
-    out.append('.%s' % label)
     for j in range(0, len(packed), 16):
         out.append('  EQUB ' + ', '.join('&%02X' % b for b in packed[j:j + 16]))
     out.append('.%s_end' % label)
@@ -128,7 +133,7 @@ def main():
         raise SystemExit('%s missing - build it from tools/zx0src/' % ZX0_EXE)
 
     if ensure:
-        for fname, label, const, what, _ in OVERLAYS.values():
+        for fname, label, const, what in OVERLAYS.values():
             path = PROJECT / 'src' / 'data' / fname
             if not path.exists():
                 stub = bytes(1)
@@ -138,7 +143,7 @@ def main():
 
     files = catalogue(img_path.read_bytes()) if img_path.exists() else {}
     changed, report = [], []
-    for disc, (fname, label, const, what, check) in OVERLAYS.items():
+    for disc, (fname, label, const, what) in OVERLAYS.items():
         path = PROJECT / 'src' / 'data' / fname
         raw = files.get(disc)
         if raw is None:
@@ -152,7 +157,7 @@ def main():
             continue
         packed = pack(raw, disc)
         report.append('%s %d->%d' % (disc, len(raw), len(packed)))
-        if emit(path, label, const, what, raw, packed, check):
+        if emit(path, label, const, what, raw, packed):
             changed.append(disc)
 
     print('pack_overlays: ' + ', '.join(report)

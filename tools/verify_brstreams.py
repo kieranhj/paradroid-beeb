@@ -12,9 +12,12 @@ cannot survive:
 
   1. decompress each stream with tools/zx0.py - the format the 6502
      depacker eats;
-  2. pull the page's record region out of the assembled PARMAN in
+  2. pull the page's record region out of the assembled XREC block in
      build/PARADROID-raw.ssd, using beebasm's own symbol dump for the
-     addresses, and diff it against the stream byte for byte;
+     addresses, and diff it against the stream byte for byte. XREC is
+     src/data/briefing.asm - the old shipping layout, kept and
+     assembled for no other purpose than this, and dropped from the
+     disc because make_disc.py writes only its LAYOUT;
   3. RUN THE DRIVER'S SCAN over it - the $FF walk that rebuilds
      brRowLo/Hi at BR_BUF - and check every pointer it derives against
      the bank's own brRow_p_r, rebased on BR_RECS. That is the check the
@@ -67,8 +70,8 @@ def main():
     if not RAW_SSD.exists():
         raise SystemExit('%s missing - build first' % RAW_SSD)
     sym = symbols()
-    parman = catalogue(RAW_SSD.read_bytes())['PARMAN']
-    man_start = sym['man_start']
+    parman = catalogue(RAW_SSD.read_bytes())['XREC']
+    man_start = sym['rec_start']
 
     # the shape, from the generated constants rather than assumed
     con = (PROJECT / 'src' / 'data' / 'briefconst.asm').read_text()
@@ -95,7 +98,7 @@ def main():
         if p + 1 < pages:
             last = sym['brRow_%d_%d' % (p + 1, row_lo)]
         else:
-            last = sym['brExtra']
+            last = sym['brRecEnd']
         bank_recs = parman[first - man_start:last - man_start]
 
         if recs != bank_recs:

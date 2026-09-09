@@ -98,6 +98,11 @@ DB_DESC_END   = &FF
 \ portrait.asm draws it; these two anchor its rectangle. The row moved
 \ down with the text when the page took its sixteenth row.
 DB_IMG_ROW  = DB_LINE_ROW0 + 2
+ASSERT DB_IMG_ROW == BR_PO_ROW0 \ the briefing's portrait uses the same
+                                \ rows and briefman.asm is assembled
+                                \ BEFORE this file now, so main.asm's
+                                \ header carries the number -- see
+                                \ BR_PO_ROW0 there
 DB_IMG_UNIT = 4
 
 \ ============================================================

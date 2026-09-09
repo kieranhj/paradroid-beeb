@@ -1,7 +1,8 @@
 \ ============================================================
 \ briefman.asm — the briefing's bank-5 half, beside its text
 \ ============================================================
-\ LAYER 11f. Assembled into the PARMAN block, after the record lists.
+\ LAYER 11f. Bank-resident since no-load step 5; it was in PARMAN, a
+\ disc file loaded over this bank for the briefing.
 \ These routines run WITH BANK 5 PAGED — which is the briefing's
 \ resting state — and exist because the PARBRF overlay at &0400 has a
 \ HARD CEILING AT &0800: the page above it, &0800-&08FF, is the MOS's
@@ -28,7 +29,10 @@ bmp = chp                       \ the record pointer, briefing.asm's brp
 \ table's text starts at column 10, so nothing overlaps.
 ASSERT BR_PO_UNIT == 4                  \ text columns 2-7: 48 px, the width
 ASSERT BR_PO_OFS  == BR_PO_UNIT * UNIT_BYTES
-BR_PO_ROW0 = DB_IMG_ROW         \ PoDraw's own rows, unmoved
+ASSERT BR_PO_ROW0 == 3          \ PoDraw's own rows, unmoved. It was
+                                \ `= DB_IMG_ROW` until this file went
+                                \ bank-resident; main.asm's header owns
+                                \ it now and condb.asm checks it
 BR_PO_ROWS = 11                 \ 84 scanlines and the row they end in
 BR_PO_SPAN = 12 * UNIT_BYTES    \ one row's slice of the rectangle
 
@@ -44,15 +48,15 @@ BR_PO_SPAN = 12 * UNIT_BYTES    \ one row's slice of the rectangle
 \ already ferried bank 7's fourteen bytes into brSc and paged this
 \ bank in; the records patched are THIS bank's, two pages back.
 .BmPatch
-  LDA #LO(br_hiscore+1)         \ +1: past the record's column byte
+  LDA #LO(BR_HISCORE+1)         \ +1: past the record's column byte
   STA bmp
-  LDA #HI(br_hiscore+1)
+  LDA #HI(BR_HISCORE+1)
   STA bmp+1
   LDX #0                        \ brSc: the high score's 4+3
   JSR BmPatchLine
-  LDA #LO(br_loscore+1)
+  LDA #LO(BR_LOSCORE+1)
   STA bmp
-  LDA #HI(br_loscore+1)
+  LDA #HI(BR_LOSCORE+1)
   STA bmp+1
   LDX #7                        \ and the low score's, by falling in
 .BmPatchLine
@@ -379,3 +383,100 @@ BR_PO_SPAN = 12 * UNIT_BYTES    \ one row's slice of the rectangle
   JSR KeyDownIx
 .bmsd_x
   RTS
+
+
+\ ============================================================
+\ BmDepackPrep — set up the depack of brPage's row lists
+\ ============================================================
+\ no-load step 5. The briefing's text is five ZX0 streams distributed
+\ across the banks by the table below; nothing spans a bank and each
+\ depacks whole into BR_RECS. THIS HALF IS HERE AND THE PAGING IS
+\ BrDepack's, in PARBRF, because code in a bank cannot page another
+\ bank in without swapping itself out — so all this may do is fill in
+\ src and mapptr and hand the bank number back in A.
+\ The table holds SLOT indices, not bank numbers: PARSWR probes for the
+\ four banks at boot and they are not assumed to be 4-7 (Layer 13b).
+.BmDepackPrep
+  LDX brPage
+  LDA bmStrLo,X    : STA src
+  LDA bmStrHi,X    : STA src+1
+  LDA #LO(BR_RECS) : STA mapptr
+  LDA #HI(BR_RECS) : STA mapptr+1
+  LDA bmStrSlot,X
+  TAX
+  LDA swBank,X                  \ main RAM, readable with any bank up
+  RTS
+
+\ Where each page's stream lives. WHICH BANK IS NOT ARBITRARY: this
+\ bank is kept for keyredef's 776 and the briefing's own code, and what
+\ was left then decided the other three -- docs/no-load.md 17.
+.bmStrSlot
+  EQUB SWRAM_SPR2               \ page 1
+  EQUB SWRAM_XFER               \ page 2, the largest
+  EQUB SWRAM_SPR                \ page 3
+  EQUB SWRAM_SPR                \ page 4
+  EQUB SWRAM_SPR2               \ page 5
+.bmStrLo
+  EQUB LO(brStream_0), LO(brStream_1), LO(brStream_2)
+  EQUB LO(brStream_3), LO(brStream_4)
+.bmStrHi
+  EQUB HI(brStream_0), HI(brStream_1), HI(brStream_2)
+  EQUB HI(brStream_3), HI(brStream_4)
+
+\ ============================================================
+\ BmRowScan — the two pointer tables, from the page itself
+\ ============================================================
+\ The streams carry the row lists and NOTHING ELSE. Shipping the
+\ 114-byte pointer pair inside each one was measured at 2,798 packed
+\ against 2,466, so the five pages pay 332 bytes to save this loop
+\ (KC, 2026-09-09; docs/no-load.md 15c).
+\ THE WALK IS UNAMBIGUOUS because the record format already reserves
+\ its sentinels: $FF ends a row, $FE ends a record, and neither a
+\ column byte (42 at most) nor a glyph index (107 at most) can reach
+\ either. Fifty-seven rows over ~1,000 bytes, once per page turn, on a
+\ modal screen where the depack in front of it costs more.
+\ tools/verify_brstreams.py runs this same walk in Python over every
+\ emitted stream and checks all 285 pointers against beebasm's own.
+.BmRowScan
+  LDA #LO(BR_RECS) : STA bmp
+  LDA #HI(BR_RECS) : STA bmp+1
+  LDX #0
+  LDY #0                        \ bmp is advanced, so Y stays 0 and a
+.bmrs_row                       \ long row cannot outrun an 8-bit index
+  LDA bmp   : STA BR_BUF,X
+  LDA bmp+1 : STA BR_BUF+BR_ROWS,X
+.bmrs_byte
+  LDA (bmp),Y
+  INC bmp
+  BNE bmrs_1
+  INC bmp+1
+.bmrs_1
+  CMP #&FF
+  BNE bmrs_byte
+  INX
+  CPX #BR_ROWS
+  BCC bmrs_row
+
+\ ...and the score line, on the one page that carries it. It has to be
+\ here rather than at the briefing entry because the record only exists
+\ while its page is depacked; brSc was ferried across once, by
+\ BrFerryScores.
+  LDA brPage
+  CMP #BR_SCORE_PAGE
+  BNE bmrs_x
+  JMP BmPatch
+.bmrs_x
+  RTS
+
+\ ============================================================
+\ BmKrDepack — the redefine screen into the arena
+\ ============================================================
+\ krImg is THIS bank's, so nothing needs paging: only the addresses.
+\ It lands on BR_RECS, over whichever page is up, and BrKeyRedef's
+\ BrPagePaint depacks the page back afterwards.
+.BmKrDepack
+  LDA #LO(krImg)   : STA src
+  LDA #HI(krImg)   : STA src+1
+  LDA #LO(BR_RECS) : STA mapptr
+  LDA #HI(BR_RECS) : STA mapptr+1
+  JMP Zx0Unpack                 \ main RAM, and its RTS

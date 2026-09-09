@@ -39,61 +39,50 @@ BR_EXIT_FIRE  = 0               \ fire or transfer: start the game
 BR_EXIT_OFF   = 1               \ off the end of the last page: the title
 
 \ ============================================================
-\ BrTimeout — TiWait timed out: fetch the text, mark the turn
+\ BrTimeout — TiWait timed out: mark the turn, ferry the scores
 \ ============================================================
 \ Reached by JMP from TiWait's wrap, with TiShow's return address on
 \ the stack — so the RTS here lands at TitleSeq's ts_loads exactly as
-\ TiWait's own RTS would have. Runs BEFORE PageLowIn, so filing calls
-\ are legal; PARMAN's stream lands at DEPK_STREAM over the title
-\ overlay we have just left for good, and is copied up into bank 5
-\ before loadfnt reclaims &3000.
+\ TiWait's own RTS would have.
 .BrTimeout
-  LDA #6                        \ blank the display for the loads: the
-  STA CRTC_ADDR                 \ title picture is still up and the low
-  LDA #0                        \ overlay stages inside its framebuffer.
-  STA CRTC_DATA                 \ VSync carries on, which they need
+  LDA #6                        \ blank the display: the title picture is
+  STA CRTC_ADDR                 \ still up and ts_loads stages the low
+  LDA #0                        \ overlay inside its framebuffer.
+  STA CRTC_DATA                 \ VSync carries on, which the loads need
   LDA #8                        \ and R8, which is what actually blanks
   STA CRTC_ADDR                 \ it: R6 = 0 leaks row 0, measured
   LDA #R8_BLANK                 \ 2026-08-31. Every blank in the port is
   STA CRTC_DATA                 \ R8 now; the rupture IRQ unblanks
   LDA #1
   STA brFlag
-  LDX #LO(brLoadMan)
-  LDY #HI(brLoadMan)
-  JSR OSCLI
-\ PARMAN SHIPS ZX0 NOW, 2026-08-29. It used to be the one uncompressed
-\ overlay and BrTimeout copied it up page by page; with the depacker
-\ resident it unpacks like any bank file, 20 sectors down to 11 and
-\ ~0.6 s off this seam. UnpackBankIn does its own paging, so the PgSpr
-\ that used to stand here is gone with the copy.
-  LDA swBank+SWRAM_SPR
-  JSR UnpackBankIn
-  JSR BrPatchScores
+\ NO LOAD AT ALL SINCE no-load STEP 5. This used to *LOAD PARMAN over
+\ the dead title overlay and UnpackBankIn it into bank 5, evicting the
+\ blitter for the whole briefing; the text is five ZX0 page streams in
+\ the banks now and the code beside them is resident, so there is
+\ nothing to fetch. What is left here is the score ferry, which still
+\ has to happen once — bank 7's table into brSc — and it is now the
+\ DEPACK that applies it, per page turn, because the record it writes
+\ lives in the arena and only exists while its page is up.
+  JSR BrFerryScores
   JMP PgData     \ tail: its RTS is ours
-
-.brLoadMan
-  EQUS "LOAD PARMAN"
-  EQUB 13
-
 \ ============================================================
-\ BrPatchScores — the live table into page 5's two lines
+\ BrFerryScores — bank 7's table into brSc, once per briefing
 \ ============================================================
 \ UpdateTextScore ($E5AC) moved to the read side [11f DECISION 7]: the
 \ C64 writes the score into the packed text at $DD89/$DDB4 and the text
-\ persists; ours is reloaded from disc each time, so the patch happens
-\ here, on the fresh copy in bank 5, before anything draws it. The
-\ layout is the original's: eight BCD digits at glyph offsets 0-7 with
-\ leading zeros as spaces (the last digit never blanked), initials at
-\ 11-13. make_briefing.py labels the two records br_hiscore/br_loscore.
-\
-\ The table is bank 7's and the text is bank 5's, so the fourteen bytes
-\ go through brSc in this overlay — the same one-bank-at-a-time dance
-\ as everything else. hsHigh..hsLoIni are contiguous: 4+3+4+3.
-\ Only the ferry lives here: the write half is BmPatch in bank 5,
-\ beside the records it patches, because this overlay has a hard
-\ ceiling at &0800 — see briefman.asm's header for what the page above
-\ costs.
-.BrPatchScores
+\ persists; ours is rebuilt each time, so the patch happens on the
+\ fresh copy before anything draws it. The layout is the original's:
+\ eight BCD digits at glyph offsets 0-7 with leading zeros as spaces
+\ (the last digit never blanked), initials at 11-13.
+\ THE FERRY AND THE WRITE ARE NOW SEPARATED IN TIME (no-load step 5).
+\ The records used to be bank 5's and persisted for the whole briefing,
+\ so one BmPatch here did it. They are the ARENA's now and only the
+\ page that is up exists — so this carries the fourteen bytes across
+\ once, and BmRowScan applies them on every depack of BR_SCORE_PAGE.
+\ The table is bank 7's and brSc is this overlay's, which is the same
+\ one-bank-at-a-time dance as everything else; hsHigh..hsLoIni are
+\ contiguous, 4+3+4+3.
+.BrFerryScores
   JSR PgXfer   
   LDX #13
 .bps_copy
@@ -101,21 +90,15 @@ BR_EXIT_OFF   = 1               \ off the end of the last page: the title
   STA brSc,X
   DEX
   BPL bps_copy
-  JSR PgSpr   
-  JMP BmPatch                   \ bank 5's, now paged — and its RTS
+  JMP PgSpr                     \ back to the briefing's bank, and its RTS
 
 \ ============================================================
 \ BrDispatch — where TitleSeq's callers land instead of the game
 \ ============================================================
 \ Both post-title sites (boot's JSR and GoTitle's JMP) come here in
 \ place of GameStartInfo. brFlag says how the title ended: 0 fired ->
-\ the game, 1 timed out -> the briefing, and afterwards either exit
-\ reloads PARASPR into the bank the text borrowed — BOTH exits, because
-\ a fire at the NEXT title would otherwise start a game whose blitter
-\ is briefing text. The reload is the PARDEPK dance boot does, legal
-\ here because the teardown has put the MOS back in charge; ~0.7 s,
-\ accepted as the naive form (KC: get it working, optimise the loading
-\ after — [DECISION 6], and §3d has the one-load trim for later).
+\ the game, 1 timed out -> the briefing. NOTHING IS RELOADED ON EITHER
+\ EXIT ANY MORE (no-load step 5) — see the note in the teardown below.
 .BrDispatch
   LDA brFlag
   BNE brd_brief
@@ -145,16 +128,15 @@ BR_EXIT_OFF   = 1               \ off the end of the last page: the title
                                 \ (title) gives the display back
   JSR RestoreDfsWs
 
-\ NO PARDEPK RELOAD. It used to come back here purely to put a
-\ decompressor at &3000; the code image carries the only copy now, and
-\ with nothing landing on &3000 the font survives too — which is what
-\ lets ts_loads stop reloading PARAFNT. 2026-08-29
-  LDX #LO(loadspr)              \ PARASPR's stream at DEPK_STREAM
-  LDY #HI(loadspr)
-  JSR OSCLI
-  LDA swBank+SWRAM_SPR
-  JSR UnpackBankIn              \ the blitter is home again
-
+\ AND NO PARASPR RELOAD EITHER, SINCE no-load STEP 5. Both exits used
+\ to fetch the blitter back, because the briefing's text had been
+\ loaded over bank 5 and a fire at the NEXT title would otherwise start
+\ a game whose compiled sprite rows were manual text. Bank 5 is never
+\ evicted now — the text is streams in the banks and the briefing's own
+\ code lives beside the blitter — so there is nothing to put back.
+\ ~0.7 s off each exit, and the last reason this seam made a filing
+\ call at all. (PARDEPK went the same way on 2026-08-29: the code
+\ image carries the only depacker.)
   PLA
   BNE brd_title
   JSR ts_loads                  \ font, low overlay, rupture, tables,
@@ -551,9 +533,45 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
   BNE br_pg_nopo                \ so the first window composites it
   JSR BrPortrait
 .br_pg_nopo
+\ THE PAGE ITSELF (no-load step 5). The row lists are a ZX0 stream in
+\ whichever bank had room; BrDepack pages that bank, unpacks it to
+\ BR_RECS and has BmRowScan build brRowLo/Hi at BR_BUF in front of it.
+\ AFTER BrPortrait, NOT BEFORE, AND THAT IS MEASURED: PoDraw depacks a
+\ portrait chunk into PO_BASE, which is the tile map at &4600 — right
+\ through the middle of BR_RECS. Page 5 came up as pure noise until
+\ this moved. The arena is shared and the briefing is not exempt from
+\ the arena rule just because it is the one that lives there longest.
+\ SAFE BETWEEN BmPalHide AND THE DRAW, though §7 warns about a depack
+\ in exactly that gap: the two bugs it cost were a delay with the WRONG
+\ palette showing, and BmPalHide's is invisible ink — the gap shows
+\ nothing at all. BrPortrait has always carried its own depack here.
+  JSR BrDepack
   JSR BrDrawPage
   JMP BmPalReveal               \ the finished block, in one go — and
                                 \ its RTS
+
+\ ============================================================
+\ BrDepack — brPage's row lists into the arena
+\ ============================================================
+\ Called with the briefing's bank paged, which BmDepackPrep needs.
+\ THE SPLIT IS THE &0800 CEILING AGAIN: only the four instructions that
+\ actually change the map can be here, because a routine in a bank
+\ cannot page another bank in without swapping itself out. BmDepackPrep
+\ (bank 5) reads the per-page stream table and sets src/mapptr from it,
+\ handing back the bank number in A; Zx0Unpack is the code image's one
+\ resident copy; BmRowScan (bank 5, once the briefing's bank is back)
+\ walks the depacked page for its $FF row terminators and fills
+\ brRowLo/Hi, and patches the score line if this is the page that
+\ carries it.
+\ src/mapptr are the level draw's pointers, idle outside a game — the
+\ same argument brp makes for chp at the top of this file.
+.BrDepack
+  JSR BmDepackPrep              \ bank 5: src, mapptr, and A = the bank
+  STA ROMSHAD                   \ both, always — PAGEBANK's rule
+  STA ROMSEL
+  JSR Zx0Unpack
+  JSR PgSpr                     \ the briefing's bank back
+  JMP BmRowScan                 \ and its RTS
 
 \ ============================================================
 \ BrKeyRedef — CTRL+R: the redefine screen, and the page back
@@ -583,7 +601,14 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
   JSR keydown
   BNE brkr_x
   INC brRedef
-  JSR BmKrRun                   \ bank 5, and it is already paged
+\ THE SCREEN IS A STREAM NOW (no-load step 5), assembled at BR_RECS and
+\ depacked straight over the page that is up. That is legal because the
+\ page is dead for the duration and BrPagePaint below depacks it back —
+\ it already repainted, so the only new cost is one more depack.
+\ BmKrRun then runs from MAIN RAM, and still reads brExtra through
+\ BrChar with this bank paged, exactly as it did from inside it.
+  JSR BmKrDepack                \ bank 5: src/mapptr, then Zx0Unpack
+  JSR BmKrRun                   \ ...which is at BR_RECS
   JSR BrPagePaint
   LDA #0
   STA brRedef
@@ -671,17 +696,13 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
   SEC
   SBC #BR_ROW_LO
   TAY
-  LDX brPage                    \ the per-page split keeps every index
-  LDA brPageLLo,X : STA brp     \ 8-bit: 57 rows a page, not 285
-  LDA brPageLHi,X : STA brp+1
-  LDA (brp),Y
-  STA brT                       \ the row list's low byte
-  LDA brPageHLo,X : STA brp
-  LDA brPageHHi,X : STA brp+1
-  LDA (brp),Y
-  STA brp+1
-  LDA brT
-  STA brp                       \ brp -> the row list
+\ TWO LOADS, AND THEY ARE MAIN RAM (no-load step 5). This used to walk
+\ a per-page pair of pointer tables in the bank, through brPageL/H*, to
+\ keep every index 8-bit across 285 rows. The depacked page carries
+\ ONE page's tables at BR_BUF — built by BmRowScan, not shipped — so
+\ the page index is gone from the lookup entirely, and so is the bank.
+  LDA BR_BUF,Y          : STA brp
+  LDA BR_BUF+BR_ROWS,Y  : STA brp+1
 
 .brl_rec
   LDY #0

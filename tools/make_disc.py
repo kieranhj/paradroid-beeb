@@ -45,7 +45,7 @@ FNT_STREAM  = 0x3700            # must match main.asm
 # overtake it -- see in_place_delta() and FNT_STREAM in main.asm.
 COMPRESSED = {"PARADAT": DEPK_STREAM, "PARASPR": DEPK_STREAM,
               "PARSPR2": DEPK_STREAM, "PARXFER": DEPK_STREAM,
-              "PARMAN":  DEPK_STREAM, "PARAFNT": FNT_STREAM}
+              "PARAFNT": FNT_STREAM}
 
 # Where each compressed file's output goes, for the in-place check. Only
 # the ones whose stream and output share memory actually need it.
@@ -124,8 +124,10 @@ def in_place_delta(packed, raw):
 # before the game), PARA, then the four banks (PARDEPK is gone -- the depacker is resident
 # in the code image since 2026-08-29), then the title, then (after
 # the title is dismissed) the font and the low overlay.
-# PARMAN (the briefing text, loaded only when the title times out) is
-# the one title-time load left. Layer 11f.
+# PARMAN IS GONE TOO (no-load step 5, 2026-09-09): the briefing's text
+# ships as five ZX0 page streams inside the banks, its code is
+# bank-resident and its redefine screen is another stream, so nothing
+# is loaded for it at all. PARAFNT is the one post-boot load left.
 # THREE FILES USED TO SIT WITH IT AND ARE GONE. PARTITL first (no-load
 # step 4, 2026-09-07): the title overlay is carried inside PARXFER and
 # copied down by TiResident. Then PARBRF and PARALOW (2026-09-09), the
@@ -135,9 +137,20 @@ def in_place_delta(packed, raw):
 # On an --intro build, PINTRO slots in after !BOOT: it is the first
 # thing !BOOT runs (docs/intro.md §4).
 LAYOUT = ["!BOOT", "PARSWR", "PARA", "PARADAT", "PARASPR", "PARSPR2",
-          "PARXFER", "PARMAN", "PARAFNT"]
+          "PARXFER", "PARAFNT"]
 
 SECTOR = 256
+
+# Build-only SAVEs that must NEVER reach the disc: main.asm writes each
+# block of assembled code that ships PACKED under an X-name so that
+# tools/pack_overlays.py can read the bytes back out, and briefing.asm's
+# old record layout under XREC so that verify_brstreams.py has an oracle.
+# THEY ARE DROPPED HERE EXPLICITLY, and that is not belt and braces: the
+# first attempt relied on build_image keeping only the names in LAYOUT,
+# and it does not -- it appends anything unexpected, which is what lets
+# an --intro build carry PINTRO's data files. The four shipped, 7,444
+# bytes of them, until the catalogue was actually looked at.
+BUILD_ONLY = {"XBRF", "XLOW", "XKR", "XREC"}
 
 
 def read_catalogue(img):
@@ -242,6 +255,9 @@ def main():
 
     img = raw_path.read_bytes()
     files = read_catalogue(img)
+    dropped = sorted(n for n in files if n in BUILD_ONLY)
+    for n in dropped:
+        del files[n]
     missing = [n for n in LAYOUT if n not in files]
     if missing:
         raise SystemExit(f"raw image lacks {missing} - loader and disc "
@@ -282,6 +298,8 @@ def main():
         print(f"make_disc: INTRO build - PINTRO + {len(intro_files) - 1} data "
               "files wired into !BOOT")
 
+    if dropped:
+        print("make_disc: dropped build-only " + ", ".join(dropped))
     report = []
     for name, stream in COMPRESSED.items():
         raw = files[name]["data"]

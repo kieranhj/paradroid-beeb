@@ -161,13 +161,18 @@ image, ZX0s them and writes `src/data/brfimg.asm` / `lowimg.asm` for the NEXT as
 `build.ps1` assembles again if anything changed (exit 10). **In the steady state that is still one
 assembly**; from a cold start it is two, and the loop is what makes convergence a build-time fact
 rather than an assumption — a stream that changes size moves the bank around under the very block
-it came from. The X-files never reach the disc: `make_disc.py` writes only the names in its
-`LAYOUT`. Each generated file carries its own size `ASSERT`, so a stale one fails the build; the
-bootstrap stub omits it, which is the only reason a fresh clone assembles at all. This pass exists
-because `keyredef` cannot ship packed without it — `docs/no-load.md` §16.
+it came from. **The X-files are dropped from the disc by `make_disc.py`'s `BUILD_ONLY` set, and
+that is explicit for a reason** — `build_image` appends any file it does not recognise (which is
+how an `-Intro` build carries PINTRO's data), so the four shipped, 7,444 bytes of them, until the
+catalogue was actually looked at. **There is deliberately no size `ASSERT`** — one was tried, and a stale assert makes a
+*changed* overlay unbuildable, because the assembly that would produce the new bytes is the one it
+stops; the loop's byte comparison is the guard and the stronger check. A bare `beebasm` run
+outside `build.ps1` can therefore assemble a stale overlay silently, which is harmless because
+nothing boots that image. This pass exists because `keyredef` cannot ship packed without it —
+`docs/no-load.md` §16.
 
 **Then `tools/make_disc.py`.** The tool ZX0-compresses the four
-bank files **and `PARMAN` and `PARAFNT`** with `bin/zx0.exe` (sources and build line in `tools/zx0src/`; round-trip-verified
+bank files **and `PARAFNT`** with `bin/zx0.exe` (sources and build line in `tools/zx0src/`; round-trip-verified
 through `tools/zx0.py` every build), moves their catalogue load address to `DEPK_STREAM`, and lays
 the disc out physically in boot access order. The loader (`UnpackBankIn`, resident in the code
 image) only understands that layout, so **`PARADROID-raw.ssd` hangs at the first bank load** — never hand
@@ -189,7 +194,7 @@ code. Redirecting **stdout** alone is safe, which is how `build.ps1` captures th
 
 **beebasm's `SAVE` writes a loose host file whenever it has no disc image to put it in**, so any
 run without a working `-do` drops `PARA`, `PARADAT`, `PARASPR`, `PARSPR2`, `PARXFER`, `PARAFNT`,
-`PARMAN` and `PARSWR` in the project root (`PARTITL` was one of them until no-load step 4
+`PARSWR` in the project root, plus the build-only `XBRF`/`XLOW`/`XKR`/`XREC` (`PARTITL` was one of them until no-load step 4
 stopped `SAVE`ing it, and `PARBRF` and `PARALOW` until 2026-09-09 did the same). They are gitignored. Two things follow: a `-do` path that cannot be written leaves a
 build that *looks* like it worked, and the symbol dump below litters unless you give it one.
 
@@ -267,7 +272,7 @@ addresses from the `beebasm` output rather than from any document.** In outline:
 | `&5400–&57FF` | Row/unit multiply (`&5400`), **`LUTs` — `BuildCharset`'s four nibble tables at `&54C0`** — character-address and sprite-mask tables, built at startup. **Packed exactly, no slack**: the 64 bytes that look free below `CHAR_PTR_LO` are `LUTs`, and the `ASSERT` that seems to permit a gap does not |
 | `&5800–&7FFF` | Play buffer: circular strip, 16 rows × 640 |
 | SWRAM bank 4 | `PARADAT` — tiles, levels, palettes, droid game data, **the level-draw code, the droid AI, Layer 10's entry/exit and Layer 11e's sound driver**. The char bitmaps ship ZX0-packed; `BuildCharset` unpacks them into the idle sprite save areas at deck load |
-| SWRAM bank 5 | `PARASPR` — the blitter, shifts 0 and 1 px, **the effect blitter (`src/sprfx.asm`, RAM pass DECISION 2) and the rupture handover (`src/ruptalign.asm`), and the tranche prescan (`src/sprscan.asm`, 2026-09-01 — the split decision's geometry half, feeding `sprCls` in lowbss)**. **Evicted for the briefing**, which loads `PARMAN` over it: the manual's text, `briefman.asm`, `keyredef.asm` (the CTRL+R key redefinition, Layer 11f) and the chatter's effect records. Both exits reload the blitter |
+| SWRAM bank 5 | `PARASPR` — the blitter, shifts 0 and 1 px, **the effect blitter (`src/sprfx.asm`, RAM pass DECISION 2) and the rupture handover (`src/ruptalign.asm`), and the tranche prescan (`src/sprscan.asm`, 2026-09-01 — the split decision's geometry half, feeding `sprCls` in lowbss)**. **NOT evicted any more** (no-load step 5, 2026-09-09): it also holds the briefing's resident half — `briefman.asm`, `sndchat`, `brExtra`, `keyredef` as a ZX0 stream and two of the five page streams — where `PARMAN` used to be loaded over it, and neither briefing exit reloads anything |
 | SWRAM bank 6 | `PARSPR2` — shifts 2 and 3 px, same layout, plus Layer 9's panel/console, Layer 11f's `PnBriefing`, the 912 B `dfsSave` snapshot and the tranche decision's component half (`src/sprsplit.asm` — its geometry moved to bank 5's `sprscan.asm`, 2026-09-01) |
 | SWRAM bank 7 | `PARXFER` — Layer 10's transfer minigame, Layer 8b's lift screen, the console's ship, deck-plan and droid-database pages, and Layer 11's game over. Since no-load step 3 it also holds **the title's artwork** (`src/data/title.asm`, raw — `TiPaint` reads it in place) and **the whole high-score screen below `HsEntry`** (`highscore.asm` + `hsremap.asm`). The droid icons are main RAM's |
 
@@ -286,7 +291,6 @@ paragraph:
 | `PARBRF` (`&0400`, hard ceiling `&0800`) — **no longer a disc file, 2026-09-09: it rides in bank 6 as `brfImg` and `BrfResident` copies it down** | **12 B** (36 B before `BrTimeout`'s R8 blank, 56 B before the CTRL+R hook) |
 | The title overlay (`&0900`, ceiling `&0C90` = `LOWBSS_ADDR`) | **515 B** — the overlay is 397 and the region is 912. `&0800–&08FF` is NOT in it; see the note under the disc files below. Not a disc file since no-load step 4: the image is bank 7's |
 | `PARAFNT` block | **16 B** before `SPR_SAVE` (`KeyDownIx` took 7, DECISION 5's `CN_STRS` 10) |
-| `PARMAN` (bank 5's briefing load; the bound is `DEPK_STREAM + size <= PANEL_ADDR`) | **225 B** — the redefine screen took 893 |
 | Low overlay | `lowcode` **9 B** (its two raw `PAGEBANK`s became `JSR Pg*`), `lowcode2` 3 B, `lowbss` **0 B** (`sprCls` took the last 8, 2026-09-01) |
 | `PINTRO` (`pdloader/`, `-Intro` builds) | **0 B** — it fills to `&3000` exactly, where the picture lands. **It starts at `&2600` since 2026-08-31** (PORT 7's MODE 7 "Loading..." screen took the page it moved down for) and `&2500–&25FF` is what is left below it |
 
@@ -328,7 +332,7 @@ IRQ does with banks is Layer 11e's sound tick**, which saves `ROMSHAD`, pages `S
 `SndTick` and restores what it found — legal because `PAGEBANK` writes the shadow first. Anything
 else in the IRQ must still read no bank; check that again before putting anything else in one.
 
-The four bank files **and `PARMAN` and `PARAFNT`** ship ZX0-compressed on disc (written by
+The four bank files **and `PARAFNT`** ship ZX0-compressed on disc (written by
 `tools/make_disc.py`, not by the SAVEs): `*LOAD` drops each stream at `DEPK_STREAM = &3200` and
 `UnpackBankIn` decompresses it straight into the bank.
 
@@ -352,16 +356,20 @@ uncompressed, because the MOS has the DFS ROM paged in there during a filing-sys
 must also happen **before** `InstallIrq` — taking over IRQ1V stops the MOS servicing the filing
 system. See `docs/loader-compression.md`.
 
-**`PARALOW` AND `PARBRF` ARE NOT DISC FILES ANY MORE (2026-09-09).** Both ride in bank 6 —
+**`PARALOW` AND `PARBRF` ARE NOT DISC FILES ANY MORE (2026-09-09), and both ship ZX0-packed
+(§16's pack pass).** Both ride in bank 6 —
 `lowImg` and `brfImg` — and `LowResident` / `BrfResident`, which live in that bank like
-`TiResident` lives in bank 7, copy them down. **Post-boot loads are 3: `PARAFNT`, `PARMAN` and
-`PARASPR`.** What made it possible is that both overlays are now **assembled ABOVE bank 6's
-block**, so `COPYBLOCK` can take their bytes: only the last bank block can be filled after the
-fact, because each block `CLEAR`s and re-`ORG`s the same `&8000`, and bank 7 (the last) had 759
-bytes against the 1,931 these need. The move cost seven constants their homes — beebasm resolves
-constant assignments in file order — so `BR_PAGES`/`BR_ROW_LO`/`BR_ROW_HI`/`BR_XTRA0` are
+`TiResident` lives in bank 7, copy them down. **Post-boot loads are 1: `PARAFNT`**; `PARMAN` and the
+briefing's `PARASPR` reload went with no-load step 5 (`docs/no-load.md` §17). What made THAT
+possible is that both overlays are **assembled ABOVE bank 6's block**, so the pack pass can take
+their bytes and bank 6 can hold the stream: only the last bank block can be filled after the fact,
+because each block `CLEAR`s and re-`ORG`s the same `&8000`, and bank 7 (the last) had 759 bytes
+against the 1,931 these needed raw. The move cost **eight** constants their homes — beebasm
+resolves constant assignments in file order — so `BR_PAGES`/`BR_ROW_LO`/`BR_ROW_HI`/`BR_XTRA0` are
 generated into **`src/data/briefconst.asm`**, which `main.asm` includes from its header, and
-`BR_CHAT_PRE`/`BR_PO_UNIT`/`BR_PO_OFS` sit beside `UNIT_BYTES` with `ASSERT`s at their old homes.
+`BR_CHAT_PRE`/`BR_PO_UNIT`/`BR_PO_OFS`/`BR_PO_ROW0` sit beside `UNIT_BYTES` with `ASSERT`s at
+their old homes (`BR_PO_ROW0` is step 5's, when `briefman.asm` went bank-resident and its
+`= DB_IMG_ROW` started reaching forward into bank 7).
 
 The low overlay still lands on DFS's own workspace at `&0E00–&10FF` **and, via `lowcode2`, on the
 MOS's extended vector table at `&0D9F+` — the route DFS 1.2's FILEV takes into its ROM**, so the

@@ -4,7 +4,14 @@
 Branch `no-load`. Written 2026-09-09 by the session that did §11-§14 of `docs/no-load.md`, which
 ran low on context. Everything below is measured; nothing in it needs re-deriving.
 
-**STAGE 1 IS DONE — see `docs/no-load.md` §15 before this file.** It confirms 2B off the table,
+**STAGES 1-3 ARE DONE. Read `docs/no-load.md` §15, §16 and §17 before this file; only stage 4
+(`PARAFNT` boot-only) and stage 5 (the terminal dividend) are left, and §17g restates them.**
+The three sections also correct this file: §6's stage 2 could not be built as written (PARMAN
+loads over bank 5, which three of the streams live in), the budget in §3 was 17 bytes short
+rather than 67 spare, and the build grew a pack pass because `keyredef` cannot ship packed
+without one.
+
+**Historic, from when stage 1 landed:** It confirms 2B off the table,
 corrects §3's page-4 figure below (435 -> 469), and records a decision that changes the design:
 the pointer tables are NOT carried inside the streams but rebuilt at run time, worth 332 bytes.
 §15e restates the budget, which §14c had 17 bytes short before any code.

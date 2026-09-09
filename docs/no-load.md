@@ -1491,3 +1491,123 @@ delivers `BrDispatch`, which every post-title path runs through:
 cold boot -> title -> fire -> **game** (the panel reads "Mobile", the deck is drawn, the player
 is on it) -> ESCAPE -> death -> game over -> high-score entry -> three initials -> **title
 again**, through `GoTitle` after `RestoreDfsWs` -> **briefing on the timeout**, scrolling.
+
+---
+
+## 17. THE BRIEFING GOES RESIDENT — 2026-09-09. Post-boot loads 3 → 1
+
+**`PARMAN` and the `PARASPR` reload are gone. `PARAFNT` is the only load left after boot.**
+
+### 17a. What was built
+
+| | |
+|---|---|
+| the text | five ZX0 page streams in the banks (§15), depacked one at a time to `BR_RECS` |
+| the tables | built at `BR_BUF` by `BmRowScan`'s `$FF` walk, not shipped (§15c) |
+| `briefman`, `sndchat`, `brExtra` | bank-resident in bank 5, the briefing's resting bank |
+| `keyredef` | a ZX0 stream in bank 5, assembled at `BR_RECS` and depacked over the page |
+| `BrTimeout` | no `*LOAD PARMAN`, no `UnpackBankIn` — just the score ferry |
+| `BrDispatch` | no `PARASPR` reload on either exit |
+| `PARMAN` | out of `make_disc.py`'s `LAYOUT` and `COMPRESSED`, and its `SAVE` gone |
+
+The renderer is simpler than it was. `BrRowList`'s per-page table walk — four `LDA abs,X`/`STA zp`
+pairs through `brPageLLo`/`LHi`/`HLo`/`HHi` to keep every index 8-bit across 285 rows — is **two
+loads from main RAM**, because the depacked page carries one page's tables at a fixed address:
+
+```
+  LDA BR_BUF,Y          : STA brp
+  LDA BR_BUF+BR_ROWS,Y  : STA brp+1
+```
+
+`PARBRF` shrank from 1,012 bytes to 967 on that alone.
+
+**The score patch moved in time, not in place.** The records used to be bank 5's and persisted for
+the whole briefing, so one `BmPatch` at entry did it. They are the arena's now and only the page
+that is up exists — so `BrFerryScores` carries bank 7's fourteen bytes into `brSc` once, and
+`BmRowScan` applies them on **every** depack of `BR_SCORE_PAGE`. The exporter emits `BR_HISCORE`,
+`BR_LOSCORE` and `BR_SCORE_PAGE`, and refuses to build if the two records ever land on different
+pages.
+
+### 17b. THE BUG THAT WAS WORTH THE WHOLE TEST: the portrait shares the arena
+
+Page 5 came up as pure noise. **`PoDraw` depacks a portrait chunk into `PO_BASE`, which is the
+tile map at `&4600`** — straight through the middle of `BR_RECS`, which for page 5 runs
+`&4572`–`&4747`. §14b measured the arena's high-water mark and put `BR_BUF` clear of it, and that
+was right as far as it went; what it did not account for is that the briefing *itself* invokes a
+screen that takes the map for its own arena.
+
+The fix is an ordering one: **`BrDepack` runs after `BrPortrait`, not before it.** The portrait's
+chunk is dead the moment `BmSnap` has copied the rendered rectangle to `SPR_SAVE`, so the page can
+land on it afterwards. §7's rule about a depack between a palette change and its redraw does not
+bite here — `BmPalHide`'s ink is invisible, so the gap shows nothing, and `BrPortrait` has always
+carried a depack in exactly that gap.
+
+**The lesson generalises: the arena rule applies to the briefing too.** It is the screen that
+lives in the arena longest, which made it easy to think of the space as the briefing's.
+
+### 17c. And one the catalogue caught
+
+The build-only `SAVE`s — `XBRF`, `XLOW`, `XKR` and `XREC` — **shipped on the disc**, 7,444 bytes
+of them. `make_disc.py`'s `build_image` does not keep only the names in `LAYOUT`; it appends
+anything it does not recognise, which is how an `--intro` build carries PINTRO's data files. A
+`BUILD_ONLY` set now drops them by name, and the tool prints what it dropped.
+
+**Nothing in the emulator would have found this**, because a bigger disc still boots. It took
+listing the catalogue.
+
+### 17d. What it cost and what it bought
+
+| | before step 5 | now |
+|---|---|---|
+| post-boot loads | 3 | **1** — `PARAFNT` |
+| disc files | 9 | **8** |
+| disc image | 47,872 | **45,312** |
+| bank 4 | 225 | 225 |
+| bank 5 | 2,650 | **88** |
+| bank 6 | 442 | **212** |
+| bank 7 | 775 | **171** |
+| main-RAM code image | 28 | 28 |
+| `PARBRF` | 12 free (1,012 used) | 57 free (967 used) |
+
+**696 bytes of bank space left**, and the two briefing exits no longer make a filing-system call
+at all — ~0.7 s off each.
+
+Placement, and none of it is arbitrary: bank 5 holds the briefing's resident code and `keyredef`'s
+776 (the only hole that big — bank 7 had 775, one byte short) plus pages 3 and 4; bank 6 holds
+pages 1 and 5, which it could only do because §16 packed the two overlays above it; bank 7 holds
+page 2, the largest. Bank 4's 225 still holds nothing of the briefing's — nothing is small enough.
+
+### 17e. One constant had to be hoisted, for §13a's reason
+
+`briefman.asm` moved from the very last block to bank 5's, and `BR_PO_ROW0 = DB_IMG_ROW` reaches
+into **bank 7**, which is now later. §13a named this exact dependency as what defeated its first
+attempt. `BR_PO_ROW0 = 3` lives in `main.asm`'s header with the other six now, and `condb.asm`
+`ASSERT`s `DB_IMG_ROW == BR_PO_ROW0`, so the portrait cannot be moved on one side only.
+
+`keyredef.asm` also had to be assembled **after** `briefman.asm`, which owns the `bmp` zero-page
+alias: a forward reference to a zero-page constant is sized absolute on pass 1 and zero page on
+pass 2, and beebasm stops with *the second assembler pass has generated different code to the
+first*.
+
+### 17f. Verified, in jsbeeb on the shipping image, `B-DFS1.2`
+
+- cold boot → title → **fire → game** (deck drawn, sprites drawn, scrolls)
+- title timeout → **briefing**, all five pages walked by eye: page 1, the controls page, the
+  story page, the device page (which exercises `brExtra` — the apostrophes in "device's" and
+  "'normal'"), and **page 5 with its portrait and both score lines patched**
+- **CTRL+R** → the redefine screen depacked over the page, six keys taken, → back to page 5,
+  re-depacked and re-patched with a fresh portrait
+- **fire out of the briefing → game**, which is what the `PARASPR` reload existed for: the
+  blitter draws, the deck scrolls, the score counts
+- ESCAPE → death → game over → high-score entry → three initials → **title again** (through
+  `GoTitle` after `RestoreDfsWs`) → briefing again
+- **the off-the-end exit**: `brPage` poked to the last page, the travel run out, `br_out` →
+  title → timeout → a fresh briefing
+
+### 17g. What is left
+
+**Step 5's stage 4: `PARAFNT` becomes boot-only.** Nothing stages at `DEPK_STREAM` any more, so
+`&3000` has no destroyer left; `ts_loads` is shared three ways (boot, game-over, briefing exit)
+and needs a flag or a split. **That is the last load**, and after it the terminal dividend of §11h
+— `dfsSave`'s 912 bytes of bank 6, `SaveDfsWs`/`RestoreDfsWs`, the OSCLI strings and
+`UnpackBankIn`/`BootBanks` — comes due.

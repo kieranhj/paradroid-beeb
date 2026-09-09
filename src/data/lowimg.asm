@@ -8,7 +8,6 @@
 \ it holds changes, and the build assembles again when it is.
 
 LOW_IMG_UNPACKED = 919
-ASSERT LOW_IMG_UNPACKED == low_end - low2_start
 .lowImg
   EQUB &40, &7E, &A0, &04, &D9, &6D, &0D, &F0, &05, &88, &10, &F8, &A0, &FF, &60, &08
   EQUB &11, &12, &14, &17, &AE, &95, &B5, &A9, &28, &38, &FD, &E1, &B4, &0A, &8D, &AF
