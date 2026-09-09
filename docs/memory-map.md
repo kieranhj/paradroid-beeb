@@ -4,7 +4,7 @@ Every address here comes from a `beebasm -dd -labels` dump of the current build,
 Regenerate it after any change that moves a region:
 
 ```powershell
-./bin/beebasm.exe -i src/main.asm -do PARADROID.SSD -boot PARA -dd -labels PARADROID.labels
+./bin/beebasm.exe -i src/main.asm -do paradroid.ssd -boot PARA -dd -labels paradroid.labels
 ```
 
 `PLAN.md` keeps the one-line summary; this file is the detail behind it.

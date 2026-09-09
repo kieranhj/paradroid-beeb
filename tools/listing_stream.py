@@ -13,7 +13,7 @@ Baron's; beebasm's listing is a different shape and much easier, see below.
 
 WHAT IT PARSES.  beebasm's `-v` listing contains ONLY instructions and labels —
 EQUB/EQUS/INCBIN emit nothing to it, which is what makes this exact rather than
-heuristic.  Measured on build/PARADROID.lst, 2026-09-08: 57,255 lines, of which
+heuristic.  Measured on build/paradroid.lst, 2026-09-08: 57,255 lines, of which
 53,102 are instructions, 3,185 are labels and the rest are macro banners.
 
     .start                                  a label:      column 0
@@ -27,7 +27,7 @@ So:
     a build against itself          0 differences
     one instruction inserted        1 difference   (measured here 2026-09-08:
                                     a synthetic NOP line spliced into
-                                    build/PARADROID.lst gives exactly one)
+                                    build/paradroid.lst gives exactly one)
     a constant changed 8 -> 4       0 differences  (kit, on its own template)
 
 The last is the point to understand.  The stream proves the SHAPE of the code,
@@ -40,10 +40,10 @@ by design; that is the buffer oracle's job.
 
 USAGE
 
-    python tools/listing_stream.py build/PARADROID.lst > new.txt
+    python tools/listing_stream.py build/paradroid.lst > new.txt
     diff old.txt new.txt && echo "stream identical, $(wc -l < new.txt) entries"
 
-    python tools/listing_stream.py --mnemonics build/PARADROID.lst
+    python tools/listing_stream.py --mnemonics build/paradroid.lst
         adds the mnemonic to each entry — easier to read in a diff, and no
         weaker, since the mnemonic is a function of the opcode byte.
 """

@@ -1,4 +1,4 @@
-# Build Paradroid (BBC Model B) -> build/PARADROID.SSD
+# Build Paradroid (BBC Model B) -> build/paradroid.ssd
 # -Intro additionally assembles pdloader/paradroid_intro.asm (scarybeasts'
 # loading intro and its sample player, docs/intro.md) and wires "*RUN PINTRO"
 # into !BOOT behind PARSWR; the default build carries no trace of it.
@@ -22,10 +22,10 @@ $root    = $PSScriptRoot
 $beebasm = if ($env:BEEBASM) { $env:BEEBASM }
            else { Join-Path $root ('bin' + [IO.Path]::DirectorySeparatorChar + 'beebasm.exe') }
 $build   = Join-Path $root 'build'
-$raw     = Join-Path $build 'PARADROID-raw.ssd'
-$ssd     = Join-Path $build 'PARADROID.SSD'
-$padded  = Join-Path $build 'PARADROID-200K.SSD'
-$listing = Join-Path $build 'PARADROID.lst'
+$raw     = Join-Path $build 'paradroid-raw.ssd'
+$ssd     = Join-Path $build 'paradroid.ssd'
+$padded  = Join-Path $build 'paradroid-200k.ssd'
+$listing = Join-Path $build 'paradroid.lst'
 $bem     = 'C:\Users\khcon\OneDrive\BEEB\B-Em\b-em-42f6597-w64\b-em.exe'
 
 if (-not (Test-Path $build)) { New-Item -ItemType Directory -Path $build | Out-Null }
@@ -103,7 +103,7 @@ if ($Intro) {
     & $python (Join-Path $root 'tools\make_intro_data.py')
     if ($LASTEXITCODE -ne 0) { throw "make_intro_data failed ($LASTEXITCODE)" }
 
-    $introRaw = Join-Path $build 'PINTRO-raw.ssd'
+    $introRaw = Join-Path $build 'pintro-raw.ssd'
     Push-Location (Join-Path $root 'pdloader')
     try {
         & $beebasm -i 'paradroid_intro.asm' -do $introRaw -opt 0

@@ -8,7 +8,7 @@
 # Measured: 18.2 s serial from clean, 9.2 s with -j4, 0.23 s when nothing
 # has changed. docs/build.md has the rest of the numbers.
 #
-#   make            assemble and build build/PARADROID.SSD (debug flags on)
+#   make            assemble and build build/paradroid.ssd (debug flags on)
 #   make -j4        the same, four compressors in parallel
 #   make release    the build for other people: intro on, every DEBUG_ off
 #   make run        build, then launch an emulator (autodetected, or EMU=)
@@ -16,15 +16,17 @@
 #   make world      data, then all - the whole thing from the listing
 #   make help       every target, with a line each
 #
-# WHAT IT ASSUMES. Tools come from $PATH unless overridden, and nothing
-# here writes a `.exe` suffix - the platforms that need one supply it:
+# WHAT IT ASSUMES. beebasm and python come from $PATH unless overridden;
+# the ZX0 compressor is BUILT, not assumed, because its source is vendored
+# here. Nothing writes a `.exe` suffix - the platforms that need one
+# supply it:
 #
-#   PYTHON=python3   BEEBASM=beebasm   ZX0=zx0   MAKE=make   EMU=
+#   PYTHON=python3   BEEBASM=beebasm   ZX0=bin/zx0   MAKE=make   EMU=
 #
-# so `make BEEBASM=./bin/beebasm ZX0=./bin/zx0` uses a checked-out local
-# build instead. tools/zx0tool.py resolves the compressor the same way for
-# the Python tools ($ZX0, then bin/, then $PATH), which is how the same
-# tree works from here and from build.ps1 with neither knowing which.
+# so `make BEEBASM=./bin/beebasm` uses a checked-out local assembler.
+# tools/zx0tool.py resolves the compressor the same way for the Python
+# tools ($ZX0, then bin/, then $PATH), which is how the same tree works
+# from here and from build.ps1 with neither knowing which.
 #
 # PORTABILITY. POSIX.1-2024 make: `?=`, `+=`, `.PHONY` and `-j` are all in
 # Issue 8, and GNU make and bmake have had them for years. No $(wildcard),
@@ -41,9 +43,20 @@
 
 PYTHON  ?= python3
 BEEBASM ?= beebasm
-ZX0     ?= zx0
 MAKE    ?= make
 EMU     ?=
+
+# ZX0 IS NOT AN EXTERNAL TOOL AND THE BUILD MAKES IT (hexwab, issue #3).
+# beebasm and python are things you install; the compressor's source is
+# vendored here in tools/zx0src/, it is Einar Saukas' reference ZX0 built
+# unmodified, and src/zx0depack.asm decodes exactly what it emits - so it
+# belongs to this project the way the assembler does not. It is built into
+# bin/ by the rule near the bottom and everything that compresses depends
+# on it, so a fresh clone needs no separate step.
+#
+# An override must name an EXISTING file, not a bare command: it is a
+# prerequisite, so `ZX0=zx0` would leave make with nothing to build.
+ZX0     ?= bin/zx0
 
 BUILD   ?= build
 PACK     = $(BUILD)/pack
@@ -57,19 +70,26 @@ INTRO    ?= 0
 INTRO_DEP =
 INTRO_ARG =
 
-RAW      = $(BUILD)/PARADROID-raw.ssd
-SSD      = $(BUILD)/PARADROID.SSD
-PADDED   = $(BUILD)/PARADROID-200K.SSD
-LISTING  = $(BUILD)/PARADROID.lst
+RAW      = $(BUILD)/paradroid-raw.ssd
+SSD      = $(BUILD)/paradroid.ssd
+PADDED   = $(BUILD)/paradroid-200k.ssd
+LISTING  = $(BUILD)/paradroid.lst
 SYMBOLS  = $(BUILD)/symbols.ssd
-INTRO_RAW = $(BUILD)/PINTRO-raw.ssd
+INTRO_RAW = $(BUILD)/pintro-raw.ssd
 
-# The file names above are the ones the docs, the skills and every
-# published image already use, so they are written here exactly as they
-# are on disc rather than lowercased: renaming the shipped artefact is a
-# separate change from making the build portable. Everything this
-# Makefile invents for itself - the .bin and .zx0 intermediates below -
-# takes a lowercase extension.
+# ALL LOWERCASE, and the extension is not a style question: b2 refuses a
+# disc image called .SSD outright - "unknown extension: .SSD" - so the old
+# build/PARADROID.SSD was unopenable in one of the emulators this port is
+# checked against (hexwab, issue #3). The basename came with it on KC's
+# call. 52 references across docs/, .claude/skills/, build.ps1 and tools/
+# moved at the same time.
+#
+# THE DFS NAMES INSIDE THE IMAGE ARE UNTOUCHED and must stay uppercase:
+# PARA, PARADAT, PARASPR, PARSPR2, PARXFER, PARAFNT, PARSWR, PINTRO and
+# !BOOT are catalogue entries, and !BOOT does *RUN PARA. That is why the
+# .bin/.zx0 intermediates below keep their uppercase stems - they are
+# named after the DFS file each one came out of - with the lowercase
+# extension the issue asked for.
 
 # ---------------------------------------------------------------------------
 # Sources
@@ -162,7 +182,7 @@ intro:
 # IN THE STEADY STATE IT IS ONE ASSEMBLY: the first pass extracts what is
 # already there, finds it unchanged and exits 0.
 
-$(RAW): $(ASM) $(DATA) $(BRIEF)
+$(RAW): $(ASM) $(DATA) $(BRIEF) $(ZX0)
 	@mkdir -p $(BUILD)
 	$(PYTHON) tools/pack_overlays.py --zx0 $(ZX0) --ensure $(RAW)
 	@pass=1; while :; do \
@@ -241,11 +261,11 @@ $(PACK)/PARAFNT.bin: $(RAW)
 	@mkdir -p $(PACK)
 	$(PYTHON) tools/make_disc.py --extract-file PARAFNT $(PACK) $(RAW)
 
-$(PACK)/PARADAT.zx0: $(PACK)/PARADAT.bin
-$(PACK)/PARASPR.zx0: $(PACK)/PARASPR.bin
-$(PACK)/PARSPR2.zx0: $(PACK)/PARSPR2.bin
-$(PACK)/PARXFER.zx0: $(PACK)/PARXFER.bin
-$(PACK)/PARAFNT.zx0: $(PACK)/PARAFNT.bin
+$(PACK)/PARADAT.zx0: $(PACK)/PARADAT.bin $(ZX0)
+$(PACK)/PARASPR.zx0: $(PACK)/PARASPR.bin $(ZX0)
+$(PACK)/PARSPR2.zx0: $(PACK)/PARSPR2.bin $(ZX0)
+$(PACK)/PARXFER.zx0: $(PACK)/PARXFER.bin $(ZX0)
+$(PACK)/PARAFNT.zx0: $(PACK)/PARAFNT.bin $(ZX0)
 
 # ---------------------------------------------------------------------------
 # The disc image
@@ -330,9 +350,10 @@ symbols:
 	@mkdir -p $(BUILD)
 	$(BEEBASM) -i src/main.asm -do $(SYMBOLS) -D RELEASE=$(RELEASE) -d
 
-# The reference ZX0 by Einar Saukas, from tools/zx0src/. Only needed if
-# there is none on $PATH; `make ZX0=./bin/zx0` then uses it. distclean
-# leaves it alone - see the note there.
+# The reference ZX0 by Einar Saukas, from tools/zx0src/, unmodified and
+# BSD-3. `make zx0` builds it on its own; everything that compresses
+# depends on $(ZX0) anyway, so a plain `make` builds it once on a fresh
+# clone and never again. distclean leaves it alone - see the note there.
 zx0: bin/zx0
 
 bin/zx0: tools/zx0src/zx0_main.c tools/zx0src/zx0_compress.c \

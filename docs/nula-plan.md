@@ -101,7 +101,7 @@ deliverable:
   | screenshot | **none** |
 
   **Tried, 2026-08-21**, against `b2_Debug.exe` build `20260322-193052-51e70d7`, the port booted
-  from `PARADROID-200K.SSD` on a `B/Acorn 1770 w/ NULA` config:
+  from `paradroid-200k.ssd` on a `B/Acorn 1770 w/ NULA` config:
 
   | | |
   |---|---|
@@ -330,7 +330,7 @@ Worth stating so the plan is not oversold:
 current plan, but it ships **on the same disc as a second executable**, selected at boot by the
 runtime detection KC has. So there is no second SSD, no menu, and no user choice to get wrong.
 
-The disc has room. Measured from `build/PARADROID.SSD`:
+The disc has room. Measured from `build/paradroid.ssd`:
 
 | | now | ceiling |
 |---|---|---|

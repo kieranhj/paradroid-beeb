@@ -261,7 +261,7 @@ the collision work and the animated tiles had eaten the budget. Both halves of t
 
 `DEBUG_TIME` is 154 bytes over the code image (`BUGS.md` #17), so everything below was measured
 with a **zero-byte harness**: execute breakpoints on the `JSR` sites in `mainloop` — addresses out
-of `build/PARADROID.lst` — and, at each stop, `read_registers` for `elapsed_cycles`. Two jsbeeb
+of `build/paradroid.lst` — and, at each stop, `read_registers` for `elapsed_cycles`. Two jsbeeb
 quirks decide whether it works at all:
 
 - **`cycles_run` is NOT the actual count when a breakpoint fires.** It returns the number

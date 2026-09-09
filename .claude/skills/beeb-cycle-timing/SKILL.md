@@ -25,7 +25,7 @@ deterministic, so one sample is exact for that state.
    ./bin/beebasm.exe -i src/main.asm -do build/symbols.ssd -D RELEASE=0 -d | tr ',' '\n' | grep "'SprDrawAll'"
    ```
 
-   `build/PARADROID.lst` is the other source, and the one that shows the emitted bytes.
+   `build/paradroid.lst` is the other source, and the one that shows the emitted bytes.
 
    You want the `JSR` site (or handler entry) and the instruction after it (the return site).
    **For code in a sideways bank the address is only meaningful while that bank is paged in**,

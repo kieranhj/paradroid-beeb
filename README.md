@@ -47,13 +47,13 @@ There is no pre-built image in the repository. Put `beebasm.exe` in `bin/`, then
 `make.bat` and `make.sh` are thin wrappers over the same script, for cmd and sh (`make run` works).
 Python 3 and Pillow are needed for the build's data stages.
 
-Everything lands in `build/`. Hand an emulator **`build/PARADROID-200K.SSD`** — the padded copy,
+Everything lands in `build/`. Hand an emulator **`build/paradroid-200k.ssd`** — the padded copy,
 which is what every published build is.
 
 > **beebasm's own output is not bootable.** The build is several stages: the intro-manual text is
 > converted, beebasm assembles a raw image, and `tools/make_disc.py` then ZX0-compresses the
 > sideways-RAM bank files and lays the disc out in the order the loader expects. Running beebasm by
-> hand produces `build/PARADROID-raw.ssd`, which hangs at the first bank load. Use the scripts.
+> hand produces `build/paradroid-raw.ssd`, which hangs at the first bank load. Use the scripts.
 
 DFS filenames are limited to seven characters, so the executable on disc is `PARA`.
 

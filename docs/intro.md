@@ -178,7 +178,7 @@ build:
   `!BOOT` header). The plan's first idea, a beebasm `-D` symbol driving a conditional `EQUS`,
   was dropped during the build: beebasm has no way to default an undefined symbol, so it
   would have broken the documented bare `beebasm -i src/main.asm` symbol-dump command.
-- `tools/make_disc.py --intro <PINTRO-raw.ssd>` also takes `PINTRO` from the second pass's
+- `tools/make_disc.py --intro <pintro-raw.ssd>` also takes `PINTRO` from the second pass's
   image and lays it into the physical boot order right after `!BOOT`. `PINTRO` ships
   uncompressed (its image stream is already ZX0 inside the file; there is no loader yet to
   depack a whole exe).

@@ -47,7 +47,7 @@ cross-cutting ones and the evidence for which Paradroid the listing is
 
    ```powershell
    .\build.ps1
-   Select-String -Path build\PARADROID.lst -Pattern "code|bank|free" | Select-Object -Last 20
+   Select-String -Path build\paradroid.lst -Pattern "code|bank|free" | Select-Object -Last 20
    ```
 
    Every free-space figure carries the date it was measured, because they move every build.

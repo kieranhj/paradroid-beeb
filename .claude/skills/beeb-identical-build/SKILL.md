@@ -12,7 +12,7 @@ change, stronger.
 
 **Baseline:** build the OLD tree first and keep its image and listing somewhere the new build will not overwrite
 **Always differs:** `!BOOT`, which stamps the build - so compare per file, not per image, when it does
-**Listing:** `build/PARADROID.lst`, which `build.ps1` writes with beebasm's `-v`
+**Listing:** `build/paradroid.lst`, which `build.ps1` writes with beebasm's `-v`
 **Reducer:** `tools/listing_stream.py` (checked in 2026-09-08; beebasm's listing emits only instructions and labels, which is what makes it exact)
 
 ## Steps
@@ -32,7 +32,7 @@ change, stronger.
 3. **Compare the images.** Identical is the pass and the end.
 
    ```bash
-   cmp build-old/PARADROID.SSD build/PARADROID.SSD
+   cmp build-old/paradroid.ssd build/paradroid.ssd
    ```
 
    The disc is ZX0-compressed per file by `tools/make_disc.py`, which is deterministic, so an
@@ -53,8 +53,8 @@ change, stronger.
    before trusting a result.
 
    ```bash
-   python tools/listing_stream.py build-old/PARADROID.lst > old.txt
-   python tools/listing_stream.py build/PARADROID.lst     > new.txt
+   python tools/listing_stream.py build-old/paradroid.lst > old.txt
+   python tools/listing_stream.py build/paradroid.lst     > new.txt
    diff old.txt new.txt && echo "stream identical, $(wc -l < new.txt) entries"
    ```
 

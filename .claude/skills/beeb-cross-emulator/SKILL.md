@@ -38,8 +38,8 @@ is the one that has caught this port's faults; b2 and beebjit are the others
    ```powershell
    .\build.ps1 -Run                      # b-em, the padded image
    # or directly
-   b2 -0 build\PARADROID-200K.SSD -b
-   beebjit -0 build\PARADROID-200K.SSD -autoboot
+   b2 -0 build\paradroid-200k.ssd -b
+   beebjit -0 build\paradroid-200k.ssd -autoboot
    ```
 
    Here that means: the **three-cycle rupture** and every handover into and out of it (title to

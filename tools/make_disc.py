@@ -12,7 +12,7 @@ compressed they are 25.2K instead of 63.6K on disc.
 
 THE RAW IMAGE IS NOT BOOTABLE. UnpackBankIn JMPs the PARDEPK depacker at
 every bank load, so the loader only works on this tool's output - always
-hand build/PARADROID.SSD (or the padded copy) to an emulator, never
+hand build/paradroid.ssd (or the padded copy) to an emulator, never
 beebasm's direct output.
 
 It also lays the files out physically in BOOT ACCESS ORDER, so the head
@@ -27,10 +27,10 @@ output is byte-identical to tools/zx0.py, which is the format
 src/zx0depack.asm decodes; zx0.py verifies every stream by decompression
 before the image is written, whoever compressed it.
 
-Usage: python tools/make_disc.py RAW.SSD OUT.SSD [PADDED.SSD]
+Usage: python tools/make_disc.py RAW.ssd OUT.ssd [PADDED.ssd]
                                  [--intro PINTRO.ssd] [--zx0 PATH]
                                  [--packed-dir DIR]
-       python tools/make_disc.py --extract-file NAME DIR RAW.SSD
+       python tools/make_disc.py --extract-file NAME DIR RAW.ssd
 
 --extract-file and --packed-dir are the two halves of ONE compression,
 split so that a make -j build can run the five compressors at once:
@@ -296,7 +296,7 @@ def main():
     if "--extract-file" in argv:            # one raw file out, then stop
         i = argv.index("--extract-file")
         if len(argv) < i + 4:
-            raise SystemExit("--extract-file NAME DIR RAW.SSD")
+            raise SystemExit("--extract-file NAME DIR RAW.ssd")
         extract_file(argv[i + 1], argv[i + 2], Path(argv[i + 3]))
         return
     intro_path = None

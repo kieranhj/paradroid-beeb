@@ -63,7 +63,7 @@ seeked back to track 0.
   (`layer-11f-frontend.md`) — which is exactly why the overlay can hold
   `UnpackBankIn`. The game-over seam reloads only PARTITL/PARAFNT/PARALOW.
 - **`tools/make_disc.py`** post-processes beebasm's image
-  (`build/PARADROID-raw.ssd` → `PARADROID.SSD` + the 200K pad):
+  (`build/paradroid-raw.ssd` → `paradroid.ssd` + the 200K pad):
   compresses the four banks with `bin/zx0.exe` (the reference compressor,
   sources and build line in `tools/zx0src/` — the Python `tools/zx0.py`
   is byte-identical but takes ~60 s per bank), round-trip-verifies every
@@ -85,8 +85,8 @@ seeked back to track 0.
 
 **beebasm's own image is no longer bootable.** `UnpackBankIn` expects a
 compressed stream at `&3200`; the raw image's banks are uncompressed at
-`&3000`, and handing `build/PARADROID-raw.ssd` to an emulator hangs the
-first bank load. Always use `build/PARADROID.SSD` or the 200K pad, both
+`&3000`, and handing `build/paradroid-raw.ssd` to an emulator hangs the
+first bank load. Always use `build/paradroid.ssd` or the 200K pad, both
 written by `make_disc.py`. `build.ps1` runs the whole chain.
 
 ## Rejected along the way

@@ -13,7 +13,7 @@ cannot survive:
   1. decompress each stream with tools/zx0.py - the format the 6502
      depacker eats;
   2. pull the page's record region out of the assembled XREC block in
-     build/PARADROID-raw.ssd, using beebasm's own symbol dump for the
+     build/paradroid-raw.ssd, using beebasm's own symbol dump for the
      addresses, and diff it against the stream byte for byte. XREC is
      src/data/briefing.asm - the old shipping layout, kept and
      assembled for no other purpose than this, and dropped from the
@@ -23,7 +23,7 @@ cannot survive:
      the bank's own brRow_p_r, rebased on BR_RECS. That is the check the
      scan itself has to pass at run time, done here at build time.
 
-Run it after a build. It needs build/PARADROID-raw.ssd (beebasm's direct
+Run it after a build. It needs build/paradroid-raw.ssd (beebasm's direct
 output, whose PARMAN is uncompressed) and re-runs beebasm for -d.
 """
 
@@ -36,7 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import zx0                       # noqa: E402
 
 PROJECT = Path(__file__).resolve().parent.parent
-RAW_SSD = PROJECT / 'build' / 'PARADROID-raw.ssd'
+RAW_SSD = PROJECT / 'build' / 'paradroid-raw.ssd'
 BEEBASM = PROJECT / 'bin' / 'beebasm.exe'
 SECTOR = 256
 

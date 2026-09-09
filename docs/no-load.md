@@ -918,7 +918,7 @@ was always its role in §1a. Step 6 moves back to where §5 had it, as part of t
 
 ### 11i. The briefing's pieces, packed — measured, not estimated
 
-From the raw SSD (`build/PARADROID-raw.ssd`, whose `PARMAN` is uncompressed) through
+From the raw SSD (`build/paradroid-raw.ssd`, whose `PARMAN` is uncompressed) through
 `bin/zx0.exe`, 2026-09-08:
 
 | piece | raw | ZX0 | |
@@ -1464,7 +1464,7 @@ be patched.
 ### 15b. The check, and it is the strong one
 
 `tools/verify_brstreams.py` decompresses each emitted stream and diffs it against **the bytes
-beebasm actually emitted**, pulled out of `PARMAN` in `build/PARADROID-raw.ssd` using beebasm's
+beebasm actually emitted**, pulled out of `PARMAN` in `build/paradroid-raw.ssd` using beebasm's
 own `-d` symbol dump — not against `make_briefing`'s idea of them, so a slip in the blob builder
 cannot survive.
 

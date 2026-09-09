@@ -9,9 +9,9 @@ The first thing after every build and the only check that trusts a screenshot: f
 boot", a screenshot is enough. Everything past that point is verified against the buffer
 (`beeb-buffer-oracle`), never the picture.
 
-**Image to boot:** `build/PARADROID-200K.SSD` - the padded copy, which is the one published
+**Image to boot:** `build/paradroid-200k.ssd` - the padded copy, which is the one published
 **Model:** `B-DFS1.2` (Model B; the four sideways RAM banks `PARSWR` probes for are jsbeeb's 4-7)
-**Never boot:** the assembler's own output (`*-RAW.SSD`, `*-raw.ssd`) - the loader expects the compressed layout the disc tool writes
+**Never boot:** the assembler's own output (`*-raw.ssd`) - the loader expects the compressed layout the disc tool writes
 **Frames to run:** ~400 (about 8 s of emulated time; enough to clear the loader and reach the title)
 
 ## Steps
@@ -26,7 +26,7 @@ boot", a screenshot is enough. Everything past that point is verified against th
    if ($LASTEXITCODE -ne 0) { "build failed" }
    ```
 
-2. **Pick the post-processed image, not the raw one.** `build/PARADROID-raw.ssd` is beebasm's
+2. **Pick the post-processed image, not the raw one.** `build/paradroid-raw.ssd` is beebasm's
    own output and **hangs at the first bank load**: `tools/make_disc.py` is what ZX0-compresses
    the banks, moves their catalogue load addresses to `DEPK_STREAM` and lays the disc out in
    boot access order, and `UnpackBankIn` understands only that layout. **Padding is irrelevant to
@@ -51,7 +51,7 @@ boot", a screenshot is enough. Everything past that point is verified against th
    must be absolute.
 
    ```
-   boot_disc    session_id, image_path: "C:/Users/khcon/OneDrive/Projects/Paradroid/build/PARADROID-200K.SSD"
+   boot_disc    session_id, image_path: "C:/Users/khcon/OneDrive/Projects/Paradroid/build/paradroid-200k.ssd"
    run_frames   session_id, count: 400
    screenshot   session_id
    ```

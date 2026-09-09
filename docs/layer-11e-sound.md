@@ -173,7 +173,7 @@ state) and the pulse fields gone. Faithful by construction where the hardware al
 ### Stage 0 — verify the hardware facts (nothing built on recall)
 
 **Items 1–3 DONE 2026-08-21, in jsbeeb, via `tools/sndtest.asm`** — a standalone harness poked
-to `&2000` (or `build/SNDTEST.SSD`, `*RUN SNDTEST` then the `CALL`s in its header). Item 4 needs
+to `&2000` (or `build/sndtest.ssd`, `*RUN SNDTEST` then the `CALL`s in its header). Item 4 needs
 the game build and moves to the head of stage 2, where the IRQ shim it measures is written.
 
 1. **The write sequence — VERIFIED.** Latch byte `1 cc t dddd`, data byte `0 0 dddddd`,

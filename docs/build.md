@@ -11,7 +11,7 @@ one thing two builds of an unchanged tree are meant to differ in. Measured 2026-
 `-Release` both: **identical, 8 and 12 files.**
 
 ```
-make                 debug build -> build/PARADROID.SSD
+make                 debug build -> build/paradroid.ssd
 make -j4             the same, four compressors at once
 make release         intro on, every DEBUG_ flag off
 make run             build, then launch an emulator (EMU= to choose)
@@ -22,14 +22,18 @@ make help            every target
 
 ## What the Makefile assumes
 
-Tools come from `$PATH` unless overridden, and **nothing in the build writes a `.exe` suffix any
-more** — the platforms that need one supply it:
+beebasm and python come from `$PATH` unless overridden; **the ZX0 compressor is built, not
+assumed**, because its source is vendored in `tools/zx0src/` — it is Einar Saukas' reference ZX0
+unmodified, and `src/zx0depack.asm` decodes exactly what it emits, so it belongs to this project
+the way the assembler does not (hexwab, issue #3). A plain `make` builds it once on a fresh clone.
+**Nothing in the build writes a `.exe` suffix** — the platforms that need one supply it:
 
 ```
-PYTHON=python3   BEEBASM=beebasm   ZX0=zx0   EMU=   BUILD=build
+PYTHON=python3   BEEBASM=beebasm   ZX0=bin/zx0   EMU=   BUILD=build
 ```
 
-so `make BEEBASM=./bin/beebasm ZX0=./bin/zx0` uses a checked-out local build. `tools/zx0tool.py`
+so `make BEEBASM=./bin/beebasm` uses a checked-out local assembler. An override of `ZX0` must name
+an existing file rather than a bare command, because it is a prerequisite. `tools/zx0tool.py`
 resolves the compressor the same way for the five Python tools that shell out to it — `$ZX0`,
 then `bin/`, then `$PATH` — which is how the same tree serves both builds with neither knowing
 which is running. `build.ps1` reads `$env:PYTHON` / `$env:BEEBASM` for the same reason, and
@@ -120,6 +124,21 @@ deterministic and that the committed data really does match the listing.
 Still thin wrappers over `build.ps1`, and still KC's entry point on Windows. They are not
 wrappers over this Makefile and do not need to be: on Windows `build.ps1` is the build, and on a
 POSIX box `make` is.
+
+## The image is called `paradroid.ssd`
+
+Lowercased on 2026-09-09, and the extension is not a style question: **b2 refuses a disc image
+called `.SSD` outright** — *"unknown extension: .SSD"* — so `build/PARADROID.SSD` was unopenable in
+one of the emulators this port is checked against (hexwab, issue #3). The basename followed on KC's
+call. 52 references moved with it, across `docs/`, `.claude/skills/`, `build.ps1` and `tools/`.
+
+**The DFS names inside the image are untouched and must stay uppercase**: `PARA`, `PARADAT`,
+`PARASPR`, `PARSPR2`, `PARXFER`, `PARAFNT`, `PARSWR`, `PINTRO` and `!BOOT` are catalogue entries,
+and `!BOOT` does `*RUN PARA`. The `.bin`/`.zx0` intermediates keep their uppercase stems for the
+same reason — each is named after the DFS file it came out of — with a lowercase extension.
+
+The next image published to the Bitshifters wip folder will therefore have a different name from
+the last one. The size is still the signal to check: 204,800 bytes.
 
 ## Known rough edge
 

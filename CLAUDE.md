@@ -169,10 +169,10 @@ lives only in `build.ps1`.
 
 | | |
 |---|---|
-| `build/PARADROID-raw.ssd` | beebasm's direct output — **NOT bootable**, see below |
-| `build/PARADROID.SSD` | the disc image, post-processed by `tools/make_disc.py` |
-| `build/PARADROID-200K.SSD` | the same, padded — **give this one to jsbeeb** |
-| `build/PARADROID.lst` | beebasm's `-v` listing, ~870 KB |
+| `build/paradroid-raw.ssd` | beebasm's direct output — **NOT bootable**, see below |
+| `build/paradroid.ssd` | the disc image, post-processed by `tools/make_disc.py` |
+| `build/paradroid-200k.ssd` | the same, padded — **give this one to jsbeeb** |
+| `build/paradroid.lst` | beebasm's `-v` listing, ~870 KB |
 
 DFS filenames are max 7 characters — the executable on disc is `PARA`.
 
@@ -198,7 +198,7 @@ nothing boots that image. This pass exists because `keyredef` cannot ship packed
 bank files **and `PARAFNT`** with `bin/zx0.exe` (sources and build line in `tools/zx0src/`; round-trip-verified
 through `tools/zx0.py` every build), moves their catalogue load address to `DEPK_STREAM`, and lays
 the disc out physically in boot access order. The loader (`UnpackBankIn`, resident in the code
-image) only understands that layout, so **`PARADROID-raw.ssd` hangs at the first bank load** — never hand
+image) only understands that layout, so **`paradroid-raw.ssd` hangs at the first bank load** — never hand
 it to an emulator. Boot measured 14.4 s → 10.4 s; `docs/loader-compression.md` has the numbers.
 
 **Pad an SSD to 200K before handing it to an emulator or publishing it.** jsbeeb WILL boot an
