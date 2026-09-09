@@ -415,7 +415,7 @@ BR_PO_SPAN = 12 * UNIT_BYTES    \ one row's slice of the rectangle
   EQUB SWRAM_XFER               \ page 2, the largest
   EQUB SWRAM_SPR                \ page 3
   EQUB SWRAM_SPR                \ page 4
-  EQUB SWRAM_XFER              \ page 5, chunk A - chunk B is bank 4
+  EQUB SWRAM_SPR2               \ page 5, whole again since 2026-09-09
 .bmStrLo
   EQUB LO(brStream_0), LO(brStream_1), LO(brStream_2)
   EQUB LO(brStream_3), LO(brStream_4)

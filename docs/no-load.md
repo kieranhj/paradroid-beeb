@@ -2026,3 +2026,72 @@ Then title -> briefing -> game -> game over again, twice more, to exercise the r
 went 381 -> 386 and bank 7 5 bytes; the overlay's region has 509 free. `highscore.asm`'s header
 carries a correction: `SetupPlain` is no longer what makes the screen possible, it is what closes
 it.
+
+## 21. PUTTING BACK WHAT WAS SPLIT FOR SPACE - 2026-09-09
+
+KC: *"is there anything that's been previously split that adds complexity which could be put back
+together now that we have space for"*. Two things, and the first pays for the second.
+
+### 21a. Briefing page 5 ships whole again
+
+SS11m cut it in two because bank 6 needed 313 bytes back for the SCANSTEP unfold. That debt has
+been paid several times over since - SS19's `drYcol` move alone gave bank 6 **420** - and the cut
+was never free:
+
+| what the split cost | |
+|---|---|
+| `BrDepackChain` | **33 bytes of code image** - the `brPage` compare, the second `src` setup, the second bank fetch. Six survive as `BrDepackPage` |
+| `brstream4b` | **154 bytes of bank 4**, which has no `ALIGN` pad left and had 51 free |
+| `brstream4` | **175 of bank 7's `plandata` pad**, taking it from 208 to 33 |
+| compression | **+16 bytes**: 313 whole against 175 + 154, because ZX0 cannot match across the cut |
+| the rule | `BR_SPLIT_PAGES = 1` - "exactly one page may split; a second would need a table instead of a compare" |
+| the machinery | `SPLIT_MAX`, `split_page()` and its cut-search cache in `make_briefing.py`; `BR_SPLIT_PAGE`, `BR_SPLIT_SLOT`; `brstream4b.asm`; the chunk-B arm of `verify_brstreams.py` |
+
+Putting it back is **one byte** in `bmStrSlot` - `briefman.asm`'s page-to-bank table, page 5 from
+`SWRAM_XFER` to `SWRAM_SPR2` - and deleting all of the above.
+
+### 21b. …which lets `xfpause.asm` go home
+
+BUGS.md #24's fix is a file of its own behind `plandata.asm`'s `ALIGN` for one reason: its 35
+bytes went **4 past** the 33-byte pad `xfer.asm` rides in front of that `ALIGN`, the padding
+rolled a page and bank 7 overflowed by 256. With page 5 gone the pad is 208 again, so it folds
+back into the foot of `xfer.asm` beside the panel-line engine it calls - riding the pad for
+nothing, and taking a file, a Makefile entry and a paragraph of explanation with it. Bank 7's
+tail gets its 35 bytes back at the same time.
+
+### 21c. The ledger
+
+| | before | after | |
+|---|---|---|---|
+| code image | 60 B | **87 B** | `code_end` `&2FA9` |
+| bank 4 | 51 B | **205 B** | and it had no pad left |
+| bank 7 tail | 131 B | **166 B** | `xfer_end` `&BF5A` |
+| bank 7 `ALIGN` pad | 33 B | **173 B** | 208 minus `xfpause`'s 35, which now rides it |
+| bank 6 | 714 B | 401 B | the page, 313 |
+| bank 5 | 344 B | 344 B | untouched |
+
+Files gone: `src/data/brstream4b.asm`, `src/xfpause.asm`.
+
+### 21d. Verified
+
+- **`tools/verify_brstreams.py`: all five pages match beebasm byte for byte**, which is the strong
+  check and the one that matters - it decompresses each stream and diffs it against the records
+  beebasm assembled, so a stream that packed wrong or landed in the wrong place cannot pass;
+- **in jsbeeb on the shipping image, `B-DFS1.2`**: a breakpoint on `BrDepackPage` caught page 5
+  with **A = 6** - `bmStrSlot` handing it bank 6, where the whole stream now is - against A = 7
+  for page 2 and A = 5 for pages 3 and 4. The page then renders correctly ("Volume down: Ctrl~Down
+  / Quit game: Escape / During briefing only: Redefine keys: Ctrl~R"), and the briefing cycled
+  through all five pages several times with no hang and no corruption at any transition.
+
+### 21e. What was looked at and left alone
+
+- **`GameStart2`** is in main RAM because "the low overlay has no room left" - three bytes there
+  against eighteen in `lowcode`, which has **9** free. Needs 15. Still no.
+- **`InfoHigh`** is out of the low overlay because "the overlay had one byte free"; its own note
+  says the arrangement "costs that region nothing", so there is nothing to win.
+- **`lowcode` / `lowcode2`** are not a space split - the NMI handler and the ROM private-workspace
+  page sit between them.
+- **`briefman.asm` against `PARBRF`** is forced by the `&0800` sound-workspace ceiling, not by
+  bank space. hexwab's `INSV` stub would move that ceiling to `&0900` (SS19), and is not taken.
+- **`sprscan.asm` / `sprsplit.asm`** IS a leftover split and both files are in bank 6 again since
+  step 6 - but it is worth no bytes either way, so it goes in its own commit as file surgery.

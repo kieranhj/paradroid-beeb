@@ -566,8 +566,8 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
 \ same argument brp makes for chp at the top of this file.
 .BrDepack
   JSR BmDepackPrep              \ bank 5: src, mapptr, and A = the bank
-  JSR BrDepackChain             \ code image: pages it, unpacks it, and
-  JMP BmRowScan                 \ a second chunk if the page has one
+  JSR BrDepackPage              \ code image: pages it and unpacks it,
+  JMP BmRowScan                 \ then the row scan rebuilds the tables
 
 \ ============================================================
 \ BrKeyRedef — CTRL+R: the redefine screen, and the page back

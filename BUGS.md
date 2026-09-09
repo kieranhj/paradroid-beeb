@@ -87,10 +87,13 @@ calls `XfPauseWord` through the bank-7 shim instead of `PanelTick`:
 - **the lift's side view** repaints its "Lift". That cost nothing at all: `LvStart7b` already
   painted it, so `liftview.asm` gained a label — `.LvPanelWord` — and no code.
 
-`xfpause.asm` is a file of its own and sits **behind `plandata.asm`'s `ALIGN`**, beside
-`xfericon.asm`. That is not taste: at the foot of `xfer.asm`, where it belongs, its 35 bytes went
-4 past the 33-byte pad `xfer.asm` rides in front of that `ALIGN`, the padding rolled a page and
-bank 7 overflowed by 256 — measured, on the first build of it.
+It went in as `src/xfpause.asm`, a file of its own **behind `plandata.asm`’s `ALIGN`** beside
+`xfericon.asm`, and that was not taste: at the foot of `xfer.asm`, where it belongs, its 35 bytes
+went **4 past** the 33-byte pad `xfer.asm` rides in front of that `ALIGN`, the padding rolled a
+page and bank 7 overflowed by 256 — measured, on the first build of it. **It is at the foot of
+`xfer.asm` now** ([`docs/no-load.md`](docs/no-load.md) §21b): putting briefing page 5 back
+together took its 175 bytes out of that pad, the pad is 208 again, and these 35 ride it for
+nothing.
 
 Cost: **24 B of code image** (67 free → 43) and **35 B of bank 7** (171 free → 136, the pad
 untouched at 33).

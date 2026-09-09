@@ -584,11 +584,6 @@ UNIT_BYTES = 8
 \ these values rather than defining them, so a regenerated briefing
 \ or chatter still fails the build if it disagrees.
 INCLUDE "src/data/briefconst.asm"   \ BR_PAGES, BR_ROW_LO/HI, BR_XTRA0
-\ Which bank page 5's SECOND chunk is in. BR_SPLIT_PAGE comes from
-\ briefconst.asm above (make_briefing decides WHICH page splits); this
-\ is main.asm's half of the answer, because where a stream lives is a
-\ memory-map decision and not the exporter's.
-BR_SPLIT_SLOT = SWRAM_DATA
 BR_CHAT_PRE = 5                 \ was src/data/sndchat.asm
 BR_PO_UNIT  = 4                 \ was src/briefman.asm
 BR_PO_OFS   = BR_PO_UNIT * UNIT_BYTES
@@ -3779,36 +3774,22 @@ INCLUDE "src/zx0depack.asm"
 \ play (DEPK_STREAM, SWRAM_BASE, FNT_STREAM, FONT_ADDR) have a ZERO LOW
 \ BYTE, so only the two high bytes differ and the tail sets both lows
 \ from one zero. The code image had nothing to spare when this landed.
-\ ---- BrDepackChain — a briefing page in one or two chunks ----
+\ ---- BrDepackPage - a briefing page, out of its bank ----
 \ IT IS HERE AND NOT IN briefing.asm because that file is the PARBRF
 \ overlay at &0400, which has twelve bytes free. This is main RAM, it
 \ pages banks (so it can live in none of them), and it sits beside the
 \ depacker it calls.
 \
-\ Entered with src, mapptr and A set by BmDepackPrep. Chunk B needs no
-\ offset: Zx0Unpack leaves mapptr past its last byte, so the second
-\ stream simply carries on writing where the first stopped. Each chunk
-\ is an independently packed stream - the depacker re-inits zxofs and
-\ zxbit at entry, and a back-reference can only reach inside its own
-\ chunk, which is exactly how they were compressed.
-\
-\ ONE PAGE SPLITS, and briefconst.asm's BR_SPLIT_PAGES asserts it: a
-\ second split page would need a table here instead of this compare,
-\ and would cost 15 bytes of a code image with 108.
-.BrDepackChain
+\ IT WAS BrDepackChain UNTIL 2026-09-09 and 33 bytes rather than six:
+\ page 5 shipped in two chunks in two banks, so this compared brPage
+\ against BR_SPLIT_PAGE, pointed src at the second stream and called
+\ the depacker again. Bank 6 has room for the page whole now, so the
+\ compare, the second setup and the constants they read have all gone.
+\ docs/no-load.md 21 has the ledger.
+.BrDepackPage
   JSR BrDepackOne
-  JSR PgSpr                     \ the briefing bank, for brPage below
-  LDA brPage
-  CMP #BR_SPLIT_PAGE
-  BNE bdc_done
-  LDA #LO(brStream_4b) : STA src
-  LDA #HI(brStream_4b) : STA src+1
-  LDX #BR_SPLIT_SLOT
-  LDA swBank,X                  \ main RAM, readable with any bank up
-  JSR BrDepackOne
-  JSR PgSpr
-.bdc_done
-  RTS
+  JMP PgSpr                     \ tail: the briefing bank back for the
+                                \ caller, and its RTS is ours
 
 .BrDepackOne
   STA ROMSHAD                   \ both, always — PAGEBANK's rule
@@ -4080,16 +4061,6 @@ INCLUDE "src/level.asm"
 INCLUDE "src/droid.asm"
 .snd_code_start
 INCLUDE "src/sound.asm"        \ Layer 11e: the SN76489 driver — IRQ-called
-\ ---- page 5's second chunk (no-load step 6) ------------------
-\ The other half of the stream in bank 7. BrDepackChain depacks this
-\ straight on from where chunk A stopped: Zx0Unpack leaves mapptr past
-\ its last byte, so there is no offset to compute and the cut may fall
-\ anywhere in the page.
-\ AT THE TAIL, PAST EVERY ALIGN. This bank's colourMap pad is down to
-\ TEN bytes (measured 2026-09-09), so unlike bank 7 there is no free
-\ ride here and the 11th byte in front of it would cost 256.
-INCLUDE "src/data/brstream4b.asm"
-
 .data_end
 \ Layer 11e filled this bank to the brim (docs/layer-11e-sound.md §6);
 \ the line below is the fuel gauge, printed every build.
@@ -4361,6 +4332,17 @@ INCLUDE "src/data/lowimg.asm"
 \ packed -- it had 33 bytes free before that. See docs/no-load.md 17.
 INCLUDE "src/data/brstream0.asm"
 
+\ ---- AND PAGE 5, WHOLE AGAIN (2026-09-09) --------------------
+\ It shipped as two chunks, in banks 7 and 4, from no-load step 6 until
+\ this bank had room for it again. Whole it is 313 packed; cut it was
+\ 175 + 154, because ZX0 cannot match across the cut. What came back
+\ with the 16 bytes: BrDepackChain and BR_SPLIT_SLOT out of the code
+\ image, 154 bytes of bank 4 (which has no ALIGN pad left), 175 of
+\ bank 7's pad, brstream4b.asm, make_briefing's cut search and its
+\ cache, and the rule that exactly one page could ever split.
+\ docs/no-load.md 21.
+INCLUDE "src/data/brstream4.asm"
+
 \ Both copiers live in the BANK, like TiResident, so they cost the code
 \ image nothing — and both end in main RAM's PgData for TiResident's
 \ reason: a PAGEBANK executed here would swap the RTS out from under
@@ -4477,16 +4459,11 @@ INCLUDE "src/data/droidinfo.asm"
 \ this bank's: everything assembled before an ALIGN rides its padding
 \ for nothing, because the pad shrinks by what you add and the page
 \ boundary does not move. Measured 2026-09-09: 208 bytes of pad here,
-\ and these 175 cost the bank NOTHING - its tail stays at 171 free.
+\ PAGE 5 USED TO RIDE IT AND NO LONGER DOES (2026-09-09): 175 bytes of
+\ a two-way split that went back to bank 6 whole, so the pad is 208
+\ again and the next thing assembled in front of the ALIGN rides it.
 \ Past 208 it would round a page and cost 256 at a stroke, so watch it.
 \
-\ Page 5 ships as TWO chunks so that it could leave bank 6 at all:
-\ whole it is 313 and no hole in the machine could take it. Cut, it is
-\ 175 + 154 - +16 bytes of compression for 313 of bank 6, which is what
-\ paid for sprscan coming home and bank 5's unfold (docs/no-load.md 11m).
-\ The other chunk is in BANK 4, and being apart is the point of cutting.
-INCLUDE "src/data/brstream4.asm"
-
 INCLUDE "src/data/plandata.asm"
 \ sideview.asm USED TO SIT HERE, behind plandata's ALIGN &100 so that
 \ it cost the bank its own size and nothing more. It is now packed and
@@ -4495,11 +4472,6 @@ INCLUDE "src/data/plandata.asm"
 \ DECISION 14's icon code, BEHIND the ALIGN on purpose — its own
 \ header says why, and moving it in front costs the bank 256 B.
 INCLUDE "src/xfericon.asm"
-\ BUGS.md #24's pause repaint, BEHIND THE ALIGN for the same reason
-\ and not by choice: 37 bytes against xfer.asm's 33-byte ride in the
-\ pad, so in front of it the bank overflowed. Its header has the
-\ measurement and everything else about it.
-INCLUDE "src/xfpause.asm"
 \ The title's ARTWORK, but not its code (no-load step 3, 2026-09-07).
 \ 1,140 bytes of glyphs and RLE that TiPaint reads ONCE, in place, with
 \ this bank paged -- so they never needed to be main RAM at all, and
