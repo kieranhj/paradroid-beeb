@@ -22,6 +22,23 @@ renders straight from the record lists instead. [11f DECISION 3]
                  renderer plots any index >= BR_XTRA0 from here
     .br_<name>   a label on each `label`-tagged record (the score lines)
 
+AND, SINCE no-load STEP 5, THE SAME PAGES AS ZX0 STREAMS. Each page is
+assembled here, in Python, EXACTLY as beebasm lays it out above and ZX0'd
+into src/data/brstreamN.asm, which main.asm places in whichever bank has
+room; nothing spans a bank. A stream is THE ROW LISTS AND NOTHING ELSE
+and depacks to BR_RECS = BR_BUF + 2 * BR_ROWS; the driver rebuilds
+brRowLo/Hi at BR_BUF by walking the depacked page for its $FF row
+terminators. Carrying the tables INSIDE the stream was the design of
+docs/no-load.md 14d and it was measured against this one: 2,798 packed
+against 2,466, so the scan is worth 332 bytes of bank for ~40 of code
+(KC, 2026-09-09; 15d). The record addresses emitted below are therefore
+still absolute and still correct by construction - only the tables that
+point at them are built at run time.
+The blobs are checked against beebasm's own output by
+tools/verify_brstreams.py, which also runs the scan and checks the
+pointers it derives, and each stream is round-tripped through
+tools/zx0.py before it is written.
+
 A record occupies the row it names AND the one below - the top cells of
 its 8 x 16 glyphs, then the bottom ones - so painting canvas row r is
 row r's list drawn top-half plus row r-1's list drawn bottom-half.
@@ -37,8 +54,13 @@ back to ASCII and diffs it against the input, so a mapping slip cannot
 survive.
 """
 
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import zx0                       # noqa: E402  - the round-trip check
 
 PROJECT = Path(__file__).resolve().parent.parent
 SRC = PROJECT / 'src' / 'data' / 'briefing.txt'
@@ -49,6 +71,20 @@ OUT = PROJECT / 'src' / 'data' / 'briefing.asm'
 # ABOVE bank 6 now so that bank 6 can COPYBLOCK it, which is well before
 # this data. Same numbers, defined once, just earlier. (2026-09-09)
 OUT_CONST = PROJECT / 'src' / 'data' / 'briefconst.asm'
+# ...and one ZX0 stream a page, each in its own file so main.asm can put
+# it in whichever bank has room. no-load step 5.
+OUT_STREAM = PROJECT / 'src' / 'data' / 'brstream%d.asm'
+ZX0_EXE = PROJECT / 'bin' / 'zx0.exe'
+
+# WHERE A DEPACKED PAGE LANDS, and the reason the pointer tables can ride
+# inside the stream: the blob is assembled below as if it were AT this
+# address, so brRowLo/Hi hold the addresses the page really will have.
+# main.asm declares BR_BUF and ASSERTs it against BR_BUF_ASSUMED, which
+# this tool writes into briefconst.asm - the two cannot drift.
+# &4500 is 440 bytes clear of the briefing's measured high-water mark in
+# the arena (docs/no-load.md 14b) and leaves 1,280 for the tables and the
+# page together.
+BR_BUF = 0x4500
 
 PAGE_COLS = 40
 
@@ -135,6 +171,42 @@ def parse(path):
     return pages, extras, order
 
 
+def page_blob(pages, extras, p, rows):
+    """One page's row lists, EXACTLY as beebasm lays out briefing.asm's
+    brRow_p_r, laid out at BR_RECS. The two pointer tables are NOT here:
+    the driver rebuilds them by scanning for the $FF row terminators.
+    Returns the bytes and {label: address}."""
+    recs, labels = bytearray(), {}
+    base = BR_BUF + 2 * len(rows)       # BR_RECS
+    for r in rows:
+        for col, text, label, n in sorted(pages.get(p, {}).get(r, [])):
+            if label:
+                labels[label] = base + len(recs)
+            recs.append(col + MARGIN)
+            recs += bytes(to_glyph(c, extras) for c in text)
+            recs.append(0xFE)
+        recs.append(0xFF)
+    return bytes(recs), labels
+
+
+def zx0_pack(raw, name):
+    """bin/zx0.exe, then tools/zx0.py's decompressor over what it wrote.
+    make_disc.py does the same for the banks and for the same reason: the
+    stream the 6502 depacker eats is zx0.py's format, so a compressor
+    that drifted from it would ship silently."""
+    if not ZX0_EXE.exists():
+        raise SystemExit('%s missing - build it from tools/zx0src/' % ZX0_EXE)
+    with tempfile.TemporaryDirectory() as td:
+        src, dst = Path(td) / 'in.bin', Path(td) / 'out.zx0'
+        src.write_bytes(raw)
+        subprocess.run([str(ZX0_EXE), '-f', str(src), str(dst)],
+                       check=True, capture_output=True)
+        packed = dst.read_bytes()
+    if zx0.decompress(packed) != raw:
+        raise SystemExit('%s: zx0.exe stream fails zx0.py round-trip' % name)
+    return packed
+
+
 def main():
     pages, extras, order = parse(SRC)
 
@@ -182,7 +254,6 @@ def main():
     con.append(bs + ' Characters the shared font has not got; the renderer plots an')
     con.append(bs + ' index of BR_XTRA0 or above from brExtra, not from the font.')
     con.append('BR_XTRA0     = %d' % PN_GLYPHS)
-    OUT_CONST.write_text(chr(10).join(con) + chr(10))
 
     out.append(bs + ' A row list is (col, glyphs..., $FE) per record, then $FF.')
     out.append(bs + ' Rows with nothing on them are one byte: $FF.')
@@ -241,6 +312,59 @@ def main():
 
     OUT.write_text(chr(10).join(out) + chr(10))
 
+    # ---- and the same pages as ZX0 streams (no-load step 5) ----
+    # One file a page, so main.asm can put each in whichever bank has
+    # room. The blob is the page AS IT WILL BE IN MAIN RAM, tables and
+    # all; verify_brstreams.py checks it against what beebasm assembled.
+    rows = list(range(row_lo, row_hi + 1))
+    scores, raws, packs = {}, [], []
+    for p in range(npages):
+        blob, labels = page_blob(pages, extras, p, rows)
+        packed = zx0_pack(blob, 'briefing page %d' % p)
+        raws.append(blob)
+        packs.append(packed)
+        for name, addr in labels.items():
+            scores[name] = (p, addr)
+        st = []
+        st.append(bs + ' ============================================================')
+        st.append(bs + ' brstream%d.asm - GENERATED by tools/make_briefing.py' % p)
+        st.append(bs + ' ============================================================')
+        st.append(bs + " Briefing page %d, ZX0-packed: %d bytes -> %d."
+                  % (p + 1, len(blob), len(packed)))
+        st.append(bs + ' The row lists and nothing else. It depacks to BR_RECS and')
+        st.append(bs + ' the driver rebuilds brRowLo/Hi at BR_BUF by scanning it for')
+        st.append(bs + ' the $FF row terminators - 332 bytes cheaper across the five')
+        st.append(bs + ' pages than carrying the tables in (docs/no-load.md 15d).')
+        st.append(bs + ' Placed in a bank by main.asm; nothing here may span one.')
+        st.append('.brStream_%d' % p)
+        for j in range(0, len(packed), 16):
+            st.append('  EQUB ' + ', '.join('&%02X' % b
+                                            for b in packed[j:j + 16]))
+        st.append('.brStream_%d_end' % p)
+        st.append('')
+        (Path(str(OUT_STREAM) % p)).write_text(chr(10).join(st) + chr(10))
+
+    con.append('')
+    con.append(bs + ' ---- no-load step 5: the pages as ZX0 streams ----')
+    con.append(bs + " BR_BUF is main.asm's to declare - this is what the streams")
+    con.append(bs + ' were assembled against, and main.asm ASSERTs the two agree.')
+    con.append('BR_BUF_ASSUMED = &%04X' % BR_BUF)
+    con.append(bs + " The largest page's row lists, unpacked, for the arena ASSERT.")
+    con.append('BR_PAGE_MAX  = %d' % max(len(r) for r in raws))
+    con.append('')
+    con.append(bs + ' The two score records BmPatch writes, as addresses in the')
+    con.append(bs + ' depacked page - and the page they are on, which is the only')
+    con.append(bs + ' one that may be patched.')
+    for name in sorted(scores):
+        p, addr = scores[name]
+        con.append('BR_%-9s = &%04X' % (name.upper(), addr))
+    con.append('BR_SCORE_PAGE = %d' % scores[sorted(scores)[0]][0])
+    for name in sorted(scores):
+        if scores[name][0] != scores[sorted(scores)[0]][0]:
+            raise SystemExit('the score records are not on one page')
+
+    OUT_CONST.write_text(chr(10).join(con) + chr(10))
+
     # THE CHECK THAT MATTERS: decode the emitted indices back to ASCII
     # through an inverse map and diff against the input, record for
     # record. A slip in to_glyph shows up here and nowhere else.
@@ -262,6 +386,10 @@ def main():
           '%d bytes of lists + %d index + %d glyphs; round-trip clean'
           % (len(emitted), npages, row_lo, row_hi,
              total, len(entries) * 2 + 4 * npages, 16 * len(extras)))
+    print('make_briefing: streams ' +
+          ', '.join('%d->%d' % (len(r), len(k)) for r, k in zip(raws, packs))
+          + ' = %d packed (largest page %d unpacked)'
+          % (sum(len(k) for k in packs), max(len(r) for r in raws)))
 
 
 if __name__ == '__main__':

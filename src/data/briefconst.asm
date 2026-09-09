@@ -14,3 +14,17 @@ BR_ROWS      = BR_ROW_HI - BR_ROW_LO + 1
 \ Characters the shared font has not got; the renderer plots an
 \ index of BR_XTRA0 or above from brExtra, not from the font.
 BR_XTRA0     = 104
+
+\ ---- no-load step 5: the pages as ZX0 streams ----
+\ BR_BUF is main.asm's to declare - this is what the streams
+\ were assembled against, and main.asm ASSERTs the two agree.
+BR_BUF_ASSUMED = &4500
+\ The largest page's row lists, unpacked, for the arena ASSERT.
+BR_PAGE_MAX  = 967
+
+\ The two score records BmPatch writes, as addresses in the
+\ depacked page - and the page they are on, which is the only
+\ one that may be patched.
+BR_HISCORE   = &458C
+BR_LOSCORE   = &45BD
+BR_SCORE_PAGE = 4

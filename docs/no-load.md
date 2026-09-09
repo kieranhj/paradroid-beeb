@@ -1270,3 +1270,142 @@ Thin, and every figure in it is now measured rather than estimated. If it needs 
 - **Both loads go**: `BrTimeout` stops loading `PARMAN` and `BrDispatch` stops reloading
   `PARASPR`, because bank 5 is never evicted. `PARAFNT` then has no destroyer left and can
   become boot-only, which is the third and last load.
+
+---
+
+## 15. STEP 5 STAGE 1 — the data pipeline, 2026-09-09
+
+**KC confirmed §14a's finding: the briefing keeps its five pages, 2B is off the table.**
+
+### 15a. What was built
+
+`tools/make_briefing.py` now lays each briefing page out **twice**. It still writes
+`src/data/briefing.asm` — the bank-5 `PARMAN` records the old renderer walks, unchanged — and it
+additionally assembles each page **in Python**, as the bytes it will be in main RAM, with every
+record address resolved as if the page lived at `BR_RECS`. Each blob is ZX0'd through
+`bin/zx0.exe`, round-tripped through `tools/zx0.py` (the format the 6502 depacker eats) and
+written to `src/data/brstreamN.asm`.
+
+The tool also emits, into `src/data/briefconst.asm`: `BR_BUF_ASSUMED` (its copy of the depack
+address, which `main.asm` asserts against), `BR_PAGE_MAX` (the largest page's row lists, for the
+arena assert) and `BR_HISCORE` / `BR_LOSCORE` / `BR_SCORE_PAGE` — the two records `BmPatch`
+writes, as the addresses they will have in the depacked page. It refuses to build if the two
+score records ever land on different pages, because only the page that is currently depacked can
+be patched.
+
+**Nothing reads the streams yet.** The old path is untouched and this stage is pure data.
+
+### 15b. The check, and it is the strong one
+
+`tools/verify_brstreams.py` decompresses each emitted stream and diffs it against **the bytes
+beebasm actually emitted**, pulled out of `PARMAN` in `build/PARADROID-raw.ssd` using beebasm's
+own `-d` symbol dump — not against `make_briefing`'s idea of them, so a slip in the blob builder
+cannot survive.
+
+```
+page 0: 624 record bytes identical, 57 pointers scanned back from &4572
+page 1: 967 record bytes identical, 57 pointers scanned back from &4572
+page 2: 962 record bytes identical, 57 pointers scanned back from &4572
+page 3: 932 record bytes identical, 57 pointers scanned back from &4572
+page 4: 469 record bytes identical, 57 pointers scanned back from &4572
+verify_brstreams: all 5 pages match beebasm byte for byte
+```
+
+**§14a's page-4 figure is wrong and this is the correction.** It says 435 records; the generator
+emits **469**, and its own byte count (3,954 bytes of lists) agrees with 624 + 967 + 962 + 932 +
+469 and not with §14a's 3,920. Every other page in that table is right.
+
+### 15c. The tables are NOT in the streams — KC, 2026-09-09
+
+§14a compared two ways of holding a page's 114-byte pointer pair: inside the stream (2,798 packed
+as measured, and the design §14d agreed) or bank-resident beside it (2,466 + 5 x 114 = 3,036).
+**There is a third and it is the cheapest: ship neither, and rebuild the tables at run time.**
+Re-packed both ways today:
+
+| | packed |
+|---|---|
+| five streams, tables inside | 2,798 |
+| five streams, **row lists only** | **2,466** |
+| | **332 saved** |
+
+The scan is unambiguous because the record format already reserves its two sentinels: `&FF` ends
+a row and `&FE` ends a record, and neither a column byte (42 at most) nor a glyph index (107 at
+most) can collide with either. Fifty-seven rows, one walk over ~1,000 bytes, once per page turn —
+against ~40 bytes of code, and on a modal screen where the depack that precedes it costs more.
+
+**KC took it**, so the layout is:
+
+```
+BR_BUF   &4500   brRowLo, 57 bytes    built by the driver, not shipped
+         &4539   brRowHi, 57 bytes    likewise
+BR_RECS  &4572   the depacked row lists, 967 at the largest
+```
+
+`main.asm` declares both and `ASSERT`s `BR_BUF == BR_BUF_ASSUMED` and
+`BR_RECS + BR_PAGE_MAX <= PANEL_ADDR`. The record addresses the tool emits are still absolute and
+still correct by construction; only the tables that point at them are built at run time.
+
+**`verify_brstreams.py` runs that scan too**, in Python, over the decompressed stream, and checks
+every pointer it derives against the bank's own `brRow_p_r`. All 285 pointers over the five pages
+agree — so the algorithm the driver has to implement is proved at build time, before a line of
+6502 is written for it.
+
+### 15d. Where they were put, and why it is not arbitrary
+
+| stream | packed | bank |
+|---|---|---|
+| page 2 | 604 | 5 |
+| page 3 | 574 | 5 |
+| page 4 | 566 | 5 |
+| page 1 | 409 | **6** |
+| page 5 | 313 | **7** |
+| | **2,466** | |
+
+**Bank 5 is being kept whole for `keyredef`.** Packed it is 776, and after this it is the ONLY
+bank with a hole that big — bank 7 has 775, one byte short, which is the sort of coincidence that
+decides a layout. Bank 7's 462 is `briefman`'s 456. Bank 4's 225 is `brExtra` (64) and `sndchat`
+(15), the only two pieces small enough to use it at all. Measured from the gauges after:
+
+| bank | before step 5 | now | stage 3 will put there |
+|---|---|---|---|
+| 4 | 225 | 225 | `brExtra` + `sndchat` (79) |
+| 5 | 2,650 | **906** | `keyredef` packed (776) |
+| 6 | 442 | **33** | — |
+| 7 | 775 | **462** | `briefman` (456) |
+| **total** | **4,092** | **1,626** | **1,311** |
+
+### 15e. THE BUDGET, RESTATED — §14c totalled a pool and it is not one
+
+§14c's 4,092-against-4,025 has two faults. The demand left out `brExtra` (64) and `sndchat` (15)
+and used estimates for the rest; and the supply is four bins, not a pool. Measured from the
+symbol dump (`man_start` &8000, `brExtra` &91C0, `BmPatch` &921F, `BmKrRun` &93D7, `man_end`
+&97CD), the stage-3 demand as originally designed was:
+
+| | bytes |
+|---|---|
+| five page streams, tables inside | 2,798 |
+| `brExtra` | 64 |
+| `sndchat` | 15 |
+| `briefman` | 456 |
+| `keyredef`, packed | 776 |
+| **demand** | **4,109** |
+| supply | **4,092** |
+
+**Seventeen short before a byte of new code**, and worse in practice, because bank 4's 225 can
+hold nothing but the smallest two pieces. §15c's 332 is what turns that into the 315-byte
+surplus above.
+
+**And 315 is fragile: 130 in bank 5, 33 in bank 6, 6 in bank 7, 146 in bank 4.** The driver, the
+per-page bank/address table and `briefman`'s trampolines still have to come out of it — and **the
+driver has to be MAIN RAM**, because a routine in a bank cannot page another bank in without
+pulling the rug from under itself, so what it wants is `PARBRF`'s 12 bytes or the code image's 28
+rather than any of this. §14c's `brfImg`/`lowImg` packing (+432, needing the two-pass build of
+§12a option 4C) is the reserve if it does not close, and it lands in banks 6 and 7, which is
+exactly where the fragility is.
+
+### 15f. Verified
+
+**Cold boot → title → briefing on the timeout, on the shipping image in jsbeeb, `B-DFS1.2`.**
+The briefing paints and scrolls exactly as before, which is the whole of the check stage 1 can
+carry: nothing reads the streams yet, so this is a build-time change and `verify_brstreams.py` is
+where its proof lives.

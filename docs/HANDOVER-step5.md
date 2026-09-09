@@ -4,6 +4,11 @@
 Branch `no-load`. Written 2026-09-09 by the session that did §11-§14 of `docs/no-load.md`, which
 ran low on context. Everything below is measured; nothing in it needs re-deriving.
 
+**STAGE 1 IS DONE — see `docs/no-load.md` §15 before this file.** It confirms 2B off the table,
+corrects §3's page-4 figure below (435 -> 469), and records a decision that changes the design:
+the pointer tables are NOT carried inside the streams but rebuilt at run time, worth 332 bytes.
+§15e restates the budget, which §14c had 17 bytes short before any code.
+
 **Read first, in this order:** `CLAUDE.md` (the rules; it is loaded for you automatically),
 `docs/no-load.md` **§14** (the design and its measurements), then **§12a, §13, §11j**. `§1`–`§10`
 are history and two of their tables are superseded — §1a says which.
