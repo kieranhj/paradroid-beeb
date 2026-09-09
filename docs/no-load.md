@@ -8,7 +8,11 @@ analysis; this file is the working copy, kept current as the branch lands.
 **Read the arena rule below before touching `&4600`.** It is the only invariant on the branch and
 it has already been broken twice.
 
-**STATUS, 2026-09-09: §12 IS THE HANDOVER — read it first.** Four commits on the night of
+**STATUS, 2026-09-09: `docs/HANDOVER-step5.md` IS THE BRIEF FOR THE NEXT SESSION.** §14 is the
+design and the measurements behind it; the handover turns them into staged work with the
+verification recipes and the traps. §12 is the earlier handover and is now history.
+
+**STATUS, 2026-09-09: §12 was the handover.** Four commits on the night of
 2026-09-08 took free bank space from 2,201 to **6,081**, so **step 5 fits for the first time** and
 space is no longer the blocker. What is left is architectural and §12a lists the three choices it
 needs.
