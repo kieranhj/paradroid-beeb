@@ -584,6 +584,11 @@ UNIT_BYTES = 8
 \ these values rather than defining them, so a regenerated briefing
 \ or chatter still fails the build if it disagrees.
 INCLUDE "src/data/briefconst.asm"   \ BR_PAGES, BR_ROW_LO/HI, BR_XTRA0
+\ Which bank page 5's SECOND chunk is in. BR_SPLIT_PAGE comes from
+\ briefconst.asm above (make_briefing decides WHICH page splits); this
+\ is main.asm's half of the answer, because where a stream lives is a
+\ memory-map decision and not the exporter's.
+BR_SPLIT_SLOT = SWRAM_DATA
 BR_CHAT_PRE = 5                 \ was src/data/sndchat.asm
 BR_PO_UNIT  = 4                 \ was src/briefman.asm
 BR_PO_OFS   = BR_PO_UNIT * UNIT_BYTES
@@ -3726,6 +3731,42 @@ INCLUDE "src/zx0depack.asm"
 \ play (DEPK_STREAM, SWRAM_BASE, FNT_STREAM, FONT_ADDR) have a ZERO LOW
 \ BYTE, so only the two high bytes differ and the tail sets both lows
 \ from one zero. The code image had nothing to spare when this landed.
+\ ---- BrDepackChain — a briefing page in one or two chunks ----
+\ IT IS HERE AND NOT IN briefing.asm because that file is the PARBRF
+\ overlay at &0400, which has twelve bytes free. This is main RAM, it
+\ pages banks (so it can live in none of them), and it sits beside the
+\ depacker it calls.
+\
+\ Entered with src, mapptr and A set by BmDepackPrep. Chunk B needs no
+\ offset: Zx0Unpack leaves mapptr past its last byte, so the second
+\ stream simply carries on writing where the first stopped. Each chunk
+\ is an independently packed stream - the depacker re-inits zxofs and
+\ zxbit at entry, and a back-reference can only reach inside its own
+\ chunk, which is exactly how they were compressed.
+\
+\ ONE PAGE SPLITS, and briefconst.asm's BR_SPLIT_PAGES asserts it: a
+\ second split page would need a table here instead of this compare,
+\ and would cost 15 bytes of a code image with 108.
+.BrDepackChain
+  JSR BrDepackOne
+  JSR PgSpr                     \ the briefing bank, for brPage below
+  LDA brPage
+  CMP #BR_SPLIT_PAGE
+  BNE bdc_done
+  LDA #LO(brStream_4b) : STA src
+  LDA #HI(brStream_4b) : STA src+1
+  LDX #BR_SPLIT_SLOT
+  LDA swBank,X                  \ main RAM, readable with any bank up
+  JSR BrDepackOne
+  JSR PgSpr
+.bdc_done
+  RTS
+
+.BrDepackOne
+  STA ROMSHAD                   \ both, always — PAGEBANK's rule
+  STA ROMSEL
+  JMP Zx0Unpack                 \ tail call: its RTS is ours
+
 .UnpackFont
   LDA #HI(FNT_STREAM)
   LDX #HI(FONT_ADDR)
@@ -3991,6 +4032,16 @@ INCLUDE "src/level.asm"
 INCLUDE "src/droid.asm"
 .snd_code_start
 INCLUDE "src/sound.asm"        \ Layer 11e: the SN76489 driver — IRQ-called
+\ ---- page 5's second chunk (no-load step 6) ------------------
+\ The other half of the stream in bank 7. BrDepackChain depacks this
+\ straight on from where chunk A stopped: Zx0Unpack leaves mapptr past
+\ its last byte, so there is no offset to compute and the cut may fall
+\ anywhere in the page.
+\ AT THE TAIL, PAST EVERY ALIGN. This bank's colourMap pad is down to
+\ TEN bytes (measured 2026-09-09), so unlike bank 7 there is no free
+\ ride here and the 11th byte in front of it would cost 256.
+INCLUDE "src/data/brstream4b.asm"
+
 .data_end
 \ Layer 11e filled this bank to the brim (docs/layer-11e-sound.md §6);
 \ the line below is the fuel gauge, printed every build.
@@ -4038,17 +4089,6 @@ INCLUDE "src/sprfx.asm"
 \ Layer 3's rupture handover, here for want of room anywhere else --
 \ read its header, and note that ts_loads pages this bank in for it.
 INCLUDE "src/ruptalign.asm"
-
-\ ---- the tranche decision's geometry half ------------------
-\ SprScanCls — the per-slot hit test against everything this pass will
-\ write to the buffer. It was SprHitsDraw inside bank 6's sprsplit.asm
-\ until 2026-09-01, when that bank's last 7 bytes could not hold the
-\ growth; the whole file is 634 B and fits in NO bank's free space, so
-\ it is split instead: the geometry here (it reads only main RAM, zero
-\ page and the low overlay), the component logic in bank 6, and a
-\ per-slot class table in the low overlay carrying the answer across
-\ the page flip. The bridge in sprite.asm pages this bank first.
-INCLUDE "src/sprscan.asm"
 
 \ ---- the briefing's resident half (no-load step 5) ------------
 \ THIS IS WHAT PARMAN USED TO BE. It was a disc file loaded over this
@@ -4207,6 +4247,19 @@ INCLUDE "src/dbgpanel.asm"     \ the debug readouts, beside the panel they draw 
 \ ITS GEOMETRY HALF IS BANK 5's SINCE 2026-09-01: SprScanCls fills the
 \ per-slot class table (sprCls, low overlay) before this runs — see
 \ src/sprscan.asm.
+\ ---- the tranche decision's geometry half, back home --------
+\ SprScanCls WAS SPLIT OUT OF sprsplit.asm INTO BANK 5 ON 2026-09-01 and
+\ came back on 2026-09-09. The split was never a design: the whole file
+\ is 634 B, it fitted no bank's free space, and this bank had seven bytes
+\ left - so the geometry went to bank 5 and the answer crossed the page
+\ flip in sprCls. Unfolding bank 6's SCANSTEP tail left the room, and
+\ bank 5 needed the 538 back to unfold its own (docs/no-load.md 11m).
+\ IT COSTS A PAGE FLIP LESS THAN THE SPLIT DID. SprSplitOK used to page
+\ bank 5, call the geometry, page bank 6 and call the decision; now it
+\ pages this bank once and calls both. Every byte SprScanCls reads is
+\ main RAM, zero page or the low overlay, which is what made it movable
+\ in the first place and is just as true here.
+INCLUDE "src/sprscan.asm"
 INCLUDE "src/sprsplit.asm"
 
 \ The string table is NOT here any more: it is main RAM's, in PARAFNT,
@@ -4259,7 +4312,6 @@ INCLUDE "src/data/lowimg.asm"
 \ only hold them at all because the two overlays above it now ship
 \ packed -- it had 33 bytes free before that. See docs/no-load.md 17.
 INCLUDE "src/data/brstream0.asm"
-INCLUDE "src/data/brstream4.asm"
 
 \ Both copiers live in the BANK, like TiResident, so they cost the code
 \ image nothing — and both end in main RAM's PgData for TiResident's
@@ -4371,6 +4423,22 @@ INCLUDE "src/hstable.asm"       \ Layer 11f: 25 B that outlive a title
 \ droidicon7.asm is gone with the rotor-and-digits stand-in: the
 \ database draws the C64's own portrait now.
 INCLUDE "src/data/droidinfo.asm"
+\ ---- page 5's first chunk (no-load step 6) -------------------
+\ IN FRONT OF plandata.asm's ALIGN, AND THAT IS THE WHOLE POINT.
+\ colours.asm's pad in bank 4 is the worked example and xfericon.asm is
+\ this bank's: everything assembled before an ALIGN rides its padding
+\ for nothing, because the pad shrinks by what you add and the page
+\ boundary does not move. Measured 2026-09-09: 208 bytes of pad here,
+\ and these 175 cost the bank NOTHING - its tail stays at 171 free.
+\ Past 208 it would round a page and cost 256 at a stroke, so watch it.
+\
+\ Page 5 ships as TWO chunks so that it could leave bank 6 at all:
+\ whole it is 313 and no hole in the machine could take it. Cut, it is
+\ 175 + 154 - +16 bytes of compression for 313 of bank 6, which is what
+\ paid for sprscan coming home and bank 5's unfold (docs/no-load.md 11m).
+\ The other chunk is in BANK 4, and being apart is the point of cutting.
+INCLUDE "src/data/brstream4.asm"
+
 INCLUDE "src/data/plandata.asm"
 \ sideview.asm USED TO SIT HERE, behind plandata's ALIGN &100 so that
 \ it cost the bank its own size and nothing more. It is now packed and

@@ -566,11 +566,8 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
 \ same argument brp makes for chp at the top of this file.
 .BrDepack
   JSR BmDepackPrep              \ bank 5: src, mapptr, and A = the bank
-  STA ROMSHAD                   \ both, always — PAGEBANK's rule
-  STA ROMSEL
-  JSR Zx0Unpack
-  JSR PgSpr                     \ the briefing's bank back
-  JMP BmRowScan                 \ and its RTS
+  JSR BrDepackChain             \ code image: pages it, unpacks it, and
+  JMP BmRowScan                 \ a second chunk if the page has one
 
 \ ============================================================
 \ BrKeyRedef — CTRL+R: the redefine screen, and the page back

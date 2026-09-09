@@ -87,10 +87,26 @@ def main():
 
     bad = 0
     for p in range(pages):
-        packed = bytes(int(v, 16) for v in re.findall(
-            r'&([0-9A-F]{2})',
-            (PROJECT / 'src' / 'data' / ('brstream%d.asm' % p)).read_text()))
-        recs = zx0.decompress(packed)
+        def stream(name):
+            path = PROJECT / 'src' / 'data' / name
+            if not path.exists():
+                return None
+            return bytes(int(v, 16) for v in
+                         re.findall(r'&([0-9A-F]{2})', path.read_text()))
+
+        # A SPLIT PAGE IS CHECKED AS THE DRIVER SEES IT, chained. Page 5
+        # ships as two independently packed chunks in two different banks
+        # (no-load step 6); BrDepackChain depacks the second straight on
+        # from where the first stopped, because Zx0Unpack leaves mapptr
+        # past its last byte. Concatenating the two decompressions here is
+        # the same operation, so what this diffs against beebasm is the
+        # page the machine will actually have - not either half of it.
+        recs = zx0.decompress(stream('brstream%d.asm' % p))
+        chunk_b = stream('brstream%db.asm' % p)
+        if chunk_b is not None:
+            recs += zx0.decompress(chunk_b)
+            print('page %d: two chunks, %d + %d packed'
+                  % (p, len(stream('brstream%d.asm' % p)), len(chunk_b)))
 
         # the bank's record region: from the first row's list to the end
         # of the last one, which is the byte after the last row's $FF.

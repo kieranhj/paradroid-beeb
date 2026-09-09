@@ -15,6 +15,14 @@ BR_ROWS      = BR_ROW_HI - BR_ROW_LO + 1
 \ index of BR_XTRA0 or above from brExtra, not from the font.
 BR_XTRA0     = 104
 
+
+\ ---- which page ships as two chunks (no-load step 6) ----
+\ SPLIT_MAX up in this tool decides WHICH page splits; where the
+\ two chunks then live is main.asm BR_SPLIT_SLOT. BrDepackChain
+\ compares brPage against this, so exactly one page may split -
+\ a second would need a table there instead of a compare.
+BR_SPLIT_PAGES = 1
+BR_SPLIT_PAGE  = 4
 \ ---- no-load step 5: the pages as ZX0 streams ----
 \ BR_BUF is main.asm's to declare - this is what the streams
 \ were assembled against, and main.asm ASSERTs the two agree.

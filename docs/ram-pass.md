@@ -169,7 +169,13 @@ seeded and checked, and a comment at the site should say which paths were.
 - **SCANSTEP tail folding in `tools/export_droids.py` — SPENT 2026-09-08**,
   as the first move of `docs/no-load.md` §11. The 70 compiled rows per bank
   that ended `SCANSTEP` + `RTS` (14 bytes) end `JMP <tail>` (3) instead, with
-  one 14-byte shared tail per bank. **+756 B in EACH of banks 5 and 6 when it was   built, and that is no longer the figure**: §11k's interning of the duplicate   compiled blocks landed the same day and collapsed 13 of the 70 sites onto shared   copies, so the fold is worth **613 a bank** now and nobody netted the two off   against each other until 2026-09-09. **Bank 6's fold has since been SOLD BACK**   (`docs/no-load.md` §11l): it had 1,126 bytes and no claim on them, and unfolding   returns 3 cycles per compiled row drawn. Bank 5 keeps its fold — it has 88.   Originally —
+  one 14-byte shared tail per bank. **+756 B in EACH of banks 5 and 6 when it was   built, and that is no longer the figure**: §11k's interning of the duplicate   compiled blocks landed the same day and collapsed 13 of the 70 sites onto shared   copies, so the fold is worth **613 a bank** now and nobody netted the two off   against each other until 2026-09-09. **Bank 6's fold has since been SOLD BACK**   (`docs/no-load.md` §11l): it had 1,126 bytes and no claim on them, and unfolding   returns 3 cycles per compiled row drawn. Bank 5 keeps its fold — it has 88.   **BOTH BANKS ARE UNFOLDED as of 2026-09-09** (no-load step 6, §11m): bank 5's
+  613 came from sending sprscan.asm home to bank 6 and cutting briefing page 5
+  in two so it could leave bank 6 at all. `FOLD_TAIL` in the exporter is empty
+  and the machinery stays - **put a bank index back in it and that bank gets
+  613 bytes at 3 cycles a compiled row.** That is the cheapest large block of
+  space left in the machine and the only one needing nothing moved.
+  Originally —
   not the ~1,050 estimated here, because the deferred carry below shortened
   SCANSTEP from 15 bytes to 13 after this entry was written and the estimate
   was never re-derived. Cost: **3 cycles per compiled row DRAWN**, so ~120 a

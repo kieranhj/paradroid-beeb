@@ -61,6 +61,7 @@ back to ASCII and diffs it against the input, so a mapping slip cannot
 survive.
 """
 
+import hashlib
 import sys
 from pathlib import Path
 
@@ -80,6 +81,29 @@ OUT_CONST = PROJECT / 'src' / 'data' / 'briefconst.asm'
 # ...and one ZX0 stream a page, each in its own file so main.asm can put
 # it in whichever bank has room. no-load step 5.
 OUT_STREAM = PROJECT / 'src' / 'data' / 'brstream%d.asm'
+OUT_STREAM_B = PROJECT / 'src' / 'data' / 'brstream%db.asm'
+
+# PAGES THAT SHIP AS TWO CHUNKS, and the largest either chunk may pack to.
+#
+# A page is one ZX0 stream and no stream may span a bank, so a page can only
+# live where a hole is big enough for the whole of it. That is what wedged
+# bank 5 in September 2026: its two streams are 574 and 566, krimg is 774,
+# and the largest hole in the machine was 513 - every freely-movable thing
+# in the bank was bigger than anywhere to put it.
+#
+# Cutting a page in two fixes that, and it is nearly free, because
+# Zx0Unpack leaves mapptr past the last byte it wrote: chunk B depacks
+# straight on from where chunk A stopped, with no offset arithmetic and no
+# alignment rule. The cut may fall ANYWHERE - the chunks are consecutive
+# bytes of one blob, not rows - so the cut is chosen by search below.
+#
+# WHAT IT COSTS is compression: ZX0 cannot match across the cut. Measured
+# over all five pages, a two-way split costs +23 to +74. Page 4 is the
+# cheapest by some way and is the one that is split; at the chosen cut it
+# is +16 (313 -> 175 + 154). docs/no-load.md 11m has why bank 6 needed the
+# 313 back and where the two chunks went (banks 4 and 7).
+SPLIT_MAX = {4: 200}
+
 # brExtra is not in briefing.asm any more: that file is the VERIFICATION
 # ORACLE now (see the header) and is assembled into a block the disc throws
 # away, while these glyphs are read by the live renderer and have to be in
@@ -197,6 +221,67 @@ def page_blob(pages, extras, p, rows):
             recs.append(0xFE)
         recs.append(0xFF)
     return bytes(recs), labels
+
+
+def cached_cut(page, blob):
+    """The cut a previous run chose for this exact page, or None.
+
+    THE SEARCH IS 29 SECONDS and this build takes eight, so it cannot run
+    every time. It does not have to: the answer depends only on the page's
+    bytes, so the chosen cut and a hash of the blob are written into the
+    generated file's header and read back here. Edit a word of the page and
+    the hash misses and it re-searches; touch anything else and it does not.
+    That is why the cut is not simply a constant in this file - a constant
+    would go stale silently on the one edit that invalidates it.
+    """
+    path = Path(str(OUT_STREAM_B) % page)
+    if not path.exists():
+        return None
+    for line in path.read_text().splitlines()[:12]:
+        if 'CUT-CACHE' in line:
+            cut, digest = line.split('CUT-CACHE')[1].split()
+            if digest == hashlib.sha256(blob).hexdigest()[:16]:
+                return int(cut)
+            return None
+    return None
+
+
+def split_page(blob, page, limit):
+    """Cut `blob` in two so that both chunks pack to <= limit, as small
+    as the pair can be made.
+
+    Every cut is tried, which is why the answer is cached: it is a MEASURED
+    figure that re-derives itself when the briefing text changes, rather
+    than a magic offset. The cut may fall anywhere - the chunks are
+    consecutive bytes of one blob, not rows.
+    """
+    cut = cached_cut(page, blob)
+    if cut is not None:
+        a = zx0_pack(blob[:cut], 'page %d chunk A' % page)
+        b = zx0_pack(blob[cut:], 'page %d chunk B' % page)
+        if len(a) <= limit and len(b) <= limit:
+            print('  page %d split at %d (cached): %d + %d packed'
+                  % (page, cut, len(a), len(b)))
+            return cut, a, b
+    print('  page %d: searching for the best cut, this takes a while...' % page)
+    best = None
+    for cut in range(1, len(blob)):
+        a = zx0_pack(blob[:cut], 'page %d chunk A' % page)
+        if len(a) > limit:
+            continue
+        b = zx0_pack(blob[cut:], 'page %d chunk B' % page)
+        if len(b) > limit:
+            continue
+        if best is None or len(a) + len(b) < best[1]:
+            best = (cut, len(a) + len(b), a, b)
+    if best is None:
+        raise SystemExit('page %d: no cut leaves both chunks <= %d bytes - '
+                         'raise SPLIT_MAX or split it three ways' % (page, limit))
+    cut, total, a, b = best
+    whole = len(zx0_pack(blob, 'page %d whole' % page))
+    print('  page %d SPLIT at %d: %d + %d = %d packed (+%d over %d whole)'
+          % (page, cut, len(a), len(b), total, total - whole, whole))
+    return cut, a, b
 
 
 def zx0_pack(raw, name):
@@ -335,10 +420,14 @@ def main():
     # room. The blob is the page AS IT WILL BE IN MAIN RAM, tables and
     # all; verify_brstreams.py checks it against what beebasm assembled.
     rows = list(range(row_lo, row_hi + 1))
-    scores, raws, packs = {}, [], []
+    scores, raws, packs, cuts = {}, [], [], {}
     for p in range(npages):
         blob, labels = page_blob(pages, extras, p, rows)
-        packed = zx0_pack(blob, 'briefing page %d' % p)
+        if p in SPLIT_MAX:
+            cut, packed, packed_b = split_page(blob, p, SPLIT_MAX[p])
+            cuts[p] = (cut, packed_b)
+        else:
+            packed = zx0_pack(blob, 'briefing page %d' % p)
         raws.append(blob)
         packs.append(packed)
         for name, addr in labels.items():
@@ -362,7 +451,38 @@ def main():
         st.append('')
         (Path(str(OUT_STREAM) % p)).write_text(chr(10).join(st) + chr(10))
 
+    # The B chunks, one file each so main.asm can put them in a different
+    # bank from their A half - which is the whole point of splitting.
+    for p, (cut, packed_b) in sorted(cuts.items()):
+        digest = hashlib.sha256(raws[p]).hexdigest()[:16]
+        st = [bs + ' ' + '=' * 60,
+              bs + ' brstream%db.asm - GENERATED by tools/make_briefing.py' % p,
+              bs + ' ' + '=' * 60,
+              bs + ' Briefing page %d, SECOND CHUNK: bytes %d.. of the page,'
+              % (p + 1, cut),
+              bs + ' CUT-CACHE %d %s' % (cut, digest),
+              bs + ' ZX0-packed to %d.' % len(packed_b),
+              bs + ' It depacks straight on from where chunk A stopped -',
+              bs + ' Zx0Unpack leaves mapptr past its last byte, so BrDepack',
+              bs + ' just points src at this and calls it again. The two',
+              bs + ' chunks are in DIFFERENT banks on purpose; see main.asm.',
+              '.brStream_%db' % p]
+        for j in range(0, len(packed_b), 16):
+            st.append('  EQUB ' + ', '.join('&%02X' % b
+                                            for b in packed_b[j:j + 16]))
+        st.append('.brStream_%db_end' % p)
+        st.append('')
+        (Path(str(OUT_STREAM_B) % p)).write_text(chr(10).join(st) + chr(10))
+
     con.append('')
+    con.append('')
+    con.append(bs + ' ---- which page ships as two chunks (no-load step 6) ----')
+    con.append(bs + ' SPLIT_MAX up in this tool decides WHICH page splits; where the')
+    con.append(bs + ' two chunks then live is main.asm BR_SPLIT_SLOT. BrDepackChain')
+    con.append(bs + ' compares brPage against this, so exactly one page may split -')
+    con.append(bs + ' a second would need a table there instead of a compare.')
+    con.append('BR_SPLIT_PAGES = %d' % len(cuts))
+    con.append('BR_SPLIT_PAGE  = %d' % (min(cuts) if cuts else 255))
     con.append(bs + ' ---- no-load step 5: the pages as ZX0 streams ----')
     con.append(bs + " BR_BUF is main.asm's to declare - this is what the streams")
     con.append(bs + ' were assembled against, and main.asm ASSERTs the two agree.')

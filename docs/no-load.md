@@ -1105,6 +1105,104 @@ deck, and a long run right with the deck scrolling clean behind the droid — ba
 and restore correctly.
 
 
+### 11m. Step 6 — unfolding bank 5 too, 2026-09-09. Both banks now unfolded
+
+§11l left bank 5 folded because unfolding costs 613 and it had 88. This found the 525, and the
+interesting part is **why it was hard**, because the reason is structural and will recur.
+
+#### The constraint that actually binds
+
+**Bank code cannot page another bank in** — it would page itself out mid-instruction. So bank 5's
+contents divide three ways:
+
+| stuck in bank 5 | free to move anywhere | borderline |
+|---|---|---|
+| `droids.asm` 9,742 | `krimg` 774 | `sprscan.asm` 538 |
+| `effects.asm` 2,977 + `sprfx.asm` 419 | `brstream2` 574, `brstream3` 566 | |
+| | `sndchat` 15, `brextra` 64 | |
+
+The streams and `krimg` are pure data depacked by main-RAM code, so they can live in any bank.
+**And every one of them was bigger than the largest hole in the machine (bank 6's 513.)** That one
+fact is why nothing could move: 774, 574 and 566 against holes of 513, 225 and 171.
+
+The arithmetic is also better stated the other way round. Banks 5 and 6 had **1,214** free between
+them and the two unfolds cost **1,226**, so the requirement was never "find 525" — it was **export
+12 bytes net out of banks 5+6, and be able to shuffle across the 5/6 boundary**. Everything hard
+was granularity, not space.
+
+#### What was done, in three parts
+
+**1. `sprscan.asm` went home to bank 6 (538 out of bank 5).** It was split out of `sprsplit.asm`
+on 2026-09-01 only because bank 6 had seven bytes left; the two halves are one 634-byte file that
+fitted nowhere. It is bank *code*, but it is called from a main-RAM bridge and reads only main RAM,
+zero page and the low overlay — which is what made it movable then and now. **It costs a page flip
+less than the split did**: `SprSplitOK` paged bank 5, called the geometry, paged bank 6 and called
+the decision; it now pages bank 6 once and calls both. Three bytes of code image back too.
+
+**2. Page 5 of the briefing was cut in two (313 out of bank 6).** A page is one ZX0 stream and no
+stream may span a bank, so a page can only live where a hole fits the whole of it — page 5 whole is
+313 and neither bank 4 (225) nor bank 7 (171) could take it. Cut, it is **175 + 154**.
+
+Cutting is nearly free, because `Zx0Unpack` leaves `mapptr` past its last byte: chunk B depacks
+straight on from where chunk A stopped, with no offset arithmetic. **The cut may fall anywhere** —
+the chunks are consecutive bytes of one blob, not rows — so `make_briefing.py` searches every cut
+and takes the smallest pair. Measured cost of a two-way split, all five pages: **+54, +74, +65, +73,
++23**. Page 5 is the cheapest by some way, and at the chosen cut (270) it is **+16**.
+
+The search is 29 seconds and the build is eight, so the chosen cut and a hash of the page are
+written into the generated file's header and read back. Edit a word of page 5 and the hash misses
+and it re-searches; touch anything else and it does not. **That is why the cut is not a constant** —
+a constant would go stale silently on the one edit that invalidates it.
+
+**3. Both chunks were placed to cost as little as possible.** Chunk A (175) went into **bank 7 in
+front of `plandata.asm`'s `ALIGN`**, which had **208 bytes of padding doing nothing** (measured):
+it rides the pad, so bank 7's tail is **unchanged at 171**. Chunk B (154) went to bank 4's tail,
+because bank 4's own `colourMap` pad is down to **10 bytes** and there is no free ride there.
+
+#### Where it landed
+
+| | before step 6 | after |
+|---|---|---|
+| code image | 108 | **70** (`BrDepackChain`, 38 B) |
+| bank 4 | 225 | **71** |
+| bank 5 | 88 | **15** — unfolded |
+| bank 6 | 513 | **294** |
+| bank 7 | 171 | **171** (its `ALIGN` pad 208 → 33) |
+
+**Both banks are now unfolded: ~480 cycles a pass at a full pool of eight, up from ~240.**
+
+#### The safety valve, which is the point of leaving the machinery in
+
+`export_droids.py`'s `FOLD_TAIL` is now empty, and the folding code stays. **Put a bank index back
+in it and that bank gets 613 bytes at 3 cycles a compiled row** — the cheapest large block of space
+left in the machine and the only one that can be taken without moving anything. Bank 5 has 15 bytes,
+so it is the likely customer. A partial fold (some blocks folded, some not) was considered and
+rejected: it works, but it makes the exporter's output depend on a budget that has to be retuned
+whenever anything else in the bank changes, and a byte added elsewhere would silently refold a
+block. All-or-nothing per bank is a knob that cannot rot.
+
+#### How it was verified
+
+- **The unfold, by textual equivalence**, as in §11l: expand every `JMP ScanStepRts` in the old
+  `droids.asm` to `SCANSTEP` + `RTS`, drop the dead tail, diff. 2,326 lines → 2,380, identical to
+  the new file's 2,380.
+- **The split page, by `verify_brstreams.py`** — which now decompresses *both* chunks and
+  concatenates them, exactly as `BrDepackChain` does, before diffing against beebasm's own bytes.
+  All five pages match byte for byte and all 285 pointers scan back correctly, page 5 included.
+- **By eye**: the whole briefing run through to page 5 (the split one) renders correctly, and a
+  game started out of it plays with the deck scrolling clean behind the droid.
+- Debug and `-Release` both assemble.
+
+#### What was ruled out on the way, with the measurement
+
+- **Interning the compiled glyph code.** It bypasses the pool §11k used on the rotor — but 20 blocks
+  a bank, **20 distinct, 0 duplicates**. Nothing there.
+- **`conicons` (189) out of bank 6.** Illegal: `console.asm` executes from bank 6 and reads it by
+  address.
+- **Moving `sprfx.asm` (419).** Tied to `effects.asm` (2,977), which fits no hole.
+- **Bank 4's `colourMap` pad as a source.** Ten bytes left; the 11th costs 256.
+
+
 ## 12. WHERE THE NIGHT OF 2026-09-08 GOT TO — read this first
 
 Four commits, each verified and each with its own section above. **The branch is in a good state:

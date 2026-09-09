@@ -859,34 +859,29 @@ def collect_waypoints(mem):
     return counts, offsets, blob
 
 
-# WHICH BANK FOLDS ITS SCANSTEP TAIL. Bank index, 0 = droids.asm (SWRAM
+# WHICH BANKS FOLD THEIR SCANSTEP TAIL. Bank index, 0 = droids.asm (SWRAM
 # bank 5, shifts 0 and 1 px), 1 = droids2.asm (bank 6, shifts 2 and 3).
 #
-# THIS IS A MEMORY DECISION, NOT A CODE ONE, and it is asymmetric because
-# the two banks are. Folding buys 613 bytes and costs 3 cycles per compiled
-# row drawn; unfolding is the reverse. Measured 2026-09-09, on the tree
-# after no-load step 5:
+# IT IS EMPTY: NEITHER BANK FOLDS ANY MORE. Folding buys 613 bytes a bank
+# and costs 3 cycles per compiled row drawn - ~480 a pass with a full pool
+# of eight, 0.6% of a 79,872-cycle pass. Bank 6 stopped folding on
+# 2026-09-09 because it had 1,126 bytes and no claim on them; bank 5
+# followed the same day once no-load step 6 found it the 538 it was short
+# (sprscan.asm went home to bank 6, and page 5 of the briefing was cut in
+# two so it could leave bank 6 at all). docs/no-load.md 11l and 11m.
 #
-#     bank 5   ends &BFA8,    88 free   - CANNOT unfold, 525 short
-#     bank 6   ends &BB9A, 1,126 free   - unfolds with 513 to spare
+# THIS TUPLE IS THE SAFETY VALVE, so the machinery below stays. Put a bank
+# index back in it and that bank gets 613 bytes at 3 cycles a row - the
+# cheapest large block of space left in the machine, and the only one that
+# can be taken back without moving anything. Bank 5 has 13 bytes free as
+# this is written, so it is the likely customer.
 #
-# So bank 6 takes the cycles back and bank 5 keeps the bytes. A sprite uses
-# one bank or the other on its sub-pixel X, so about half the pool draws
-# through the faster copy: ~240 cycles a pass at eight slots rather than
-# the ~480 unfolding both would give.
-#
-# NOTHING IN THE BLITTER CARES which way a bank went. The tails are already
-# per-bank (a JMP cannot reach the other bank), every compiled block is
-# entered through a dispatch table, and the tables are the same size in
-# both files by construction - which is what main.asm's address asserts
-# check. The only thing that changes is how each block ends.
-#
-# To unfold bank 5 as well, empty this tuple and find it 525 bytes; the
-# only movable content is a briefing page stream (566 or 574) and the
-# largest hole to put one in is bank 6's 513 after ITS unfold, so it is 53
-# bytes short and needs something small out of bank 6 first. docs/no-load.md
-# 11j has the working.
-FOLD_TAIL = (0,)
+# Nothing in the blitter cares which way a bank went. The tails are
+# per-bank anyway (a JMP cannot reach the other bank), every compiled
+# block is entered through a dispatch table, and the tables are the same
+# size in both files by construction - which is what main.asm's address
+# asserts check.
+FOLD_TAIL = ()
 
 
 def main():

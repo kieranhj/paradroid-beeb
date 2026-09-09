@@ -948,7 +948,7 @@ ENDMACRO
   JMP PgData     \ tail: its RTS is ours
 
 \ ============================================================
-\ SprSplitOK — the bridge into bank 5
+\ SprSplitOK — the bridge into bank 6
 \ ============================================================
 \ THE DECISION ITSELF IS IN src/sprsplit.asm, IN BANK 5, and this is
 \ the three instructions that page it in — PanelTick's idiom exactly.
@@ -963,10 +963,9 @@ ENDMACRO
 \ The answer comes back in sprSplit rather than in A, because PAGEBANK
 \ writes A on the way out.
 .SprSplitOK
-  JSR PgSpr                     \ the geometry half is bank 5's since
-  JSR SprScanCls                \ 2026-09-01 — see sprscan.asm. It fills
-  JSR PgSpr2                    \ sprCls before the decision reads it
-  JSR SprSplitDecide
+  JSR PgSpr2                    \ ONE page, not two: the geometry half
+  JSR SprScanCls                \ came back to bank 6 on 2026-09-09, so
+  JSR SprSplitDecide            \ both halves sit behind this one flip
   JSR PgData
   LDA sprSplit                  \ the caller branches on these flags —
   RTS                           \ main.asm no longer re-stores sprSplit
