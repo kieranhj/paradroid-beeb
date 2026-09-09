@@ -1852,3 +1852,94 @@ is about loading: **real hardware**, the transfer game's LOSE path, and a system
 eight rotor phases and 24 droid types. `docs/no-load.md` §8's rule stands — the emulator half is
 the expensive one and it is where every real defect on this branch was found, including both of
 §17's.
+
+## 19. THE SECOND HALF OF THE ZERO PAGE - 2026-09-09
+
+hexwab, answering issue #2: once loading is done, and with no `OSWRCH` or `OSRDCH` in flight,
+everything up to and including `&E6` is ours, as are `&E8-&E9`, `&F2-&F3` and `&F6-&F7` - 77 bytes
+on top of the MOS's user allocation at `&00-&8F`, which has been full since Layer 5. (He also
+offers page 8 and `&03E0-&03FF` for an `INSV` stub; page 8 is already ours - the MODE 1 charset is
+`&0400-&0C90` and spans it - so what that would buy is the *legality* of the squat while the MOS
+owns IRQ1V, which is the briefing's window and is why `PARBRF`'s ceiling is `&0800`. Not taken
+yet.)
+
+**This branch is the precondition.** Every `OSCLI` is in `.start` (§18), `IrqHandler` neither
+chains to the MOS nor leaves its VIA sources live, and no filing-system call happens after boot at
+all. What is NOT true is that the front end leaves the region alone by construction: the title,
+the high-score entry and the briefing all hand the machine back (`UninstallIrq`, briefing.asm),
+so anything put up here is treated as lost across a seam.
+
+### 19a. What the shortage was actually costing - measured, not guessed
+
+Absolute operands were counted out of `build/paradroid.lst` by target address, main-RAM code and
+bank code separately. The candidates, in order of what they are worth:
+
+| | |
+|---|---|
+| `drYcol0/1/2` | 731 `LDY drYcolN,X` in the compiled glyphs - 320 in bank 5, 411 in bank 6 |
+| main-RAM scalars | 78 bytes of variables carrying 390 absolute references from code-image code, plus 531 more from bank code (`sndFx1` 23, `shdT` 17, `palPlay` 14, `sprActive` 13) |
+| `sound.asm` | its header's "NO ZERO PAGE ANYWHERE IN THIS FILE" is the one place the shortage changed a DESIGN rather than a byte count: ~63 bytes of state, 140 references, in a tick measured at 475/1,161 cycles against window A's 2,959 |
+| `panel.asm`, `xfer.asm` | nine borrowed pointers between them, held safe by comment (`pnSrc`/`pnDst` on `swSrc`/`swDst`; the transfer's seven on `bufp`, `chp`, `src`, `tdp`, `mapptr`, `psrc`, `svp`) |
+
+Only the first is built. The rest are recorded here so the next squeeze does not have to count
+them again.
+
+### 19b. `drYcol0/1/2` - 749 bytes across the two tightest banks, for no cycles
+
+`export_droids.py` compiles every digit glyph to straight-line code and carries the digit POSITION
+in X, turning it into a buffer offset with `LDY drYcolN,X` once per column per row (see the digit
+block's header in `sprite.asm` for why the position is not baked in). `LDY abs,X` is `BC nn nn`;
+`LDY zp,X` is `B4 nn`. **The same four cycles, one byte less.**
+
+| | `drYcol0,X` | `drYcol1,X` | `drYcol2,X` | its own copy of the table | total |
+|---|---|---|---|---|---|
+| `droids.asm`, bank 5 | 160 | 160 | - | 9 | **329** |
+| `droids2.asm`, bank 6 | 160 | 160 | 91 | 9 | **420** |
+
+Bank 6 has the extra 91 because only a SHIFTED glyph spills into column 2, and bank 6 carries the
+2 px and 3 px shifts. The nine bytes had been main RAM's, then one copy in EACH sprite bank
+(hexwab, issue #1, 2026-09-03, when main RAM was the binding constraint); they are `&A0-&A8` now
+and the two per-bank copies are gone with the ASSERTs that tied them together.
+
+Zero page is not loadable, so the table is seeded at run time - `SprSeedYcol`, four instructions
+and nine bytes in bank 4, called from `ts_loads` beside `SprBuildMask`. **Once per route into
+play, not once at boot**, for §19's front-end reason.
+
+The exporter emits the identical instruction stream; the diff on both generated files is six
+deleted lines and nothing else.
+
+### 19c. The ledger
+
+| | before | after | |
+|---|---|---|---|
+| bank 5 free | 15 B | **344 B** | `spr_end` `&BFF1` -> `&BEA8` |
+| bank 6 free | 294 B | **714 B** | `spr2_end` `&BEDA` -> `&BD36` |
+| bank 4 free | 71 B | 51 B | `SprSeedYcol` and its seed |
+| code image free | 70 B | 67 B | the `JSR` |
+
+Bank 5 was **the tightest region in the machine** and is not any more. Note what that does to the
+SCANSTEP tail fold, which §11l and §11m sold back in both banks: refolding is still available at
++613 B and 3 cycles a compiled row, and this is simply a better deal than it - not a way to enable
+it. The two are independent and can both be taken.
+
+`docs/memory-map.md`'s per-bank sections predate this branch and were not touched; `CLAUDE.md`'s
+table is the one kept current.
+
+### 19d. Verified, in jsbeeb on the shipping image, `B-DFS1.2`
+
+Boot -> title -> briefing -> game: `&A0-&A8` reads `00 10 20 08 18 28 10 20 30`, which is
+`drYcol0/1/2` exactly. Then, without touching memory again after the poke:
+
+1. `A5` written over all nine **mid-game**;
+2. ESCAPE -> death -> game over -> high-score entry -> three initials -> title -> briefing ->
+   **new game**;
+3. `&A0-&A8` reads `00 10 20 08 18 28 10 20 30` again. `ts_loads` re-seeds on the `GoTitle` route
+   as it does on boot's.
+
+Three games run end to end, sprites drawing throughout.
+
+**One side observation worth keeping**: the `A5` bytes survived the title and the whole high-score
+entry UNTOUCHED, with the MOS owning the machine. That is independent corroboration of hexwab's
+claim for `&A0-&A8` on this build, and it puts the re-seed in the right category - belt and
+braces, not load-bearing. It is not a measurement of the whole `&A0-&E6` range, which the next
+user of this space should make for itself with the `beeb-bss-bugs` method.

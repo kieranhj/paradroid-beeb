@@ -3641,3 +3641,32 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
 .conMPrevL  EQUB 0              \ the menu's own key edges — prevRet is
 .conPrevU   EQUB 0              \ the weapon's, prevUp/Dn the debug hop's,
 .conPrevD   EQUB 0              \ prevLU/LD the lift's
+
+\ ============================================================
+\ SprSeedYcol — the digit-column table, into zero page
+\ ============================================================
+\ drYcol0/1/2 are &A0-&A8 and zero page is not loadable, so the nine
+\ bytes are seeded here — from bank 4, because this bank is the resting
+\ state and ts_loads has it paged in at the point it calls this.
+\
+\ ONCE PER ROUTE INTO PLAY, not once at boot: the title, the high-score
+\ entry and the briefing all give the machine back to the MOS, and
+\ nothing in the second half of the zero page is assumed to survive
+\ that. See the &A0 block in main.asm for what is and is not claimed.
+\ Called from ts_loads beside SprBuildMask, which is every route in.
+.SprSeedYcol
+  LDX #8
+.ssy_l
+  LDA sprYcolSeed,X
+  STA drYcol0,X
+  DEX
+  BPL ssy_l
+  RTS
+
+\ The three digit positions as column offsets — Y = pos*16 + col*8.
+\ Column 2 is the shifted glyph's SPILL and is not optional; the digit
+\ block in sprite.asm has the derivation.
+.sprYcolSeed
+  EQUB  0, 16, 32               \ drYcol0
+  EQUB  8, 24, 40               \ drYcol1
+  EQUB 16, 32, 48               \ drYcol2

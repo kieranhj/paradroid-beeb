@@ -789,17 +789,14 @@ def emit_glyph_code(tab, f, mem, shifts, pfx):
     tab.write('  RTS\n')
     size += 3
 
-    # drYcol0/1/2 - the three digit positions as column offsets. Read ONLY by
-    # the generated glyphs, which run with this bank paged in, so they belong
-    # here rather than in sprite.asm: main RAM is the binding constraint, and
-    # nine bytes of it were going to a table no main-RAM code ever reads.
-    # (hexwab, issue #1, 2026-09-03)
-    tab.write('\n\\ The three digit positions, as column offsets. The glyphs\n'
-              '\\ below index these with the position in X.\n')
-    for n in range(3):
-        tab.write('.%sdrYcol%d EQUB %s\n'
-                  % (pfx, n, ', '.join(str(8 * n + 16 * k) for k in range(3))))
-        size += 3
+    # drYcol0/1/2 ARE ZERO PAGE AND ARE NOT EMITTED HERE (2026-09-09).
+    # They were nine bytes of main RAM until hexwab moved them into the two
+    # sprite banks (issue #1, 2026-09-03), because main RAM was the binding
+    # constraint. They are now nine bytes of the zero page hexwab's issue #2
+    # comment opened up - declared in main.asm, seeded by SprSeedYcol - so
+    # the 731 `LDY drYcolN,X` sites below assemble as zp,X: the same four
+    # cycles and ONE BYTE SHORTER. 320 bytes of bank 5 and 411 of bank 6,
+    # the two tightest banks in the machine, for no cycles at all.
 
     tab.write('\n\\ Glyph dispatch, at index (shift AND 1)*10 + digit.\n')
     tab.write('.%sdrGlyphLo\n' % pfx)

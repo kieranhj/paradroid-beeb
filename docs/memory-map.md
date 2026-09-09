@@ -19,7 +19,9 @@ Regenerate it after any change that moves a region:
 | Range | Size | Contents |
 |---|---|---|
 | `&0000–&008F` | 144 B | Zero page — **all of it used**. Breakdown below; the authority is the map in `main.asm` |
-| `&0090–&00FF` | 112 B | OS zero page |
+| `&0090–&009F` | 16 B | OS zero page, and it stays the OS's |
+| `&00A0–&00A8` | 9 B | `drYcol0/1/2` — the first claim on the second half of the zero page (2026-09-09, `no-load.md` §19). Seeded by `SprSeedYcol` from `ts_loads`; not loadable, and not assumed to survive the front end |
+| `&00A9–&00E6` | **62 B free** | hexwab's issue #2 answer: ours with no filing call, no `OSWRCH` and no `OSRDCH` in flight, which the `no-load` branch makes true after boot. `&E8–&E9`, `&F2–&F3` and `&F6–&F7` too — 6 B more. `&F4` is `ROMSHAD` and already in use. Measure the range you want with the `beeb-bss-bugs` method before spending it |
 | `&0100–&017F` | 128 B | Stack — **and MEASURED FREE, 2026-08-31**. `&A5` seeded with the game running, then play, a deck load, the console and its pages, and the whole game over including `GoTitle`'s `*LOAD`s; all 128 survived, so the stack has never been seen below `&0180`. **The only contiguous main-RAM space left bigger than 16 B.** Nothing is in it yet. Read [`ram-pass.md`](ram-pass.md)'s section first — it lists the paths NOT exercised, and code cannot simply live here because page 1 is not loadable from disc |
 | `&0180–&01FF` | 128 B | Stack, the part that is actually used |
 | `&0200–&03FF` | 512 B | OS vectors and workspace. We own `IRQ1V` at `&0204` outright |
@@ -123,9 +125,12 @@ and `TiResident` copies it down, so there is no load.) — see the boot code and
 | `&50–&5F` | `rowp` — the same eight rows in the play buffer |
 | `&60–&6F` | `ApplyMove`/`CalcAxis` scratch, `sprScan`, `pgCount`, `swSrc`/`swDst`, `psrc`, `svp` |
 | `&70–&8F` | Pointers and viewport — `bufp`, `chp`, `tdp`, `src`, `mapptr`, `scrollS`, `mapHX`, `mapYr`, `cellX`/`cellY`, `deck`, counters |
+| `&A0–&A8` | `drYcol0/1/2` — the digit block's three column tables, read ONLY as `LDY drYcolN,X` by the compiled glyphs. There for the byte, not the cycle: see the note below |
 
 > `LDA abs` is 4 cycles and `LDA zp` is 3 — but `LDA abs,X` and `LDA zp,X` are both 4. Zero page went
 > to scalars for that reason; indexed tables gained nothing by moving and are all in main RAM.
+>
+> **That is a CYCLE rule and it says nothing about bytes.** `abs,X` is three bytes and `zp,X` is two, so an indexed table moved into zero page still saves a byte at every site — which is the whole of why `drYcol0/1/2` moved (749 bytes across banks 5 and 6, `no-load.md` §19). When the binding constraint is space rather than time, count the sites, not the cycles.
 
 ## SWRAM bank 4 — `PARADAT`
 

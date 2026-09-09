@@ -1435,6 +1435,35 @@ prevUp   = &8D
 prevDn   = &8E
 mcTmp    = &8F
 
+\ ---- &A0 UP: THE SECOND HALF OF THE ZERO PAGE ---------------
+\ &00-&8F is the MOS's user allocation and has been full since Layer 5.
+\ &90 up is the MOS's own, and hexwab's answer to issue #2 is that with
+\ no filing system call, no OSWRCH and no OSRDCH in flight, everything
+\ up to and including &E6 is ours as well - which the no-load branch
+\ makes true for the whole of play, since every OSCLI is in .start and
+\ IrqHandler neither chains to the MOS nor leaves its VIA sources live.
+\
+\ NOTHING IS ASSUMED ABOUT WHAT SURVIVES THE FRONT END. The title, the
+\ high-score entry and the briefing all hand the machine back (see
+\ UninstallIrq in briefing.asm), so anything here is treated as lost
+\ across a seam and re-seeded in ts_loads, which every route into play
+\ runs. That leaves the claim above load-bearing only for the window
+\ where we own the machine outright, which is the weak form of it.
+\
+\ drYcol0/1/2 - Y for column 0, 1 and 2 of each of the three digit
+\ positions; the digit block in sprite.asm says what they mean. They
+\ were nine bytes of main RAM, then nine bytes of EACH sprite bank
+\ (hexwab, issue #1) because main RAM was the binding constraint. Here
+\ they cost nine bytes once and, far more to the point, turn the 731
+\ `LDY drYcolN,X` in the compiled glyphs from abs,X into zp,X: the same
+\ four cycles, one byte less. -320 B in bank 5 and -411 B in bank 6,
+\ the two tightest banks in the machine, for no cycles at all.
+\ THE NINE MUST STAY CONTIGUOUS AND IN THIS ORDER - SprSeedYcol copies
+\ them as one run.
+drYcol0  = &A0                  \ 0, 16, 32                        (3)
+drYcol1  = &A3                  \ 8, 24, 40                        (3)
+drYcol2  = &A6                  \ 16, 32, 48                       (3)
+
 \ BuildCharset borrows zero page from routines that have finished.
 bcSrc    = src
 bcDst    = mapptr
@@ -2709,6 +2738,10 @@ ENDIF                           \ other close: no band may outlive a pass
 
   JSR BuildCharPtrs             \ needs the data bank in, and the staging
                                 \ copy finished — it reaches past &5500
+  JSR SprSeedYcol               \ drYcol0-2 into &A0: nine bytes of the
+                                \ zero page that the front end is assumed
+                                \ to have trampled. Bank 4 is up, which
+                                \ is what it needs - see droid.asm
   JSR SprBuildMask              \ the title's framebuffer sat on the mask
                                 \ table too
 
@@ -4818,9 +4851,6 @@ ASSERT xdrDigit0  == drDigit0
 ASSERT xdrDigit1  == drDigit1
 ASSERT xdrDigit2  == drDigit2
 ASSERT xdrBlkSave6 == drBlkSave6
-ASSERT xdrYcol0   == drYcol0    \ both banks' copies of the digit columns
-ASSERT xdrYcol1   == drYcol1    \ land at the same address, like everything
-ASSERT xdrYcol2   == drYcol2    \ else in the fixed section
 
 DATA_PAGES = (data_end - data_start + 255) DIV 256
 SPR_PAGES  = (spr_end - spr_start + 255) DIV 256
