@@ -133,7 +133,9 @@ Test what jsbeeb has; **other DFSs (Opus, Watford, Solidisk) are not a priority*
 processors go only as far as **loading into the host**; `!BOOT` without `*EXEC` is lower priority;
 **shadow screen correct on Master and B+** (third-party boards out of scope); **write all the CRTC
 registers**; **claim the NMI** and **the Master's "LK18/LK19" message**, both tested; a **softloaded
-FS in sideways RAM is not supported** unless reported in the wild; **investigate the intro's
+FS in sideways RAM is not supported** unless reported in the wild (**reversed 2026-09-10**, when
+hexwab pointed out that ZMMFS is exactly that and common on a model B — see the last paragraph of
+this section); **investigate the intro's
 `*TAPE`**; respecting the OS's `*TV` settings is **won't fix**. One issue, one commit per fix.
 
 ### What jsbeeb runs, 2026-09-10
@@ -222,3 +224,33 @@ attempt put them at `&2500`, which the player overwrites at run time, and `PortD
 the Master 128 all go intro → keypress → "Loading..." → title → play (fieldCount advancing one a
 field, a deck up, the player placed). `pdloader/README.md` item 8 has the detail; it stays a
 change to scarybeasts's drop, worth offering him upstream.
+
+**A filing system softloaded into sideways RAM — item 9, reversed and BUILT (KC, 2026-09-10).**
+hexwab: ZMMFS is common on a model B, because `PAGE` at `&0E00` beats more sideways RAM. It is MMFS
+in a ROM socket whose bootloader (MMFS's `bootstrap.asm`, read) copies it into the **highest free
+RAM bank** at power-up and CTRL-BREAK and **writes its type into the ROM table** at `&02A1`;
+SWMMFS keeps its workspace in its own bank (`MA = &B700 - &0E00`), not at `&0E00`. `PARSWR` skips
+every bank with a type, so a B with four banks and ZMMFS found three and refused. Now:
+
+- **`PARSWR`** (`SwrImage`): only when exactly three clean banks are found, the highest bank that
+  has a ROM type AND is RAM — MMFS's own test: flip `&8006`, read back, flip back, interrupts off —
+  is taken as the **fourth slot, `SWRAM_XFER`**, and the report adds "(THE LAST HOLDS A ROM IMAGE,
+  WHICH WILL BE OVERWRITTEN)". Four clean banks and nothing changes. The intro borrows only the
+  first two slots, so it never touches it.
+- **`.start`**: `PARXFER` is the **last load**, after the font, staged at `XFER_STREAM = &4000`
+  (the font is on `DEPK_STREAM` by then). Then the NMI claim — the last call the image has to
+  answer — then its ROM-table byte is **zeroed**, so the MOS never offers the bank another service
+  call, and only then is it unpacked. `BootBanks` does three banks. The same order on every
+  machine. `make_disc.py` writes `PARXFER`'s load address and puts it after `PARAFNT` on the disc.
+  Code image **+9** (`code_end` `&2FC9` → `&2FD2`, 46 free).
+- A soft BREAK afterwards gets the filing system back: ZMMFS's bootloader compares its RAM copy with
+  its ROM on every BREAK and recopies it if they differ.
+
+**Verified in jsbeeb**, which cannot run MMFS, by planting a fake ROM image in bank 7 of a Master
+(exactly four banks) — a valid header and a service handler that counts its calls and records
+the last one in the unused stack page — and marking it in `&02A8`. The pre-change image refused
+("FOUND 3"). The new one reported `4 5 6 7` with the image line, played, and read: the image's
+**last call was service 12** (the NMI claim), its ROM-table byte `00`, bank 7 holding `PARXFER`,
+`&0D00` = `&40`. Through the `-Intro` build the image was still intact after the intro and the
+same four facts held at the title. Plain B/DFS 1.20 and B/1770, with and without the intro, still
+play. **A real ZMMFS machine has not been tried.**

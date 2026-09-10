@@ -49,6 +49,7 @@ IRQ1V         = &0204
 \ probing before the game loads; the answer arrives in swBank below.
 ROMSEL     = &FE30
 ROMSHAD    = &F4
+ROMTYPE    = &02A1              \ MOS ROM type table, one byte per bank
 SWRAM_BASE = &8000
 
 \ ---- WHICH four banks is a RUN-TIME answer ------------------
@@ -756,6 +757,17 @@ ASSERT TITL_BYTES < 512         \ then a tail; both must be non-empty
 FNT_STREAM  = &3700
 DEPK_ADDR   = &3000
 DEPK_STREAM = &3200
+\ WHERE PARXFER'S STREAM LANDS, and it is not DEPK_STREAM either (issue
+\ #18 item 9, KC 2026-09-10). PARXFER is the LAST load now, after the
+\ font, so that its bank can be a filing system's ROM image: .start has
+\ the reason. By then PARAFNT is unpacked at &3000-&3DFF, over
+\ DEPK_STREAM, so this stream stages above the font instead. &4000 up is
+\ nothing yet at that point - SetupMode has cleared it and blanked the
+\ frame (R1 = 0), and the tables, tile map and panel are built later by
+\ TitleSeq. make_disc.py checks the stream ends below &8000.
+XFER_STREAM = &4000
+ASSERT XFER_STREAM >= &3E00     \ the PARAFNT block's end (SPR_SAVE)
+ASSERT LO(XFER_STREAM) = 0      \ UnpackBankY sets the page only
 
 FONT_ADDR = &3000
 \ Declared here rather than taken from the generated file, because
@@ -1559,6 +1571,21 @@ ORG &1100
   JSR OSCLI
   JSR UnpackFont
 
+\ ---- PARXFER: THE LAST LOAD, and its bank is filled only after it ----
+\ hexwab and KC, issue #18 item 9 (2026-09-10). A filing system can live
+\ in sideways RAM - ZMMFS's bootloader copies MMFS into the highest free
+\ bank at power-up and marks it in the ROM type table - and a B with
+\ four banks then has three clean ones. PARSWR hands such a bank over as
+\ SWRAM_XFER when it is the only way to make four, so THE FILING SYSTEM
+\ MAY BE IN THIS BANK, and it must not be touched until the last filing
+\ call has been made. So the stream is loaded here, after the font,
+\ staged at XFER_STREAM rather than DEPK_STREAM (the font is on that),
+\ and unpacked below once the NMI has been handed over. The same order
+\ on every machine, so an ordinary one tests it.
+  LDX #LO(d_loadxfer)
+  LDY #HI(d_loadxfer)
+  JSR OSCLI
+
 \ ---- and the NMI is ours, now that the last load is done ----
 \ hexwab, issue #18. Nothing after this line makes a filing-system call,
 \ so nothing needs an NMI -- but &0D00 was simply left as the disc
@@ -1570,6 +1597,21 @@ ORG &1100
 \ NMI costs a few cycles and nothing else. Econet is what this breaks.
   LDA #143 : LDX #12 : LDY #&FF : JSR OSBYTE
   LDA #&40 : STA &0D00          \ RTI
+
+\ ---- and only NOW the transfer bank ----------------------------
+\ Its ROM type byte goes to zero first, so the MOS never offers the
+\ bank another service call - an unknown OSBYTE, a BRK, an unclaimed
+\ IRQ while the MOS still owns IRQ1V at the title - which would jump
+\ into &8003 of our data. On an ordinary machine the byte is zero
+\ already. The OSBYTE 143 above was the last call a ROM image in this
+\ bank had to answer, and it was still there to answer it. Unpacking it
+\ is boot's last act before TitleSeq, which the title's code relies on.
+  LDX swBank+SWRAM_XFER
+  LDA #0
+  STA ROMTYPE,X
+  TXA
+  LDY #HI(XFER_STREAM)
+  JSR UnpackBankY
 
 \ ---- the title, and everything that rebuilds after it ------
 \ TitleSeq is shared with the game-over seam (GoTitle): load PARTITL,
@@ -3869,9 +3911,12 @@ INCLUDE "src/zx0depack.asm"
   BNE UnpSet                    \ always: HI(FNT_STREAM) is non-zero
 
 .UnpackBankIn
+  LDY #HI(DEPK_STREAM)
+.UnpackBankY                    \ the same, stream page in Y: PARXFER's
+                                \ is XFER_STREAM (issue #18 item 9)
   STA ROMSHAD                   \ both, always — PAGEBANK's rule
   STA ROMSEL
-  LDA #HI(DEPK_STREAM)
+  TYA
   LDX #HI(SWRAM_BASE)
 .UnpSet
   STA src+1
@@ -3907,12 +3952,10 @@ INCLUDE "src/zx0depack.asm"
   LDY #HI(d_loadspr2)
   JSR OSCLI
   LDA swBank+SWRAM_SPR2
-  JSR UnpackBankIn
-  LDX #LO(d_loadxfer)
-  LDY #HI(d_loadxfer)
-  JSR OSCLI
-  LDA swBank+SWRAM_XFER
   JMP UnpackBankIn              \ tail call; its RTS is BootBanks' own
+\ THREE BANKS, NOT FOUR, since issue #18 item 9: PARXFER is loaded by
+\ .start after the font, because its bank may hold the filing system.
+\ d_loadxfer stays here beside its siblings.
 .d_loadcmd
   EQUS "LOAD PARADAT"
   EQUB 13

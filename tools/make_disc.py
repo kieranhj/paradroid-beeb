@@ -51,13 +51,16 @@ import zx0tool
 
 DEPK_STREAM = 0x3200            # must match main.asm
 FNT_STREAM  = 0x3700            # must match main.asm
+XFER_STREAM = 0x4000            # must match main.asm - PARXFER is the LAST
+                                # load (issue #18 item 9), after the font
+                                # has been unpacked over DEPK_STREAM
 # Compressed files, and where each one's STREAM is *LOADed to. Four of
 # them decompress into a sideways bank, so their stream can sit at the
 # shared staging address; PARAFNT decompresses into MAIN RAM at &3000,
 # under itself, so its stream has to land where its own output will not
 # overtake it -- see in_place_delta() and FNT_STREAM in main.asm.
 COMPRESSED = {"PARADAT": DEPK_STREAM, "PARASPR": DEPK_STREAM,
-              "PARSPR2": DEPK_STREAM, "PARXFER": DEPK_STREAM,
+              "PARSPR2": DEPK_STREAM, "PARXFER": XFER_STREAM,
               "PARAFNT": FNT_STREAM}
 
 # Where each compressed file's output goes, for the in-place check. Only
@@ -149,8 +152,12 @@ def in_place_delta(packed, raw):
 # as the required-file check below and would otherwise fail every build.
 # On an --intro build, PINTRO slots in after !BOOT: it is the first
 # thing !BOOT runs (docs/intro.md §4).
+# PARAFNT BEFORE PARXFER since issue #18 item 9 (2026-09-10): .start
+# loads PARXFER last, after the font, in case its bank holds the filing
+# system - so it goes last on the disc too, and the head still only
+# moves forwards.
 LAYOUT = ["!BOOT", "PARSWR", "PARA", "PARADAT", "PARASPR", "PARSPR2",
-          "PARXFER", "PARAFNT"]
+          "PARAFNT", "PARXFER"]
 
 SECTOR = 256
 
@@ -199,7 +206,7 @@ def check_stream(packed, raw, name):
         raise SystemExit(f"{name}: stream does not decompress to this "
                          "build's file - stale .zx0, or a compressor whose "
                          "output is not the format zx0depack.asm decodes")
-    if DEPK_STREAM + len(packed) > 0x8000:
+    if COMPRESSED[name] + len(packed) > 0x8000:
         raise SystemExit(f"{name}: compressed stream overruns main RAM")
     return packed
 

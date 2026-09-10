@@ -30,6 +30,11 @@
 \      how you hang a machine that was working. Skipping them also means
 \      we never CHOOSE one and blow it away at BootBanks, which matters
 \      more — a DFS in sideways RAM would take the next *LOAD with it.
+\      THE ONE EXCEPTION (issue #18 item 9, KC 2026-09-10): with exactly
+\      three clean banks, a RAM bank holding a ROM image becomes the
+\      fourth, because .start fills that slot only after its last load.
+\      That is how ZMMFS - MMFS softloaded into sideways RAM - plays. See
+\      SwrImage.
 \
 \   2. IT SAVES THE RIGHT BYTE. stnicc's stage 1 reads its original at
 \      &8008 with the bank from the END of the inner loop selected, so it
@@ -59,7 +64,8 @@ OSASCI    = &FFE3               \ OSWRCH, but 13 comes out as CR AND LF —
                                 \ without it the BASIC prompt lands back on
                                 \ top of the report
 TSTADDR   = &8008               \ probed byte: past a ROM header's vectors
-ROMTYPE   = &02A1               \ MOS ROM type table, one byte per bank
+                                \ ROMTYPE (&02A1, the MOS ROM type table)
+                                \ is main.asm's: .start zeroes an entry too
 RAMSEL    = &FE32               \ Solidisk write-select
 USR_ORB   = &FE60               \ Solidisk bank index
 USR_DDRB  = &FE62
@@ -82,11 +88,21 @@ ORG SWR_ADDR
                                 \ bank behind us. Held to the restore.
   LDA #0
   STA swSolid
+  STA swImage
   JSR SwrProbe
 
   LDA swCount
   CMP #4
   BCS swr_found
+
+\ ---- three: is the fourth a ROM image in sideways RAM? ------
+\ hexwab and KC, issue #18 item 9. See SwrImage. Only at exactly three,
+\ so a machine with four clean banks never has its images touched.
+  CMP #3
+  BNE swr_notimg
+  JSR SwrImage
+  BCS swr_found
+.swr_notimg
 
 \ ---- not four: is it a board we deliberately do not drive? ----
   LDA #&FF                      \ the Solidisk pass. Only ever reached
@@ -163,6 +179,12 @@ ORG SWR_ADDR
   BNE swr_show
   LDA #13
   JSR OSASCI
+  LDA swImage                   \ and say so if the last one is a ROM
+  BEQ swr_noimg                 \ image we are about to use
+  LDX #LO(swMsgImage)
+  LDY #HI(swMsgImage)
+  JSR SwrPrint
+.swr_noimg
 
 \ ---- and the game's VDU 22 will be a NORMAL screen -----------
 \ hexwab and KC, issue #18: on a B+ or a Master set to *SHADOW, MODE 1
@@ -287,6 +309,61 @@ ORG SWR_ADDR
   BPL sp_tr
   RTS
 
+\ ============================================================
+\ SwrImage — a ROM image in sideways RAM, as the fourth bank
+\ ============================================================
+\ hexwab and KC, issue #18 item 9 (2026-09-10). A filing system can be
+\ softloaded into sideways RAM: ZMMFS, on a model B, is MMFS in a ROM
+\ socket whose bootloader copies it into the highest free RAM bank at
+\ power-up and CTRL-BREAK and writes its type into ROMTYPE (MMFS's
+\ bootstrap.asm). Stage 0 skips every bank with a type, so a machine
+\ with four banks and ZMMFS found three and was refused.
+\ Such a bank CAN be used, provided it is filled after the last filing
+\ call - .start loads PARXFER last for exactly that, and zeroes the
+\ bank's type before it unpacks into it. So: the highest bank that has
+\ a ROM type AND is RAM becomes the FOURTH slot, SWRAM_XFER, which the
+\ intro never borrows either (it takes the first two). It need not be
+\ the filing system to be safe - any image is filled last - and on a
+\ soft BREAK afterwards ZMMFS's bootloader finds its copy damaged and
+\ makes it again.
+\ THE RAM TEST IS MMFS's OWN: flip &8006, the ROM type byte, read it
+\ back, flip it back. Interrupts are off (SwrMain), so nothing runs the
+\ image while its byte is wrong; a real ROM ignores the write.
+\ Exit C set with the bank in swBanks[0] (highest first, so the handover
+\ puts it last) and swCount 4; C clear if there is none.
+.SwrImage
+  LDX #15
+.si_bank
+  LDA ROMTYPE,X
+  BEQ si_next                   \ clean: SwrProbe has already had it
+  STX ROMSEL
+  LDA &8006
+  EOR #&FF
+  STA &8006
+  CMP &8006
+  PHP
+  EOR #&FF
+  STA &8006
+  PLP
+  BEQ si_got
+.si_next
+  DEX
+  BPL si_bank
+  CLC
+  RTS
+.si_got
+  LDY #2                        \ the three clean ones down one place
+.si_shift
+  LDA swBanks,Y
+  STA swBanks+1,Y
+  DEY
+  BPL si_shift
+  STX swBanks
+  INC swCount
+  DEC swImage                   \ 0 -> &FF
+  SEC
+  RTS
+
 \ ---- select bank X for WRITING ------------------------------
 \ ROMSEL always, because the read-back needs it too. The two latches
 \ only on the Solidisk pass — see the header.
@@ -327,6 +404,9 @@ ORG SWR_ADDR
   EQUS 13, "PARADROID NEEDS 4 x 16K SIDEWAYS RAM", 13, "BANKS - FOUND ", 0
 .swMsgLinks
   EQUS "(SET LK18 AND LK19 WEST?)", 13, 0
+.swMsgImage
+  EQUS "(THE LAST HOLDS A ROM IMAGE, WHICH", 13
+  EQUS "WILL BE OVERWRITTEN)", 13, 0
 .swMsgSolid
   EQUS 13, "SIDEWAYS RAM FOUND, BUT ON A BOARD WITH", 13
   EQUS "SOLIDISK-STYLE WRITE SELECT, WHICH THIS", 13
@@ -336,6 +416,7 @@ ORG SWR_ADDR
 
 .swProbe  EQUB 0
 .swSolid  EQUB 0                \ &FF on the Solidisk pass
+.swImage  EQUB 0                \ &FF when the fourth bank is a ROM image
 .swCount  EQUB 0
 .swCand   SKIP 16               \ ROM type per bank; zero = probe it
 .swBanks  SKIP 16               \ the RAM banks found, highest first
