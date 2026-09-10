@@ -126,3 +126,39 @@ combination either works, or is documented as unsupported with the reason.
 
 **Entry condition:** Layer 12 done, so memory needs are final. **Exit condition:** a build that
 detects what it is running on, says so, and either runs correctly or refuses honestly.
+
+### Issue #18 (hexwab's portability list) — KC's rulings, 2026-09-10
+
+Test what jsbeeb has; **other DFSs (Opus, Watford, Solidisk) are not a priority**; second
+processors go only as far as **loading into the host**; `!BOOT` without `*EXEC` is lower priority;
+**shadow screen correct on Master and B+** (third-party boards out of scope); **write all the CRTC
+registers**; **claim the NMI** and **the Master's "LK18/LK19" message**, both tested; a **softloaded
+FS in sideways RAM is not supported** unless reported in the wild; **investigate the intro's
+`*TAPE`**; respecting the OS's `*TV` settings is **won't fix**. One issue, one commit per fix.
+
+### What jsbeeb runs, 2026-09-10
+
+The dev build, booted with SHIFT+BREAK, then fire at the title and ~300 frames: "in play" means
+`fieldCount` rising, the player's reference cell and `deck` set, `infoActive` 0.
+
+| Machine | Before | After the host load address |
+|---|---|---|
+| B, DFS 1.2 | plays | plays |
+| B, DFS 0.9 | plays | — |
+| B, Acorn 1770 DFS | plays | — |
+| Master 128 (MOS 3.20, 1770 DFS) | plays | — |
+| B + 65C02 second processor | **refused**: "NEEDS 4 x 16K … FOUND 1" | **plays** |
+| Master + 65C102 second processor | **refused**, the same | **plays** |
+
+The two ADFS-only models cannot read a DFS image and were not tried.
+
+**Second processors — every file now loads and runs in the HOST.** The catalogue's load and exec
+addresses carried bits 16-17 = 0, because beebasm writes 16-bit addresses, and with a Tube attached
+0 means the parasite: `PARSWR` loaded and ran over there, probed the parasite's own RAM at `&8008`
+and found one "bank". `make_disc.py` now writes 3 in both fields, `&FFFFxxxx`, for every file — the
+one place the catalogue is written, so `build.ps1`, the Makefile and `-Intro` all get it; without a
+Tube the bits are ignored. **The game then overwrites the Tube host code** (`&0400-&07FF`, zero
+page) as it takes the machine, which is harmless only because nothing after `.start` makes a
+filing-system call — the same invariant the low overlay already depends on. jsbeeb reports ~40,130
+cycles a frame on both Tube machines against 39,936 without; `fieldCount` advances normally, so
+this is recorded rather than chased.

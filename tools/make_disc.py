@@ -257,8 +257,16 @@ def build_image(files, title, cycle, opt):
         img[a + 3] = (f["exec"] >> 8) & 0xFF
         img[a + 4] = length & 0xFF
         img[a + 5] = (length >> 8) & 0xFF
-        img[a + 6] = (((f["exec"] >> 16) & 3) << 6 | ((length >> 16) & 3) << 4
-                      | ((f["load"] >> 16) & 3) << 2 | (start >> 8) & 3)
+        # EVERY FILE LOADS AND RUNS IN THE HOST: load and exec bits 16-17
+        # are 3, i.e. &FFFFxxxx, the only two of the high sixteen bits DFS
+        # keeps. beebasm writes 16-bit addresses, so they used to be 0 -
+        # and with a second processor attached, 0 means THE SECOND
+        # PROCESSOR: PARSWR loaded and ran over there, probed its RAM for
+        # sideways banks and reported "FOUND 1" (measured in jsbeeb on a
+        # B + 65C02 and a Master + 65C102, issue #18). Without a Tube the
+        # bits are ignored, so nothing changes on a plain machine.
+        img[a + 6] = (3 << 6 | ((length >> 16) & 3) << 4
+                      | 3 << 2 | (start >> 8) & 3)
         img[a + 7] = start & 0xFF
 
     img[2 * SECTOR:] = data
