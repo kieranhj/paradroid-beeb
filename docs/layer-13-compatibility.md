@@ -181,3 +181,10 @@ hand the NMI over, and `&40` (`RTI`) goes at `&0D00`. hexwab's method: the filin
 claim it back if anything ever loads again, which `*TAPE` would have prevented; only Econet
 suffers. 14 bytes of main RAM (`code_end` `&2FBB` → `&2FC9`). **Verified**: `&0D00` reads `40` at
 the title and the plain B plays.
+
+**A Master 128 short of banks is told about the links.** `PARSWR`'s refusal adds "(SET LK18 AND
+LK19 WEST?)" when OSBYTE 0 with X = `&FF` returns 3 — the Master 128 alone, not the Compact or ET,
+whose sideways RAM is not those links. hexwab's wording, from *Stunt Car*. In the loader, so the
+game pays nothing. **Verified** by the method above (both `CMP #4` thresholds, now at `&190C` and
+`&1928`, patched to 9 in a `*LOAD`ed copy, then `CALL &1900`): the Master printed the refusal and
+the links line; the plain B printed the refusal alone.

@@ -115,6 +115,20 @@ ORG SWR_ADDR
   JSR SwrDigit
   LDA #13
   JSR OSASCI
+\ ON A MASTER 128 IT IS TWO JUMPERS, and saying so beats a bare refusal
+\ (hexwab, issue #18; his wording from Stunt Car). LK18 and LK19 give the
+\ Master its other two banks. OSBYTE 0 with X non-zero returns the OS in
+\ X, and 3 is the Master 128 alone -- not the Compact or the ET, whose
+\ sideways RAM is not those links.
+  LDA #0
+  LDX #&FF
+  JSR OSBYTE
+  CPX #3
+  BNE swr_nolinks
+  LDX #LO(swMsgLinks)
+  LDY #HI(swMsgLinks)
+  JSR SwrPrint
+.swr_nolinks
   JMP SwrAbort
 
 \ ---- four or more: hand the top four to the game ------------
@@ -298,6 +312,8 @@ ORG SWR_ADDR
   EQUS "DETECTED SWRAM BANKS: ", 0
 .swMsgShort
   EQUS 13, "PARADROID NEEDS 4 x 16K SIDEWAYS RAM", 13, "BANKS - FOUND ", 0
+.swMsgLinks
+  EQUS "(SET LK18 AND LK19 WEST?)", 13, 0
 .swMsgSolid
   EQUS 13, "SIDEWAYS RAM FOUND, BUT ON A BOARD WITH", 13
   EQUS "SOLIDISK-STYLE WRITE SELECT, WHICH THIS", 13
