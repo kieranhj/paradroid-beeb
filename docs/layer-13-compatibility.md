@@ -199,3 +199,16 @@ is ignored. In the loader, so the game pays nothing; a bare `*RUN PARA` does not
 the debugging path. hexwab's fuller dance (OSBYTE 133 first, then zeroing `&FE34`) exists for
 third-party shadow boards, which KC ruled out of scope. **Verified**: the same `*SHADOW` + soft
 reset gave ACCCON `&18` at the title and in play, and the Master played; the plain B plays.
+
+**The intro's `*TAPE` — investigated, tested, not changed.** scarybeasts's `pdloader/` (the
+`-Intro` build, which the release uses) calls OSBYTE 140 (`paradroid_intro.asm` line 966) "to
+unload DFS before we trash its workspace" — his sample player runs from zero page `&40-&FF` with
+interrupts off — and after the tune it backs zero page and `&0D00` out again, `*DISC`s, and
+chains `PARA`. **Tested** on the `-Intro` build: the plain B and a Master under `*SHADOW` + soft
+reset both go detector → intro → keypress → "Loading..." → title → play, and on the Master
+ACCCON stayed `&18` through the intro, the title and play — OSBYTE 114 is a lasting state, not a
+one-shot, so the intro's own `VDU 22` does not consume it. **What `*TAPE` costs is the `*DISC`
+that has to follow it**: that forces DFS back even for someone who booted from another filing
+system (hexwab's point), which jsbeeb cannot show. The fix would be fix 7's shape — claim the
+NMI instead of `*TAPE`, and drop the `*DISC` — but it is an eighth `\ PORT:` edit to a vendored
+drop, so it is KC's call, and better raised with scarybeasts than made quietly.
