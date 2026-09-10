@@ -977,6 +977,18 @@ and the two dwells are untouched, so a page is 256 + 720 + 128 fields rather tha
 **Measured in jsbeeb**: page 2 mid-travel, `fieldCount` &FD → &61 (100 fields), `brTop`×8 +
 `line` 70 → 120 — **50 scanlines in 100 fields**.
 
+**[DECISION 18]** **Every initials slot is two cells wide** (KC, 2026-09-10; issue #17, from
+hexwab's #4). A deviation: `$E6E8` is a six-character record drawn as one string, a capital is
+sixteen pixels and the dot eight, so on the C64 as here the dots slid right as each letter replaced
+one, and three trailing spaces covered the debris when a wide letter gave way to a narrow one.
+`HsShow` now draws the three slots at fixed columns, `HS_COL_INI` + 2n, each glyph through `HsWide`
+and anything narrow — the dot, the space, capital I — followed by a space. The record's trailing
+spaces went with the shrink they covered, so `hsIni` is three bytes. **Bank 7: 36 bytes**, tail
+`&BF5A` → `&BF7E` (`highscore.asm` is behind `plandata.asm`'s `ALIGN`, so it pays the tail).
+**Verified in jsbeeb**: a real game over (ESCAPE, `score` poked to `00 99 99 99`), the entry row
+(buffer rows 13-14) dumped before and after committing the first initial. Only columns 33-34 —
+slot 1, dot → A — changed; slot 0 (31-32) and slot 2's dot and its pad (35-36) are byte-identical.
+
 ### 8d. Verified in jsbeeb, 2026-08-30
 
 Boot, title timeout, CTRL+R, then: LEFT <- A, a duplicate A refused with "Already used",

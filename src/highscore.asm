@@ -82,11 +82,14 @@
 \ — the two IsOverDraw already used — because the page is drawn on the
 \ database table's lines and that table starts on buffer row 1.
 \
-\ THE INITIALS FIELD IS SIX CHARACTERS AND ONLY THREE ARE ENTERED. That
-\ is the original's ($E6E8 is a six-character record) and it is not
-\ padding: a capital is SIXTEEN pixels and a space is eight, so when a
-\ wide letter is replaced by a space every character after it shifts one
-\ cell left. The three trailing spaces are what covers the debris.
+\ EVERY INITIAL IS TWO CELLS WIDE HERE, and that is not the original's
+\ (layer-11f DECISION 18, issue #17 from hexwab's #4, KC 2026-09-10).
+\ $E6E8 is a six-character record drawn as one string: a capital is
+\ SIXTEEN pixels and the dot and the space eight, so the dots slid right
+\ as each letter replaced one, and three trailing spaces covered the
+\ debris when a wide letter gave way to a narrow one. HsShow draws the
+\ three slots at fixed columns instead, padding anything narrow -- the
+\ dot, the space, capital I -- with a space, so no slot ever moves.
 \
 \ WHAT REPLACES THE JOYSTICK. $E574 reads `joyYDir ORA joyXDir` so
 \ either axis walks the alphabet, and $094D makes UP -1: up goes
@@ -296,11 +299,34 @@ HS_COL_INI    = 31              \ $E6E8's
 \ HsShow / HsWait — $E592's redraw, and $E599's delay
 \ ============================================================
 .HsShow
-  LDX #HS_COL_INI
+  LDA #0
+  STA hsSlot
+.hs_sh_slot
+  LDA hsSlot                    \ slot n starts at HS_COL_INI + 2n,
+  ASL A                         \ whatever the slots before it hold
+  CLC
+  ADC #HS_COL_INI
+  TAX
   LDA #HS_ROW_BOT
   JSR HsAt
-  LDA #LO(hsIni) : LDY #HI(hsIni)
-  JMP HsStr                     \ and its RTS
+  LDX hsSlot
+  LDA hsIni,X
+  PHA
+  JSR HsWide                    \ a wide capital fills both cells
+  PLA
+  CMP #HS_UPPER_I               \ HsWide's own narrow test, for the
+  BEQ hs_sh_pad                 \ glyphs a slot can hold: I, and
+  CMP #HS_UPPER_R               \ anything past the capitals -- the
+  BCC hs_sh_next                \ dot and the space
+.hs_sh_pad
+  LDA #HS_SPACE                 \ the second cell, blanked: it covers
+  JSR HsGlyph                   \ the right half of whatever was here
+.hs_sh_next
+  INC hsSlot
+  LDA hsSlot
+  CMP #3
+  BCC hs_sh_slot
+  RTS
 
 .HsWait
   LDY #HS_DELAY
@@ -441,9 +467,11 @@ HS_COL_INI    = 31              \ $E6E8's
   NEXT
 
 \ ---- state, all of it this overlay's ------------------------
-\ $E6E8: three initials and the three spaces that cover their shrink.
+\ $E6E8's three initials. Its three trailing spaces are gone: they
+\ covered the shrink of a one-string field, and HsShow's slots do not
+\ shrink (DECISION 18).
 .hsIni
-  EQUB 0, HS_DOT, HS_DOT, HS_SPACE, HS_SPACE, HS_SPACE, &FF
+  EQUB 0, HS_DOT, HS_DOT
 
 .hsSelFor EQUB 0, 0, 0          \ xfer_cpuSpriteX, one per initial: the
                                 \ LETTER index 0-26, which is what goes
@@ -453,3 +481,4 @@ HS_COL_INI    = 31              \ $E6E8's
 .hsIx     EQUB 0
 .hsTmp    EQUB 0
 .hsTmp2   EQUB 0
+.hsSlot   EQUB 0                \ HsShow's slot, 0-2
