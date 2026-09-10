@@ -175,6 +175,8 @@ DB_IMG_UNIT = 4
   STA dbPrevD
   STA dbPrevL
   STA dbPrevR
+  STA dbPrevX                   \ TRANSFER opens consoles now (layer-7
+                                \ DECISION 13), so it may still be down
   LDA #2
   STA conDbReq
   RTS
@@ -245,8 +247,12 @@ DB_IMG_UNIT = 4
   STA dbStatN
   JSR DbName                    \ ShowRobotType
 
-  JSR DbSideways                \ $2D27: left or right starts the pages
-  BCC db_p1_x
+  JSR DbKeys                    \ $2D27: forward starts the pages. Left
+  BEQ db_p1_x                   \ does nothing here: the browser is the
+  BMI db_p1_x                   \ first screen (layer-9 DECISION 21)
+  LDA #0
+  STA dbHistN                   \ a new entry's screens start again
+  JSR DbPush
   LDA #2
   STA dbPage
 .db_p1_x
@@ -378,8 +384,10 @@ DB_DESC_MAX = &38 - &10         \ sub_0_2DCD's own bound, rebased to 0
   LDA #LO(dbTxtMore) : LDY #HI(dbTxtMore)
   JSR DbPanelStr
 
-  JSR DbSideways
-  BCC db_p3_x
+  JSR DbKeys
+  BEQ db_p3_x
+  BMI DbBack                    \ left: the screen before this one
+  JSR DbPush                    \ forward: the next screen starts here
   LDA #LO(dbTxtConsole) : LDY #HI(dbTxtConsole)
   JSR DbPanelStr                \ $2D4F
   LDA #2
@@ -393,11 +401,13 @@ DB_DESC_MAX = &38 - &10         \ sub_0_2DCD's own bound, rebased to 0
 \ ============================================================
 \ DbPage4 â€” DrInfo4 ($2D6A), the end of the entry
 \ ============================================================
-\ Any direction at all goes back to page 0, which clears and returns to
-\ the browser. $2D6A ORs the two axes; ours is the four keys.
+\ Forward, up or down goes back to page 0, which clears and returns to
+\ the browser. $2D6A ORs the two axes; ours is the four keys. LEFT goes
+\ back a screen instead (layer-9 DECISION 21).
 .DbPage4
-  JSR DbSideways
-  BCS db_p4_go
+  JSR DbKeys
+  BMI DbBack
+  BNE db_p4_go
   LDX #CTL_UP
   JSR KeyDownIx
   BEQ db_p4_go
@@ -413,36 +423,100 @@ DB_DESC_MAX = &38 - &10         \ sub_0_2DCD's own bound, rebased to 0
   STA dbPrevD
   RTS
 
-\ ---- left or right, edge triggered --------------------------
-\ joyXDir's two keys. Carry set if either has just gone down.
-.DbSideways
+\ ============================================================
+\ DbBack -- left: the previous screen of this entry (DECISION 21)
+\ ============================================================
+\ NOT THE C64'S. $2D27 reads joyXDir with no sign, so either way on the
+\ stick turns the page forward and nothing turns it back; hexwab (issue
+\ #9) and KC, 2026-09-10: left goes back, right goes on, and TRANSFER
+\ goes on too. A screen is wholly determined by where it starts --
+\ dbStatN and dbDescIx; DbStatLine and db_d_cont reset everything else
+\ -- so going back is restoring the previous screen's start and letting
+\ page 2 print it again, through exactly the code that printed it the
+\ first time.
+\ dbHistN counts the screens printed since the browser, and the one on
+\ show is the last. Dropping it leaves the one to reprint on top -- or
+\ nothing, in which case the screen on show was the first and back is
+\ the browser. Reached from pages 3 and 4, the only pages with a screen
+\ of stats or description up.
+.DbBack
+  LDA #LO(dbTxtConsole) : LDY #HI(dbTxtConsole)
+  JSR DbPanelStr                \ "More..." off the panel, as $2D4F does
+  JSR DbClear
+  DEC dbHistN                   \ the screen on show
+  BEQ db_bk_browse
+  LDX dbHistN
+  DEX                           \ the one before it, which stays on top
+  LDA dbHistS,X : STA dbStatN
+  LDA dbHistD,X : STA dbDescIx
+  JSR DbImage                   \ page 2 prints under the name, as after
+  JSR DbName                    \ any clear
+  LDA #2
+  STA dbPage
+  RTS
+.db_bk_browse
+  LDA #1                        \ page 1 redraws the image and the name
+  STA dbPage                    \ itself, every pass
+  RTS
+
+\ ---- a screen's start, on the way forward --------------------
+\ Only the forward steps push; DbBack's reprint does not, because the
+\ screen it reprints is already on top. Eight is more than an entry
+\ ever uses; past it the push is dropped and back simply goes further.
+DB_HIST = 8
+.DbPush
+  LDX dbHistN
+  CPX #DB_HIST
+  BCS db_ph_x
+  LDA dbStatN  : STA dbHistS,X
+  LDA dbDescIx : STA dbHistD,X
+  INC dbHistN
+.db_ph_x
+  RTS
+
+\ ---- left, right and transfer, edge triggered ----------------
+\ A = 1 forward (right or TRANSFER), &FF back (left), 0 neither, and the
+\ flags follow A. It replaced DbSideways, which ORed left and right into
+\ one carry -- the C64's unsigned joyXDir.
+.DbKeys
   LDX #CTL_LEFT
   JSR KeyDownIx
-  BNE db_sw_lUp
+  BNE db_k_lUp
   LDA dbPrevL
-  BNE db_sw_tryR
+  BNE db_k_tryR
   LDA #1
   STA dbPrevL
-  SEC
+  LDA #&FF
   RTS
-.db_sw_lUp
+.db_k_lUp
   LDA #0
   STA dbPrevL
-.db_sw_tryR
+.db_k_tryR
   LDX #CTL_RIGHT
   JSR KeyDownIx
-  BNE db_sw_rUp
+  BNE db_k_rUp
   LDA dbPrevR
-  BNE db_sw_no
+  BNE db_k_tryX
   LDA #1
   STA dbPrevR
-  SEC
-  RTS
-.db_sw_rUp
+  RTS                           \ A = 1: forward
+.db_k_rUp
   LDA #0
   STA dbPrevR
-.db_sw_no
-  CLC
+.db_k_tryX
+  LDX #CTL_XFER
+  JSR KeyDownIx
+  BNE db_k_xUp
+  LDA dbPrevX
+  BNE db_k_no
+  LDA #1
+  STA dbPrevX
+  RTS                           \ A = 1: forward
+.db_k_xUp
+  LDA #0
+  STA dbPrevX
+.db_k_no
+  LDA #0
   RTS
 
 \ ============================================================
@@ -1083,3 +1157,7 @@ ASSERT DB_IMG_ROW + 11 <= PLAY_ROWS      \ the 84-scanline portrait: rows 3-13
 .dbPrevD   EQUB 0
 .dbPrevL   EQUB 0
 .dbPrevR   EQUB 0
+.dbPrevX   EQUB 0               \ the transfer key's edge (DECISION 21)
+.dbHistN   EQUB 0               \ screens printed since the browser
+.dbHistS   SKIP DB_HIST         \ each one's dbStatN at its start
+.dbHistD   SKIP DB_HIST         \ and its dbDescIx

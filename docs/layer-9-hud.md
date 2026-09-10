@@ -997,3 +997,35 @@ walk was the ageing ceiling coming down. The **game over** screen was reached th
 self-destruct and shows no bar, because the death path leaves energy at zero; the **briefing**
 cannot show a stale one either, since `briefing.asm` calls `PanelInit` — and so `PnClear` — before
 `PnBriefing`.
+
+## [DECISION 21] The database pages go both ways — left back, right and TRANSFER on
+
+**KC, 2026-09-10, issue #9 from hexwab's UX list (#4).** A deviation. `$2D27` reads `joyXDir`
+unsigned, so on the C64 either way on the stick turns the page forward and nothing turns it back;
+the port copied that in `DbSideways`, and nothing read the transfer key. Now **right and TRANSFER
+go forward, left goes back a screen**. Up and down still walk droid types in the browser, and fire
+still leaves — both as the C64's.
+
+**How back works.** A screen of stats or description is wholly determined by where it starts —
+`dbStatN` and `dbDescIx`; `DbStatLine` and `db_d_cont` reset everything else — so back is
+restoring the previous screen's start and letting page 2 print it again, through exactly the code
+that printed it the first time. `DbPush` records each start on the way forward (`dbHistS`/`dbHistD`,
+8 deep, `dbHistN` the count); `DbBack` drops the screen on show and reprints the one before, or
+returns to the browser from the first. `DbKeys` replaced `DbSideways`: +1 forward, −1 back, each key
+its own edge latch, and `dbPrevX` is armed at entry because TRANSFER opens consoles now (layer-7
+DECISION 13). **Bank 7: nothing** — `condb.asm` is in front of `plandata.asm`'s `ALIGN` and the 134
+bytes rode the pad, 173 → 39. `xfer_end` did not move.
+
+**Verified in jsbeeb, 2026-09-10**, deck 6, the console opened with TRANSFER, 001's entry:
+
+| | |
+|---|---|
+| right from the browser | page 3, `dbHistN` 1, `dbHistS` [13] — screen 1 (Entry … Brain), "More..." |
+| right again | `dbHistN` 2, `dbHistS` [13, 19] — screen 2 (Armament, Sensors) |
+| left | screen 1 reprinted: `dbStatN` 19, `dbHistN` 1 — **0 of 10,240 play-buffer bytes differ** from its first print |
+| left again | the browser: page 1, `dbHistN` 0, "Console" back on the panel |
+| TRANSFER from the browser | forward exactly as right |
+
+Left from page 4 (the entry's end) was not driven; it is the same `DbBack`. Every press has to be a
+fresh edge — a key pressed within the first passes after `DbEnter` arms the latches is taken as
+still held, which is the entry's existing design.
