@@ -966,6 +966,17 @@ second test. The first cut halved the wrap to compensate for the doubled turn an
 volume gate stays 1-in-1024, which the measured rate puts at 11.7 Hz. The deck seed still
 reads `tiLo EOR tiHi`.
 
+**[DECISION 17]** **The briefing scrolls at HALF the C64's rate** (KC, 2026-09-10; issue #8,
+from hexwab's UX list in #4). The port had the original exactly — `MoveScreen` subtracts
+`$FF - joyYDir` from `ScreenPosY` every field, one scanline cruising, two with DOWN — and it
+was too fast to read. `br_scroll` now steps on odd fields only (`fieldCount` bit 0), and DOWN
+steps every field: the old cruising rate, still double the new one. UP still stops the scroll
+and the two dwells are untouched, so a page is 256 + 720 + 128 fields rather than 256 + 360 +
+128. A side effect, and a good one: `BrStep` can no longer run twice in one field, so the
+35,850-cycle row paint of §4e-2 never has a second step queued behind it. PARBRF paid 2 bytes.
+**Measured in jsbeeb**: page 2 mid-travel, `fieldCount` &FD → &61 (100 fields), `brTop`×8 +
+`line` 70 → 120 — **50 scanlines in 100 fields**.
+
 ### 8d. Verified in jsbeeb, 2026-08-30
 
 Boot, title timeout, CTRL+R, then: LEFT <- A, a duplicate A refused with "Already used",

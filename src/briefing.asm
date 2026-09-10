@@ -281,12 +281,20 @@ BR_TRAVEL = 45                  \ rows of scrolling: canvas row 0 to 45
   LDX #CTL_UP                    \ up: ySpd+1 becomes 0 — hold still
   JSR KeyDownIx
   BEQ br_scroll
-  JSR BrStep
-  LDX #CTL_DOWN                    \ down: $FF - 1 = -2 — a second step
+\ HALF THE C64'S RATE (KC, 2026-09-10, issue #8 from hexwab's #4). The
+\ C64 steps a scanline every field and DOWN doubles it; that was ported
+\ exactly and was too fast to read. Now a step every OTHER field, and
+\ DOWN steps every field -- the old cruising rate, still twice the new
+\ one. It also means BrStep never runs twice in a field, so its 35,850-
+\ cycle row paint never has a second step queued behind it.
+  LDX #CTL_DOWN
   JSR KeyDownIx
-  BNE br_moved
+  BEQ br_step                   \ down: every field
+  LDA fieldCount
+  LSR A
+  BCC br_scroll                 \ cruising: odd fields only
+.br_step
   JSR BrStep
-.br_moved
   JSR SetCRTCStart
   LDA brTop
   CMP #BR_TRAVEL
