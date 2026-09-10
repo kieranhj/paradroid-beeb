@@ -174,3 +174,10 @@ cursor off. Main RAM **+15** (`code_end` `&2FCA` → `&2FBB`, the two `CRTC` mac
 bank 4 −29. **Verified**: plain B plays; a Master given `*CONFIGURE TV 252,0` and a hard reset
 boots, plays, and holds the rupture — 300 frames at exactly 39,936 cycles, `fieldCount` 39 → 139
 over 100 frames.
+
+**The NMI is claimed once the last load is done.** Straight after `UnpackFont` in `.start` — the
+last filing-system call the game ever makes — OSBYTE 143 with X = 12 asks the filing system to
+hand the NMI over, and `&40` (`RTI`) goes at `&0D00`. hexwab's method: the filing system can
+claim it back if anything ever loads again, which `*TAPE` would have prevented; only Econet
+suffers. 14 bytes of main RAM (`code_end` `&2FBB` → `&2FC9`). **Verified**: `&0D00` reads `40` at
+the title and the plain B plays.

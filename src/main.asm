@@ -1559,6 +1559,18 @@ ORG &1100
   JSR OSCLI
   JSR UnpackFont
 
+\ ---- and the NMI is ours, now that the last load is done ----
+\ hexwab, issue #18. Nothing after this line makes a filing-system call,
+\ so nothing needs an NMI -- but &0D00 was simply left as the disc
+\ system's handler, and one stray NMI through it with the machine in
+\ this state is unrecoverable. Service call 12 (OSBYTE 143) asks the
+\ filing system to hand the NMI over, which is the polite way: it can
+\ claim it back if anything ever loads again (an ADFS version, say),
+\ where *TAPE would have closed that door. Then an RTI at &0D00, so an
+\ NMI costs a few cycles and nothing else. Econet is what this breaks.
+  LDA #143 : LDX #12 : LDY #&FF : JSR OSBYTE
+  LDA #&40 : STA &0D00          \ RTI
+
 \ ---- the title, and everything that rebuilds after it ------
 \ TitleSeq is shared with the game-over seam (GoTitle): load PARTITL,
 \ show the title, reload PARAFNT and PARALOW over it, rebuild every
