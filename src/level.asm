@@ -323,10 +323,30 @@ DECK_CLEAR_PHYS = 4             \ BBC physical 4 is blue: the floor of a
   DEY
   BPL bc_row
 
+\ ---- EXCEPT THE ALERT LETTERING (layer-14 DECISION 11) --------
+\ Row 0 of tile 22, C64 codes $63-$66, is drawn in logical 1 — which is
+\ physical BLACK on every deck, and black is exactly what the dither
+\ ORs into logical 0. So the dither painted the letters' own colour into
+\ half their background and they dissolved: hexwab read it as "GLEDT"
+\ (issue #5). Skipping these four keeps the letters crisp; the plaque's
+\ interior stays solid floor colour inside its frame. KC, 2026-09-10.
+\ ALERT_IDX0 IS THE CHARSET INDEX, not the C64 code: export_bbc.py builds
+\ the set as sorted({codes the 32 tile definitions use}), and $63 lands at
+\ index 52 with $64-$66 after it. The remap is inside the ZX0 stream, so
+\ the assembler cannot check this — NUM_CHARS is the tripwire. If it
+\ moves, recompute: used = sorted(...); used.index(0x63).
+ALERT_IDX0 = 52
+ASSERT NUM_CHARS = 137          \ the set ALERT_IDX0 was measured against
+  LDA bcIndex
+  SEC
+  SBC #ALERT_IDX0
+  CMP #4
+  BCC bc_nodither               \ 52-55: the lettering, left undithered
   JSR DitherChar                \ Layer 14's floor dither, over the 16 bytes
                                 \ just written. Here rather than in a pass of
                                 \ its own because bcDst already walks the
                                 \ charset a character at a time.
+.bc_nodither
   CLC
   LDA bcSrc    : ADC #8  : STA bcSrc
   LDA bcSrc+1  : ADC #0  : STA bcSrc+1

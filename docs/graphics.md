@@ -472,11 +472,15 @@ palette write, mirroring how the C64 recoloured through `CharColor`.
 > correct and the damage was done in colour assignment. Check the palette before re-reading the
 > pixel maths.
 
-**Multicolour ALERT lettering is faithful, not a bug.** Row 0 of tile 22 (`$63-$66`) is the
-lettering and sits on slot 7, which is multicolour under 8 of the 16 deck schemes — 4 pixels wide,
-so the single-pixel letter gaps cannot exist and the letters join. The C64 does exactly the same.
-Decided to stay faithful rather than force those characters to hires; `compare_tile.py` is how such
-questions get settled.
+~~**Multicolour ALERT lettering is faithful, not a bug.**~~ **STALE — every cell is hires.** Row 0
+of tile 22 (`$63-$66`) is the lettering, on slot 7. This paragraph used to say slot 7 was
+multicolour under 8 of the 16 schemes and the letters therefore joined; that reading was retired
+2026-08-18, when bit 3 of the colour nibble turned out to be part of the COLOUR and `BuildCharset`
+stopped drawing anything multicolour (`level.asm`, "EVERY CELL IS HIRES"). **`tools/analyse_alert.py`
+still prints the old multicolour verdict** — it decides the mode from the C64's metadata, not from
+what the port draws — so do not take its table as a statement about the BBC screen. What DID make
+the lettering unreadable was the port's own floor dither, on every deck: layer-14 DECISION 11 (issue
+#5, 2026-09-10).
 
 ---
 

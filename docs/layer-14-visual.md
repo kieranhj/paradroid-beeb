@@ -498,3 +498,32 @@ three decks and always will; it tests the palette, not what the artwork does wit
 **Still open:** deck 5 is scheme 6, not scheme 0, so [DECISION 2] — which is written about scheme
 0's light-grey floor — never mentions it, yet it carries the same collision. Either intended and
 undocumented, or it slipped in. Worth deciding.
+
+### [DECISION 11] The ALERT lettering is not dithered — 2026-09-10
+
+**hexwab, issue #5 (from his UX list, #4): "ALERT tile is unreadable due to dithering … it looks
+like 'GLEDT' to me."** He was right, and the cause was ours, not the C64's.
+
+**The mechanism.** Row 0 of tile 22 — C64 codes `$63-$66` — is the lettering, drawn in **logical
+1**. [DECISION 1]'s dither runs only where logical 1 is physical **black** (`deck_dithers()`), and
+that is **all 16 decks** in `deck_palettes.json`. The dither ORs logical 1 into half of every
+logical-0 pixel, so it painted the letters' own colour into half their background and they
+dissolved. Every cell is hires (`level.asm`, "EVERY CELL IS HIRES") — the letters were never
+multicolour on the BBC, whatever `tools/analyse_alert.py` still prints; KC corrected that reading
+when this was raised, and `docs/graphics.md`'s old paragraph now says it is stale.
+
+**The fix (KC, 2026-09-10): `BuildCharset` skips `DitherChar` for those four characters.** They
+are charset indices **52-55** — `export_bbc.py` builds the set as the sorted codes the 32 tile
+definitions use, and `$63` ranks 52 — tested as one range around the `JSR`. The remap lives inside
+the ZX0 stream, so the assembler cannot check the index; `ASSERT NUM_CHARS = 137` beside it is the
+tripwire. `BuildLampChar`'s call is untouched: the lamp (`$16`, index 2) keeps its dither. **Bank 4:
+10 bytes**, 205 → 195 free. What it looks like: the letters crisp, and the plaque's interior solid
+floor colour inside its frame — a slightly brighter panel set into the dithered floor, which reads
+as a sign. The lamp's four states are unchanged, and on the C64 as here the lamp is the only part
+that lights; the lettering never did.
+
+**Verified in jsbeeb, 2026-09-10**, deck 6, the built charset read back after a deck load and again
+after a `LoadDeck` rebuild: index 51 (`&0730`) and 56 (`&0780`) carry the `&05`/`&0A` checker,
+52-55 (`&0740-&077F`) none. On screen, placed on deck 6's lift stop 27 (tile 8,13) beside the
+plaque at tile (11,12): **"ALERT."**, black on solid yellow, against the dithered floor. Before the
+fix, deck 7's plaque was the unreadable one hexwab saw.
