@@ -175,6 +175,16 @@ problem, and the order of the arms in the loop is the thing to check.
 `IS_ACT_TITLE` then takes `GoTitle`, which is Layer 11c's path unchanged. Verified end to end:
 death, wash, page, title, a new game, and the 001 screen on the new deck.
 
+**The wash's rows are painted in a scattered order** (KC, 2026-09-10; issue #6, from hexwab's #4).
+It "visibly rippled because it is drawn from top to bottom": the entry paint ran rows 15→0 and each
+pass after it repainted four *consecutive* rows, a band walking down the screen. Both now index
+`goOrder`, the bit-reversal of 0-15, so a pass's four rows are a quarter of the screen apart. The
+C64 has no order to be faithful to — it boils by animating its charset; the repaint is the port's
+own (layer-11 [DECISION 7] in `xfer.asm`). 24 bytes, in front of `plandata.asm`'s `ALIGN`: bank 7's
+tail did not move, the pad went 42 → 18. **Verified in jsbeeb**: a breakpoint on `GoWashRow` after
+`GoWashStart` wrote `overPhase` = 2 read X = 0, 8, 4, 12, then 2 — the table's order — and the game
+over ran on through the 999 page to the high-score entry as before.
+
 **The 999 is CENTRED, and that is the original's own doing.** `$37E8`'s `STA loc_0_365E+1` is not a
 colour, as this file first guessed — `loc_0_365E` is `BuildIntroSprites`' `LDA #40 / STA SpriteX`,
 and EndGame patches the 40 to **160**. Less the C64's first visible column at 24 that is 136 px in,

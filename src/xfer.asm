@@ -2600,6 +2600,8 @@ GO_ROWS      = 4                \ rows repainted per pass
   LDX #15
 .gw_all
   STX goBoil
+  LDA goOrder,X                 \ the row this step paints, not the step
+  TAX                           \ itself -- see goOrder
   JSR GoWashRow
   LDX goBoil
   DEX
@@ -2649,6 +2651,8 @@ GO_ROWS      = 4                \ rows repainted per pass
   LDA #0
   STA goBoil
 .gwt_row
+  TAX
+  LDA goOrder,X                 \ scattered, as the entry paint is
   TAX
 \ NO RE-POST OF THE ROAR. There used to be one here, every time the boil
 \ wrapped, justified as "near the C64's every-76-frames refire" -- but
@@ -2747,6 +2751,16 @@ GO_ROWS      = 4                \ rows repainted per pass
   EQUB XF_LC+0, XF_LC+12, PN_M_RIGHT, XF_LC+4
   EQUB PN_SPACE
   EQUB XF_LC+14, XF_LC+21, XF_LC+4, XF_LC+17, &FF
+\ ---- the order the rows are painted in (issue #6) -------------
+\ hexwab (#4): the static "visibly ripples because it is drawn from top
+\ to bottom" -- the entry paint ran row 15 to 0, and each pass after it
+\ repainted GO_ROWS CONSECUTIVE rows, a band walking down the screen.
+\ Both now go through this table, the bit-reversal of 0-15, so a pass's
+\ four rows are a quarter of the screen apart and no band forms. KC,
+\ 2026-09-10; layer-11d [DECISION 7] is where the repaint itself comes
+\ from -- the C64 boils by animating its charset and has no order at all.
+.goOrder
+  EQUB 0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15
 .goCol       EQUB 0
 .goBoil      EQUB 0             \ which row the boil repaints next
 .goRows      EQUB 0             \ GoWashTick's per-pass row counter
