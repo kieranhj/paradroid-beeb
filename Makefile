@@ -299,11 +299,13 @@ INTRO_IN = \
   pdloader/sample.guitar pdloader/conv.out pdloader/lookup_tables.out \
   pdloader/screen
 
-$(INTRO_RAW): $(INTRO_SRC) $(INTRO_IN) tools/make_intro_data.py
+# make_intro_data.py ZX0s the intro's two streams, so $(ZX0) is a
+# prerequisite here for the same reason as the briefing's below.
+$(INTRO_RAW): $(INTRO_SRC) $(INTRO_IN) tools/make_intro_data.py $(ZX0)
 	@test "$(BUILD)" = "build" || { echo "an intro build needs" \
 	    "BUILD=build: pdloader PUTFILEs ../build/PINTDAT verbatim" >&2; \
 	    exit 1; }
-	$(PYTHON) tools/make_intro_data.py
+	ZX0="$(ZX0)" $(PYTHON) tools/make_intro_data.py
 	@root=`pwd`; ba="$(BEEBASM)"; \
 	 case $$ba in /*|?:*) ;; */*) ba="$$root/$$ba" ;; esac; \
 	 cd pdloader && $$ba -i paradroid_intro.asm \
@@ -333,11 +335,29 @@ world:
 # The briefing IS part of the default build - unlike the exporters, its
 # input is a hand-editable working file, so an edit to briefing.txt must
 # reach the disc without anyone remembering to run a tool.
-src/data/briefing.asm src/data/briefconst.asm src/data/brextra.asm \
+#
+# TWO THINGS HERE BIT A FRESH CLONE UNDER -j4 (hexwab, issue #3), because
+# a checkout gives every file much the same mtime and can leave the
+# generated half looking older than briefing.txt:
+#
+# - It ZX0s its page streams, so it depends on $(ZX0) like every other
+#   compression - without that, it ran before bin/zx0 existed and stopped
+#   with "no ZX0 compressor found". ZX0 is passed in the environment so
+#   an override reaches zx0tool.py too.
+# - It writes all eight files in one run, and a multi-target rule is one
+#   rule per target: four copies ran at once over the same outputs. So
+#   ONE file owns the recipe and the other seven hang off it with an
+#   empty one - the portable idiom, since grouped targets (&:) are GNU
+#   4.3+ only. It is safe because the tool rewrites every output every
+#   run, so all eight come out newer than their inputs together.
+src/data/briefing.asm: \
+    src/data/briefing.txt tools/make_briefing.py tools/zx0.py \
+    tools/zx0tool.py $(ZX0)
+	ZX0="$(ZX0)" $(PYTHON) tools/make_briefing.py
+src/data/briefconst.asm src/data/brextra.asm \
 src/data/brstream0.asm src/data/brstream1.asm src/data/brstream2.asm \
-src/data/brstream3.asm src/data/brstream4.asm: \
-    src/data/briefing.txt tools/make_briefing.py tools/zx0.py tools/zx0tool.py
-	$(PYTHON) tools/make_briefing.py
+src/data/brstream3.asm src/data/brstream4.asm: src/data/briefing.asm
+	@:
 
 # ---------------------------------------------------------------------------
 # Odds and ends

@@ -76,6 +76,18 @@ GNU make's grouped targets (`&:`) are 4.3 and later, bmake has nothing — so `m
 `.NOTPARALLEL:`. It costs nothing: the whole regeneration is a few seconds and it is not in the
 default build.
 
+**`make_briefing.py` is the one multi-output tool that IS in the default build, and it had the
+same race — plus a missing prerequisite — until hexwab caught both on a fresh clone** (issue #3,
+2026-09-10). A checkout gives every file much the same mtime, so the briefing's generated half
+can look older than `briefing.txt`. `make -j4` then started four copies of the tool at once, and
+all four stopped with *no ZX0 compressor found*, because the rule compresses the page streams
+but did not depend on `$(ZX0)` and so ran before `bin/zx0` was built (reproduced here, fresh
+clone, GNU Make 4.4.1). `.NOTPARALLEL` is not an option in the main Makefile — it would
+serialise the compressors this build exists to parallelise — so **`briefing.asm` owns the recipe
+and the other seven outputs depend on it with an empty one**. That is safe because the tool
+rewrites every output every run. `$(INTRO_RAW)` had the same missing `$(ZX0)` and got it too; both
+recipes pass `ZX0` in the environment so an override reaches `zx0tool.py`.
+
 ## Parallel compression
 
 Compression was 5.0 s of a 7.9 s build: five serial `zx0` runs inside one `make_disc.py` process.
