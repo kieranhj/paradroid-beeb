@@ -69,6 +69,18 @@ PLY_FIRE_SLOT = 7
 \ SPR_SLOTS-1, which used to be the same number and stopped being one
 \ the moment the player's bullet got a slot of its own.
 SPR_POOL_LAST = 6
+
+\ How many sprites the SECOND window will hold: 24,576 cycles of
+\ blanking, DoorAnimPaint and nothing else in front of them, and a
+\ measured 6,350 for a restore and a draw -- so 3.87, ROUNDED UP.
+\ Rounding down is the worse error: the component that will not fit
+\ B goes back to A, where it costs 1,878 cycles of overrun, against
+\ the 824 it costs as B's fourth. Window A's figure is not a
+\ constant -- it depends on what the level draw is writing this pass
+\ -- and SprScanCls computes it into satCapA. See the budget block
+\ there, and docs/raster-timing.md [DECISION, 2026-09-09].
+SPR_CAP_B = 4
+
 SPR_W     = 7                   \ 24 px, plus one byte for the 2 px shift
 SPR_H     = 21                  \ scanlines
 SPR_BYTES = SPR_W * SPR_H       \ 147 bytes of background per slot

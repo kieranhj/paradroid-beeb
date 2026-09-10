@@ -64,6 +64,15 @@ fixed. [`docs/layer-12-balance.md`](docs/layer-12-balance.md). 12b (the Redux ad
   droids (~17,000) + full-diagonal level draw (19,172) is ~72,000 of 79,872 before the rest of
   the loop. It wants a rig on a deck with a long open corridor; `docs/raster-timing.md` Step 3
   is the planned relief. Graceful degradation if it overruns.
+  **Part of this was measured 2026-09-09** (`docs/raster-timing.md`, "The window-A budget"):
+  a restore and a draw is **6,350 a sprite**, not 5,182, and the fixed overhead ahead of the
+  tranche-A draw is **7,403**, not ~4,900 — so window A holds **two** sprites on a quiet pass and
+  none behind a band. The tranche assignment now budgets against that rather than balancing by
+  count. **The first lever is BUILT (2026-09-10, KC)**: `ApplyMove`, the fire block, `AnimTick`
+  and `SprSplitOK` are `PassPrep`, run at the end of the pass, so window A opens on the restore
+  (133 cycles in, was 6,720) and the budget went to 3/2/0 — `docs/raster-timing.md`, "PassPrep
+  leaves window A". The second is done too: `SprAssignTr` is 25-58% cheaper (8 live slots: 4,931 -> 3,707 mean,
+  9,606 -> 5,442 worst), proven output-identical over 20,000 random states in py65.
 
 ### Layer 13c — the machines people actually have
 

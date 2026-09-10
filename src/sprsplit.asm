@@ -70,6 +70,45 @@
   ORA colCount
   STA scnAnyW
 
+\ ---- how many sprites will window A hold this pass? ---------
+\ THE TWO WINDOWS ARE NOT THE SAME SIZE, and until 2026-09-09 the
+\ assignment behaved as though they were. Both are 24,576 cycles of
+\ blanking, but window A also carries the pass preamble AND the level
+\ draw; window B carries DoorAnimPaint and nothing else.
+\ MEASURED 2026-09-09, seven slots live, three in each tranche, on a
+\ pass with nothing for the level draw to do -- offsets from the
+\ fire-3 that opens the window:
+\        0 ->  6,720  ApplyMove, fire, AnimTick, SprSplitOK
+\    6,720 -> 13,758  SprRestoreTr(A), three sprites, + SetCRTCStart
+\   13,758 -> 14,441  DoRedraws, the debug keys, SprAnimateAll
+\   14,441 -> 26,454  SprDrawTr(A), three sprites
+\   24,576            the window shuts -- the draw was 1,878 LATE
+\ so a restore and a draw is 6,350 a sprite and the fixed overhead was
+\ 7,403 -- and 6,720 of that overhead was PassPrep, which LEFT WINDOW
+\ A the next day (2026-09-10, main.asm's prepDone block). Re-measured
+\ after: the restore starts 133 cycles into the window, a restore and
+\ a draw is ~6,070, and what else window A pays is ~700. So it holds
+\ (24,576 - 830 - level draw) / 6,070: THREE sprites on a quiet pass,
+\ TWO behind a column draw (~4,900 -- 3.1, rounded down) and NONE
+\ behind a band (~13,800-19,200). Window B holds SPR_CAP_B.
+\ SprAssignTr used to hand components to whichever tranche was
+\ emptier, which on the commonest crowd alternates A, B, A, B, A and
+\ puts the MAJORITY in the window with least room. Measured over 100
+\ diagonal passes with six slots live: nA = 3, nB = 2, and the
+\ tranche-A draw ended with the play area already on display on 62
+\ of them. See docs/raster-timing.md [DECISION, 2026-09-09].
+  LDX #3                        \ nothing to draw: three fit
+  LDA bandDo
+  BNE sscw_cband
+  LDA colCount
+  BEQ sscw_ccap
+  LDX #2                        \ a column pass: ~4,900 of the window gone
+  BNE sscw_ccap                 \ always
+.sscw_cband
+  LDX #0                        \ a band: the window is spent, and the
+.sscw_ccap                      \ player is pinned to A whatever this says
+  STX satCapA
+
 \ ---- did the view move this pass? ---------------------------
 \ ApplyMove has already run, so oldHX/oldPosY against the live pair
 \ says whether this pass scrolls. The answer rides to bank 6 as BIT 2
@@ -110,6 +149,7 @@
 \ the only reader and writer of either.
 .scnDoorW EQUB 0                \ some door repaints this pass
 .scnAnyW  EQUB 0                \ any writer at all this pass
+.satCapA  EQUB 0                \ sprites window A has room for this pass
 .scnViewMv EQUB 0               \ 4 when the view moved this pass
 .shdCls   EQUB 0                \ SprHitsDraw's class accumulator
 .shdR0    EQUB 0                \ the slot's padded char-row span
@@ -496,103 +536,155 @@
 \ one component, it all goes to A, tranche B is empty and the pass
 \ behaves as it did before any of this.
 .SprAssignTr
-  LDX #SPR_SLOTS-1              \ label: own index, or &FF if inactive
+\ ---- the live slots, each labelled with its own index ---------
+\ AND THE LIST OF THEM (2026-09-10). Every later walk runs over satLive
+\ rather than all eight slots, which is most of what made this ~5,000
+\ cycles a pass: the pair loop tested inactive slots 28 times over, and
+\ each component was counted and then marked by a walk of all eight.
+\ The per-label count and forcing are zeroed here for live slots only,
+\ because a label is always a live slot's own index.
+  LDY #0
+  LDX #0
 .sat_init
   LDA #&FF
   STA sprTr,X
-  LDY sprActive,X
-  BEQ sat_initset
-  TXA
-.sat_initset
   STA sprComp,X
-  DEX
-  BPL sat_init
+  LDA sprActive,X
+  BEQ sat_inext0
+  TXA
+  STA sprComp,X
+  STA satLive,Y
+  INY
+  LDA #0
+  STA satCnt,X
+  STA satFrc,X
+.sat_inext0
+  INX
+  CPX #SPR_SLOTS
+  BNE sat_init
+  STY satN
 
-  LDA #0                        \ merge across every overlapping pair
+\ ---- merge across every overlapping pair -----------------------
+\ THE OVERLAP TEST IS SprOverlapXY's, INLINED instruction for
+\ instruction (the same SBC / BPL / EOR / ADC as SprAbsA, so the same
+\ answer for every byte pair) — three JSR/RTS pairs a pair tested. The
+\ padding and why it is loose: see SPR_OVL_U below.
+  LDA #0
   STA satI
 .sat_i
   LDX satI
-  LDA sprActive,X
-  BEQ sat_inext
-  LDA satI
+  INX
+  CPX satN
+  BCS sat_mdone                 \ no J left above this I
+  STX satJ
+  DEX
+  LDA satLive,X
+  STA satSi                     \ slot I, reloaded for each J
+.sat_j
+  LDX satSi
+  LDY satJ
+  LDA satLive,Y
+  TAY                           \ slot J
+  LDA sprUnit,X
+  SEC
+  SBC sprUnit,Y
+  BPL sat_du
+  EOR #&FF
   CLC
   ADC #1
-  STA satJ
-.sat_j
-  LDA satJ
-  CMP #SPR_SLOTS
-  BCS sat_inext
-  TAY
-  LDA sprActive,Y
-  BEQ sat_jnext
-  LDX satI
-  JSR SprOverlapXY
-  BCC sat_jnext
-  LDX satJ                      \ relabel everything in J's component
+.sat_du
+  CMP #SPR_OVL_U
+  BCS sat_jnext
+  LDA sprScrY,X
+  SEC
+  SBC sprScrY,Y
+  BPL sat_dy
+  EOR #&FF
+  CLC
+  ADC #1
+.sat_dy
+  CMP #SPR_OVL_Y
+  BCS sat_jnext
+  LDA sprComp,Y                 \ they overlap: J's component takes I's
+  STA satOld                    \ label
   LDA sprComp,X
-  STA satOld
-  LDX satI
-  LDA sprComp,X
+  CMP satOld
+  BEQ sat_jnext                 \ already one component
   STA satNew
-  LDX #SPR_SLOTS-1
+  LDY satN
 .sat_merge
+  DEY
+  LDX satLive,Y
   LDA sprComp,X
   CMP satOld
   BNE sat_mnext
   LDA satNew
   STA sprComp,X
 .sat_mnext
-  DEX
-  BPL sat_merge
+  TYA
+  BNE sat_merge
 .sat_jnext
   INC satJ
-  JMP sat_j
-.sat_inext
+  LDA satJ
+  CMP satN
+  BCC sat_j
   INC satI
-  LDA satI
-  CMP #SPR_SLOTS
-  BNE sat_i
+  JMP sat_i
+.sat_mdone
 
-  LDA #0                        \ hand out whole components
+\ ---- each component's size and forcing, in one walk -----------
+\ A label is the index of a slot that is IN that component — a merge
+\ either keeps a component's label or relabels every member away from
+\ it — so satCnt/satFrc/sprTr indexed by label are per-component.
+  LDY satN
+  BEQ sat_aggx
+.sat_agg
+  LDX satLive-1,Y
+  LDA sprCls,X                  \ under this pass's writes? SprScanCls
+  AND #3                        \ answered: bit 0 window-A writers, bit 1
+  STA satOld                    \ window-B. Bit 2 of sprCls[0] is the
+  LDA sprComp,X                 \ view-moved flag, masked off here
+  TAX
+  INC satCnt,X
+  LDA satFrc,X
+  ORA satOld
+  STA satFrc,X
+  DEY
+  BNE sat_agg
+.sat_aggx
+
+\ ---- hand out whole components, in slot order ------------------
+\ The order and every input of the decision are what they were, so
+\ every decision is: the component is met at its lowest live slot,
+\ with satNA/satNB as the components before it left them.
+  LDA #0
   STA satNA
   STA satNB
   STA satI
 .sat_asg
   LDX satI
+  CPX satN
+  BCC sat_asg1
+  JMP sat_done
+.sat_asg1
+  LDA satLive,X
+  TAX
   LDA sprComp,X
-  CMP #&FF
-  BNE sat_live                  \ inactive: in neither tranche. The
-  JMP sat_asgnext               \ player-refuse block pushed the label
-.sat_live                       \ out of branch range (2026-09-01)
+  TAX                           \ the component's label
   LDA sprTr,X
   CMP #&FF
-  BEQ sat_place                 \ its component is already placed
+  BEQ sat_place                 \ not yet placed
   JMP sat_asgnext
 .sat_place
-  LDX satI
-  LDA sprComp,X
-  STA satNew
-  LDA #0
+  STX satNew
+  LDA satCnt,X
   STA satCount
+  LDA satFrc,X
   STA satForce
-  LDX #SPR_SLOTS-1
-.sat_cnt
-  LDA sprComp,X
-  CMP satNew
-  BNE sat_cntnext
-  INC satCount
-  LDA sprCls,X                  \ under this pass's writes? SprScanCls
-  AND #3                        \ (bank 5) answered before we were paged:
-  ORA satForce                  \ bit 0 window-A writers, bit 1 window-B.
-  STA satForce                  \ Bit 2 of sprCls[0] is the view-moved
-                                \ flag, masked off here
-.sat_cntnext
-  DEX
-  BPL sat_cnt
 
   LDA satForce                  \ under a window-A writer it MUST be in
   CMP #3                        \ tranche A (erased while the band and
-  BEQ sat_refuse                \ columns paint); under a window-B one it
+  BEQ sat_refx                  \ columns paint); under a window-B one it
   LSR A                         \ MUST be in tranche B (erased while the
   BCS sat_toA                   \ tiles repaint); under BOTH no tranche
   LDA satForce                  \ is safe and the pass is drawn whole
@@ -609,13 +701,50 @@
   BNE sat_toB
   LDA sprCls+0
   AND #4
-  BNE sat_refuse
+  BNE sat_refx
   BEQ sat_toB                   \ always
+\ The budget block below put sat_refuse out of both branches' reach.
+.sat_refx
+  JMP sat_refuse
+\ ---- otherwise, window A's BUDGET decides ------------------
+\ [DECISION, 2026-09-09] THE TWO WINDOWS ARE NOT INTERCHANGEABLE, so
+\ this is a budget and not a balance. See SprScanCls's satCapA block
+\ for the arithmetic: window A pays for the pass preamble and the
+\ level draw as well as its own tranche, so it holds three sprites on
+\ a quiet pass, two behind a column draw and none behind a band,
+\ while window B holds four. The old rule handed each component to
+\ whichever tranche was emptier, which alternates A, B, A, B, A and
+\ puts the majority in the window with least room.
+\ THE PLAYER IS PINNED TO A EXPLICITLY, which the old rule only did
+\ by accident: slot 0 is the first component looked at, so satNA and
+\ satNB were both 0 and the tie went to A. With a budget that can be
+\ zero the accident stops working, and the guarantee it was standing
+\ in for is load-bearing -- a tranche-B image lags the scroll by one
+\ field, which reads as judder on the one sprite the eye holds
+\ against the screen frame (2026-09-01).
 .sat_bal
-  LDA satNA                     \ otherwise the emptier tranche takes it,
-  CMP satNB                     \ and a tie goes to A, which is how slot 0
-  BCC sat_toA                   \ ends up there
+  LDA sprActive+0
+  BEQ sat_bnply
+  LDA satNew
+  CMP sprComp+0
+  BEQ sat_toA                   \ the player's component, always window A
+.sat_bnply
+  LDA satNA                     \ does it still fit window A's budget?
+  CLC
+  ADC satCount
+  CMP satCapA
+  BCC sat_toA
   BEQ sat_toA
+  LDA satNB                     \ no -- window B, if B has room for it
+  CLC
+  ADC satCount
+  CMP #SPR_CAP_B
+  BCC sat_toB
+  BEQ sat_toB
+  LDA satNA                     \ both over budget: the emptier one, and
+  CMP satNB                     \ a tie goes to B, which is the window
+  BCC sat_toA                   \ that is not also drawing the level
+  BCS sat_toB                   \ always
 .sat_toB
   CLC
   LDA satNB
@@ -630,25 +759,25 @@
   STA satNA
   LDA #0
 .sat_mark
-  STA satWhich
-  LDX #SPR_SLOTS-1
-.sat_mk
-  LDA sprComp,X
-  CMP satNew
-  BNE sat_mknext
-  LDA satWhich
-  STA sprTr,X
-.sat_mknext
-  DEX
-  BPL sat_mk
+  LDX satNew                    \ the component's answer, on its label
+  STA sprTr,X                   \ slot; sat_done copies it to the rest
 .sat_asgnext
   INC satI
-  LDA satI
-  CMP #SPR_SLOTS
-  BEQ sat_done                  \ the component walk grew past a branch's
-  JMP sat_asg                   \ reach when the forcing test went in
+  JMP sat_asg
 
 .sat_done
+  LDY satN                      \ every member takes its label's answer
+  BEQ sat_ret
+.sat_fill
+  LDX satLive-1,Y
+  LDA sprComp,X
+  TAX
+  LDA sprTr,X
+  LDX satLive-1,Y
+  STA sprTr,X
+  DEY
+  BNE sat_fill
+.sat_ret
   LDA #1                        \ always: see the note on balance above
   RTS
 .sat_refuse
@@ -656,42 +785,22 @@
   RTS                           \ sprTr is half-written but a whole pass
                                 \ never reads it
 
-\ ============================================================
-\ SprOverlapXY — slots X and Y close enough to share a tranche
-\ ============================================================
-\ Deliberately loose — 7 wide plus 2 units of a pass's movement, and 21
-\ scanlines plus 8 — because it has to cover where the other tranche was
-\ drawn LAST pass as well as this one.
+\ The overlap distances. Deliberately loose — 7 wide plus 2 units of a
+\ pass's movement, and 21 scanlines plus 8 — because the test has to
+\ cover where the other tranche was drawn LAST pass as well as this one.
+\ (SprOverlapXY and SprAbsA, which held this test, were inlined into
+\ the pair loop above on 2026-09-10 and are gone.)
 SPR_OVL_U = SPR_W + 2
 SPR_OVL_Y = SPR_H + 8
 
-.SprOverlapXY
-  LDA sprUnit,X
-  SEC
-  SBC sprUnit,Y
-  JSR SprAbsA
-  CMP #SPR_OVL_U
-  BCS sov_no
-  LDA sprScrY,X
-  SEC
-  SBC sprScrY,Y
-  JSR SprAbsA
-  CMP #SPR_OVL_Y
-  BCS sov_no
-  SEC
-  RTS
-.sov_no
-  CLC
-  RTS
-
-\ |A|, which the overlap test wants both ways round.
-.SprAbsA
-  BPL sab_x
-  EOR #&FF
-  CLC
-  ADC #1
-.sab_x
-  RTS
+\ SprAssignTr's working bytes, beside it for the reason scnDoorW and its
+\ neighbours are beside SprScanCls: this bank is RAM, nothing else reads
+\ them, and the code image has 60 bytes left.
+.satLive  SKIP SPR_SLOTS        \ the live slots, ascending
+.satCnt   SKIP SPR_SLOTS        \ per label: members
+.satFrc   SKIP SPR_SLOTS        \ per label: the OR of their class bits
+.satN     EQUB 0                \ how many are live
+.satSi    EQUB 0                \ slot I of the pair loop
 
 IF DEBUG_TRCHK
 \ ============================================================

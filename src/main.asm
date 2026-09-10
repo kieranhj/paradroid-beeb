@@ -1676,6 +1676,7 @@ ENDIF
 \ cbd_end clears both; so does this.
 .ml_modalend
   LDA #0
+  STA prepDone                 \ the prep belonged to the pass before
   STA disruptorCnt
   STA disrFlash
   JMP ml_passend
@@ -1774,140 +1775,27 @@ ENDIF
 \
 \ No edge latch. Both writes are idempotent, and once overPhase is set
 \ the game-over arm above takes the pass before this is reached again.
-\ THE KEYS AND THE WALLS MOVED TO THE DISPLAY PERIOD (Step 4,
-\ 2026-09-01): ReadKeys/CalcSpeed/CheckWalls ran in the PREVIOUS
-\ pass's display period, against exactly the position this ApplyMove
-\ moves from, so the clip is not stale — see the pipeline block above
-\ DroidsUpdate, and the ESCAPE test that moved with it. What that
-\ bought is ~5,000 cycles at the front of window A, which the level
-\ draw's fire-1 latch budget needed; what it costs is one pass (40 ms)
-\ of input latency, the same pipeline the droid AI and the anim scan
-\ already ride. ReframeView zeroes the speeds at every seam that
-\ moves the player without a pass — a transfer, a lift, a deck load —
-\ so the first pass after a modal exit applies rest, not momentum.
-  JSR ApplyMove
-
 \ ============================================================
-\ Fire — and the lift gets first refusal on the same key
+\ The pass's PREP ran at the end of the LAST pass
 \ ============================================================
-\ L DOES DOUBLE DUTY, which is what the C64 does too: there, fire drives
-\ the moveMode machine and DoCharUnder gates the lift countdown on it.
-\ We keep lift.asm's explicit trigger instead, so the two have to be told
-\ apart here — the lift takes the press when there is a lift to take it,
-\ and the weapon gets it otherwise.
-\
-\ THIS BLOCK MOVED UP FROM BELOW THE LEVEL DRAW. DoFire activates slot 7,
-\ and the tranche assignment in SprSplitOK has to see it, so everything
-\ that changes slot state must happen before the erase — the same reason
-\ the movement is up here. Nothing in LiftEnter/LiftExit draws; the
-\ deck-hop keys, which do, stay where they were.
-  LDA overPhase                 \ the game is ending: the C64's loop calls
-  BNE ml_lDone                  \ RunGame and nothing else, so no fire, no
-                                \ moveMode and no bullet. SLOT 7 IS THE
-                                \ BULLET'S and the cloud lights it — leave
-                                \ MovePlyFire running here and it puts the
-                                \ slot out again on the next pass
+\ ApplyMove, the fire block, AnimTick and SprSplitOK are PassPrep now,
+\ and it runs below the tranche-B draws, in the second field's display
+\ period — not here in window A, where it cost 6,720 cycles measured
+\ (SprSplitOK alone 5,185) ahead of the first restore. That is more
+\ than a sprite's worth of the window: docs/raster-timing.md, "PassPrep
+\ leaves window A" (2026-09-10).
+\ prepDone says the last pass got that far. Nothing reaches the end of
+\ a pass that takes a modal arm — they all leave through ml_modalend,
+\ which clears it — so the first pass after the console, a transfer,
+\ the lift, an information screen or a game start preps HERE instead,
+\ the old way, and pays the old cost once.
+  LDA prepDone
+  BNE ml_prepped
+  JSR PassPrep
+.ml_prepped
   LDA #0
-  STA fireDown
-  LDX #CTL_FIRE
-  JSR KeyDownIx
-  BNE ml_lUp
-  LDA #1 : STA lDown
-  LDA prevRet
-  BNE ml_lHeld
-  LDA #1 : STA prevRet          \ the press edge
-\ liftMode can only be 0 here: with the view up the pass short-circuits
-\ at the lift arm long before this block, so the old exit-on-fire arm is
-\ gone — leaving the lift is LiftViewTick's commit now.
-  JSR LiftEnter
-  LDA liftMode                  \ did it take? if not, the press is the gun's
-  BEQ ml_lHeld
-  LDA #1 : STA fireEaten
-  JMP ml_lDone
-.ml_lHeld
-  LDA fireEaten
-  BNE ml_lDone
-  LDA liftMode
-  BNE ml_lDone
-  LDA #1 : STA fireDown
-  JMP ml_lDone
-.ml_lUp
-  LDA #0
-  STA prevRet
-  STA fireEaten
-  STA lDown
-.ml_lDone
-
-  LDA overPhase
-  BNE ml_nofire
-
-\ ============================================================
-\ SPACE — the second way into transfer mode
-\ ============================================================
-\ THE C64 HAS ONE BUTTON and DoMoveMode ($31B9) has to divide it three
-\ ways, which is what the settle state is for: press fire WITH a
-\ direction and you draw the weapon, press it with NONE and eight
-\ passes later you are in transfer mode. That works on a joystick and
-\ it is a nuisance on a keyboard — you must stop dead, hold L, and wait
-\ a third of a second before touching a droid means anything.
-\
-\ So a second button, KC 2026-08-26: SPACE goes STRAIGHT to transfer
-\ mode and holds it, direction or no direction. SPACE is only its
-\ DEFAULT since 2026-08-30 — this is CTL_XFER, the sixth redefinable
-\ control, and the briefing's CTRL+R screen can move it. The settle delay exists
-\ only to disambiguate a single button and a dedicated one has nothing
-\ to disambiguate, so it is skipped rather than reproduced — see
-\ docs/layer-7-combat.md [DECISION 12].
-\
-\ IT FORCES THE STATE AND THE BUTTON TOGETHER, and both halves are
-\ needed: DoMoveMode's mm_transfer arm holds moveMode at 0 only while
-\ fireDown is set and drops to Mobile the moment it is not, so setting
-\ the mode alone would last exactly one pass. Setting fireDown is safe
-\ — DoMoveMode is its only reader, and with the mode already 0 the arm
-\ it lands in never calls DoFire, so holding SPACE cannot shoot.
-\
-\ ABOVE DoMoveMode and BELOW the L block, which is the only place it
-\ can go: L writes fireDown from scratch every pass, so anything that
-\ wants to add to it must come after, and DoMoveMode must see the
-\ result. INSIDE the overPhase guard with the rest of the fire
-\ machinery — a corpse does not transfer either.
-\
-\ The movement is untouched. ReadKeys/CalcSpeed/ApplyMove have already
-\ run by here, so ignoring the direction costs the player nothing this
-\ pass; he keeps walking and simply enters transfer mode while doing it.
-  LDX #CTL_XFER
-  JSR KeyDownIx
-  BNE ml_noxfb
-  LDA #0                        \ MM_TRANSFER, spelled out: combat.asm's
-  STA moveMode                  \ constants are assembled after this point
-  LDA #1                        \ and beebasm resolves them in file order
-  STA fireDown
-.ml_noxfb
-
-  JSR DoMoveMode                \ and DoFire, when it decides to
-  JSR MovePlyFire
-.ml_nofire
-
-\ ============================================================
-\ Erase, and decide first whether the pool can be split
-\ ============================================================
-\ THE MOVEMENT RUNS BEFORE THE ERASE, which it did not used to. It is
-\ what decides how much work DoRedraws has, and that decides whether
-\ the pool may be split this pass — a question that has to be answered
-\ before anything is restored, because the two paths erase different
-\ sets of slots. Nothing is lost by the order: the restore replays the
-\ addresses the DRAW recorded, so it does not care where anything has
-\ moved to since.
-\ ---- the animated tiles, ahead of every draw ----------------
-\ AnimTick rotates the recharger's four characters inside the charset,
-\ so it has to run before anything reads it — and its answer is whether
-\ there is buffer work to do, which SprSplitOK needs before it decides.
-\ AnimPaint, below, is the half that writes; AnimScanPass, after the
-\ draw, is the half that COSTS — 10,060 cycles of the window until it
-\ was moved out of it. See docs/raster-timing.md.
-  JSR AnimTick
-
-  JSR SprSplitOK                \ A = sprSplit, and one subtract maps it
+  STA prepDone
+  LDA sprSplit                  \ one subtract maps it
 IF DEBUG_DRAW
   PHA
   LDA #DBG_SPR : JSR DbgSetBg
@@ -1955,8 +1843,8 @@ ENDIF
 \ the arm calls LoadDeck from inside its own bank now rather than
 \ across. Layer-15 DECISION 1.
 \
-\ L was handled at the top of the pass, where it has to be: DoFire
-\ activates a sprite slot and SprSplitOK must see it.
+\ L is handled in PassPrep, at the end of the pass before, where it has
+\ to be: DoFire activates a sprite slot and SprSplitOK must see it.
 IF DEBUG_DECK
   JSR DbgDeck4
 ENDIF
@@ -2011,7 +1899,7 @@ ENDIF                           \ 2026-08-20 it did not: the tint set before
 \ IT MOVED BELOW THE TRANCHE-B BLOCK (2026-09-01). It used to run
 \ here, in the gap between the band draw and the droid AI where its
 \ borrowed `maprow` is dead — but on a split pass window B now paints
-\ the list SprScanCls classified at the top of the pass, so rebuilding
+\ the list SprScanCls classified in the LAST pass's PassPrep, so rebuilding
 \ it before window B would paint tiles the forcing never saw. Below
 \ the tranche-B draws maprow is just as dead (the next band draw is
 \ next pass's), and a modal arm skipping the rebuild costs nothing:
@@ -2067,9 +1955,11 @@ ENDIF                           \ 2026-08-20 it did not: the tint set before
 \ ---- the movement pipeline, for the NEXT pass ---------------
 \ Step 4 (2026-09-01): ReadKeys/CalcSpeed/CheckWalls write no buffer,
 \ so they belong here, in the display period, not in window A. They
-\ compute the speeds the NEXT pass's ApplyMove applies — and because
-\ ApplyMove has already run this pass, CheckWalls clips against the
-\ position the player will move FROM, so the clip is never stale.
+\ compute the speeds PassPrep's ApplyMove applies at the end of this
+\ pass — and nothing moves the player between here and there, so
+\ CheckWalls clips against the position he will move FROM, so the
+\ clip is never stale. (Until 2026-09-10 that ApplyMove ran at the
+\ top of the NEXT pass; the relationship is the same.)
 \ Z / X left-right, K / M up-down; the keys feed a direction pair and
 \ the pair feeds an accelerating speed, 0-7 px a pass.
 \ DoCharUnder, below, reads the plyCX/plyCY this CheckWalls leaves —
@@ -2217,6 +2107,13 @@ ENDIF
   \ computed against. See the note above DroidsUpdate.
   JSR AnimScanPass
 
+\ ---- and the NEXT pass's prep, here in the display period ---
+\ Below every read of this pass's view and tranches — the tranche-B
+\ draw used both — and above ml_afterdraw, which every modal arm jumps
+\ past. See the prepDone block at the top of the pass.
+  JSR PassPrep
+  INC prepDone
+
 IF DEBUG_DRAW
   JSR DbgDeckBg
 ENDIF
@@ -2255,6 +2152,160 @@ ENDIF                           \ other close: no band may outlive a pass
   \ 16.7 Hz for as long as the load lasts.
   JSR WaitNextPass
   JMP mainloop
+
+\ ============================================================
+\ PassPrep — everything the NEXT pass's window A must know first
+\ ============================================================
+\ Called from the end of the pass (the usual case) and from the top of
+\ one whose predecessor did not get there. Every input it reads is
+\ settled by then: the speeds (CalcSpeed/CheckWalls, earlier in this
+\ pass), the droid slots (DroidsUpdate, earlier in this pass), the door
+\ probes and the animated-tile list (AnimScanPass, just above). The
+\ relationships did not change, only the side of the wait they are on:
+\ CheckWalls still clips the position this ApplyMove moves from, the
+\ bullet still moves after the view, and SprSplitOK still sees DoFire.
+\ SetCRTCStart and DoRedraws stay in window A — they are what use what
+\ ApplyMove decides, and the IRQ reads only what SetCRTCStart parks.
+.PassPrep
+
+\ THE KEYS AND THE WALLS MOVED TO THE DISPLAY PERIOD (Step 4,
+\ 2026-09-01): ReadKeys/CalcSpeed/CheckWalls run earlier in the same
+\ pass as this call now (the previous pass's, when this sat at the top
+\ of window A), against exactly the position this ApplyMove
+\ moves from, so the clip is not stale — see the pipeline block above
+\ DroidsUpdate, and the ESCAPE test that moved with it. What that
+\ bought is ~5,000 cycles at the front of window A, which the level
+\ draw's fire-1 latch budget needed; what it costs is one pass (40 ms)
+\ of input latency, the same pipeline the droid AI and the anim scan
+\ already ride. ReframeView zeroes the speeds at every seam that
+\ moves the player without a pass — a transfer, a lift, a deck load —
+\ so the first pass after a modal exit applies rest, not momentum.
+  JSR ApplyMove
+
+\ ============================================================
+\ Fire — and the lift gets first refusal on the same key
+\ ============================================================
+\ L DOES DOUBLE DUTY, which is what the C64 does too: there, fire drives
+\ the moveMode machine and DoCharUnder gates the lift countdown on it.
+\ We keep lift.asm's explicit trigger instead, so the two have to be told
+\ apart here — the lift takes the press when there is a lift to take it,
+\ and the weapon gets it otherwise.
+\
+\ THIS BLOCK MOVED UP FROM BELOW THE LEVEL DRAW. DoFire activates slot 7,
+\ and the tranche assignment in SprSplitOK has to see it, so everything
+\ that changes slot state must happen before the decision — which is
+\ below, and the erase it governs is the NEXT pass's window A. Nothing in LiftEnter/LiftExit draws; the
+\ deck-hop keys, which do, stay where they were.
+  LDA overPhase                 \ the game is ending: the C64's loop calls
+  BNE ml_lDone                  \ RunGame and nothing else, so no fire, no
+                                \ moveMode and no bullet. SLOT 7 IS THE
+                                \ BULLET'S and the cloud lights it — leave
+                                \ MovePlyFire running here and it puts the
+                                \ slot out again on the next pass
+  LDA #0
+  STA fireDown
+  LDX #CTL_FIRE
+  JSR KeyDownIx
+  BNE ml_lUp
+  LDA #1 : STA lDown
+  LDA prevRet
+  BNE ml_lHeld
+  LDA #1 : STA prevRet          \ the press edge
+\ liftMode can only be 0 here: with the view up the pass short-circuits
+\ at the lift arm long before this block, so the old exit-on-fire arm is
+\ gone — leaving the lift is LiftViewTick's commit now.
+  JSR LiftEnter
+  LDA liftMode                  \ did it take? if not, the press is the gun's
+  BEQ ml_lHeld
+  LDA #1 : STA fireEaten
+  JMP ml_lDone
+.ml_lHeld
+  LDA fireEaten
+  BNE ml_lDone
+  LDA liftMode
+  BNE ml_lDone
+  LDA #1 : STA fireDown
+  JMP ml_lDone
+.ml_lUp
+  LDA #0
+  STA prevRet
+  STA fireEaten
+  STA lDown
+.ml_lDone
+
+  LDA overPhase
+  BNE ml_nofire
+
+\ ============================================================
+\ SPACE — the second way into transfer mode
+\ ============================================================
+\ THE C64 HAS ONE BUTTON and DoMoveMode ($31B9) has to divide it three
+\ ways, which is what the settle state is for: press fire WITH a
+\ direction and you draw the weapon, press it with NONE and eight
+\ passes later you are in transfer mode. That works on a joystick and
+\ it is a nuisance on a keyboard — you must stop dead, hold L, and wait
+\ a third of a second before touching a droid means anything.
+\
+\ So a second button, KC 2026-08-26: SPACE goes STRAIGHT to transfer
+\ mode and holds it, direction or no direction. SPACE is only its
+\ DEFAULT since 2026-08-30 — this is CTL_XFER, the sixth redefinable
+\ control, and the briefing's CTRL+R screen can move it. The settle delay exists
+\ only to disambiguate a single button and a dedicated one has nothing
+\ to disambiguate, so it is skipped rather than reproduced — see
+\ docs/layer-7-combat.md [DECISION 12].
+\
+\ IT FORCES THE STATE AND THE BUTTON TOGETHER, and both halves are
+\ needed: DoMoveMode's mm_transfer arm holds moveMode at 0 only while
+\ fireDown is set and drops to Mobile the moment it is not, so setting
+\ the mode alone would last exactly one pass. Setting fireDown is safe
+\ — DoMoveMode is its only reader, and with the mode already 0 the arm
+\ it lands in never calls DoFire, so holding SPACE cannot shoot.
+\
+\ ABOVE DoMoveMode and BELOW the L block, which is the only place it
+\ can go: L writes fireDown from scratch every pass, so anything that
+\ wants to add to it must come after, and DoMoveMode must see the
+\ result. INSIDE the overPhase guard with the rest of the fire
+\ machinery — a corpse does not transfer either.
+\
+\ The movement is untouched. ReadKeys/CalcSpeed/ApplyMove have already
+\ run by here, so ignoring the direction costs the player nothing this
+\ pass; he keeps walking and simply enters transfer mode while doing it.
+  LDX #CTL_XFER
+  JSR KeyDownIx
+  BNE ml_noxfb
+  LDA #0                        \ MM_TRANSFER, spelled out: combat.asm's
+  STA moveMode                  \ constants are assembled after this point
+  LDA #1                        \ and beebasm resolves them in file order
+  STA fireDown
+.ml_noxfb
+
+  JSR DoMoveMode                \ and DoFire, when it decides to
+  JSR MovePlyFire
+.ml_nofire
+
+\ ============================================================
+\ Decide whether the NEXT pass's pool can be split
+\ ============================================================
+\ The erase this governs is the next pass's, at the top of window A.
+\ THE MOVEMENT RUNS BEFORE THE DECISION, which it did not used to. It is
+\ what decides how much work DoRedraws has, and that decides whether
+\ the pool may be split this pass — a question that has to be answered
+\ before anything is restored, because the two paths erase different
+\ sets of slots. Nothing is lost by the order: the restore replays the
+\ addresses the DRAW recorded, so it does not care where anything has
+\ moved to since.
+\ ---- the animated tiles, ahead of every draw ----------------
+\ AnimTick rotates the recharger's four characters inside the charset,
+\ so it has to run before anything reads it — and its answer is whether
+\ there is buffer work to do, which SprSplitOK needs before it decides.
+\ AnimPaint, below, is the half that writes; AnimScanPass, after the
+\ draw, is the half that COSTS — 10,060 cycles of the window until it
+\ was moved out of it. See docs/raster-timing.md.
+  JSR AnimTick
+
+  JSR SprSplitOK                \ A = sprSplit, and one subtract maps it
+  RTS
+
 
 .loadspr                        \ shared: BootBanks' bank-5 load and the
   EQUS "LOAD PARASPR"           \ briefing exit's reload of the same file
@@ -3396,6 +3447,7 @@ ASSERT FRAME_LOCK >= 2
   JMP WaitUntilField
 
 .wufTarget EQUB 0
+.prepDone  EQUB 0                \ 1: PassPrep ran at the end of the last pass
 
 \ ============================================================
 \ IrqHandler — front of the IRQ1V chain

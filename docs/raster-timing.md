@@ -989,3 +989,224 @@ into the displayed part, corrected to us 51). Reality had drifted about 6 us lat
 arithmetic since — the phase is a property of the whole IRQ path, and that path has changed.
 **Take the phase from the emulator, not from the arithmetic.** The breakpoint-and-`elapsed_cycles`
 method above is cheaper than `T1_PROBE` and gives a number rather than a step to eyeball.
+
+# The window-A budget: the two windows are not the same size — 2026-09-09
+
+Reopened on KC's ask: "do a pass on the two field draw routines. make sure that the sprite tranche
+plotting across the two fields is timed to avoid sprite flicker as much as possible."
+
+## What window A actually costs, measured
+
+Zero-byte harness: execute breakpoints on the fire-3 `INC fieldCount` (`&18ED`, where window A
+opens) and on the `JSR` sites in `mainloop`, `elapsed_cycles` read at each. Seven slots live, six
+drawn, three in each tranche, on a pass with nothing for the level draw to do. Offsets from the
+window opening; it shuts at 24,576.
+
+| offset | phase | cost |
+|---:|---|---:|
+| 0 → 6,720 | `ApplyMove`, the fire block, `AnimTick`, **`SprSplitOK`** | 6,720 |
+| 6,720 → 13,758 | `SprRestoreTr(A)`, three sprites, + `SetCRTCStart` | 7,038 |
+| 13,758 → 14,441 | `DoRedraws` (nothing to draw), the debug keys, `SprAnimateAll` | 683 |
+| 14,441 → **26,454** | `SprDrawTr(A)`, three sprites | 12,013 |
+| **24,576** | **the window shuts — the draw is 1,878 cycles LATE** | |
+
+So, against the figures this file has carried since 2026-08-20:
+
+| | old figure | **measured 2026-09-09** |
+|---|---:|---:|
+| restore + draw, per sprite | 5,182 | **6,350** |
+| fixed overhead ahead of the draw | ~4,900 | **7,403** |
+
+**Window A therefore holds (24,576 − 7,403 − level draw) / 6,350 sprites: two on a quiet pass, one
+behind a column draw (~4,900), none behind a full-width band (~19,200).** Window B holds the same
+24,576 with only `DoorAnimPaint` in front of it — **four**.
+
+## [DECISION, 2026-09-09] The balance becomes a budget
+
+`SprAssignTr` handed each overlap component to whichever tranche was **emptier**, tie to A. With
+five or more components that alternates A, B, A, B, A and puts the **majority in the window with
+least room**. Measured over 100 diagonal passes with six slots live and five separate components:
+`nA` = 3, `nB` = 2, and the tranche-A draw ended with the play area already on display on **62 of
+them**.
+
+The rule now asks whether the component still fits window A's budget for this pass — `satCapA`,
+computed once in `SprScanCls` from `bandDo`/`colCount` — and sends it to window B if not, falling
+back to the emptier tranche only when both are over. `SPR_CAP_B` is 4: 24,576/6,350 is 3.87, and
+rounding **up** is right, because a component that will not fit B goes back to A where it costs
+1,878 cycles of overrun against the 824 it costs as B's fourth.
+
+**The player is pinned to tranche A explicitly.** The old rule only did it by accident — slot 0 is
+the first component looked at, so `satNA` and `satNB` were both 0 and the tie went to A. A budget
+that can be zero breaks the accident, and the guarantee it was standing in for is load-bearing: a
+tranche-B image lags the scroll by one field, which reads as judder on the one sprite the eye holds
+against the screen frame (the 2026-09-01 entry above).
+
+Verified by driving `SprAssignTr` directly in jsbeeb — break after `JSR SprScanCls` inside
+`SprSplitOK`, poke six active slots 10 units apart (no overlaps, so six components of one), let
+`SprSplitDecide` run, read `sprTr` at `JSR PgData`:
+
+| | `sprTr` | |
+|---|---|---|
+| old rule | `0 1 0 1 0 1` | nA = 3, nB = 3 |
+| **new rule** | `0 0 1 1 1 1` | **nA = 2, nB = 4** |
+
+Cost: **63 bytes of bank 6** (401 free → 338), nothing in the code image, ~30 cycles a component.
+Frame rate unchanged — `gameTick` advanced 50 over 100 fields, exactly 25.0 Hz. The overlap
+invariant is untouched by construction: `sat_mk` still marks every member of a component with one
+tranche, and only *which* tranche changed. (`DEBUG_TRCHK` could not be used to prove it — it does
+not assemble, blowing bank 6's `spr2_end` assert, and did not before this change either.)
+
+## What this does NOT fix, and both are bigger
+
+The budget only governs the components the *balance* used to. Two things override it, and in a real
+chase they usually do:
+
+1. **A full-width band forces every sprite it touches into tranche A.** The band paints in window A
+   and is latch-bound there (the withdrawn Step 3 above), so a sprite standing over it must be
+   erased while it lands. Measured on a clustered crowd scrolling diagonally: window A's work
+   reaches ~42,000 cycles — **more than a whole field** — and 78 of 100 tranche-A draws ended a
+   full field late. The budget is a no-op on those passes; patching the old rule back in over the
+   same 100 passes gave 79.
+2. **The player's own overlap component is often three sprites.** Droids only get a sprite slot
+   when they are in line of sight, which in these corridors means they are in the same room as the
+   player — so they merge with him, and the pin drags the whole component into A. `sprComp` read
+   `0 1 0 FF 4 0 6 FF` on the crowd measured above: a component of three, pinned, and window A over
+   by exactly the 1,878 the table predicts. The overlap pads (`SPR_OVL_U` = 12 px, `SPR_OVL_Y` = 8
+   scanlines) are already **tighter** than a pass's relative movement of two sprites (up to 14
+   either way), so there is nothing to reclaim by narrowing them.
+
+## Two levers left, both KC's call — NOT built
+
+- **`SprSplitOK` costs 5,185 cycles inside window A** — 21% of the window, 0.8 of a sprite, and the
+  largest thing in it that draws nothing. `SprScanCls` is ~180 of that with no writers; the rest is
+  `SprAssignTr`'s O(n²) merge and per-component walks (measured 4,833–5,002 with six live slots).
+  It cannot simply move: `bandDo`, `bandRc`, `colFirst` and `colCount` are written **inside
+  `ApplyMove`** (player.asm, `am_norow`), and every geometry test reads the view `ApplyMove` has
+  just produced. **But `ApplyMove` could move with it** — its input speeds are already pipelined
+  from the end of the previous pass — putting both in the display period after window B and leaving
+  window A to open on the restore. That is worth ~6,000 cycles: **a whole extra sprite in window A**
+  in the common case, which is more than everything above. It is a change to the pass pipeline and
+  wants agreeing first.
+- **Making `SprAssignTr` itself cheaper.** Eight slots make the naive algorithm "free" only in code
+  size; at ~5,000 cycles a pass it is not free in the window. Same 0.8 sprite, smaller blast radius
+  than moving the pipeline.
+
+# PassPrep leaves window A — 2026-09-10
+
+KC approved the first lever above ("go ahead with the SprSplitOK change"). `ApplyMove`, the fire
+block (L, `LiftEnter`, SPACE, `DoMoveMode`, `MovePlyFire`), `AnimTick` and `SprSplitOK` are one
+routine now, `PassPrep` (main.asm), called **at the end of the pass** — below the tranche-B draws
+and `AnimScanPass`, above `ml_afterdraw` — so they run in the second field's display period and
+window A opens on the tranche-A restore.
+
+## Why it is safe
+
+Every relationship between the moved block and its neighbours is unchanged; only the side of the
+wait it sits on moved.
+
+- `CheckWalls` still clips the position `ApplyMove` moves from — it now runs earlier in the *same*
+  pass, and nothing moves the player in between.
+- `SprSplitOK` still sees `DoFire`'s slot 7 and every slot `DroidsUpdate` changed; it still reads
+  `bandDo`/`colCount`, which `ApplyMove` writes (player.asm `am_norow`).
+- The tranche-B draw and `DoorAnimPaint` still use this pass's view and tranches: `PassPrep` runs
+  after them.
+- `SetCRTCStart` and `DoRedraws` stay in window A. The IRQ reads only what `SetCRTCStart` parks
+  (`crtcHi/Lo`, `pline`), never `line`, `scrollS` or `mapHX`, so the view changing during the
+  field-2 display is invisible — checked in rupture.asm and bufcore.asm.
+- The restore replays the draw's recorded addresses, so it never cared where anything had moved.
+
+**The one new hazard is a pass that does not reach the end.** Every modal arm (console, transfer,
+lift view, information screens, game-over wash, and the three mid-pass starts) leaves through
+`ml_modalend`, which never reaches `PassPrep`. So `prepDone` records that the last pass got there;
+`ml_modalend` clears it, and a pass that finds it clear runs `PassPrep` at the top, the old way —
+the first pass after any modal screen, and a game's first pass, pay the old cost once.
+
+Cost: **27 B of code image** (`code_end` `&2FC4`, 60 free), nothing in the banks.
+
+## Measured
+
+**Same 100 passes, same machine state, three sprites in three components, scrolling diagonally** —
+the old ordering reproduced in-session by NOPing the end-of-pass `JSR PassPrep` / `INC prepDone`,
+so every pass took the top fallback. Bins are field-aware (`fieldCount − passF0`), because with the
+prep gone a one-sprite tranche A can finish inside rupture state 3 legitimately:
+
+| | old (prep at top of window A) | **new** |
+|---|---:|---:|
+| tranche-A draw on time | 64 | **71** — 17 of them inside the first 8,192 cycles |
+| tranche-A draw into the display | 31 | **25** |
+| tranche-A draw a whole field late | 5 | **4** |
+| tranche-B draw late | 10 | **6** |
+| pass rate (`gameTick`, 100 over 200 fields) | 25.0 Hz | **25.0 Hz** |
+
+The window-A walk (breakpoints on the fire-3 `INC fieldCount` and the `mainloop` JSRs, a band
+pass, nA = 2):
+
+| offset from window A | new | old, same crowd |
+|---|---:|---:|
+| tranche-A restore starts | **133** | 6,720 |
+| `DoRedraws` entered | **3,946** | ~13,758 |
+| tranche-A draw ends | **26,811** | ~33,500 (predicted: +6,700) |
+
+The level draw gets ~9,800 cycles more before the fire-1 latch. What is still late is the band
+passes: a band (~13,800 here, ~19,200 on a full diagonal) plus two sprites overruns the window
+whatever the prep costs.
+
+**The window-A budget was re-set to match** — `satCapA` 3/2/0 (was 2/1/0), because 6,720 of the
+7,403 cycles of overhead it was sized against are gone. Re-measured: restore + draw ~6,070 a
+sprite, ~830 of fixed overhead, so (24,576 − 830 − level draw) / 6,070 = 3.9 quiet, 3.1 behind a
+column (rounded down to 2), under 1 behind a band.
+
+## Verified
+
+- **Buffer oracle: 0 of 10,240** at `mapHX` 4 / `line` 3 and at `mapHX` 18 / `line` 7, both after
+  diagonal legs, the three draw sites NOPed, both dumps inside one pass. **Odd `mapHX` is not
+  covered** — the corridor kept settling on even units. A third attempt read 54 of 10,240, all in
+  the player's footprint: that run had the player walked *with the draws already NOPed*, so the
+  restores replayed a stale saved background into a scrolled buffer — the pitfall the recipe warns
+  about (`SprRestoreSlot` never clears `sprSaved`), not the change. Redone in the recipe's order it
+  read 0.
+- **The modal seam**: ESCAPE → explosion → game-over wash → high-score entry → title → new game →
+  001 screen → play. `prepDone` read 0 through the wash, the entry and the title; the new game drew
+  normally; and an execute breakpoint on the top-of-pass `JSR PassPrep` stayed silent over 100
+  frames of normal play afterwards — the end-of-pass call carries every pass.
+- **Not exercised**: the console, the transfer game and the lift. All three leave through the same
+  `ml_modalend` the game-over arm and the 001 screen do, but they were not driven.
+
+# SprAssignTr made cheaper — 2026-09-10
+
+The second lever from "The window-A budget". Since `PassPrep` it no longer runs in window A, but it
+is still the largest thing in `PassPrep` (the field-2 tail, which a four-sprite tranche B already
+fills) and it is back in window A on the first pass after every modal screen.
+
+**Where the ~5,000 cycles went**: the pair loop tested all 28 slot pairs and skipped the inactive
+ones one at a time; every component was then counted by a walk of all eight slots and marked by
+another; and each pair tested cost three JSR/RTS pairs (`SprOverlapXY`, `SprAbsA` twice).
+
+**What changed** (src/sprsplit.asm), with the decision block — forcing, the player pin, the budget
+— left verbatim:
+
+- the live slots are listed once (`satLive`), and every later walk runs over the list;
+- the overlap test is inlined, the same `SBC`/`BPL`/`EOR`/`ADC` instructions `SprAbsA` used, so the
+  same answer for every byte pair; `SprOverlapXY` and `SprAbsA` are gone;
+- one walk gathers each component's size and class bits into `satCnt`/`satFrc`, indexed by label;
+- the answer is stored once on the component's label slot and one closing walk copies it to the
+  members. That is sound because a label is always the index of a slot IN the component: a merge
+  either keeps a component's label or relabels every member away from it.
+
+Components are met in the same order with the same inputs, so every decision is the same one.
+
+**Verified off-machine against the real binaries**: both builds' `PARA` and `PARSPR2` loaded into
+py65, 20,000 random slot states — every live count, clustered crowds, in-game ranges and arbitrary
+bytes, random class bits, view-moved flag and budget — `SprAssignTr` run to its RTS in each.
+**0 mismatches** in A, `satNA`/`satNB` and (on a split) every live slot's `sprTr`. Cycles:
+
+| live slots | old mean | **new mean** | old worst | **new worst** |
+|---:|---:|---:|---:|---:|
+| 1 | 1,140 | **485** | 1,299 | **528** |
+| 3 | 1,965 | **1,060** | 2,631 | **1,306** |
+| 6 | 3,496 | **2,396** | 5,651 | **3,410** |
+| 8 | 4,931 | **3,707** | 9,606 | **5,442** |
+
+Cost: 53 B of bank 6 (26 of them the new tables, beside the code like `scnDoorW`), 286 left.
+The harness is worth keeping for the next change here: two loose-file builds (`beebasm` with no
+`-do`, in a scratch copy of the tree) and a symbol dump are all it needs.
