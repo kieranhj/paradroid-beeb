@@ -989,6 +989,25 @@ spaces went with the shrink they covered, so `hsIni` is three bytes. **Bank 7: 3
 (buffer rows 13-14) dumped before and after committing the first initial. Only columns 33-34 —
 slot 1, dot → A — changed; slot 0 (31-32) and slot 2's dot and its pad (35-36) are byte-identical.
 
+**[DECISION 19]** **The initials are typed** (KC, 2026-09-10; issue #16, from hexwab's #4). A
+deviation: `GetInitial` (`$E56D`) walks the alphabet on the stick and commits on fire, and the port
+put that on the game's own controls — which, with the default keys, *are* letters (Z X K M L), so a
+picker and typing cannot share them. KC chose **typing alone**: any letter fills the slot and moves
+on, DELETE steps back, RETURN ends early, and the three slots start as dots. `HsType` replaces the
+`HsGet` loop; `HsScan` reads a fixed 28-key table (A-Z, DELETE, RETURN — fixed keys, not `keyTab`'s,
+because a letter is a letter whatever the controls are bound to), and every accepted key waits for
+its own release, `$E5A2`'s shape. **Nothing is read until every key is up**: the key that ended the
+game may still be down, and with the defaults it is a letter. `hsSelFor` starts as spaces, so
+RETURN files spaces for what is left. The picker's repeat delay (`HsWait`, `HS_DELAY`) went with
+it, and so did layer-12 [DECISION 4] — Redux's `hsPrev` seeded the walk with the last initials, and
+there is no walk now. **The key numbers were measured**, one `key_down` per key in jsbeeb, and
+agree with the ten `KEY_` constants `main.asm` already carried. **Bank 7: 25 bytes** of tail,
+`&BF7E` → `&BF97`; `hsPrev`'s three bytes came back to the `ALIGN` pad (39 → 42).
+**Verified in jsbeeb** on a real game over: the entry opened on three dots with `hsSelFor` all 26;
+**K** typed a K and **L** an L (the default up and fire keys), **DELETE** took the L back to a dot and
+a space, **M** filled the slot again, **RETURN** ended it — and `hsHiIni` was filed as `0A 0C 1A`,
+K, M, space, beside the new `00 99 99 99`. A held DELETE deleted once.
+
 ### 8d. Verified in jsbeeb, 2026-08-30
 
 Boot, title timeout, CTRL+R, then: LEFT <- A, a duplicate A refused with "Already used",

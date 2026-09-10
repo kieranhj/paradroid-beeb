@@ -199,7 +199,9 @@ lift tiles. It must degrade to placing the droid anyway when the exclusion exhau
 deck 2 is 5 waypoints against 3 droids.
 
 **[DECISION 4] — (4) the high-score entry seeds from the previous initials: BUILT.
-2026-08-31.**
+2026-08-31.** **SUPERSEDED 2026-09-10** by layer-11f [DECISION 19] (issue #16): the initials are
+typed now, from three dots, so there is no walk to seed and `hsPrev` is gone. What follows is the
+record of what was built.
 
 `GetInitial` ($E56D) starts every initial at index 0, 'A', and so did this port — so entering a
 third set of initials meant walking the alphabet from A again for each letter. Redux starts you

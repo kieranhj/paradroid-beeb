@@ -91,24 +91,22 @@
 \ three slots at fixed columns instead, padding anything narrow -- the
 \ dot, the space, capital I -- with a space, so no slot ever moves.
 \
-\ WHAT REPLACES THE JOYSTICK. $E574 reads `joyYDir ORA joyXDir` so
-\ either axis walks the alphabet, and $094D makes UP -1: up goes
-\ BACKWARDS. K and M are the port's up and down, so K steps back and M
-\ steps on, which is the original's direction and not a coin toss.
+\ THE INITIALS ARE TYPED, and that is not the original's either (layer-
+\ 11f DECISION 19, issue #16 from hexwab's #4, KC 2026-09-10). GetInitial
+\ ($E56D) walks the alphabet on the stick and commits on fire; the port
+\ copied that on the game's own controls -- and with the default keys
+\ those ARE letters, Z X K M L, so a picker and typing cannot share them.
+\ So it is typing alone: any letter fills the slot and moves on, DELETE
+\ steps back, RETURN ends early, and the three slots start as dots.
 \
 \ AND THERE IS NO CapitalAlpha_t. The C64 needs a 27-byte table because
 \ its capitals are not contiguous — capital I lives at $16, outside the
 \ alphabet's run. export_hsremap.py has already straightened that out, so
 \ index 0-25 IS the glyph and 26 is a space, by arithmetic.
 
-HS_LETTERS  = 27                \ $E57D's #$1B: A-Z and a space
-HS_SPACE_IX = 26
-
-\ $E599 passes DelayScore(#$40) and the C64 runs at ~1 MHz; this runs at
-\ 2, so the same count would step the alphabet twice as fast. Measured
-\ in jsbeeb before the doubling: six letters in fourteen fields, against
-\ the original's twelve a second. The conversion IS_HOLD took.
-HS_DELAY    = &80
+HS_SPACE_IX = 26                \ the letter index of a space: $E57D's 27th
+HS_KEY_DEL  = 26                \ HsScan's answers past the letters
+HS_KEY_RET  = 27
 
 HS_INK      = &FF               \ logical 3: both colour planes set, which
                                 \ is white under the port's fixed slot
@@ -188,34 +186,25 @@ HS_COL_INI    = 31              \ $E6E8's
   JSR HsStr
 
 \ ---- $E536: three initials, and then it is over -------------
-\ $E4E7 sets the second and third slots to full stops; $E56D starts every
-\ initial at index 0, which is 'A', so the slot being entered always
-\ shows a letter and the ones after it show dots.
+\ ALL THREE SLOTS START AS DOTS: $E4E7 sets the second and third and the
+\ C64's walk put an 'A' in the first, but nothing is chosen until a key
+\ is typed (DECISION 19). The table side starts as spaces, so a RETURN
+\ before the third letter files spaces for the rest.
   LDA #HS_DOT
+  STA hsIni
   STA hsIni+1
   STA hsIni+2
-  LDA #0
-  STA hsIdx
-.hs_next
-  JSR HsGet
-  INC hsIdx
-  LDA hsIdx
-  CMP #3
-  BCC hs_next
+  LDA #HS_SPACE_IX
+  STA hsSelFor
+  STA hsSelFor+1
+  STA hsSelFor+2
+  JSR HsType
 
 \ ---- $E52A/$E561: the initials into the table ---------------
 \ The C64 hands them to UpdateTextScore, which writes them into the
 \ briefing text. The port's briefing does not exist yet and its text
 \ will be an overlay reloaded every time, so the table is written here
 \ and the briefing's score page will read it. [11f DECISION 7]
-\ REMEMBERED BEFORE THEY ARE FILED, and for both ends of the table:
-\ what the next entry starts from is what you last typed, not what the
-\ high score happens to hold. [DECISION 4]
-  LDX #2
-.hs_c_prev
-  LDA hsSelFor,X : STA hsPrev,X
-  DEX : BPL hs_c_prev
-
   LDX #2
   LDA hsWhich
   BNE hs_c_low
@@ -229,58 +218,84 @@ HS_COL_INI    = 31              \ $E6E8's
   RTS
 
 \ ============================================================
-\ HsGet — GetInitial ($E56D)
+\ HsType — GetInitial ($E56D) x3, typed (DECISION 19)
 \ ============================================================
-\ $E571-$E5A0 is the walk and $E5A2-$E5A8 the release.
-.HsGet
-  LDX hsIdx                     \ $E56F starts every initial at 'A'; Redux
-  LDA hsPrev,X                  \ starts it at the one you typed last time,
-  STA hsSelFor,X                \ layer-12 [DECISION 4]. hsPrev is bank 7's
-  JSR HsPut                     \ and assembles as zero, so the first entry
-                                \ of a session is still 'A' -- see hstable.asm
-
-.hs_g_loop
+\ IT SPINS, as GetInitial did: the game is over and the main loop has
+\ stopped. Every accepted key waits for its own release ($E5A2's shape),
+\ so a held letter types once; and NOTHING is read until every key is
+\ up, because the key that ended the game may still be down -- and with
+\ the default controls that key is a letter.
+.HsType
+  JSR HsRelease
+  LDA #0
+  STA hsIdx
+.ht_show
   JSR HsShow
-  JSR HsWait
-
-\ The index is carried in A through both arms and stored once.
-  LDX keyTab+CTL_DOWN                    \ down: $0954's +1, on through the alphabet
-  JSR keydown                   \ Z set = the key is DOWN
-  BNE hs_g_up
-  LDX hsIdx
-  LDA hsSelFor,X
-  CLC
-  ADC #1
-  CMP #HS_LETTERS
-  BCC hs_g_set
-  LDA #0                        \ $E581
-  BEQ hs_g_set                  \ always
-
-.hs_g_up
-  LDX keyTab+CTL_UP                    \ up: $094D's -1, backwards
-  JSR keydown
-  BNE hs_g_fire
-  LDX hsIdx
-  LDA hsSelFor,X
-  SEC
-  SBC #1
-  BPL hs_g_set
-  LDA #HS_LETTERS-1             \ $E585
-
-.hs_g_set
-  LDX hsIdx
+.ht_scan
+  JSR HsScan
+  BMI ht_scan                   \ nothing down
+  CMP #HS_KEY_DEL
+  BEQ ht_del
+  BCS ht_ret
+  LDX hsIdx                     \ a letter: into this slot, and on
   STA hsSelFor,X
   JSR HsPut
+  JSR HsRelease
+  INC hsIdx
+  LDA hsIdx
+  CMP #3
+  BCC ht_show
+  JMP HsShow                    \ the third one shown, and its RTS is ours
+.ht_del
+  JSR HsRelease
+  LDX hsIdx
+  BEQ ht_scan                   \ nothing to take back
+  DEX
+  STX hsIdx
+  LDA #HS_SPACE_IX              \ the slot is empty again: a dot on the
+  STA hsSelFor,X                \ screen, a space in the table
+  LDA #HS_DOT
+  STA hsIni,X
+  JMP ht_show
+.ht_ret
+  JMP HsRelease                 \ done early: the rest stay spaces
 
-.hs_g_fire
-  LDX keyTab+CTL_FIRE                    \ $E59E: fire commits this initial
+\ ---- which key: A = 0-25 a letter, 26 DELETE, 27 RETURN, &FF none ----
+\ keydown takes X and uses Y, so the index lives in hsKeyIx. N set means
+\ nothing is down; Z set is 'A', so callers test N, never Z.
+.HsScan
+  LDA #HS_KEY_RET
+  STA hsKeyIx
+.hsc_loop
+  LDY hsKeyIx
+  LDX hsKeyTab,Y
   JSR keydown
-  BNE hs_g_loop
-.hs_g_rel
-  LDX keyTab+CTL_FIRE                    \ $E5A2: and then wait for the release
-  JSR keydown
-  BEQ hs_g_rel
+  BEQ hsc_hit
+  DEC hsKeyIx
+  BPL hsc_loop
+  LDA #&FF
   RTS
+.hsc_hit
+  LDA hsKeyIx
+  RTS
+
+.HsRelease
+  JSR HsScan
+  BPL HsRelease                 \ something is still down
+  RTS
+
+\ ---- the keys, as INKEY bytes: A-Z, then DELETE and RETURN ---------
+\ MEASURED in jsbeeb, 2026-09-10, one key_down per key reading back the
+\ matrix key that moved, and cross-checked against the ten KEY_ constants
+\ main.asm already carries (C K L M P Q R W X Z): all agree. These are
+\ fixed keys, not keyTab's -- a letter is a letter whatever the controls
+\ are bound to.
+.hsKeyTab
+  EQUB &BE, &9B, &AD, &CD, &DD, &BC, &AC, &AB, &DA, &BA   \ A-J
+  EQUB &B9, &A9, &9A, &AA, &C9, &C8, &EF, &CC, &AE, &DC   \ K-T
+  EQUB &CA, &9C, &DE, &BD, &BB, &9E                       \ U-Z
+  EQUB &A6, &B6                                           \ DELETE, RETURN
+ASSERT P% - hsKeyTab = HS_KEY_RET + 1
 
 \ ---- the letter index into the display record ---------------
 \ CapitalAlpha_t, by arithmetic: HS_UPPER is 0, so a letter index IS its
@@ -296,7 +311,7 @@ HS_COL_INI    = 31              \ $E6E8's
   RTS
 
 \ ============================================================
-\ HsShow / HsWait — $E592's redraw, and $E599's delay
+\ HsShow — $E592's redraw
 \ ============================================================
 .HsShow
   LDA #0
@@ -328,16 +343,6 @@ HS_COL_INI    = 31              \ $E6E8's
   BCC hs_sh_slot
   RTS
 
-.HsWait
-  LDY #HS_DELAY
-.hs_w_y
-  LDX #0
-.hs_w_x
-  DEX
-  BNE hs_w_x
-  DEY
-  BNE hs_w_y
-  RTS
 
 \ ============================================================
 \ The plotter — DbGlyph's shape, on this overlay's alphabet
@@ -482,3 +487,4 @@ HS_COL_INI    = 31              \ $E6E8's
 .hsTmp    EQUB 0
 .hsTmp2   EQUB 0
 .hsSlot   EQUB 0                \ HsShow's slot, 0-2
+.hsKeyIx  EQUB 0                \ HsScan's key, 27 down to 0
