@@ -159,6 +159,7 @@ ASSERT PLAY_VIS_ROWS + 1 == 16  \ the board needs all 16 rows
 \ ---- XF_PH_RELEASE: WaitNoFire ($22AA) ----------------------
   LDA xfFire
   BEQ xtk_run                   \ still held
+.xtk_selgo                      \ XfReplayTick joins here: $22FC's BEQ _1
   LDA #&99                      \ SubGameSelectSide's select countdown
   STA xfTime
   LDA #XF_PH_SELECT
@@ -517,6 +518,13 @@ XF_REPLAY_PASSES = 50
   RTS
 
 \ ---- a tie holds, then the whole subgame restarts -----------
+\ $22FC's BEQ _1 goes back to the top of Capture's loop, and all of it
+\ runs again: ClearSubGameData, SndFx2 9, SubGameSelectSide — which is
+\ what draws Colour? and its countdown at $E1F2 — and sndFx1 $1B. This
+\ used to rebuild the board and blank the word, and stop there, so the
+\ select phase after a Deadlock ran with an empty status line and no
+\ clock (hexwab, issue #7). Joining XF_PH_RELEASE's tail posts both
+\ and restarts the select clock with them.
 .XfReplayTick
   DEC xfEndCtr
   BNE xfr_run
@@ -524,11 +532,11 @@ XF_REPLAY_PASSES = 50
   JSR XfSelectSide
   JSR XfRepaintAll
   JSR XfIcons                   \ a replay rebuilds the board under them
-  JSR XfTextClear
-  LDA #&99
-  STA xfTime
-  LDA #XF_PH_SELECT
-  STA xfPhase
+  LDA #9                        \ $22C1 and $22C8, Capture's entry pair,
+  STA sndFx2                    \ as XfStart posts them
+  LDA #&1B
+  STA sndFx1
+  JMP xtk_selgo
 .xfr_run
   LDA #0
   RTS
