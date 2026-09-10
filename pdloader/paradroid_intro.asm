@@ -4,7 +4,7 @@
 \ ==========================================================================
 \ This file is HIS, kept in his style and his layout so that the next drop
 \ from him is a clean diff. Everything below this header is as delivered
-\ except for the seven changes listed here, each marked `\ PORT:` at the
+\ except for the eight changes listed here, each marked `\ PORT:` at the
 \ site. Do not tidy it, do not restyle it, and add nothing that could
 \ instead live in the game.
 \\
@@ -31,6 +31,10 @@
 \ PORT 7 -- it hands the game a MODE 7 screen with "Loading..." on it in
 \   place of the abandoned picture, and starts a page lower (&2600) to pay
 \   for it. KC, 2026-08-31.
+\ PORT 8 -- no *TAPE and no *DISC (issue #18, KC 2026-09-10): the pair forced
+\   DFS back on at exit whatever the machine booted from. DFS's workspace is
+\   kept in the handover's second bank across our run instead; see
+\   PortDfsSave, in PORT 7's page.
 \ PORT 3 -- it closes the *EXEC file first. !BOOT is still open as an exec
 \   file when this runs, and *TAPE below unloads the filing system out from
 \   under it; closing it first means the boot cannot resume into a half-
@@ -196,6 +200,57 @@ ORG &2600
 GUARD &2700
 
 .binary_start
+
+\ PORT 8: HERE, in PORT 7's page, and NOT a page lower: &2500-&25FF is
+\ free at load time but not while the tune plays -- the first placement
+\ was overwritten, and PortDfsRest executed a BRK at &2542 (measured).
+\ This page has to survive the run anyway: PortLoading runs from it.
+\ PORT 8: DFS's workspace, &0E00-&18FF, kept safe in a spare sideways bank
+\ while init_player's advance tables are over it, and put back before PARA
+\ is chained. That is what lets his *TAPE and *DISC go: *TAPE was there
+\ because the workspace was about to be destroyed, and *DISC rebuilt it --
+\ forcing DFS back whatever the machine booted from. Without either and
+\ without this, DFS 1.2 hung in its 8271 busy poll (BIT &FE80 at &ACAE)
+\ on the chain to PARA; measured in jsbeeb, issue #18.
+\ THE BANK IS THE HANDOVER'S SECOND. We borrow the first for the samples;
+\ the second is idle until PARA loads PARASPR into it, after we are gone.
+\ INTERRUPTS OFF throughout: an IRQ that pages ROMs puts &FE30 back from
+\ &F4 on its way out, and the rest of the copy would land in the wrong bank.
+\ THE RANGE IS &0E00-&18FF, eleven pages, not just the three pages of
+\ workspace: DFS 1.2 also keeps state in its buffer space from &1100, and
+\ with only &0E00-&10FF kept it still hung in the 8271 poll (measured).
+\ Self-modifying page bytes, so one loop serves both directions.
+PORT_DFS_PAGES = &19 - &0E
+.PortDfsSave
+  LDA #&0E : LDY #&80           \ from DFS, to the bank
+  BNE PortDfsCopy               \ always
+.PortDfsRest
+  LDA #&80 : LDY #&0E           \ from the bank, back to DFS
+.PortDfsCopy
+  PHP
+  SEI
+  STA pdc_src + 2
+  STY pdc_dst + 2
+  LDA port_hand + 2
+  STA &FE30
+  LDY #PORT_DFS_PAGES
+  LDX #0
+  .pdc_loop
+  .pdc_src
+  LDA &FF00,X
+  .pdc_dst
+  STA &FF00,X
+  INX
+  BNE pdc_loop
+  INC pdc_src + 2
+  INC pdc_dst + 2
+  DEY
+  BNE pdc_loop
+  LDA &F4                       \ the MOS's own idea of the paged bank
+  STA &FE30
+  PLP
+  RTS
+
 
 \\ PORT 7: the screen the GAME boots behind. Any key exits the intro, and
 \\ what used to happen next was that PARA's own VDU 22 blanked the picture
@@ -924,6 +979,8 @@ CLEAR P%, &8000
   BEQ port_have_bank
   LDA #4                        \ nobody probed: the assembled default
   STA port_hand + 1
+  LDA #5                        \ PORT 8: and the bank DFS's workspace
+  STA port_hand + 2             \ waits in, likewise
   .port_have_bank
 
   \ PORT 6: the VIAs as the MOS left them, to be put back in restore_os.
@@ -961,16 +1018,16 @@ CLEAR P%, &8000
 
   JSR load_data
 
-  \\ Unload DFS before we trash its workspace.
-  \\ *TAPE
-  LDA #140
-  LDX #0
-  LDY #0
-  JSR OSBYTE
+  \ PORT 8: his *TAPE (OSBYTE 140) was here, "to unload DFS before we trash
+  \ its workspace". The workspace is saved instead, just below.
 
   \\ Now that data is loaded, switch to the sideways RAM, and disable
   \\ interrupts. Doing these before loading results in them getting lost.
   SEI
+
+  \ PORT 8: the last disc load is done and init_player is about to put
+  \ the advance tables over DFS's workspace. Keep it.
+  JSR PortDfsSave
 
   \ PORT: the bank PARSWR found, not 4. See the header.
   LDA port_hand + 1
@@ -1322,9 +1379,9 @@ CLEAR P%, &8000
   \ PORT 7: MODE 7 and "Loading..." for the game to come up behind.
   JSR PortLoading
 
-  LDX #LO(oscli_disc)
-  LDY #HI(oscli_disc)
-  JSR OSCLI
+  \ PORT 8: his *DISC was here. DFS's workspace goes back instead, so the
+  \ filing system the machine booted with is the one that chains PARA.
+  JSR PortDfsRest
 
   LDX #LO(oscli_run_next_program)
   LDY #HI(oscli_run_next_program)

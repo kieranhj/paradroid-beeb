@@ -209,6 +209,16 @@ reset both go detector → intro → keypress → "Loading..." → title → pla
 ACCCON stayed `&18` through the intro, the title and play — OSBYTE 114 is a lasting state, not a
 one-shot, so the intro's own `VDU 22` does not consume it. **What `*TAPE` costs is the `*DISC`
 that has to follow it**: that forces DFS back even for someone who booted from another filing
-system (hexwab's point), which jsbeeb cannot show. The fix would be fix 7's shape — claim the
-NMI instead of `*TAPE`, and drop the `*DISC` — but it is an eighth `\ PORT:` edit to a vendored
-drop, so it is KC's call, and better raised with scarybeasts than made quietly.
+system (hexwab's point).
+
+**Then both removed — PORT 8 (KC, 2026-09-10).** Dropping the two calls alone hung DFS 1.2 in
+its 8271 busy poll (`BIT &FE80` at `&ACAE`) on the chain to `PARA`, because `init_player`'s
+advance tables (`&0400-&1BFF`) had flattened DFS's workspace underneath a DFS that still thought
+it was live. So PORT 8 keeps `&0E00-&18FF` (11 pages) in the handover's second sideways bank —
+idle until `PARA` loads `PARASPR` there — saved after the intro's last load and restored before
+`RUN PARA`, both under `SEI`. The routines have to sit in PORT 7's `&2600` page: the first
+attempt put them at `&2500`, which the player overwrites at run time, and `PortDfsRest` BRKed
+("Bad program"). **Tested** on the `-Intro` build, fresh machines each: B/DFS 1.20, B/1770 and
+the Master 128 all go intro → keypress → "Loading..." → title → play (fieldCount advancing one a
+field, a deck up, the player placed). `pdloader/README.md` item 8 has the detail; it stays a
+change to scarybeasts's drop, worth offering him upstream.

@@ -19,13 +19,14 @@ straight at the SN76489's attenuation registers (measured in jsbeeb: 938 writes 
 cycles). Samples, song and lookup tables arrive as one ZX0 stream and are depacked straight
 into **one sideways RAM bank**, which the game overwrites with `PARADAT` afterwards.
 
-It owns the machine while it runs — `*TAPE` unloads DFS, System VIA interrupts are off, and
-zero page and `&0D00` are backed up and put back. The tune loops until a key is pressed
-(KC, 2026-08-29), then it silences the chip, restores what it saved, `*DISC`s and chains.
+It owns the machine while it runs — System VIA interrupts are off, and zero page, `&0D00` and
+(since PORT 8) DFS's workspace and buffers at `&0E00-&18FF` are backed up and put back. The tune loops until
+a key is pressed (KC, 2026-08-29), then it silences the chip, restores what it saved, and chains.
+His original `*TAPE`s DFS out at the start and `*DISC`s it back at the end; PORT 8 removed both.
 
 ## Our changes to his file
 
-Seven, each marked `\ PORT:` at the site and listed in the file's own header:
+Eight, each marked `\ PORT:` at the site and listed in the file's own header:
 
 1. **The sideways bank is `PARSWR`'s answer, not 4.** `src/swram.asm` probes the machine before
    any of this runs and leaves the four banks it found at `&0A00`. We borrow the first.
@@ -45,6 +46,15 @@ Seven, each marked `\ PORT:` at the site and listed in the file's own header:
    the whole load. **It starts a page lower — `&2600` — to pay for it**: his block ran
    `&2700-&3000` with not one byte spare, and `&2500-&26FF` is free at load time
    (`ADVTAB` is `&1C00-&21FF`, the zero page and `&0D00` backups are `&2200-&23FF`).
+8. **No `*TAPE` and no `*DISC`** (issue #18, KC 2026-09-10). The pair forced DFS back on at
+   exit whatever filing system the machine booted from. `PortDfsSave` copies `&0E00-&18FF`
+   (eleven pages) into the handover's **second** bank before `init_player` puts the advance
+   tables over it, and `PortDfsRest` copies it back before `RUN PARA`; that bank is idle until
+   `PARA` loads `PARASPR` into it. Both run with interrupts off, since an IRQ puts `&FE30` back
+   from `&F4`. **They live in PORT 7's `&2600` page and nowhere lower**: `&2500-&25FF` is free
+   at load time but gets overwritten while the tune plays (measured: the first placement BRKed
+   at `&2542`). Removing the two calls without the save hung DFS 1.2 in its 8271 busy poll.
+   Tested to play on B/DFS 1.20, B/1770 and the Master 128 in jsbeeb.
 
 ### The trap PORT 4 exists for
 
