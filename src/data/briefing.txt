@@ -37,12 +37,13 @@ page 1
 25  0 |or by transferring control to them.
 28  1 |Control is as follows:
 31  0 |Use keyboard to move your robot.
-33  0 |Press fire to shoot your laser and 
-35  0 |use lifts or consoles. Hold fire 
-37  0 |whilst stationary to prepare for 
-39  0 |transfer mode or press transfer
-41  0 |button. Make contact with another
-43  0 |robot to initiate the transfer.
+33  0 |Press fire to shoot your laser.
+35  0 |Hold fire whilst stationary, or
+37  0 |press transfer, to prepare for
+39  0 |transfer mode. Make contact with
+41  0 |another robot to initiate it.
+43  0 |Press transfer to use a lift or
+45  0 |console.
 46  2 |Default keys:
 49  8 |Left:        Z
 51  8 |Right:       X

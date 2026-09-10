@@ -1,9 +1,10 @@
 \ ============================================================
 \ lift.asm — lifts, and the deck change that goes with them
 \ ============================================================
-\ Stand on a lift platform, press FIRE (L), and the up/down movement
-\ keys move through the decks that lift's SHAFT serves. FIRE again
-\ steps out.
+\ Stand on a lift platform, press TRANSFER (SPACE), and the up/down
+\ movement keys move through the decks that lift's SHAFT serves. FIRE
+\ steps out. It was FIRE to get in as well, as on the C64, until
+\ 2026-09-10 — layer-7 DECISION 13, issue #12: fire only fires now.
 \
 \ ---- the tables ---------------------------------------------
 \ Thirty-one stops, indexed 1-30, exported by tools/export_bbc.py as the
@@ -27,7 +28,7 @@
 \ with liftMode as a three-state:
 \
 \   0  no lift
-\   1  ENTERING — set by LiftEnter in the fire block, consumed later
+\   1  ENTERING — set by LiftEnter in PassPrep's transfer block, consumed later
 \      the same pass at the hook after DroidsUpdate, which runs the
 \      full entry (LiftViewEnter below) and short-circuits the pass
 \   2  THE VIEW IS UP — the main loop's lift arm runs one
@@ -69,6 +70,9 @@ LIFT_LAST  = 30                 \ and so is 31
 \ THE PORT MATCHED THE WHOLE 4x4 and that is four times the area, in
 \ a game where the same key fires the weapon: every firefight near a
 \ lift ended with the player in the lift (Sydney and KC, 2026-09-05).
+\ (The key is TRANSFER now, not fire — layer-7 DECISION 13 — so a
+\ firefight cannot take a lift at all; the platform test stays, being
+\ the original's.)
 \ Cell 1 or 2 of the four in each axis is the original's region
 \ exactly, asked the way our coordinates can answer it -- the char
 \ under the player IS the reference cell, so this is $2E7B's test and
@@ -117,7 +121,7 @@ LIFT_LAST  = 30                 \ and so is 31
   RTS
 
 \ ============================================================
-\ LiftEnter — fire, edge triggered: stage the view for this pass
+\ LiftEnter — transfer, edge triggered: stage the view for this pass
 \ ============================================================
 .LiftEnter
   JSR LiftFind

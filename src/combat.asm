@@ -168,8 +168,9 @@ CB_ENERGY_FULL = &40
 \
 \   char 20     RECHARGER. Built here.
 \   chars 43-46 lift. NOT ported: the C64 gates this on moveMode, which
-\               is to say on the fire button, and lift.asm already
-\               enters a lift on the fire key. See docs/layer-7-combat.md
+\               is to say on the fire button; the port enters a lift on
+\               the TRANSFER key's press edge instead, in PassPrep
+\               (layer-7 DECISION 13). See docs/layer-7-combat.md
 \   char 66     console. Layer 9, along with the consoleState countdown
 \               that both of those arms need and this one does not.
 \
@@ -227,9 +228,11 @@ CHAR_CONSOLE = 66
 \ FIRE IS THE TRIGGER, not standing on it — you walk over a console
 \ often and would not want it opening every time. That is also the C64's
 \ arrangement, which gates its own console arm on moveMode.
-\ THE LIFT GETS THE KEY FIRST, so this tests lDown rather than fireDown:
-\ fireDown is already false whenever the lift or a lift exit has eaten
-\ the press, and a console is not a lift.
+\ THE TRANSFER KEY, NOT FIRE, since 2026-09-10 (KC, issue #12): L only
+\ ever fires, so a player can shoot from a lift or a console tile.
+\ lDown is the transfer key held and fireEaten says the lift took this
+\ hold — PassPrep's transfer block sets both — so the lift still gets
+\ the key first. docs/layer-7-combat.md [DECISION 13].
 .dcu_console
   LDA lDown
   BEQ dcu_x

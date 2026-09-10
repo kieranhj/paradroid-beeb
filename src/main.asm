@@ -2183,13 +2183,15 @@ ENDIF                           \ other close: no band may outlive a pass
   JSR ApplyMove
 
 \ ============================================================
-\ Fire — and the lift gets first refusal on the same key
+\ Fire — the weapon's, and nothing else's
 \ ============================================================
-\ L DOES DOUBLE DUTY, which is what the C64 does too: there, fire drives
-\ the moveMode machine and DoCharUnder gates the lift countdown on it.
-\ We keep lift.asm's explicit trigger instead, so the two have to be told
-\ apart here — the lift takes the press when there is a lift to take it,
-\ and the weapon gets it otherwise.
+\ THE C64'S ONE BUTTON DOES EVERYTHING: fire drives the moveMode machine
+\ and DoCharUnder gates the lift and console countdowns on it, so
+\ standing on a lift you cannot shoot without taking it. The port used
+\ to copy that, with the lift getting first refusal on L. Since
+\ 2026-09-10 (KC, issue #12, from hexwab's #4) the TRANSFER key does the
+\ activating instead — see the block below — and L only ever fires.
+\ docs/layer-7-combat.md [DECISION 13].
 \
 \ THIS BLOCK MOVED UP FROM BELOW THE LEVEL DRAW. DoFire activates slot 7,
 \ and the tranche assignment in SprSplitOK has to see it, so everything
@@ -2197,7 +2199,7 @@ ENDIF                           \ other close: no band may outlive a pass
 \ below, and the erase it governs is the NEXT pass's window A. Nothing in LiftEnter/LiftExit draws; the
 \ deck-hop keys, which do, stay where they were.
   LDA overPhase                 \ the game is ending: the C64's loop calls
-  BNE ml_lDone                  \ RunGame and nothing else, so no fire, no
+  BNE ml_nofire                 \ RunGame and nothing else, so no fire, no
                                 \ moveMode and no bullet. SLOT 7 IS THE
                                 \ BULLET'S and the cloud lights it — leave
                                 \ MovePlyFire running here and it puts the
@@ -2207,38 +2209,21 @@ ENDIF                           \ other close: no band may outlive a pass
   LDX #CTL_FIRE
   JSR KeyDownIx
   BNE ml_lUp
-  LDA #1 : STA lDown
-  LDA prevRet
-  BNE ml_lHeld
-  LDA #1 : STA prevRet          \ the press edge
-\ liftMode can only be 0 here: with the view up the pass short-circuits
-\ at the lift arm long before this block, so the old exit-on-fire arm is
-\ gone — leaving the lift is LiftViewTick's commit now.
-  JSR LiftEnter
-  LDA liftMode                  \ did it take? if not, the press is the gun's
-  BEQ ml_lHeld
-  LDA #1 : STA fireEaten
-  JMP ml_lDone
-.ml_lHeld
-  LDA fireEaten
-  BNE ml_lDone
-  LDA liftMode
-  BNE ml_lDone
   LDA #1 : STA fireDown
-  JMP ml_lDone
 .ml_lUp
-  LDA #0
-  STA prevRet
-  STA fireEaten
-  STA lDown
-.ml_lDone
-
-  LDA overPhase
-  BNE ml_nofire
 
 \ ============================================================
-\ SPACE — the second way into transfer mode
+\ TRANSFER — lifts and consoles first, then transfer mode
 \ ============================================================
+\ THE LIFT GETS FIRST REFUSAL on the transfer key's press edge, exactly
+\ as it used to on L's: LiftEnter takes the press if there is a lift to
+\ take it, and the whole hold is then eaten, so it neither enters
+\ transfer mode nor re-opens anything until the key comes up. lDown and
+\ fireEaten keep their names and now mean this key; DoCharUnder's
+\ console arm reads both, a pass later, as it always did.
+\ liftMode can only be 0 at the edge: with the view up the pass
+\ short-circuits at the lift arm long before this block — leaving the
+\ lift is LiftViewTick's commit, on fire, as the C64's is.
 \ THE C64 HAS ONE BUTTON and DoMoveMode ($31B9) has to divide it three
 \ ways, which is what the settle state is for: press fire WITH a
 \ direction and you draw the weapon, press it with NONE and eight
@@ -2272,11 +2257,29 @@ ENDIF                           \ other close: no band may outlive a pass
 \ pass; he keeps walking and simply enters transfer mode while doing it.
   LDX #CTL_XFER
   JSR KeyDownIx
+  BNE ml_xUp
+  LDA #1 : STA lDown
+  LDA prevRet
+  BNE ml_xHeld
+  LDA #1 : STA prevRet          \ the press edge
+  JSR LiftEnter
+  LDA liftMode                  \ did it take? if not, the press is
+  BEQ ml_xHeld                  \ transfer mode's
+  LDA #1 : STA fireEaten
+  BNE ml_noxfb                  \ always
+.ml_xHeld
+  LDA fireEaten                 \ the lift had this hold
   BNE ml_noxfb
   LDA #0                        \ MM_TRANSFER, spelled out: combat.asm's
   STA moveMode                  \ constants are assembled after this point
   LDA #1                        \ and beebasm resolves them in file order
   STA fireDown
+  BNE ml_noxfb                  \ always
+.ml_xUp
+  LDA #0
+  STA prevRet
+  STA fireEaten
+  STA lDown
 .ml_noxfb
 
   JSR DoMoveMode                \ and DoFire, when it decides to

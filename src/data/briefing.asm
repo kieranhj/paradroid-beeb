@@ -736,66 +736,70 @@
 .brRow_0_32
   EQUB &FF
 .brRow_0_33
-  \ "Press fire to shoot your laser and "
+  \ "Press fire to shoot your laser."
   EQUB 2
   EQUB 26, 80, 67, 81, 81, 0, 68, 71, 80, 67, 0, 82
   EQUB 77, 0, 81, 70, 77, 77, 82, 0, 87, 77, 83, 80
-  EQUB 0, 74, 63, 81, 67, 80, 0, 63, 76, 66, 0
+  EQUB 0, 74, 63, 81, 67, 80, 89
   EQUB &FE
   EQUB &FF
 .brRow_0_34
   EQUB &FF
 .brRow_0_35
-  \ "use lifts or consoles. Hold fire "
+  \ "Hold fire whilst stationary, or"
   EQUB 2
-  EQUB 83, 81, 67, 0, 74, 71, 68, 82, 81, 0, 77, 80
-  EQUB 0, 65, 77, 76, 81, 77, 74, 67, 81, 89, 0, 18
-  EQUB 77, 74, 66, 0, 68, 71, 80, 67, 0
+  EQUB 18, 77, 74, 66, 0, 68, 71, 80, 67, 0, 85, 70
+  EQUB 71, 74, 81, 82, 0, 81, 82, 63, 82, 71, 77, 76
+  EQUB 63, 80, 87, 104, 0, 77, 80
   EQUB &FE
   EQUB &FF
 .brRow_0_36
   EQUB &FF
 .brRow_0_37
-  \ "whilst stationary to prepare for "
+  \ "press transfer, to prepare for"
   EQUB 2
-  EQUB 85, 70, 71, 74, 81, 82, 0, 81, 82, 63, 82, 71
-  EQUB 77, 76, 63, 80, 87, 0, 82, 77, 0, 78, 80, 67
-  EQUB 78, 63, 80, 67, 0, 68, 77, 80, 0
+  EQUB 78, 80, 67, 81, 81, 0, 82, 80, 63, 76, 81, 68
+  EQUB 67, 80, 104, 0, 82, 77, 0, 78, 80, 67, 78, 63
+  EQUB 80, 67, 0, 68, 77, 80
   EQUB &FE
   EQUB &FF
 .brRow_0_38
   EQUB &FF
 .brRow_0_39
-  \ "transfer mode or press transfer"
+  \ "transfer mode. Make contact with"
   EQUB 2
   EQUB 82, 80, 63, 76, 81, 68, 67, 80, 0, 75, 77, 66
-  EQUB 67, 0, 77, 80, 0, 78, 80, 67, 81, 81, 0, 82
-  EQUB 80, 63, 76, 81, 68, 67, 80
+  EQUB 67, 89, 0, 23, 63, 73, 67, 0, 65, 77, 76, 82
+  EQUB 63, 65, 82, 0, 85, 71, 82, 70
   EQUB &FE
   EQUB &FF
 .brRow_0_40
   EQUB &FF
 .brRow_0_41
-  \ "button. Make contact with another"
+  \ "another robot to initiate it."
   EQUB 2
-  EQUB 64, 83, 82, 82, 77, 76, 89, 0, 23, 63, 73, 67
-  EQUB 0, 65, 77, 76, 82, 63, 65, 82, 0, 85, 71, 82
-  EQUB 70, 0, 63, 76, 77, 82, 70, 67, 80
+  EQUB 63, 76, 77, 82, 70, 67, 80, 0, 80, 77, 64, 77
+  EQUB 82, 0, 82, 77, 0, 71, 76, 71, 82, 71, 63, 82
+  EQUB 67, 0, 71, 82, 89
   EQUB &FE
   EQUB &FF
 .brRow_0_42
   EQUB &FF
 .brRow_0_43
-  \ "robot to initiate the transfer."
+  \ "Press transfer to use a lift or"
   EQUB 2
-  EQUB 80, 77, 64, 77, 82, 0, 82, 77, 0, 71, 76, 71
-  EQUB 82, 71, 63, 82, 67, 0, 82, 70, 67, 0, 82, 80
-  EQUB 63, 76, 81, 68, 67, 80, 89
+  EQUB 26, 80, 67, 81, 81, 0, 82, 80, 63, 76, 81, 68
+  EQUB 67, 80, 0, 82, 77, 0, 83, 81, 67, 0, 63, 0
+  EQUB 74, 71, 68, 82, 0, 77, 80
   EQUB &FE
   EQUB &FF
 .brRow_0_44
   EQUB &FF
 .brRow_0_45
+  \ "console."
+  EQUB 2
+  EQUB 65, 77, 76, 81, 77, 74, 67, 89
+  EQUB &FE
   EQUB &FF
 .brRow_0_46
   \ "Default keys:"

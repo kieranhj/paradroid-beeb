@@ -1011,3 +1011,38 @@ screen or the game over all end the pass **above** the fire block, so `DoMoveMod
 `moveMode`/`fireDown` keep their last values. That looks exactly like a stuck key. Check
 `infoActive`, `conActive`, `xferActive` and `liftMode` before believing it; an unnoticed opening
 001 screen cost half an hour here.
+
+## Lifts and consoles move to the transfer key — 2026-09-10
+
+**[DECISION 13] Fire only fires; the TRANSFER key opens lifts and consoles.** KC, 2026-09-10,
+issue #12 from hexwab's UX list (#4). A deviation: on the C64 the one button does everything —
+`DoCharUnder`'s lift and console arms gate on `moveMode`, which is to say on fire — and the port
+copied it, with the lift taking first refusal on L. So a player standing on a lift could not
+shoot without riding it, and [DECISION 12] had already given the keyboard a second button. hexwab's
+point is that the two buttons should be used sensibly; three (fire, transfer, activate) is
+overkill.
+
+**What moved, in `PassPrep` (main.asm).** The L block now does one thing: `fireDown`. The
+transfer block got the lift's old logic — on the press edge `LiftEnter` gets first refusal, and if
+it takes the press `fireEaten` eats the whole hold, so the same press neither enters transfer mode
+nor reopens anything until the key comes up. Otherwise the key forces transfer mode exactly as
+DECISION 12 built it. `lDown` and `fireEaten` keep their names and now mean the transfer key;
+`DoCharUnder`'s console arm reads both, a pass later, as before. **Inside the modal screens nothing
+changed**: the lift view still commits on fire, the console still leaves on fire — as the C64's
+do. The briefing's control text says so (`briefing.txt` page 1). **Code image: 12 bytes back**
+— one `overPhase` guard where there were two, and the L block down to a single store —
+`code_end` `&2FC4` → `&2FB8`, 72 B free (measured from the build's symbol dump).
+
+**Verified in jsbeeb, 2026-09-10**, the player placed on deck 4's lift stop 16 (cell 93,21) by
+poking `deck` = 3, `liftPos` = 16, `liftPlace` = 1 and hopping with CTRL+`]`, one snapshot, three
+runs from it:
+
+| | |
+|---|---|
+| L alone, 10 frames | `liftMode` stays 0; `moveMode` 2 (settling), `fireDown` 1 — the C64's stationary-fire path, no lift |
+| SPACE, 20 frames | `liftMode` 2, the deck-select view up, "Lift" on the panel; `fireEaten` 1, `lDown` 1, `moveMode` &80 — the hold was eaten, no transfer mode |
+| M + L, 6 frames | `sprActive`+7 = 1, the bullet on screen below the player, `moveMode` 1 "Weapon", `liftMode` 0, the player still on the platform (93,22) |
+
+X + L first gave no bullet: the platform has a wall immediately to its right, and `DoFire` refuses a
+shot fired straight into a wall, as the original does. **The console arm was not driven in the
+emulator**; it reads the same two flags the lift test exercised.
