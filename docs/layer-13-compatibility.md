@@ -162,3 +162,15 @@ page) as it takes the machine, which is harmless only because nothing after `.st
 filing-system call — the same invariant the low overlay already depends on. jsbeeb reports ~40,130
 cycles a frame on both Tube machines against 39,936 without; `fieldCount` advances normally, so
 this is recorded rather than chased.
+
+**Every CRTC register is written, once, after boot's `VDU 22`.** R0, R2, R3, R9, R10 and R11 used to
+be whatever the MOS left, and R4/R5 until the rupture started. `SetupModeRegs` (bank 4, beside
+`SetupPlain`) now writes all twelve, reached from `SetupMode`'s tail through `PgData`. **The values
+are MOS 1.20's MODE 1 row, measured**: a write breakpoint on `&FE00` stopped the MOS in its CRTC
+loop at `&CBB0` (`LDA &C46E,X`, indexed from `&C469,Y`), and `&C46E-&C479` read
+`7F 50 62 28 26 00 20 22 01 07 67 08`; R7 = 34 agrees with `title.asm`'s `MODE1_R7`. Three are
+ours on purpose: R1 = `PLAY_UNITS`, R8 = `R8_BLANK` (interlace bits clear) and R10 = `&20`, the
+cursor off. Main RAM **+15** (`code_end` `&2FCA` → `&2FBB`, the two `CRTC` macros it replaced);
+bank 4 −29. **Verified**: plain B plays; a Master given `*CONFIGURE TV 252,0` and a hard reset
+boots, plays, and holds the rupture — 300 frames at exactly 39,936 cycles, `fieldCount` 39 → 139
+over 100 frames.

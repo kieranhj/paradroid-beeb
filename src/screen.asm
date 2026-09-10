@@ -686,6 +686,40 @@ ENDIF
   BPL sp_pal
   RTS
 
+\ ============================================================
+\ SetupModeRegs -- every CRTC register, after boot's VDU 22
+\ ============================================================
+\ hexwab, issue #18 (KC: "fine, looks cleaner"). The frame used to be
+\ whatever VDU 22 left in the registers nothing here writes -- R0, R2,
+\ R3, R9, R10, R11, and R4/R5 until the rupture starts -- so a MOS
+\ configured differently (*CONFIGURE TV, a Master's own table) could
+\ hand the rupture a frame it was never measured against. Now all
+\ twelve are ours, once, from SetupMode's tail.
+\ THE VALUES ARE MOS 1.20's MODE 1 ROW, MEASURED: a write breakpoint on
+\ &FE00 caught the MOS at &CBB0 (LDA &C46E,X, indexed from &C469,Y), and
+\ &C46E-&C479 read 7F 50 62 28 26 00 20 22 01 07 67 08. R7 = 34 agrees
+\ with title.asm's MODE1_R7. Three are not the OS's, on purpose: R1 is
+\ the play area's 80 units, R8 the blank SetupMode always left (with the
+\ interlace bits CLEAR -- the OS's 1 is the half-line offset bufcore
+\ explains), and R10 &20 is the cursor off, as the VDU 23 before it.
+\ Ascending, as SetupPlain's are. In bank 4, reached through PgData --
+\ SetupMode only ever runs after BootBanks, so the bank is there -- which
+\ gave main RAM back the two CRTC macros it replaced.
+.SetupModeRegs
+  LDX #0
+.smr_reg
+  STX CRTC_ADDR
+  LDA smrVal,X
+  STA CRTC_DATA
+  INX
+  CPX #12
+  BNE smr_reg
+  RTS
+.smrVal
+  EQUB &7F, PLAY_UNITS, &62, &28  \ R0-R3
+  EQUB &26, &00, &20, &22         \ R4-R7
+  EQUB R8_BLANK, &07, &20, &08    \ R8-R11
+
 \ R8 IS IN HERE AND IT IS NOT OPTIONAL. The rupture blanks rows with it
 \ — GoWashStart's note about "the R8 blank at fire 3" hiding the
 \ sixteenth row is the same register — so a teardown that leaves it set

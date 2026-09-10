@@ -102,7 +102,8 @@
   LDA #&08 OR 5                 \ C1 = 1  -> subtract &2800, restart &5800
   STA VIA_PORTB
 
-  CRTC 1,  PLAY_UNITS           \ 80 units = 320 px displayed
+\ R1 = PLAY_UNITS (80 units, 320 px) and the R8 blank below are written
+\ by SetupModeRegs now, with every other register (issue #18).
 
 \ ---- and NOTHING IS DISPLAYED until the title says so -------
 \ KC, 2026-08-31, the other half of moving this call below BootBanks:
@@ -135,8 +136,9 @@
 \ fixed intervals from VSync -- so that half line makes the split land
 \ in a different place every other field, an intermittent glitch along
 \ the top of the play area. TiCRTC's R8_ON is that 0.
-  CRTC 8,  R8_BLANK
-  RTS
+  JSR PgData                    \ SetupModeRegs is bank 4's (screen.asm):
+  JMP SetupModeRegs             \ all twelve registers, R8 blank among them,
+                                \ and its RTS is ours
 
 \ ---- the second half: after the loads, before InstallIrq ----
 \ Everything from here stops VSync, so nothing may touch the filing
