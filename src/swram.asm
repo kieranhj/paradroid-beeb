@@ -163,6 +163,19 @@ ORG SWR_ADDR
   BNE swr_show
   LDA #13
   JSR OSASCI
+
+\ ---- and the game's VDU 22 will be a NORMAL screen -----------
+\ hexwab and KC, issue #18: on a B+ or a Master set to *SHADOW, MODE 1
+\ comes up with the DISPLAY in shadow RAM while the game writes main RAM
+\ at &3000-&7FFF - measured on jsbeeb's Master: ACCCON &1B, D set, X
+\ clear, and nothing the game drew was on screen. OSBYTE 114 with X=1
+\ tells the MOS the NEXT mode change is non-shadow, and the next one is
+\ SetupMode's VDU 22 - nothing between here and there changes mode. On
+\ a model B's OS 1.20 an unknown OSBYTE is offered to the ROMs and
+\ ignored. Third-party shadow boards are out of scope (KC).
+  LDA #114
+  LDX #1
+  JSR OSBYTE
   RTS
 
 \ ---- the failure exit --------------------------------------

@@ -188,3 +188,14 @@ whose sideways RAM is not those links. hexwab's wording, from *Stunt Car*. In th
 game pays nothing. **Verified** by the method above (both `CMP #4` thresholds, now at `&190C` and
 `&1928`, patched to 9 in a `*LOAD`ed copy, then `CALL &1900`): the Master printed the refusal and
 the links line; the plain B printed the refusal alone.
+
+**`*SHADOW` no longer hides the game.** On a Master (or B+) set to `*SHADOW`, the game's `VDU 22`
+came up with the display in shadow RAM while the game writes main RAM: **measured** on jsbeeb's
+Master after `*SHADOW` and a soft reset, ACCCON read `&1B` — D and E set, X clear — against `&18`
+normally, and nothing the game drew could be seen. `PARSWR`'s success path now calls OSBYTE 114
+with X = 1, which makes the MOS's *next* mode change non-shadow; the next one is `SetupMode`'s,
+and nothing between changes mode. On a model B's OS 1.20 the unknown OSBYTE goes to the ROMs and
+is ignored. In the loader, so the game pays nothing; a bare `*RUN PARA` does not get it, which is
+the debugging path. hexwab's fuller dance (OSBYTE 133 first, then zeroing `&FE34`) exists for
+third-party shadow boards, which KC ruled out of scope. **Verified**: the same `*SHADOW` + soft
+reset gave ACCCON `&18` at the title and in play, and the Master played; the plain B plays.
