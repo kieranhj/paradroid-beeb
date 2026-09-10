@@ -292,3 +292,27 @@ The three windows a load can be seen in — boot, title→`ts_loads`, and the
 briefing's timeout — are now all blanked. Verified in jsbeeb end to end:
 MODE 7 boot text through the four bank loads, black through PARTITL, then
 the title, the briefing and a deck.
+
+## The mode change itself no longer shows memory (2026-09-10)
+
+hexwab, issue #11: **one window was left, and it is the VDU 22 itself.** The
+MOS sets the new mode up — ULA, palette, CRTC — *before* it clears
+&3000–&7FFF, and the clear is slow enough to be seen. At boot that range
+still holds `BootBanks`' ZX0 streams from &3200 up and the MOS's leftovers,
+and the R1/R8 blank above only goes on after the OSWRCH returns.
+
+**Measured in jsbeeb.** A breakpoint on `SetupMode` (it false-hits once in
+PARSWR, which runs at &1900 inside the same range — run past it to the stop
+after `*RUN PARA`), then one painted frame: PC &CCE6, still inside the MOS,
+and below the MODE 7 rows already drawn the screen was full-width
+red/yellow/white garbage in the OS's MODE 1 palette.
+
+**The fix is order-independent**: `SetupMode` zeroes &3000–&7FFF itself,
+through `mapptr`, immediately before the VDU 22 — 18 bytes of code image
+(`code_end` &2FB8 → &2FCA), ~195,000 cycles, about four fields added to
+boot. MODE 7 is still up while it runs, so the boot text goes a moment
+early (&7C00 is in the range). Nothing else there is live: the banks are
+in, and `PARAFNT` loads after. Re-measured the same way, the stop moved to
+the `LDA #22` after the loop: &3200, &5800 and &7C00 read zero, and the
+frames through the MOS's own clear (PC &CC05, &CC4A) show nothing — the
+first one scanned wholly after the loop is plain black.

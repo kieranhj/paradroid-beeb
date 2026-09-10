@@ -59,6 +59,27 @@
 \ SetupMode leaves an ordinary MODE 1 frame running — R1 and R8 only
 \ change the width and the interlace — so VSync carries on throughout.
 .SetupMode
+\ ---- clear the frame FIRST, before the OS shows it ----------
+\ hexwab, issue #11: VDU 22 puts MODE 1 on screen -- ULA, palette, CRTC
+\ -- and only then clears &3000-&7FFF, so for a frame or more the new
+\ mode shows whatever is lying there. At boot that is BootBanks' ZX0
+\ streams from &3200 up and the MOS's leftovers: measured in jsbeeb,
+\ one painted frame into the VDU 22 (PC &CCE6, still in the MOS) the
+\ screen below the torn MODE 7 rows was full-width red/yellow/white
+\ garbage. Zeroing it ourselves first makes the order moot -- whatever
+\ the OS shows is black. MODE 7 is still up while this runs, so the
+\ boot text blanks a moment early (&7C00 is in the range); nothing else
+\ here is live -- the banks are in and PARAFNT is loaded after this.
+\ mapptr is Zx0Unpack's, and BootBanks' last unpack has returned.
+  LDA #HI(&3000) : STA mapptr+1
+  LDY #0 : STY mapptr
+  TYA
+.ss_clr
+  STA (mapptr),Y
+  INY
+  BNE ss_clr
+  INC mapptr+1
+  BPL ss_clr                    \ &80 is where it stops: &3000-&7FFF
   LDA #22 : JSR OSWRCH          \ MODE 1 (OS sets 20K / 16K wrap)
   LDA #1  : JSR OSWRCH
 
