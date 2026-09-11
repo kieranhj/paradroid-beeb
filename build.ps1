@@ -26,7 +26,10 @@ $raw     = Join-Path $build 'paradroid-raw.ssd'
 $ssd     = Join-Path $build 'paradroid.ssd'
 $padded  = Join-Path $build 'paradroid-200k.ssd'
 $listing = Join-Path $build 'paradroid.lst'
-$bem     = 'C:\Users\khcon\OneDrive\BEEB\B-Em\b-em-42f6597-w64\b-em.exe'
+# -Run's emulator: $env:EMU, as the Makefile's EMU= - a b-em, since -Run
+# passes b-em's flags. Unset, it is the one on KC's machine.
+$bem     = if ($env:EMU) { $env:EMU }
+           else { 'C:\Users\khcon\OneDrive\BEEB\B-Em\b-em-42f6597-w64\b-em.exe' }
 
 if (-not (Test-Path $build)) { New-Item -ItemType Directory -Path $build | Out-Null }
 
@@ -37,7 +40,8 @@ if (-not (Test-Path $build)) { New-Item -ItemType Directory -Path $build | Out-N
 if ($LASTEXITCODE -ne 0) { throw "make_briefing failed ($LASTEXITCODE)" }
 
 # The OTHER exporters are not run here, because their input is the C64 listing
-# and that is supplied locally rather than checked in. That is fine for a code
+# and their output, src/data/, is committed (`make data` regenerates it; the
+# listing itself is committed since 2026-09-09). That is fine for a code
 # change and a trap for a DATA one: tools/deck_palettes.json is hand-edited in
 # palette_lab.py, and a build after editing it silently used the old
 # src/data/colours.asm - the palettes and the text-screen backgrounds simply

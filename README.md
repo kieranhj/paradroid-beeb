@@ -36,24 +36,48 @@ outstanding; see [`PLAN.md`](PLAN.md).
 
 ## Building
 
-There is no pre-built image in the repository. Put `beebasm.exe` in `bin/`, then:
+There is no pre-built image in the repository. You need [BeebASM](https://github.com/stardot/beebasm)
+and **Python 3**, plus a C compiler on a POSIX system, where the build compiles its own ZX0
+compressor. Pillow is needed only to regenerate `src/data/` from the C64 listing (`make data`),
+which the normal build never does.
 
-```powershell
-.\build.ps1           # assemble into build/
-.\build.ps1 -Run      # assemble and launch in b-em
-.\build.ps1 -Release  # the build to give to other people: loading intro, no debug flags
+**Linux, macOS, BSD: the `Makefile`.**
+
+```sh
+make              # dev build (debug keys on) -> build/paradroid.ssd
+make -j4          # the same, compressing the banks in parallel
+make release      # the build to give to other people: loading intro, every debug flag off
+make intro        # dev build with the loading intro
+make run          # build, then launch an emulator on it
+make help         # every target
 ```
 
-`make.bat` and `make.sh` are thin wrappers over the same script, for cmd and sh (`make run` works).
-Python 3 and Pillow are needed for the build's data stages.
+`beebasm`, `python3` and `cc` come from `$PATH`; override them with `BEEBASM=`, `PYTHON=` and `CC=`.
+The ZX0 compressor's source is vendored in `tools/zx0src/`, and a fresh clone builds it into
+`bin/zx0` the first time.
 
-On any POSIX system the `Makefile` builds the same disc byte for byte — `make`, `make -j4`,
-`make release`, `make run`, `make help` — with `beebasm` and `python3` taken from `$PATH` (override
-with `BEEBASM=` / `PYTHON=`). The ZX0 compressor is vendored in `tools/zx0src/` and the build
-compiles it. [`docs/build.md`](docs/build.md) has the details.
+`make run` looks for b-em, b2, beebjit and MAME in that order, and starts the first it finds on a
+Master with the disc autobooting. With none installed it opens jsbeeb in your browser, with the disc
+carried inside the link. `EMU=` picks one; give it your own flags if your emulator's presets differ.
+A b-em `-m` number means whatever your own `b-em.cfg` says, for example.
 
-Everything lands in `build/`. Hand an emulator **`build/paradroid-200k.ssd`** — the padded copy,
-which is what every published build is.
+**Windows: `build.ps1`.** Put `beebasm.exe` and a ZX0 compressor in `bin/`
+([`tools/zx0src/README.md`](tools/zx0src/README.md) has the one-line gcc build), then:
+
+```powershell
+.\build.ps1           # dev build (debug keys on) -> build\paradroid.ssd
+.\build.ps1 -Release  # the build to give to other people
+.\build.ps1 -Intro    # dev build with the loading intro
+.\build.ps1 -Run      # build, then launch b-em on a Master with the disc autobooting
+```
+
+`$env:PYTHON` and `$env:BEEBASM` override the tools, and `$env:EMU` names the b-em that `-Run` starts. `make.bat` and `make.sh` are thin wrappers over
+`build.ps1`, for cmd and sh.
+
+The two builds produce the same disc, file for file; [`docs/build.md`](docs/build.md) has the
+details. Everything lands in `build/`. Hand an emulator **`build/paradroid-200k.ssd`** — the padded
+copy, which is what every published build is — on a machine with four sideways RAM banks: a Master,
+or a B configured with them.
 
 > **beebasm's own output is not bootable.** The build is several stages: the intro-manual text is
 > converted, beebasm assembles a raw image, and `tools/make_disc.py` then ZX0-compresses the

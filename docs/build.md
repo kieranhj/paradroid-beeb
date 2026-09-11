@@ -52,7 +52,8 @@ so `make BEEBASM=./bin/beebasm` uses a checked-out local assembler. An override 
 an existing file rather than a bare command, because it is a prerequisite. `tools/zx0tool.py`
 resolves the compressor the same way for the five Python tools that shell out to it — `$ZX0`,
 then `bin/`, then `$PATH` — which is how the same tree serves both builds with neither knowing
-which is running. `build.ps1` reads `$env:PYTHON` / `$env:BEEBASM` for the same reason, and
+which is running. `build.ps1` reads `$env:PYTHON` / `$env:BEEBASM` for the same reason (and
+`$env:EMU` names the b-em `-Run` starts; unset, it is the one on KC's machine), and
 `make check-ps1` uses that to hand its own tools over.
 
 Portability target is POSIX.1-2024 make: `?=`, `+=`, `.PHONY`, `.NOTPARALLEL` and `-j` are all in
