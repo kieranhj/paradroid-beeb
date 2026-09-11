@@ -1099,3 +1099,53 @@ path: `line` equal to `posY AND 7` at the first `SetMapFromPos` and 30-40 frames
 afterwards rather than checking the redraw independently). A real console session left by
 TRANSFER and by fire, `posY` `&3B`: `line` 3 throughout both. The transfer game's and the
 information screens' exits reach the same code and were not driven.
+
+## The deck plan draws twice as fast, through `LUTs` (issue #19)
+
+**2026-09-11, hexwab: "deck plan is surprisingly slow to draw".** Not a deviation — the page draws
+the same cells in the same order and the bytes are identical; only the method changed. Recorded
+because it creates a dependency nothing can `ASSERT`.
+
+**Measured before:** the whole `ct_trydeck` arm was **1,038,944 cycles, 26 fields, 0.52 s** on deck
+4 (`BuildLevel` + `PgXfer` 93,050, `ConDeck7` **945,894**), and 1,095,983 on deck 0. Cost is
+deck-INDEPENDENT: all 640 cells pay in full, blank or not. The C64 stores a character code and a
+colour byte per cell and lets the VIC draw it (`DrawPacked`, `$30A0`, ~60k cycles, ~3 frames), so
+the port was ~8.7x slower in wall-clock; it has to expand 16 bytes of bitmap a cell.
+
+**Where it went:** `cd7_expand` was 44 cycles a half-byte, 16 to a cell — **704 of ~1,347, over
+half** — masking and shifting each nibble by hand through absolute scratch, and the row loop spent
+16 more cycles a row shuffling Y by 8 and back. All of it recomputed what **`BuildLUTs` already
+tabulates**: `LUTs` at `&54C0`, four 16-entry tables, `LUTs[logical * 16 + nibble]` -> the MODE 1
+byte, clean expansions because the dither is a separate pass over the charset.
+
+**Now:** `ConDeckCell` sets `cdLut` = logical * 16, points `xgs` at `planChars + code*8`, keeps the
+right half's pointer in `cdDst2` (`xgd ORA 8` — `col*16` leaves the low nibble clear, so it never
+carries), and runs one `DEY`/`BPL` loop of eight rows, two table reads a row. `cd7_expand` and
+`cdMH`/`cdML`/`cdNib`/`cdTmp` are gone; the three new zero-page bytes (`cdDst2`, `cdLut`) come from
+the spare half of the page. It also removes the `planChars` page-cross, ~10k cycles.
+
+**Measured after:** `ConDeck7` **429,013** (deck 4) and 428,725 (deck 0) — **2.2x**, ~1,347 -> ~610
+cycles a cell; the arm **522,064, 13.1 fields, 0.26 s**, half what it was. Still deck-independent.
+
+**Cost: none — it GAVE 31 bytes back.** Bank 7's `plandata.asm` `ALIGN` pad 10 -> **41**;
+`xfer_end` and the code image unmoved.
+
+**[DECISION 23] The deck plan depends on `LUTs` holding the drawn deck's tables.** `ct_trydeck`
+(`main.asm`) calls `BuildLevel` — and so `BuildLUTs` — for exactly the deck being drawn,
+immediately before `ConDeck7`, and the page is drawn in one pass with nothing in between. Anything
+that reorders that, or draws the plan for a deck the map is not holding, silently draws the page in
+another deck's colours. No `ASSERT` can see it; `ConDeckCell`'s header says so too.
+
+**Verified in jsbeeb, 2026-09-11**, both images driven through an identical deterministic sequence
+(the pre-change build of `a3689c2` in a worktree, against this one; B's cycle counter landed on the
+same 44,492,913, so the player's position — and its marker cell — is in the diff, not excluded):
+
+| | |
+|---|---|
+| deck 4, busy | **0 of 10,240** play-buffer bytes differ |
+| deck 0, sparse | **0 of 10,240** (852 non-zero bytes: it really is the sparse case) |
+| the ship / lift cross-section | opened on the new build and drew cleanly — it shares `xgd` and `xfRowAdrLo`; `ConDeckCell` leaves nothing live in `xgs` and `cd7_mark` reloads it |
+
+The transfer minigame's screens share `xgd` too and were not opened this session; no path leaves
+state in them. **Win 2 of that pass — a blank-cell fast path, ~226 of deck 4's 640 cells — is still
+available** and is worth relatively more of what remains, at ~12 bytes.

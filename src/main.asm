@@ -1471,6 +1471,12 @@ drYcol0  = &A0                  \ 0, 16, 32                        (3)
 drYcol1  = &A3                  \ 8, 24, 40                        (3)
 drYcol2  = &A6                  \ 16, 32, 48                       (3)
 
+\ The deck plan's cell renderer, from the same spare half of the zero
+\ page (issue #19). Bank 7, written before read on every cell, and
+\ nothing needs them to survive anything.
+cdDst2   = &A9                  \ the cell's right half, 8 bytes on  (2)
+cdLut    = &AB                  \ the ink's LUTs table, logical * 16 (1)
+
 \ BuildCharset borrows zero page from routines that have finished.
 bcSrc    = src
 bcDst    = mapptr

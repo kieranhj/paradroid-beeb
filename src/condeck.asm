@@ -159,8 +159,25 @@
 \ The hires conversion, done as the cell is plotted: each of the 8
 \ source rows is two nibbles, and a nibble expands to a MODE 1 byte by
 \ landing in the high plane, the low, both or neither as the ink's two
-\ bits say — background 0, so clear pixels are clear bytes. 640 cells
-\ of this once per page open; speed is not a consideration.
+\ bits say — background 0, so clear pixels are clear bytes.
+\
+\ THE EXPANSION IS `LUTs`, NOT ARITHMETIC (issue #19: hexwab found the
+\ page slow to draw; 2026-09-11). This used to mask and shift each
+\ nibble by hand through absolute scratch, 44 cycles a half-byte and
+\ over half the cost of a cell — recomputing exactly what BuildLUTs
+\ (level.asm) has already tabulated at &54C0 as four 16-entry tables,
+\ `LUTs[logical * 16 + nibble]`. The dither is a separate pass over the
+\ charset, so those entries are clean expansions and the byte this
+\ produces is identical. 640 cells fell from ~1,347 cycles each to
+\ ~570: the page draws in about half the time it did.
+\
+\ THE DEPENDENCY, and it is why this is written down: `LUTs` holds THIS
+\ DECK'S tables only while the deck it was built for is current.
+\ ct_trydeck (main.asm) calls BuildLevel — so BuildLUTs — immediately
+\ before ConDeck7, for exactly the deck being drawn, and the plan is
+\ drawn in one pass with nothing in between. Anything that reorders
+\ that, or draws the plan for a deck the map is not holding, breaks
+\ this page's colours.
 .ConDeckCell
   STA xfColV
   ASL A : ASL A : ASL A : ASL A \ dst = BUF_BASE + row*640 + col*16
@@ -172,56 +189,38 @@
   CLC
   LDA xgd   : ADC xfRowAdrLo,X : STA xgd
   LDA xgd+1 : ADC xfRowAdrHi,X : STA xgd+1
+  LDA xgd                       \ the right half is 8 bytes on, and col*16
+  ORA #8                        \ leaves the low nibble clear, so this
+  STA cdDst2                    \ never carries
+  LDA xgd+1
+  STA cdDst2+1
 
-  LDY lvChar                    \ the ink, 0-3, into two nibble masks
+  LDY lvChar                    \ the ink, 0-3: its table is 16 entries in
   LDA (xdest2),Y
-  AND #2
-  BEQ cd7_mh0
-  LDA #&0F
-.cd7_mh0
-  STA cdMH
-  LDA (xdest2),Y
-  AND #1
-  BEQ cd7_ml0
-  LDA #&0F
-.cd7_ml0
-  STA cdML
-
-  LDA lvChar                    \ planChars + code*8, byte indexed —
-  ASL A : ASL A : ASL A         \ codes stop at $1E so it stays a byte
-  TAX
-  LDY #0
-.cd7_row
-  LDA planChars,X
-  PHA
-  LSR A : LSR A : LSR A : LSR A \ left half from the high nibble
-  JSR cd7_expand
-  STA (xgd),Y
-  PLA
-  AND #&0F                      \ right half from the low
-  JSR cd7_expand
-  PHA
-  TYA : CLC : ADC #8 : TAY      \ the right half sits 8 bytes on
-  PLA
-  STA (xgd),Y
-  TYA : SEC : SBC #8 : TAY
-  INX
-  INY
-  CPY #8
-  BNE cd7_row
-  RTS
-
-.cd7_expand                     \ A = source nibble -> MODE 1 byte
-  STA cdNib
-  AND cdMH
   ASL A : ASL A : ASL A : ASL A
-  STA cdTmp
-  LDA cdNib
-  AND cdML
-  ORA cdTmp
-  RTS
+  STA cdLut
 
-.cdMH  EQUB 0                   \ the ink's high plane: &0F or 0
-.cdML  EQUB 0                   \ and its low
-.cdNib EQUB 0
-.cdTmp EQUB 0
+  LDA lvChar                    \ planChars + code*8: codes stop at $1E,
+  ASL A : ASL A : ASL A         \ so the *8 stays a byte
+  CLC
+  ADC #LO(planChars) : STA xgs
+  LDA #HI(planChars)
+  ADC #0             : STA xgs+1
+
+  LDY #7
+.cd7_row
+  LDA (xgs),Y
+  LSR A : LSR A : LSR A : LSR A \ left half from the high nibble
+  ORA cdLut                     \ ORA, not ADC: the offset is a multiple
+  TAX                           \ of 16 and the nibble is under it
+  LDA LUTs,X
+  STA (xgd),Y
+  LDA (xgs),Y
+  AND #&0F                      \ right half from the low
+  ORA cdLut
+  TAX
+  LDA LUTs,X
+  STA (cdDst2),Y
+  DEY
+  BPL cd7_row
+  RTS
