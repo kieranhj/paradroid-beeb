@@ -417,15 +417,16 @@ run: $(SSD)
 	    done; \
 	fi; \
 	if [ -z "$$emu" ]; then emu=jsbeeb; fi; \
-	echo "  $$emu $(SSD)"; \
 	case $$emu in \
-	    jsbeeb)    exec $(PYTHON) tools/run_jsbeeb.py $(SSD) ;; \
-	    *b-em*)    exec $$emu -m10 -autoboot -disc $(SSD) ;; \
-	    *beebjit*) exec $$emu -master -autoboot -0 $(SSD) ;; \
-	    *mame*)    exec $$emu bbcm -flop1 $(SSD) ;; \
-	    *b2*)      exec $$emu -b -0 $(SSD) ;; \
-	    *)         exec $$emu $(SSD) ;; \
-	esac
+	    jsbeeb)    set -- $(PYTHON) tools/run_jsbeeb.py $(SSD) ;; \
+	    *b-em*)    set -- $$emu -m10 -autoboot -disc $(SSD) ;; \
+	    *beebjit*) set -- $$emu -master -autoboot -0 $(SSD) ;; \
+	    *mame*)    set -- $$emu bbcm -flop1 $(SSD) ;; \
+	    *b2*)      set -- $$emu -b -0 $(SSD) ;; \
+	    *)         set -- $$emu $(SSD) ;; \
+	esac; \
+	echo "  $$*"; \
+	exec "$$@"
 
 # Prove this Makefile and build.ps1 agree. compare_ssd.py works per file
 # out of the catalogue and masks !BOOT's build timestamp, which is the one
