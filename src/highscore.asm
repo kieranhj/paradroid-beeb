@@ -199,6 +199,7 @@ HS_COL_INI    = 31              \ $E6E8's
   STA hsSelFor+1
   STA hsSelFor+2
   JSR HsType
+  JSR HsHold                    \ and the finished entry stays up a moment
 
 \ ---- $E52A/$E561: the initials into the table ---------------
 \ The C64 hands them to UpdateTextScore, which writes them into the
@@ -282,6 +283,32 @@ HS_COL_INI    = 31              \ $E6E8's
 .HsRelease
   JSR HsScan
   BPL HsRelease                 \ something is still down
+  RTS
+
+\ ---- HsHold: the finished entry, left up for about a second ----
+\ hexwab, issue #16 (2026-09-11): you never saw the last letter. The
+\ third one is drawn only once its key is up (HsRelease above), and the
+\ title followed in the same instant; RETURN left just as fast. The
+\ C64's picker had $E599's delay after every redraw, which the typed
+\ entry dropped with the picker (DECISION 19). This is that loop's
+\ shape with an outer count: 256 x 256 x 5 cycles is 327,680, about
+\ 0.16 s, and HS_HOLD of them makes the hold. It spins, as HsType does:
+\ the main loop has stopped and nothing else wants the machine.
+HS_HOLD = 6                     \ ~1 s at 2 MHz
+.HsHold
+  LDA #HS_HOLD
+.hh_a
+  LDY #0
+.hh_y
+  LDX #0
+.hh_x
+  DEX
+  BNE hh_x
+  DEY
+  BNE hh_y
+  SEC
+  SBC #1
+  BNE hh_a
   RTS
 
 \ ---- the keys, as INKEY bytes: A-Z, then DELETE and RETURN ---------

@@ -1008,6 +1008,17 @@ agree with the ten `KEY_` constants `main.asm` already carried. **Bank 7: 25 byt
 a space, **M** filled the slot again, **RETURN** ended it — and `hsHiIni` was filed as `0A 0C 1A`,
 K, M, space, beside the new `00 99 99 99`. A held DELETE deleted once.
 
+**The finished entry now stays up for about a second** (hexwab, on #16, 2026-09-11, playtesting:
+*"you never get to see the last letter you typed, because it instantly finishes and returns to the
+title screen"*). The third letter is drawn only once its key is up, and the title followed in the
+same instant; RETURN left as fast. The picker's delay had gone with the picker, so `HsHold` puts
+one back after `HsType`, on both exits: `HsWait`'s busy-loop shape with an outer count, `HS_HOLD` =
+6 rounds of 256 × 256 × 5 cycles, about 0.99 s. **Bank 7: 21 bytes** of tail, `&BF97` → `&BFAC`
+(84 free). **Measured in jsbeeb** on a real game over (`score` poked to `00 99 99 99`, ESCAPE),
+typing K, L, M: at `HsHold`'s first instruction `hsIni` read K L M and slot 2's cells in the play
+buffer held the M; from there to the title's `TiWait` took **2,568,685 cycles, 1.28 s** (the hold
+plus filing the initials and painting the title), and `hsHiIni` was filed as `0A 0B 0C`.
+
 ### 8d. Verified in jsbeeb, 2026-08-30
 
 Boot, title timeout, CTRL+R, then: LEFT <- A, a duplicate A refused with "Already used",
