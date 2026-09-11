@@ -118,12 +118,14 @@ ORG SWR_ADDR
   CMP #4
   BCC swr_short                 \ genuinely short, either way
 
+  JSR SwrList
   LDX #LO(swMsgSolid)
   LDY #HI(swMsgSolid)
   JSR SwrPrint
   JMP SwrAbort
 
 .swr_short
+  JSR SwrList
   LDX #LO(swMsgShort)
   LDY #HI(swMsgShort)
   JSR SwrPrint
@@ -154,6 +156,7 @@ ORG SWR_ADDR
 \ taken on.
 .swr_found
   JSR SwrRestore
+  JSR SwrList
   LDX #3
   LDY #0
 .swr_hand
@@ -376,6 +379,34 @@ ORG SWR_ADDR
 .ssw_x
   RTS
 
+\ ---- every bank the probe found, not just the four taken ----
+\ hexwab, issue #18: on a board that misbehaves, what was FOUND is the
+\ useful half of the report. swBanks is highest first, swCount long -
+\ whichever pass ran last, so on a refusal it is that pass's view.
+.SwrList
+  LDX #LO(swMsgList)
+  LDY #HI(swMsgList)
+  JSR SwrPrint
+  LDA swCount
+  BNE sl_some
+  LDX #LO(swMsgNone)
+  LDY #HI(swMsgNone)
+  JSR SwrPrint
+.sl_some
+  LDY #0
+.sl_bank
+  CPY swCount
+  BEQ sl_done
+  LDA swBanks,Y
+  JSR SwrDigit                  \ OSASCI keeps Y
+  LDA #' '
+  JSR OSASCI
+  INY
+  BNE sl_bank
+.sl_done
+  LDA #13
+  JMP OSASCI
+
 \ ---- one hex digit of A, and a string at X/Y ----------------
 .SwrDigit
   CMP #10
@@ -398,19 +429,25 @@ ORG SWR_ADDR
 .swp_x
   RTS
 
+\ Mixed case, not capitals (hexwab, issue #18): MODE 7 has lower case
+\ and nothing here needs shouting.
+.swMsgList
+  EQUS "Sideways RAM found: ", 0
+.swMsgNone
+  EQUS "none", 0
 .swMsgOK
-  EQUS "DETECTED SWRAM BANKS: ", 0
+  EQUS "Using banks: ", 0
 .swMsgShort
-  EQUS 13, "PARADROID NEEDS 4 x 16K SIDEWAYS RAM", 13, "BANKS - FOUND ", 0
+  EQUS 13, "Paradroid needs 4 x 16K sideways RAM", 13, "banks - found ", 0
 .swMsgLinks
-  EQUS "(SET LK18 AND LK19 WEST?)", 13, 0
+  EQUS "(Set LK18 and LK19 west?)", 13, 0
 .swMsgImage
-  EQUS "(THE LAST HOLDS A ROM IMAGE, WHICH", 13
-  EQUS "WILL BE OVERWRITTEN)", 13, 0
+  EQUS "(The last holds a ROM image, which", 13
+  EQUS "will be overwritten)", 13, 0
 .swMsgSolid
-  EQUS 13, "SIDEWAYS RAM FOUND, BUT ON A BOARD WITH", 13
-  EQUS "SOLIDISK-STYLE WRITE SELECT, WHICH THIS", 13
-  EQUS "GAME DOES NOT SUPPORT.", 13, 0
+  EQUS 13, "Sideways RAM found, but on a board with", 13
+  EQUS "Solidisk-style write select, which this", 13
+  EQUS "game does not support.", 13, 0
 .swCmdExec
   EQUS "EXEC", 13
 

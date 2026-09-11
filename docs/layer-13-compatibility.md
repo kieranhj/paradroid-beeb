@@ -255,3 +255,28 @@ the last one in the unused stack page — and marking it in `&02A8`. The pre-cha
 `&0D00` = `&40`. Through the `-Intro` build the image was still intact after the intro and the
 same four facts held at the title. Plain B/DFS 1.20 and B/1770, with and without the intro, still
 play. **A real ZMMFS machine has not been tried.**
+
+## The report lists every bank found, in mixed case (2026-09-11, hexwab on #18)
+
+hexwab tried several expansion boards in MAME and wanted to see what the probe **found**, not only
+the four it took; on a board that misbehaves that is the useful half. `SwrList` prints
+`Sideways RAM found:` and every bank in `swBanks` (highest first, `swCount` long) on all three
+exits: before `Using banks:` on success, and ahead of the refusal on the short and Solidisk
+paths, where it is the last pass's view. The messages are mixed case now; MODE 7 has lower case
+and nothing here needs shouting. The older capitalised quotes above are records of those tests.
+
+What his MAME runs showed, read from MAME's own board source rather than assumed:
+
+- **Watford Electronics ROM/RAM board, "FOUND 0".** MAME routes every sideways write to a
+  separate write-select register (`m_ramsel`), and nothing in its `weromram.cpp` ever sets it,
+  so every write lands in one slot and no probe can succeed. That is a gap in MAME, and says
+  nothing yet about a real board. Whether a real one needs a write-select too is unknown; if it
+  does, it is refused for the same reason as Solidisk (DECISION 2).
+- **Solidisk Twomeg 128K, "7 D E F", dies before the mode change.** In MAME's `stl2m128.cpp` its
+  eight RAM banks (4-7, C-F) are distinct and written through ROMSEL alone, so the probe is right
+  for it. But its shadow RAM IS those banks: with `&FE34` bit 7 set, CPU writes at `&3000`+ go to
+  banks C/D (or E/F with bit 1). A boot `*LOAD` to `&3200` with shadow on would land in the
+  game's own banks. That is a lead, not a measured cause, and KC has not asked for it to be
+  chased.
+- **Watford DDFS 1.53** died at `*RUN PARA` in b-em (`-m19`); KC has tested it in b2, where it
+  runs.
