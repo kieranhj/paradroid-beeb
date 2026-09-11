@@ -156,7 +156,7 @@ def in_place_delta(packed, raw):
 # loads PARXFER last, after the font, in case its bank holds the filing
 # system - so it goes last on the disc too, and the head still only
 # moves forwards.
-LAYOUT = ["!BOOT", "PARSWR", "PARA", "PARADAT", "PARASPR", "PARSPR2",
+LAYOUT = ["!BOOT", "INFO", "PARSWR", "PARA", "PARADAT", "PARASPR", "PARSPR2",
           "PARAFNT", "PARXFER"]
 
 SECTOR = 256

@@ -5078,45 +5078,26 @@ BOOT_RUN = RELEASE
 BT_OSASCI = &FFE3               \ OSWRCH, but 13 comes out as CR AND LF.
                                 \ Its own name: swram.asm defines OSASCI
                                 \ and beebasm refuses a symbol twice
-IF BOOT_RUN
-BOOT_PFX = ""
-CLEAR &0900, &0A00
-ORG &0900
-.boot_start
-  LDX #0                        \ the stamp, up to its terminating 0
-.bt_loop
-  LDA bt_text,X
-  BEQ bt_done
-  JSR BT_OSASCI
-  INX
-  BNE bt_loop
-.bt_done
-  LDX #LO(bt_cmd1)              \ the probe RTSes back here, exactly as
-  LDY #HI(bt_cmd1)              \ it returns to BASIC under *EXEC — or
-  JSR OSCLI                     \ BRKs, and this never resumes
-  LDX #LO(bt_cmd2)
-  LDY #HI(bt_cmd2)
-  JMP OSCLI                     \ the game: it never comes back
-.bt_text
-ELSE
-BOOT_PFX = "REM "
-CLEAR &7E00, &7F00
-ORG &7E00
-.boot_start
-EQUS "*BASIC", 13
-EQUS "CLS", 13
-ENDIF
-EQUS BOOT_PFX, "PARADROID by ANDREW BRAYBROOK", 13
-EQUS BOOT_PFX, "PORTED by BITSHIFTERS with", 13
-EQUS BOOT_PFX, "AI ASSISTANCE (Claude Code)", 13
-EQUS BOOT_PFX, "BUILD ", TIME$("%d %b %Y %H:%M:%S"), 13
+\ ---- the stamp itself, ONCE, as a macro --------------------------
+\ KC 2026-09-11: the build info is a DISC FILE, `INFO`, so it can be
+\ read at any time — `*TYPE INFO` — and not only in the seconds it
+\ scrolls past at boot. The dev `!BOOT` *TYPEs it; the RELEASE stub
+\ cannot (it holds one OSCLI chain and DFS's *TYPE would want a third),
+\ so it prints its own copy of the same bytes straight to the screen.
+\ The macro is what stops the two drifting: every line, and every
+\ DEBUG_ flag, is written here alone.
+MACRO BuildStamp
+EQUS "PARADROID by ANDREW BRAYBROOK", 13
+EQUS "PORTED by BITSHIFTERS with", 13
+EQUS "AI ASSISTANCE (Claude Code)", 13
+EQUS "BUILD ", TIME$("%d %b %Y %H:%M:%S"), 13
 IF RELEASE
-EQUS BOOT_PFX, VERSION_LINE, 13 \ the DEBUG line's seat — a release
+EQUS VERSION_LINE, 13           \ the DEBUG line's seat — a release
                                 \ build has no flags, by the ASSERT
                                 \ above. VERSION_LINE is set beside DEV
 ENDIF
 IF DEBUG_ANY
-EQUS "REM DEBUG:"
+EQUS "DEBUG:"
 IF DEBUG_RASTER
 EQUS " RASTER"
 ENDIF
@@ -5157,6 +5138,46 @@ IF DEBUG_TRCHK
 EQUS " TRCHK"
 ENDIF
 EQUB 13
+ENDIF
+ENDMACRO
+
+\ ---- INFO: the file, on every disc --------------------------------
+\ Assembled at the same scratch address the text !BOOT uses; it is a
+\ disc file, not code, and nothing ever loads it there.
+CLEAR &7E00, &7F00
+ORG &7E00
+.info_start
+BuildStamp
+.info_end
+SAVE "INFO", info_start, info_end
+
+IF BOOT_RUN
+CLEAR &0900, &0A00
+ORG &0900
+.boot_start
+  LDX #0                        \ the stamp, up to its terminating 0
+.bt_loop
+  LDA bt_text,X
+  BEQ bt_done
+  JSR BT_OSASCI
+  INX
+  BNE bt_loop
+.bt_done
+  LDX #LO(bt_cmd1)              \ the probe RTSes back here, exactly as
+  LDY #HI(bt_cmd1)              \ it returns to BASIC under *EXEC — or
+  JSR OSCLI                     \ BRKs, and this never resumes
+  LDX #LO(bt_cmd2)
+  LDY #HI(bt_cmd2)
+  JMP OSCLI                     \ the game: it never comes back
+.bt_text
+BuildStamp
+ELSE
+CLEAR &7E00, &7F00
+ORG &7E00
+.boot_start
+EQUS "*BASIC", 13
+EQUS "CLS", 13
+EQUS "*TYPE INFO", 13           \ the same text, from the file
 ENDIF
 IF BOOT_RUN
 EQUB 0                          \ ends the stamp the loop above prints

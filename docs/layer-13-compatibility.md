@@ -317,10 +317,29 @@ stub's single command is renamed `PARA` -> `PINTRO`, and the intro chains to `PA
 | RELEASE disc, B/DFS 1.20 | option **2**, `!BOOT` load/exec `&0900`, 193 bytes; prints the stamp with no `REM`s, then `Sideways RAM found: 7 6 5 4 3 2 1 0` / `Using banks: 4 5 6 7`, and runs on into the intro and the game |
 | `PINTRO` wiring | the stub's command reads `RUN PINTRO`, the probe's `RUN PARSWR` untouched |
 | the refusal, under `*RUN` | banks marked occupied at the probe's entry until two were left: it printed `banks - found 2` and then **`Paradroid not started`**, and the game did not start |
-| dev disc | still option **3**, text `!BOOT` at `&7E00`, `REM DEBUG: XFERWIN DECK KILL REDRAW`, boots to the briefing |
+| dev disc | still option **3**, text `!BOOT` at `&7E00` — now four `*` commands, one of them `*TYPE INFO` — boots to the briefing |
 
 **Not settled: the BREAK beep.** The kit's own table leaves it open — a `*RUN` boot enters with
 interrupts off (measured here too: `P` = `&35` at the probe's first instruction), so the MOS never
 ends the beep it starts, and Edge silenced the chip in `install_irq` instead. OSBYTE 126 does not
 help: no ESCAPE is pending. Our capture shows the game's driver idling silent long after boot, but
 the first writes were not inspected, so whether a release disc beeps through its intro is untested.
+
+### The stamp is a disc file, `INFO` (KC, 2026-09-11)
+
+The build info was only ever readable in the seconds it scrolled past. It is a disc file now, so
+`*TYPE INFO` gives it back at any prompt — the build time, the version line on a release, and every
+`DEBUG_` flag that is on. **The dev `!BOOT` *TYPEs it** (`*BASIC`, `CLS`, `*TYPE INFO`, then the two
+`*RUN`s: 44 bytes where it was 197). **The RELEASE stub prints its own copy** straight to the
+screen, because it holds one OSCLI chain and nothing spare for a third command.
+
+**`main.asm`'s `BuildStamp` macro emits the text once** and both use it, which is what stops them
+drifting. It is named for beebasm, which refuses a macro whose name begins with a mnemonic —
+`STAMP_TEXT` starts `STA`, and the build stops with *Macro name cannot start with an assembler
+mnemonic*. `INFO` is assembled at the same `&7E00` scratch the text `!BOOT` uses (it is a file, not
+code, and nothing loads it there) and sits right after `!BOOT` in `make_disc.py`'s `LAYOUT`, so it
+is under the head when the boot reads it. Nine disc files now.
+
+**Verified in jsbeeb, 2026-09-11:** `*TYPE INFO` works on DFS 1.20 — the dev disc printed
+`PARADROID by ANDREW BRAYBROOK` ... `DEBUG: XFERWIN DECK KILL REDRAW` from the file, then probed
+and ran the game.

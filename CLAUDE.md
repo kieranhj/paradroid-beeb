@@ -418,7 +418,7 @@ colourways are OURS — `tools/export_intro.py` — and came back byte-identical
 `src/data/introscr.zx0` and `src/data/introfx.asm` stay as the committed provenance even though
 nothing includes them now. `docs/intro.md` §8.
 
-**`PARSWR` is an eighth disc file and the FIRST thing `!BOOT` runs** — the sideways RAM
+**`PARSWR` is a disc file (one of nine, with `INFO`) and the FIRST thing `!BOOT` runs** — the sideways RAM
 detector (`src/swram.asm`, Layer 13b). It probes all sixteen banks, takes the highest four, and
 leaves them at `SWR_HAND = &0A00` for `.start` to copy into `swBank`. **With exactly three clean
 banks it takes a RAM bank holding a ROM image as the fourth, `SWRAM_XFER`** (issue #18 item 9,
@@ -549,7 +549,13 @@ Both worked around locally; extending the shared set is the better fix and moves
   `DEBUG_RESTART` was removed 2026-08-21: **ESCAPE** is a real game feature that ends the game
   through the whole death sequence, and it tests the boot split better than R's jump to
   `GameStart` did.
-- **A debug build says so at boot.** `!BOOT` names every flag that is on (`REM DEBUG: XFERWIN`),
+- **A debug build says so at boot, and the disc says so for ever.** **The stamp is a disc file,
+  `INFO`** (KC, 2026-09-11), so it can be read whenever — `*TYPE INFO` — and not only while it
+  scrolls past: the dev `!BOOT` is four `*` commands and `*TYPE INFO` is one of them, and the
+  RELEASE stub prints its own copy of the same bytes. **`main.asm`'s `BuildStamp` macro emits it
+  once** and both use it, which is what stops them drifting; the macro is named for beebasm, which
+  refuses a macro whose name opens with a mnemonic (`STAMP_TEXT` begins `STA`). It names every flag
+  that is on (`DEBUG: XFERWIN`),
   built from conditional `EQUS` directives beside the build stamp, and a clean build prints no
   such line. Adding a flag means adding it to that block and to `DEBUG_ANY` as well as defining
   it — otherwise a build can lie about itself. **A RELEASE build prints `VERSION_LINE` in that
