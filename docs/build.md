@@ -61,6 +61,21 @@ steady state it is one assembly. `src/data/brfimg.asm`, `lowimg.asm` and `krimg.
 therefore **not prerequisites of anything** — list them and every build would find the raw image
 stale against its own output and assemble for ever.
 
+**The loop has to survive `sh -e` (2026-09-11, hexwab on #3: OpenBSD's make stopped with
+`Error 10`).** POSIX has make run recipes with `-e` in effect and BSD make does; GNU make does not
+unless the makefile declares `.POSIX`, which is why nothing here saw it. Under `-e`,
+`pack_overlays.py`'s exit 10 killed the shell before `rc=$$?` could read it, so the status is now
+taken with `rc=0; … || rc=$$?`. The failure also left a second trap, and the fix closes that too.
+A loop that died in pass 1 left `paradroid-raw.ssd` assembled against the stub overlays and newer
+than all its prerequisites, so the next `make` would ship it without assembling. The passes now
+write `$(RAW).new`, which is renamed only once the overlays settle. Verified with MSYS GNU make
+4.4.1 under `--eval=.POSIX:` from stubbed overlays: the loop converged, and `compare_ssd.py` found
+the disc identical to `build.ps1`'s, 8 files, bar `!BOOT`'s timestamp.
+
+**Two builds' `.ssd` files never hash the same**, even from the same tree. `!BOOT` carries
+`TIME$` (`REM BUILD <date>`), so a whole-image SHA256 changes with the clock. Compare with
+`tools/compare_ssd.py`, which masks exactly that.
+
 **`RELEASE` and `INTRO` change what beebasm emits but touch no file make can see.** The fix is a
 phony `config` target that records them and *deletes* `$(RAW)` when they change, ordered ahead of
 everything by the recursion in `all`. It was a stamp file first, and that was wrong in a way

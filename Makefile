@@ -181,26 +181,37 @@ intro:
 # not a dependency - it settles by iterating and says so with exit 10.
 # IN THE STEADY STATE IT IS ONE ASSEMBLY: the first pass extracts what is
 # already there, finds it unchanged and exits 0.
+#
+# TWO THINGS HERE ARE FOR `sh -e` (hexwab on #3, OpenBSD make). POSIX has
+# make run every recipe with -e in effect, and BSD make does; GNU make
+# does not unless the makefile says .POSIX. Under -e the exit 10 above
+# kills the shell before `rc=$$?` can read it, so the status is taken
+# with `|| rc=$$?`, which -e leaves alone. And the passes assemble into
+# $(RAW).new, renamed only once the overlays have settled: a loop that
+# dies in pass 1 would otherwise leave an image built against the STUBS,
+# newer than everything it depends on, and the next make would ship it.
 
 $(RAW): $(ASM) $(DATA) $(BRIEF) $(ZX0)
 	@mkdir -p $(BUILD)
 	$(PYTHON) tools/pack_overlays.py --zx0 $(ZX0) --ensure $(RAW)
-	@pass=1; while :; do \
+	@rm -f $(RAW); pass=1; while :; do \
 	    echo "  beebasm (pass $$pass)"; \
-	    $(BEEBASM) -i src/main.asm -do $(RAW) -opt 3 -title PARADROID \
+	    $(BEEBASM) -i src/main.asm -do $(RAW).new -opt 3 -title PARADROID \
 	        -D RELEASE=$(RELEASE) -v > $(LISTING) || \
-	        { rm -f $(RAW); exit 1; }; \
-	    $(PYTHON) tools/pack_overlays.py --zx0 $(ZX0) $(RAW); rc=$$?; \
+	        { rm -f $(RAW).new; exit 1; }; \
+	    rc=0; $(PYTHON) tools/pack_overlays.py --zx0 $(ZX0) $(RAW).new || \
+	        rc=$$?; \
 	    if [ $$rc -eq 0 ]; then break; fi; \
-	    if [ $$rc -ne 10 ]; then rm -f $(RAW); exit $$rc; fi; \
+	    if [ $$rc -ne 10 ]; then rm -f $(RAW).new; exit $$rc; fi; \
 	    pass=`expr $$pass + 1`; \
 	    if [ $$pass -gt 4 ]; then \
 	        echo "pack_overlays did not settle in 4 passes - the" \
 	             "overlays' own bytes depend on the bank layout their" \
 	             "size decides" >&2; \
-	        rm -f $(RAW); exit 1; \
+	        rm -f $(RAW).new; exit 1; \
 	    fi; \
-	done
+	done; \
+	mv $(RAW).new $(RAW)
 
 listing: $(RAW)
 
