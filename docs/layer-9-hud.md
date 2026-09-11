@@ -1006,6 +1006,12 @@ the port copied that in `DbSideways`, and nothing read the transfer key. Now **r
 go forward, left goes back a screen**. Up and down still walk droid types in the browser, and fire
 still leaves — both as the C64's.
 
+**Amended 2026-09-11 by layer-7 [DECISION 14]: TRANSFER is no longer forward.** It closes the
+console from any screen now, the database included (`ConXfer4`, `droid.asm`), and one key cannot
+mean both "next" and "leave". Right still goes forward and left back, so nothing is lost;
+`DbKeys` lost its transfer arm and `dbPrevX` went with it. The table below is the original
+verification and its last row no longer holds.
+
 **How back works.** A screen of stats or description is wholly determined by where it starts —
 `dbStatN` and `dbDescIx`; `DbStatLine` and `db_d_cont` reset everything else — so back is
 restoring the previous screen's start and letting page 2 print it again, through exactly the code

@@ -2277,7 +2277,9 @@ ENDIF                           \ other close: no band may outlive a pass
 \ console arm reads both, a pass later, as it always did.
 \ liftMode can only be 0 at the edge: with the view up the pass
 \ short-circuits at the lift arm long before this block — leaving the
-\ lift is LiftViewTick's commit, on fire, as the C64's is.
+\ lift is LiftViewTick's commit, on fire as the C64's is or on this key
+\ (layer-7 DECISION 14), whose hold LvTick4 then eats through fireEaten.
+\ The console does the same (ConXfer4).
 \ THE C64 HAS ONE BUTTON and DoMoveMode ($31B9) has to divide it three
 \ ways, which is what the settle state is for: press fire WITH a
 \ direction and you draw the weapon, press it with NONE and eight
@@ -2577,6 +2579,11 @@ ENDIF                           \ other close: no band may outlive a pass
 \ is sixteen rows from ConsoleOpen, so the plan's 16-row map needs no
 \ switch of its own — see T1_I3X.
 .ConsoleTick
+  JSR ConXfer4                  \ bank 4: TRANSFER leaves from any screen
+                                \ (layer-7 DECISION 14). On the press it
+                                \ clears conActive and every page flag, so
+                                \ the arms below fall through to
+                                \ ct_noship's reframe
   LDA conShipReq
   CMP #2
   BEQ ct_ship

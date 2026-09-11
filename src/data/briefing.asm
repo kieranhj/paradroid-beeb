@@ -796,9 +796,11 @@
 .brRow_0_44
   EQUB &FF
 .brRow_0_45
-  \ "console."
+  \ "console, and again to leave it."
   EQUB 2
-  EQUB 65, 77, 76, 81, 77, 74, 67, 89
+  EQUB 65, 77, 76, 81, 77, 74, 67, 104, 0, 63, 76, 66
+  EQUB 0, 63, 69, 63, 71, 76, 0, 82, 77, 0, 74, 67
+  EQUB 63, 84, 67, 0, 71, 82, 89
   EQUB &FE
   EQUB &FF
 .brRow_0_46

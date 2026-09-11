@@ -1046,3 +1046,50 @@ runs from it:
 X + L first gave no bullet: the platform has a wall immediately to its right, and `DoFire` refuses a
 shot fired straight into a wall, as the original does. **The console arm was not driven in the
 emulator**; it reads the same two flags the lift test exercised.
+
+**[DECISION 14] The TRANSFER key closes what it opened — lifts and consoles.** KC, 2026-09-11, the
+second round of issue #12. hexwab playtested DECISION 13 and found transfer-to-enter, fire-to-leave
+*"horrible"*: the same key should open and close a lift or console, so a player can dip in and out.
+KC: if there is a second action button it should be the default for everything that is not fire.
+The proposal was posted on #12 before it was built. A further deviation from the C64, whose one
+button does all of it.
+
+| Screen | Transfer | Fire (unchanged, the C64's) |
+|---|---|---|
+| Lift view | commits: a moved selection rides, an unmoved one cancels | commits, the same |
+| Console menu | leaves the console, whichever icon is selected | selects the icon; the top one leaves |
+| Ship plan, deck plan, side view, database | leaves the console, straight back to play | back to the console menu |
+| Database | no longer "next screen" (layer-9 DECISION 21 amended) — right still is | back to the menu |
+
+**How.** `LvTick4` gains a transfer edge beside fire's (`lvPrevX`, armed by `LvEnter4` because the
+opening press is still down) that sets `lvCommit` exactly as fire does. The console gets
+`ConXfer4` (bank 4), called first in `ConsoleTick` every pass, with `conPrevX` armed by
+`ConMenuInit4`. On the press it does the whole exit bar the reframe: the side view's palette back
+(`ConShipExit4`) if that page is up, `conActive` and every page flag cleared, the exit chord, and
+the menu's own latches armed so its one pass on the way out does nothing; `ConsoleTick` then falls
+through to `ct_noship`'s existing reframe. **Both set `fireEaten`**, so the rest of the hold is
+swallowed back in play — `prevRet` is still 1 from the opening press (`PassPrep` does not run
+while either screen is up) and `LoadDeck` clears neither, so the held arm reads it even after a
+lift ride to another deck. The briefing's line is now "Press transfer to use a lift or console,
+and again to leave it." **Cost:** code image 3 (`code_end` `&2FD5`, 43 free); bank 4 102 (64
+free); bank 7's tail unmoved — `condb.asm` shrank inside `plandata.asm`'s `ALIGN` pad.
+
+**Verified in jsbeeb, 2026-09-11**, from two snapshots. The console: the tile under the player
+made a console by poking `DoCharUnder`'s `CMP #CHAR_CONSOLE` operand (`&1F77`) to the tile read at
+that site. The lift: deck 4's stop 16, by DECISION 13's recipe.
+
+| | |
+|---|---|
+| Console, menu: transfer in, transfer out, key held 70 frames | `conActive` 1 → 0; not re-opened; `moveMode` &80, `fireEaten` 1, "Mobile" and the deck back |
+| Console, side view: in, fire on entry 3, transfer | closed; `palPlay` byte-identical to the saved deck palette; play resumed |
+| Console, database: in, fire on entry 1, transfer | `conDbReq` and `conActive` 0; play resumed |
+| Database: right, the browser settled first | `dbPage` 1 → 2 — right still goes forward |
+| Lift: transfer in, transfer out unmoved, held 60 frames | `liftMode` 2 → 0 and stays 0; `deck` still 4; `moveMode` &80, `fireEaten` 1 |
+| Lift: in, down one stop, transfer out held 120 frames | `deck` 4 → 5, `liftPos` 17, `liftPlace` consumed; **`liftMode` stays 0 on arrival** with the key still down; mobile |
+| Lift: in, fire out unmoved | `liftMode` 0, `deck` 4 |
+
+**One thing to know, measured rather than fixed.** A screen's first tick comes some passes after
+the press that opened it — 556,719 cycles, 0.28 s, for the console — and a release inside that
+window is never seen, so the latch stays armed and a SECOND press that soon reads as the first
+still held; a third press then works. Fire's latches on the same screens have always had it. It
+only bites someone who closes a console within a quarter of a second of opening it.

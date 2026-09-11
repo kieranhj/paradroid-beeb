@@ -43,7 +43,7 @@ page 1
 39  0 |transfer mode. Make contact with
 41  0 |another robot to initiate it.
 43  0 |Press transfer to use a lift or
-45  0 |console.
+45  0 |console, and again to leave it.
 46  2 |Default keys:
 49  8 |Left:        Z
 51  8 |Right:       X

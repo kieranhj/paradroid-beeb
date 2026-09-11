@@ -175,8 +175,6 @@ DB_IMG_UNIT = 4
   STA dbPrevD
   STA dbPrevL
   STA dbPrevR
-  STA dbPrevX                   \ TRANSFER opens consoles now (layer-7
-                                \ DECISION 13), so it may still be down
   LDA #2
   STA conDbReq
   RTS
@@ -474,10 +472,12 @@ DB_HIST = 8
 .db_ph_x
   RTS
 
-\ ---- left, right and transfer, edge triggered ----------------
-\ A = 1 forward (right or TRANSFER), &FF back (left), 0 neither, and the
-\ flags follow A. It replaced DbSideways, which ORed left and right into
-\ one carry -- the C64's unsigned joyXDir.
+\ ---- left and right, edge triggered ---------------------------
+\ A = 1 forward (right), &FF back (left), 0 neither, and the flags
+\ follow A. It replaced DbSideways, which ORed left and right into one
+\ carry -- the C64's unsigned joyXDir. TRANSFER WAS FORWARD TOO until
+\ layer-7 DECISION 14 (2026-09-11): it closes the console now, from any
+\ screen (ConXfer4, droid.asm), and cannot mean both.
 .DbKeys
   LDX #CTL_LEFT
   JSR KeyDownIx
@@ -496,25 +496,13 @@ DB_HIST = 8
   JSR KeyDownIx
   BNE db_k_rUp
   LDA dbPrevR
-  BNE db_k_tryX
+  BNE db_k_no
   LDA #1
   STA dbPrevR
   RTS                           \ A = 1: forward
 .db_k_rUp
   LDA #0
   STA dbPrevR
-.db_k_tryX
-  LDX #CTL_XFER
-  JSR KeyDownIx
-  BNE db_k_xUp
-  LDA dbPrevX
-  BNE db_k_no
-  LDA #1
-  STA dbPrevX
-  RTS                           \ A = 1: forward
-.db_k_xUp
-  LDA #0
-  STA dbPrevX
 .db_k_no
   LDA #0
   RTS
@@ -1157,7 +1145,6 @@ ASSERT DB_IMG_ROW + 11 <= PLAY_ROWS      \ the 84-scanline portrait: rows 3-13
 .dbPrevD   EQUB 0
 .dbPrevL   EQUB 0
 .dbPrevR   EQUB 0
-.dbPrevX   EQUB 0               \ the transfer key's edge (DECISION 21)
 .dbHistN   EQUB 0               \ screens printed since the browser
 .dbHistS   SKIP DB_HIST         \ each one's dbStatN at its start
 .dbHistD   SKIP DB_HIST         \ and its dbDescIx

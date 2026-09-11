@@ -3118,6 +3118,8 @@ XF_PHYS_NEUT = 0                \ black   — logical 3, structure/unclaimed
   STA lvEntryPos
   LDA #1
   STA lvPrevFire                \ the entering press is still down
+  STA lvPrevX                   \ - it is the TRANSFER key's, and that
+                                \ leaves now too (layer-7 DECISION 14)
   STA prevLU                    \ and so may the step keys be: require
   STA prevLD                    \ a release before the first step
   LDA #0
@@ -3195,7 +3197,7 @@ XF_PHYS_NEUT = 0                \ black   — logical 3, structure/unclaimed
   JSR KeyDownIx                   \ the cancel, exactly the C64's shape
   BNE lvt4_fireOff
   LDA lvPrevFire
-  BNE lvt4_x
+  BNE lvt4_xfer
   LDA #1
   STA lvPrevFire
   STA lvCommit
@@ -3203,6 +3205,28 @@ XF_PHYS_NEUT = 0                \ black   — logical 3, structure/unclaimed
 .lvt4_fireOff
   LDA #0
   STA lvPrevFire
+\ TRANSFER COMMITS TOO (layer-7 DECISION 14, issue #12: hexwab and KC,
+\ 2026-09-11). The key that opened the lift closes it, so a player can
+\ dip in and out; fire keeps the C64's commit as well. Same ending as
+\ fire's - a moved selection rides, an unmoved one cancels - and
+\ fireEaten swallows the rest of the hold back in play, so it neither
+\ re-opens the lift nor starts transfer mode. prevRet is still 1 from
+\ the press that opened the view (PassPrep does not run while it is up)
+\ and LoadDeck clears neither, so PassPrep's held arm reads it.
+.lvt4_xfer
+  LDX #CTL_XFER
+  JSR KeyDownIx
+  BNE lvt4_xUp
+  LDA lvPrevX
+  BNE lvt4_x
+  LDA #1
+  STA lvPrevX
+  STA lvCommit
+  STA fireEaten
+  RTS
+.lvt4_xUp
+  LDA #0
+  STA lvPrevX
 .lvt4_x
   RTS
 
@@ -3347,6 +3371,8 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
   STA conMPrevL
   STA conPrevU
   STA conPrevD
+  STA conPrevX                  \ the opening press IS the transfer key,
+                                \ and it closes the console (ConXfer4)
 \ AND THE PLAY AREA GOES BLACK, BEFORE ANYTHING IS DRAWN ON IT.
 \ This ended in SetTextPal from 2026-08-24 — the menu's colours in
 \ force before the draw, which had been showing the menu in the deck's
@@ -3595,6 +3621,51 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
 .csk_x
   RTS
 
+\ ---- ConXfer4 — TRANSFER leaves the console, from any screen ----
+\ Layer-7 DECISION 14 (issue #12: hexwab playtesting, KC, 2026-09-11):
+\ the key that opens a console closes it again - from the menu or any
+\ page, the database included - so a player can dip in and out. Fire is
+\ untouched and keeps the C64's behaviour. ConsoleTick calls this first,
+\ every pass; conPrevX is armed by ConMenuInit4 because the opening
+\ press is still down.
+\ ON THE PRESS IT DOES THE WHOLE EXIT BAR THE REFRAME: conActive 0 and
+\ every page flag clear, so ConsoleTick falls through its menu arm to
+\ ct_noship, which reframes exactly as the menu's own exit does. The
+\ menu's edges are armed so that its one pass on the way out does
+\ nothing; the ship page's palette goes back as it does on fire; and
+\ fireEaten swallows the rest of the hold back in play - no transfer
+\ mode, and DoCharUnder's console arm does not re-open it.
+.ConXfer4
+  LDX #CTL_XFER
+  JSR KeyDownIx
+  BNE cx4_up
+  LDA conPrevX
+  BNE cx4_x
+  LDA conShipReq
+  CMP #2
+  BNE cx4_noship
+  JSR ConShipExit4              \ the deck's palette back, as fire's way
+.cx4_noship                     \ out of the side view does
+  LDA #0
+  STA conActive
+  STA conShipReq
+  STA conDeckReq
+  STA conDbReq
+  LDA #&16                      \ $2CC3: the mode-change chord going out,
+  STA sndFx1                    \ as the menu's own exit posts it
+  LDA #1
+  STA conPrevX
+  STA conMPrevL
+  STA conPrevU
+  STA conPrevD
+  STA fireEaten
+  RTS
+.cx4_up
+  LDA #0
+  STA conPrevX
+.cx4_x
+  RTS
+
 \ ---- the deck plan's way in and out -------------------------
 \ con_DeckInfo ($3001) reads the level RLE on the C64; since Layer 13d
 \ the port has no level RLE at all — the maps ship zx0-packed and the
@@ -3638,6 +3709,8 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
 .conSel     EQUB 0              \ the C64's consoleState low nibble, 0-3
 .conShipReq EQUB 0              \ 0 idle / 1 fire on entry 3 / 2 page up
 .conDeckReq EQUB 0              \ the same for entry 2, the deck plan
+.conPrevX   EQUB 0              \ TRANSFER's edge in the console (ConXfer4)
+.lvPrevX    EQUB 0              \ and in the lift view (LvTick4)
 .conMPrevL  EQUB 0              \ the menu's own key edges — prevRet is
 .conPrevU   EQUB 0              \ the weapon's, prevUp/Dn the debug hop's,
 .conPrevD   EQUB 0              \ prevLU/LD the lift's
