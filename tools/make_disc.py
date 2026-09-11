@@ -364,12 +364,20 @@ def main():
             at += 1
         if len(files) > 31:
             raise SystemExit(f"{len(files)} files - a DFS catalogue holds 31")
+        # TWO !BOOT SHAPES (issue #18 item 4). A dev build's is the *EXEC
+        # text file and gains a line; a RELEASE build's is the 6502 stub
+        # (main.asm, BOOT_RUN), which OSCLIs one command after the probe,
+        # so the NAME is rewritten instead -- PINTRO chains to PARA itself.
         boot = files["!BOOT"]["data"]
-        marker = b"*RUN PARA\r"
-        if marker not in boot:
-            raise SystemExit("!BOOT lacks '*RUN PARA' - cannot wire PINTRO")
-        files["!BOOT"]["data"] = boot.replace(
-            marker, b"*RUN PINTRO\r" + marker, 1)
+        if b"*RUN PARA\r" in boot:
+            files["!BOOT"]["data"] = boot.replace(
+                b"*RUN PARA\r", b"*RUN PINTRO\r*RUN PARA\r", 1)
+        elif b"RUN PARA\r" in boot:
+            files["!BOOT"]["data"] = boot.replace(
+                b"RUN PARA\r", b"RUN PINTRO\r", 1)
+        else:
+            raise SystemExit("!BOOT has neither '*RUN PARA' nor the stub's "
+                             "'RUN PARA' - cannot wire PINTRO")
         print(f"make_disc: INTRO build - PINTRO + {len(intro_files) - 1} data "
               "files wired into !BOOT")
 

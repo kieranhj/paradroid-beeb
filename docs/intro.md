@@ -332,7 +332,10 @@ relocated case**: force the handover to a different four and boot the whole chai
 
 ### Boot order, and the release build
 
-`!BOOT` is now `*RUN PARSWR` → `*RUN PINTRO` → `*RUN PARA`. **The intro goes after the probe**,
+`!BOOT` is now `*RUN PARSWR` → `*RUN PINTRO` → `*RUN PARA`. **On a RELEASE disc the same chain is
+the `*RUN` stub's** (issue #18 item 4, 2026-09-11): it OSCLIs `RUN PARSWR`, then one more command,
+and `make_disc.py` rewrites that command's name from `PARA` to `PINTRO` rather than adding a line —
+the intro chains to `PARA` itself, so the chain is the same. **The intro goes after the probe**,
 because it needs a bank number from it. The third line is dead — `PINTRO` chains — and is left
 in as the fallback if the intro is ever changed to exit by returning.
 

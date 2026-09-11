@@ -13,6 +13,8 @@ if ($Release) { $Intro = $true }
 # passed on EVERY build, and a bare beebasm invocation has to pass it too -
 # the symbol dump in CLAUDE.md does. main.asm's DEV is what the flags read.
 $relDef = if ($Release) { 'RELEASE=1' } else { 'RELEASE=0' }
+# 2 = *RUN !BOOT (the RELEASE stub), 3 = *EXEC !BOOT (the dev text file)
+$bootOpt = if ($Release) { 2 } else { 3 }
 # The interpreter and the two binaries are overridable, so that the
 # Makefile (issue #3) can hand this script the same tools it is using and
 # `make check-ps1` can prove the two builds agree. Unset, everything is
@@ -65,8 +67,12 @@ if ((Test-Path $palJson) -and (Test-Path $palAsm)) {
 # progress and success messages go to STDERR and are left alone: redirecting
 # those in PowerShell wraps each line in an ErrorRecord and trips
 # $ErrorActionPreference even though the assembly succeeded. See CLAUDE.md.
-# -opt 3 makes the disc *EXEC !BOOT on SHIFT+BREAK; main.asm assembles
-# its own !BOOT (with the build timestamp) rather than using -boot.
+# THE DISC OPTION FOLLOWS THE !BOOT SHAPE (issue #18 item 4): -opt 3
+# *EXECs the text !BOOT a dev build assembles, -opt 2 *RUNs the 6502
+# stub a RELEASE build assembles instead (main.asm, BOOT_RUN), which
+# needs no language ROM. main.asm assembles its own !BOOT either way
+# (with the build timestamp) rather than using -boot, and make_disc.py
+# carries the raw image's option through to the disc it writes.
 #
 # THE PACK LOOP. beebasm cannot compress its own output, and two of the
 # things bank 6 carries are assembled code copied down to run elsewhere -
@@ -81,7 +87,7 @@ if ((Test-Path $palJson) -and (Test-Path $palAsm)) {
 if ($LASTEXITCODE -ne 0) { throw "pack_overlays --ensure failed ($LASTEXITCODE)" }
 $packed = $false
 for ($pass = 1; $pass -le 4; $pass++) {
-    & $beebasm -i (Join-Path $root 'src\main.asm') -do $raw -opt 3 -title PARADROID -D $relDef -v |
+    & $beebasm -i (Join-Path $root 'src\main.asm') -do $raw -opt $bootOpt -title PARADROID -D $relDef -v |
         Out-File -FilePath $listing -Encoding utf8
     if ($LASTEXITCODE -ne 0) { throw "beebasm failed ($LASTEXITCODE)" }
 

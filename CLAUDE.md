@@ -129,7 +129,8 @@ as a name, and reports the matrix key that moved, which measures a key number in
 .\build.ps1           # assemble into build/
 .\build.ps1 -Run      # assemble and launch in b-em
 .\build.ps1 -Intro    # + scarybeasts' loading intro (pdloader/, docs/intro.md §8)
-.\build.ps1 -Release  # THE BUILD FOR OTHER PEOPLE: -Intro, every DEBUG_ flag off
+.\build.ps1 -Release  # THE BUILD FOR OTHER PEOPLE: -Intro, every DEBUG_ flag off,
+                      #   and a *RUN !BOOT (disc option 2) instead of an *EXEC one
 ```
 
 **THERE IS A SECOND IMPLEMENTATION OF THE SAME PIPELINE AND BOTH MUST BE KEPT IN STEP.** The
@@ -423,7 +424,8 @@ leaves them at `SWR_HAND = &0A00` for `.start` to copy into `swBank`. **With exa
 banks it takes a RAM bank holding a ROM image as the fourth, `SWRAM_XFER`** (issue #18 item 9,
 2026-09-10: ZMMFS lives in one) — which is why **`PARXFER` is the last load**, after the font, at
 `XFER_STREAM = &4000`, and `.start` zeroes that bank's ROM-table byte before unpacking into it; on a machine it will not
-drive it says so and closes the exec file, so `*RUN PARA` never happens. **The bank numbers are a
+drive it says so, closes the exec file and **`BRK`s** — which is what stops a RELEASE disc, whose
+`!BOOT` is a `*RUN` stub rather than an exec file — so `*RUN PARA` never happens. **The bank numbers are a
 run-time table now**: `SWRAM_DATA`/`SPR`/`SPR2`/`XFER` are indices 0-3, `PAGEBANK` reads `swBank`,
 and nothing may assume the four are contiguous — `PAGESPRBANK` indexes the table for exactly that
 reason. A bare `*RUN PARA` finds no magic byte and falls back to 4,5,6,7, so debugging is

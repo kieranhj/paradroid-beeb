@@ -5055,17 +5055,63 @@ IF RELEASE
 ASSERT DEBUG_ANY = 0
 ENDIF
 
+\ ---- *RUN or *EXEC: the release disc boots without a language ------
+\ KC 2026-09-11, issue #18 item 4, following beeb-port-kit's
+\ lib/boot_stamp.6502 (BOOT_RUN) — the kit's own RELEASE builds boot
+\ this way. An *EXEC !BOOT is typed at a LANGUAGE: on a B with no BASIC
+\ it stops at "Language?", and under *CONFIGURE LANG 11 it is typed
+\ into Edit. A *RUN !BOOT needs none, and prints without the REMs.
+\
+\ RELEASE ONLY, and the dev build keeps *EXEC on purpose: its !BOOT is
+\ the readable record of which DEBUG_ flags are on, and it is the file
+\ a debugging session edits by hand.
+\
+\ THE DISC OPTION MUST MATCH: *OPT 4,2 for the stub, 4,3 for the text.
+\ build.ps1 and the Makefile pass -opt 2 under RELEASE and 3 otherwise,
+\ and make_disc.py carries the raw image's option through.
+\
+\ &0900, NOT &7E00: this one RUNS, and &7E00 is MODE 7's screen — the
+\ stamp would scroll over the code printing it. &0900 is clear at boot
+\ (the title overlay lands there later, from bank 7) and PARSWR at
+\ &1900 and PARA at &1100 are both clear of it.
+BOOT_RUN = RELEASE
+BT_OSASCI = &FFE3               \ OSWRCH, but 13 comes out as CR AND LF.
+                                \ Its own name: swram.asm defines OSASCI
+                                \ and beebasm refuses a symbol twice
+IF BOOT_RUN
+BOOT_PFX = ""
+CLEAR &0900, &0A00
+ORG &0900
+.boot_start
+  LDX #0                        \ the stamp, up to its terminating 0
+.bt_loop
+  LDA bt_text,X
+  BEQ bt_done
+  JSR BT_OSASCI
+  INX
+  BNE bt_loop
+.bt_done
+  LDX #LO(bt_cmd1)              \ the probe RTSes back here, exactly as
+  LDY #HI(bt_cmd1)              \ it returns to BASIC under *EXEC — or
+  JSR OSCLI                     \ BRKs, and this never resumes
+  LDX #LO(bt_cmd2)
+  LDY #HI(bt_cmd2)
+  JMP OSCLI                     \ the game: it never comes back
+.bt_text
+ELSE
+BOOT_PFX = "REM "
 CLEAR &7E00, &7F00
 ORG &7E00
 .boot_start
 EQUS "*BASIC", 13
 EQUS "CLS", 13
-EQUS "REM PARADROID by ANDREW BRAYBROOK", 13
-EQUS "REM PORTED by BITSHIFTERS with", 13
-EQUS "REM AI ASSISTANCE (Claude Code)", 13
-EQUS "REM BUILD ", TIME$("%d %b %Y %H:%M:%S"), 13
+ENDIF
+EQUS BOOT_PFX, "PARADROID by ANDREW BRAYBROOK", 13
+EQUS BOOT_PFX, "PORTED by BITSHIFTERS with", 13
+EQUS BOOT_PFX, "AI ASSISTANCE (Claude Code)", 13
+EQUS BOOT_PFX, "BUILD ", TIME$("%d %b %Y %H:%M:%S"), 13
 IF RELEASE
-EQUS "REM ", VERSION_LINE, 13   \ the DEBUG line's seat — a release
+EQUS BOOT_PFX, VERSION_LINE, 13 \ the DEBUG line's seat — a release
                                 \ build has no flags, by the ASSERT
                                 \ above. VERSION_LINE is set beside DEV
 ENDIF
@@ -5112,10 +5158,27 @@ EQUS " TRCHK"
 ENDIF
 EQUB 13
 ENDIF
+IF BOOT_RUN
+EQUB 0                          \ ends the stamp the loop above prints
+.bt_cmd1
+EQUS "RUN PARSWR", 13           \ the bank detector; it RTSes back to the
+                                \ stub, unless it found too few banks —
+                                \ then it BRKs and nothing below runs
+.bt_cmd2
+EQUS "RUN PARA", 13             \ LAST, and make_disc.py rewrites the name
+                                \ to PINTRO on an --intro build: the intro
+                                \ chains to PARA itself
+ELSE
 EQUS "*RUN PARSWR", 13          \ the bank detector; it RTSes back to
                                 \ BASIC and this file feeds the next
                                 \ line, unless it found too few banks
                                 \ and closed the EXEC behind itself
 EQUS "*RUN PARA", 13
+ENDIF
 .boot_end
+IF BOOT_RUN
+SAVE "!BOOT", boot_start, boot_end, boot_start
+ASSERT boot_end <= &0A00
+ELSE
 SAVE "!BOOT", boot_start, boot_end
+ENDIF

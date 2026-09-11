@@ -204,12 +204,25 @@ ORG SWR_ADDR
   RTS
 
 \ ---- the failure exit --------------------------------------
-\ Close the exec file and the *RUN PARA line below us is never read, so
-\ the RTS lands on the BASIC prompt with the message still on screen.
+\ BOTH BOOT SHAPES, and it has to be both because the dev disc *EXECs
+\ its !BOOT and the release disc *RUNs a stub (issue #18 item 4):
+\   - close the exec file, so the text !BOOT's `*RUN PARA` below us is
+\     never read. Harmless when there is no exec file open — OSCLI
+\     "EXEC" with no filename closes whatever is current, and nothing
+\     is;
+\   - then BRK, which is what stops the RELEASE stub: it OSCLIs us and
+\     would otherwise carry on to `RUN PARA` when we returned. The MOS
+\     prints the message even with no language ROM, which is half the
+\     point of booting by *RUN.
+\ The detail is already on screen above; this is the line that says the
+\ game is not starting.
 .SwrAbort
   LDX #LO(swCmdExec)
   LDY #HI(swCmdExec)
-  JMP OSCLI
+  JSR OSCLI
+  BRK
+  EQUB &80
+  EQUS "Paradroid not started", 0
 
 \ ---- put the machine back ----------------------------------
 .SwrRestore

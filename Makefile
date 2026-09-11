@@ -67,6 +67,13 @@ PACK     = $(BUILD)/pack
 # stops at DEV with "Symbol not defined" if it is missing. See CLAUDE.md.
 RELEASE  ?= 0
 INTRO    ?= 0
+# The disc's *OPT 4 value, and it MUST follow the !BOOT shape main.asm
+# assembles (issue #18 item 4): 3 *EXECs the dev build's text !BOOT, 2
+# *RUNs the 6502 stub a RELEASE build assembles instead, which needs no
+# language ROM. build.ps1 does the same; make_disc.py carries it through.
+# It is set on the `release` target's own recursion, not with an ifeq:
+# POSIX make has no conditionals and this Makefile uses none.
+BOOTOPT  ?= 3
 INTRO_DEP =
 INTRO_ARG =
 
@@ -160,7 +167,7 @@ all:
 debug: all
 
 release:
-	@$(MAKE) RELEASE=1 INTRO=1 \
+	@$(MAKE) RELEASE=1 INTRO=1 BOOTOPT=2 \
 	    INTRO_DEP=$(INTRO_RAW) INTRO_ARG="--intro $(INTRO_RAW)" all
 	@echo "RELEASE build: intro on, every DEBUG_ flag off"
 
@@ -196,7 +203,7 @@ $(RAW): $(ASM) $(DATA) $(BRIEF) $(ZX0)
 	$(PYTHON) tools/pack_overlays.py --zx0 $(ZX0) --ensure $(RAW)
 	@rm -f $(RAW); pass=1; while :; do \
 	    echo "  beebasm (pass $$pass)"; \
-	    $(BEEBASM) -i src/main.asm -do $(RAW).new -opt 3 -title PARADROID \
+	    $(BEEBASM) -i src/main.asm -do $(RAW).new -opt $(BOOTOPT) -title PARADROID \
 	        -D RELEASE=$(RELEASE) -v > $(LISTING) || \
 	        { rm -f $(RAW).new; exit 1; }; \
 	    rc=0; $(PYTHON) tools/pack_overlays.py --zx0 $(ZX0) $(RAW).new || \

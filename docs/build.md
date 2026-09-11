@@ -179,7 +179,11 @@ call. 52 references moved with it, across `docs/`, `.claude/skills/`, `build.ps1
 
 **The DFS names inside the image are untouched and must stay uppercase**: `PARA`, `PARADAT`,
 `PARASPR`, `PARSPR2`, `PARXFER`, `PARAFNT`, `PARSWR`, `PINTRO` and `!BOOT` are catalogue entries,
-and `!BOOT` does `*RUN PARA`. The `.bin`/`.zx0` intermediates keep their uppercase stems for the
+and `!BOOT` does `*RUN PARA` — on a dev build. **A RELEASE build's `!BOOT` is a 6502 stub
+instead** (`main.asm`, `BOOT_RUN`), `*RUN` at disc option 2, which needs no language ROM; the
+builds pass `-opt 2` under `RELEASE` and `-opt 3` otherwise (`BOOTOPT` in the Makefile, `$bootOpt`
+in `build.ps1`), and `make_disc.py` carries the option through and knows both `!BOOT` shapes when
+it wires `PINTRO` in. The `.bin`/`.zx0` intermediates keep their uppercase stems for the
 same reason — each is named after the DFS file it came out of — with a lowercase extension.
 
 The next image published to the Bitshifters wip folder will therefore have a different name from

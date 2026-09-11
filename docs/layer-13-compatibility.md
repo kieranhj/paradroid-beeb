@@ -280,3 +280,47 @@ What his MAME runs showed, read from MAME's own board source rather than assumed
   chased.
 - **Watford DDFS 1.53** died at `*RUN PARA` in b-em (`-m19`); KC has tested it in b2, where it
   runs.
+
+## [DECISION 3] The release disc boots by `*RUN`, not `*EXEC` (issue #18 item 4)
+
+**KC, 2026-09-11**, following `beeb-port-kit`'s `lib/boot_stamp.6502` (`BOOT_RUN`), whose own
+RELEASE builds boot this way. An `*EXEC` `!BOOT` is typed at a LANGUAGE: on a B with no BASIC it
+stops at "Language?", and under `*CONFIGURE LANG 11` it is typed into Edit. hexwab raised both, and
+suggested `*OPT 4,2` with a `BRK` abort.
+
+**RELEASE only.** The dev build keeps its `*EXEC` text `!BOOT`: it is the readable record of which
+`DEBUG_` flags are on, and the file a debugging session edits by hand. So there are two shapes, and
+**the disc option must match the shape** — `-opt 2` for the stub, `-opt 3` for the text. `build.ps1`
+(`$bootOpt`) and the `Makefile` (`BOOTOPT`, set on the `release` target's own recursion, since
+POSIX make has no conditionals) pass it, and `make_disc.py` carries the raw image's option through.
+
+**The stub**, `main.asm`'s `!BOOT` block under `BOOT_RUN`: print the stamp lines through OSASCI
+(the same lines, without the `REM `s — `BOOT_PFX` is `""` or `"REM "`), `JSR OSCLI` "RUN PARSWR",
+then `JMP OSCLI` "RUN PARA", which never returns. **It is assembled at `&0900`, not `&7E00`**: this
+one RUNS, and `&7E00` is MODE 7's screen, so the stamp would scroll over the code printing it.
+`&0900` is clear at boot — the title overlay lands there later, from bank 7 — and `PARSWR` (`&1900`)
+and `PARA` (`&1100`) are both clear of it. `SAVE` gains the exec address, and an `ASSERT` keeps it
+inside its page.
+
+**`SwrAbort` closes the exec file AND `BRK`s.** The close is harmless when no exec file is open
+(OSCLI "EXEC" with no filename closes whatever is current, and nothing is); the `BRK` is what stops
+the stub, which OSCLIs the probe and would otherwise run `PARA` when it returned. The MOS prints
+`Paradroid not started` even with no language ROM, which is half the point.
+
+**`make_disc.py` knows both shapes** when it wires `PINTRO` in: the text `!BOOT` gains a line, the
+stub's single command is renamed `PARA` -> `PINTRO`, and the intro chains to `PARA` itself.
+
+**Verified in jsbeeb, 2026-09-11:**
+
+| | |
+|---|---|
+| RELEASE disc, B/DFS 1.20 | option **2**, `!BOOT` load/exec `&0900`, 193 bytes; prints the stamp with no `REM`s, then `Sideways RAM found: 7 6 5 4 3 2 1 0` / `Using banks: 4 5 6 7`, and runs on into the intro and the game |
+| `PINTRO` wiring | the stub's command reads `RUN PINTRO`, the probe's `RUN PARSWR` untouched |
+| the refusal, under `*RUN` | banks marked occupied at the probe's entry until two were left: it printed `banks - found 2` and then **`Paradroid not started`**, and the game did not start |
+| dev disc | still option **3**, text `!BOOT` at `&7E00`, `REM DEBUG: XFERWIN DECK KILL REDRAW`, boots to the briefing |
+
+**Not settled: the BREAK beep.** The kit's own table leaves it open — a `*RUN` boot enters with
+interrupts off (measured here too: `P` = `&35` at the probe's first instruction), so the MOS never
+ends the beep it starts, and Edge silenced the chip in `install_irq` instead. OSBYTE 126 does not
+help: no ESCAPE is pending. Our capture shows the game's driver idling silent long after boot, but
+the first writes were not inspected, so whether a release disc beeps through its intro is untested.
