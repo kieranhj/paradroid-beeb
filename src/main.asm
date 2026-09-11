@@ -3656,10 +3656,16 @@ ASSERT FRAME_LOCK >= 2
 \ to it.
 \
 \ Start the strip at the buffer base — vertically, at least. `line` is
-\ zeroed so buffer row 0 is not a split row, which RedrawAll needs
-\ because it writes whole rows. Both callers place the player on a
-\ whole character row, so SetMapFromPos has already made line 0 and
-\ this only restates it.
+\ the player's own sub-row offset, `posY AND 7`, exactly as SetMapFromPos
+\ computes it. It used to be zeroed, on two premises that no longer hold:
+\ RedrawAll draws 16 whole rows from mapYr and is valid at any line
+\ (screen.asm), and the callers do NOT all leave the player on a whole
+\ row - the console, the transfer and the information screens come back
+\ at any posY. Zeroed, the deck was redrawn `posY AND 7` scanlines out,
+\ and the next pass's SetMapFromPos put line back with no row change:
+\ the view jumped by up to seven scanlines ~18 frames after the console
+\ closed (hexwab, issue #19 item 1; measured). The C64 never redraws
+\ there at all, so its view comes back exactly where it was.
 \
 \ HORIZONTALLY the strip starts one unit in when mapHX is odd, which is
 \ what makes the wrap fall on a character boundary — see COPYCHAR for
@@ -3694,8 +3700,8 @@ ASSERT FRAME_LOCK >= 2
   STA scrollS
   LDA #0
   STA scrollS+1
-  STA line
-  STA iline
+  STA iline                     \ the IRQ re-latches it from pline, which
+                                \ SetCRTCStart parks from line - below
   STA bandDo                    \ the exposed edges belonged to the frame
   STA colCount                  \ we have just thrown away
   STA xSpd : STA xSpd+1         \ Step 4: the pipelined speeds were
@@ -3710,6 +3716,9 @@ ASSERT FRAME_LOCK >= 2
   STA sprSaved,X
   DEX
   BPL rv_unsave
+  LDA posY                      \ the sub-row offset SetMapFromPos will
+  AND #7                        \ set on the next pass - so it has nothing
+  STA line                      \ to change (issue #19 item 1)
   JSR SetCRTCStart
   JMP RedrawAll                 \ and its RTS
 

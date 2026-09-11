@@ -1040,3 +1040,62 @@ bytes rode the pad, 173 → 39. `xfer_end` did not move.
 Left from page 4 (the entry's end) was not driven; it is the same `DbBack`. Every press has to be a
 fresh edge — a key pressed within the first passes after `DbEnter` arms the latches is taken as
 still held, which is the entry's existing design.
+
+## [DECISION 22] The database: the name on row 0, seven lines, and a page turn clears only the text
+
+**KC, 2026-09-11, hexwab's issue #19 items 2 and 3.** A deviation, in two parts.
+
+**Row 0 and seven lines.** The console main screen already printed the name on row 0
+(`CON_ROW_UNIT`, layer-12 DECISION 5) and the database printed it on row 1, the C64's row 10, so
+it dropped a row on the way in. `DB_LINE_ROW0` is 0 now, and the freed row is a seventh content
+line: `DB_LINES` 8, `DB_LINE_LAST` 7, content on rows 2, 4 ... 14, row 15 used. `DB_IMG_ROW` is
+pinned at 3, so the portrait and the briefing's `BR_PO_ROW0` did not move. The C64 has six lines,
+and the extra screens hexwab saw are its own: its geometry and ours were line for line the same,
+and the stats always end their screen, so five droids carried their description over (001, 629
+and 821 by one line, 476 by two, 999 by three). With seven lines 001, 629 and 821 fit on one
+screen; **476 still carries over one line and 999 two**, and no whole-line layout of 16 rows can
+fix those. The stats now split 7 + 3 (Entry to Armament, then the Sensors) where they split 6 + 4.
+The information screens and the game over share the line table, and moved up a row with it.
+
+**A page turn clears only the text.** The C64's turn (`$2D5A`) clears the screen and reprints the
+name, and its portrait is hardware sprites the clear never touches. Ours cleared everything and
+repainted ~1K of portrait through a mask with the name. `DbClearText` clears rows 2-15 from column
+8, right of the portrait (columns 2-7): 512 bytes a row, exactly two pages from 128 in. The forward
+turn (`DbPage3`) and a back step within the entry (`DbBack`) use it; back to the browser still does
+the full `DbClear`, and the browser repaints its image and name as before.
+
+**Cost:** bank 7's `plandata.asm` pad 45 -> **10** (`condb.asm` is in front of it); `xfer_end`
+did not move.
+
+**Verified in jsbeeb, 2026-09-11**, the console opened by patching its tile test in emulator
+memory:
+
+| | |
+|---|---|
+| console main -> database | name rows 0-1 byte-identical: no drop |
+| 001 | stats 7 then 3; the description on one screen of 7 lines, ending "mounted." |
+| 629, 821 | one screen each, all 7 lines |
+| 476, 999 | carry over 1 and 2 lines, as simulated |
+| forward turns, back steps | a marker planted in `poLastType` survived: name and portrait never repainted. No leftovers on row 15 or column 39; each reprinted screen **0 of 10,240 bytes** from its first print |
+| back to the browser | full clear, portrait repainted, "Console" back on the panel |
+| game-start 001, transfer pages, game over | name on row 0, text clear of the portrait, nothing clipped |
+
+The briefing portrait was checked in source only: it is fixed at row 3 and reads no line table.
+
+## Leaving the console no longer moves the view (issue #19 item 1)
+
+A bug, not a deviation. `ReframeView` stored 0 in `line` but left `posY` alone, so the deck was
+redrawn `posY AND 7` scanlines out, and ~18-23 frames later the first `SetMapFromPos` put `line`
+back with no row change: the view jumped up by as much as seven scanlines. It now sets
+`line = posY AND 7` before `SetCRTCStart`, exactly as `SetMapFromPos` does; its comment said every
+caller left the player on a whole row, which stopped being true. The C64 never redraws there at all
+(`RestoreVicState`, then `EnterGame` from the unchanged scroll), so this is the original's
+behaviour back. Code image **+4** (`code_end` `&2FD9`, 39 free).
+
+**Verified in jsbeeb, 2026-09-11:** `line` 3 and 7 at negative `posY`, and 0, through the exit
+path: `line` equal to `posY AND 7` at the first `SetMapFromPos` and 30-40 frames on, `mapYr` and
+`scrollS` unchanged. The buffer after a `line`-3 exit against `RedrawAll`: **0 of 10,240** (even
+`mapHX` only, and the buffer was RedrawAll's own at that position, so it proves nothing moved
+afterwards rather than checking the redraw independently). A real console session left by
+TRANSFER and by fire, `posY` `&3B`: `line` 3 throughout both. The transfer game's and the
+information screens' exits reach the same code and were not driven.

@@ -60,9 +60,18 @@ DB_INK_PN = PN_INK_RED          \ the PANEL's mode field: red, because
 \ content on 3, 5 ... 13, and row 15 blank, as it is on the C64.
 \ Agreed with KC 2026-08-21. The information screens and the game over
 \ ride on this table, so they moved with it.
-DB_LINE_ROW0  = 1               \ the buffer row line 0 starts on
-DB_LINES      = 7
-DB_LINE_LAST  = 6               \ $2DC4's "prntY < 24"
+\
+\ AND NOW IT IS ONE ROW HIGHER AND ONE LINE LONGER (layer-9 DECISION 22,
+\ KC 2026-09-11, hexwab's issue #19). The name went to row 0, where the
+\ console main screen already prints it (CON_ROW_UNIT, layer-12 DECISION
+\ 5), so it no longer drops a row on the way into the database - and the
+\ row that freed is a seventh content line, rows 2, 4 ... 14. That puts
+\ 001, 629 and 821's descriptions on one screen; 476 and 999 still
+\ carry over, as all five do on the C64. Row 15 is no longer blank. A
+\ deviation: the C64's name is row 10, its content six lines.
+DB_LINE_ROW0  = 0               \ the buffer row line 0 starts on
+DB_LINES      = 8
+DB_LINE_LAST  = 7               \ was 6, $2DC4's "prntY < 24"
 DB_LINE_FIRST = 1               \ byte_0_46, the first content line
 DB_COL_NAME   = 2               \ UnitType_txt's own prntX
 DB_COL_LABEL  = 9               \ $2D94
@@ -97,7 +106,8 @@ DB_DESC_END   = &FF
 \ units 4-15 — clear of the stat text, which starts at column 9.
 \ portrait.asm draws it; these two anchor its rectangle. The row moved
 \ down with the text when the page took its sixteenth row.
-DB_IMG_ROW  = DB_LINE_ROW0 + 2
+DB_IMG_ROW  = 3                 \ was DB_LINE_ROW0 + 2; the portrait stayed
+                                \ put when the text went up (DECISION 22)
 ASSERT DB_IMG_ROW == BR_PO_ROW0 \ the briefing's portrait uses the same
                                 \ rows and briefman.asm is assembled
                                 \ BEFORE this file now, so main.asm's
@@ -390,9 +400,10 @@ DB_DESC_MAX = &38 - &10         \ sub_0_2DCD's own bound, rebased to 0
   JSR DbPanelStr                \ $2D4F
   LDA #2
   STA dbPage
-  JSR DbClear                   \ $2D5A: ClearGameScreen, then the name
-  JSR DbImage                   \ again â€” the C64's sprites survive its
-  JSR DbName                    \ clear, and ours have to be redrawn
+  JSR DbClearText               \ $2D5A clears the screen and redraws the
+                                \ name; its sprites survive. Ours clears
+                                \ only the text, so the portrait and the
+                                \ name survive too (DECISION 22)
 .db_p3_x
   RTS
 
@@ -440,21 +451,20 @@ DB_DESC_MAX = &38 - &10         \ sub_0_2DCD's own bound, rebased to 0
 .DbBack
   LDA #LO(dbTxtConsole) : LDY #HI(dbTxtConsole)
   JSR DbPanelStr                \ "More..." off the panel, as $2D4F does
-  JSR DbClear
   DEC dbHistN                   \ the screen on show
   BEQ db_bk_browse
+  JSR DbClearText               \ the portrait and the name stay up
   LDX dbHistN
   DEX                           \ the one before it, which stays on top
   LDA dbHistS,X : STA dbStatN
   LDA dbHistD,X : STA dbDescIx
-  JSR DbImage                   \ page 2 prints under the name, as after
-  JSR DbName                    \ any clear
   LDA #2
   STA dbPage
   RTS
 .db_bk_browse
-  LDA #1                        \ page 1 redraws the image and the name
-  STA dbPage                    \ itself, every pass
+  JSR DbClear                   \ the stats go; page 1 redraws the image
+  LDA #1                        \ and the name itself, every pass
+  STA dbPage
   RTS
 
 \ ---- a screen's start, on the way forward --------------------
@@ -1047,6 +1057,42 @@ DB_HIST = 8
   LDA pnSrc+1 : ADC #HI(ROW_BYTES) : STA pnDst+1
   DEX
   BNE db_cl_row
+  RTS
+
+\ ---- DbClearText: the text under the name, for a page turn ----
+\ Layer-9 DECISION 22 (hexwab, issue #19): the C64's page turn clears
+\ the screen and reprints the name, and its portrait is sprites the
+\ clear never touches, so only the name blinks. Ours cleared everything
+\ and repainted ~1K of portrait with it. Now a turn clears only where
+\ text goes - the content lines, rows 2-15, from column 8 to the edge,
+\ right of the portrait (units 4-15 = columns 2-7) - and the portrait
+\ and the name are never touched. Columns 8-39 are 512 bytes of a row:
+\ exactly two pages from 128 in, which is the whole loop.
+DB_TXT_ROW = DB_LINE_ROW0 + 2
+DB_TXT_COL = 8
+ASSERT DB_TXT_COL * 16 + 512 == ROW_BYTES
+ASSERT DB_IMG_UNIT * 4 + 48 <= DB_TXT_COL * 8   \ the portrait ends left of it
+.DbClearText
+  LDA #LO(BUF_BASE + DB_TXT_ROW * ROW_BYTES + DB_TXT_COL * 16) : STA pnDst
+  LDA #HI(BUF_BASE + DB_TXT_ROW * ROW_BYTES + DB_TXT_COL * 16) : STA pnDst+1
+  LDX #PLAY_ROWS - DB_TXT_ROW
+.db_ct_row
+  LDA #0
+  TAY
+.db_ct_b0
+  STA (pnDst),Y
+  INY
+  BNE db_ct_b0
+  INC pnDst+1
+.db_ct_b1
+  STA (pnDst),Y
+  INY
+  BNE db_ct_b1
+  CLC                           \ one page is in pnDst already; the rest
+  LDA pnDst   : ADC #LO(ROW_BYTES - 256) : STA pnDst
+  LDA pnDst+1 : ADC #HI(ROW_BYTES - 256) : STA pnDst+1
+  DEX
+  BNE db_ct_row
   RTS
 
 \ ============================================================
