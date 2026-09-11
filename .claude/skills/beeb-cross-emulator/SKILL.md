@@ -22,7 +22,8 @@ these was found by a second emulator or by hardware, after jsbeeb had said it wa
   port that spends the row it saves should check first.
 - **Perceived smoothness** - no emulator can judge it (`beeb-frame-drops`).
 
-**Second emulator here:** b-em is what `.\build.ps1 -Run` launches (`build.ps1` line 23), and it
+**Second emulator here:** b-em is what `.\build.ps1 -Run` launches (`build.ps1` line 131, `-m3`
+on the unpadded `build/paradroid.ssd`), and it
 is the one that has caught this port's faults; b2 and beebjit are the others
 (`b2 -0 <ssd> -b`, `beebjit -0 <ssd> -autoboot`)
 **b2 debug build:** HTTP API on port **48075**; `peek` reads memory, `paste` types BASIC, **there is no screenshot endpoint**
@@ -36,7 +37,7 @@ is the one that has caught this port's faults; b2 and beebjit are the others
    do exactly this; check which emulator and model it passes):
 
    ```powershell
-   .\build.ps1 -Run                      # b-em, the padded image
+   .\build.ps1 -Run                      # b-em, build\paradroid.ssd (unpadded)
    # or directly
    b2 -0 build\paradroid-200k.ssd -b
    beebjit -0 build\paradroid-200k.ssd -autoboot

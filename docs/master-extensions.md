@@ -40,6 +40,6 @@ both must be current at all times. Every edge redraw and every sprite blit happe
   area, or both.
 
 **Revisit when** the frame budget has real headroom — most likely after `PARADAT` moves to sideways
-RAM and [Layer 4](layer-4-player.md)'s inlining work is done — or if the target ever moves to the Master. The dead-zone
+RAM (done: it is bank 4) and [Layer 4](layer-4-player.md)'s inlining work is done — or if the target ever moves to the Master. The dead-zone
 camera already fixes the case that actually looked bad (the world lurching when you creep), so this
 buys smoothness at moderate speeds rather than curing a defect.

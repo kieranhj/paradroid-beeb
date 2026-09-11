@@ -21,7 +21,7 @@ to Layer 5. **Build yours in Layer 3, before the scroll is trusted.**
 |---|---|
 | Oracle | `RedrawAll` on **CTRL+R**, which needs `DEBUG_REDRAW` - on in every dev build, off in RELEASE (plain R until 2026-08-31, SPACE before 2026-08-26) |
 | Buffer | `&5800`, **10,240 bytes** (16 rows x 640), the circular strip under the 10K hardware wrap |
-| Draw sites - **all three** | `JSR SprDrawTr` (`src/main.asm:1899`), `JSR SprDrawAll` (`:1902`), the second `JSR SprDrawTr` (`:2115`) |
+| Draw sites - **all three** | `JSR SprDrawTr` (`src/main.asm:1931`), `JSR SprDrawAll` (`:1934`), the second `JSR SprDrawTr` (`:2149`) - line numbers as of 2026-09-11; take the run-time addresses from `build/paradroid.lst` |
 | Banks | One. No shadow RAM on a Model B, so step 6's ACCCON half does not apply |
 | Positions to vary | odd and even `mapHX`, non-zero `line`, and the diagonals - every scrolling bug so far has hidden in one of those |
 | Addresses | the symbol dump, every build: `./bin/beebasm.exe -i src/main.asm -do build/symbols.ssd -D RELEASE=0 -d \| tr ',' '\n' \| grep "'RedrawAll'"` |
@@ -45,6 +45,7 @@ to Layer 5. **Build yours in Layer 3, before the scroll is trusted.**
    ```
    write_memory  session_id, address: <JSR site 1>, bytes: [234, 234, 234]
    write_memory  session_id, address: <JSR site 2>, bytes: [234, 234, 234]
+   write_memory  session_id, address: <JSR site 3>, bytes: [234, 234, 234]
    run_frames    session_id, count: 4
    ```
 

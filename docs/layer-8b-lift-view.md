@@ -7,6 +7,10 @@ commits. Verified in jsbeeb: real entry from a platform, stepping with the highl
 moving deck to deck, commit loading the chosen deck and placing the player on its
 platform, and an unmoved fire returning to the same spot with no load.
 
+> **Amended 2026-09-10/11 (issue #12):** the view is opened by the **TRANSFER** key now, not fire
+> (layer-7 [DECISION 13], `LiftEnter` in `PassPrep`'s transfer block), and TRANSFER also commits
+> exactly as fire does (layer-7 [DECISION 14], `lvPrevX` in `LvTick4`). Fire still commits.
+
 Layer 8 built the lift *mechanics* (stop table, shaft sentinels, `LiftPlace`); this is
 the display they were waiting on.
 
@@ -39,7 +43,7 @@ coloured `$F9` draws from the forced-multicolour set. A step repaints only the t
 rectangles, not the screen.
 
 `liftMode` became a three-state: 0 none; 1 *entering* — set by `LiftEnter` in the fire
-block, consumed the same pass at the hook after `DroidsUpdate` (the transfer's entry
+block (the transfer block since layer-7 DECISION 13), consumed the same pass at the hook after `DroidsUpdate` (the transfer's entry
 point), which flattens the scroll, swaps the palette and draws; 2 *view up* — the main
 loop runs one `LiftViewTick` a pass and nothing else.
 
@@ -52,6 +56,8 @@ loop runs one `LiftViewTick` a pass and nothing else.
    standing where you were.
 2. **[DECISION] Fire commits; there is no separate cancel** (KC) — the C64's own shape.
    Firing without moving *is* the cancel.
+   *Amended 2026-09-11 by layer-7 [DECISION 14]:* TRANSFER commits too, the same way — a moved
+   selection rides, an unmoved one cancels. Still no separate cancel.
 3. **[DECISION] The palette** (KC, revised 2026-08-17): blue field, the emboss in white
    and black, the lit deck's fill magenta — the C64's dark purple. The first cut (black
    field, pen-coloured shapes) flattened the `10` pairs into the background, which erased

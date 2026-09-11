@@ -15,7 +15,7 @@ them.
 | [`docs/memory-map.md`](docs/memory-map.md) | The map, from a label dump — every region of main RAM and all four banks, plus which source file lands where |
 | [`docs/decisions.md`](docs/decisions.md) | **The decision table of record**, plus the reasoning — why MODE 1, the no-HAL rule, and the evidence for which Paradroid the listing is |
 | [`docs/ram-pass.md`](docs/ram-pass.md) | The 2026-08-25 RAM recovery pass — what it bought, what it rejected, the reserves left, and the corrected buffer-diff oracle recipe |
-| [`docs/no-load.md`](docs/no-load.md) | **The `no-load` branch, in progress** — hexwab's issue #2: everything resident, loading once at boot. The arena rule for `&4600`, the ledger, what has landed, and step 3 onwards |
+| [`docs/no-load.md`](docs/no-load.md) | **The `no-load` branch** — hexwab's issue #2: everything resident, loading once at boot. **Goal met** (step 5, 2026-09-09: no filing-system call after boot), with §19–§21 since. The arena rule for `&4600`, the ledger, and what remains in its 2026-09-11 status block |
 | [`docs/build.md`](docs/build.md) | **The two builds** — hexwab's issue #3: `build.ps1` and the POSIX `Makefile`, proven to produce the same disc. What is overridable, the three parts of the pipeline that are not a DAG, and the timings |
 | [`docs/graphics.md`](docs/graphics.md) | Where the C64's graphics live, which tool reads them, and per section what is ported |
 | [`docs/raster-timing.md`](docs/raster-timing.md) | **Where the main loop sits against the beam** — the frame, what writes the buffer when, and the flicker work |
@@ -36,10 +36,14 @@ ESCAPE and CTRL**, and **fire or transfer starts the game**. The boot chain is `
 (banks probed, 4–7 not assumed) → (`PINTRO`) → `PARA`; `build.ps1 -Release` is the build for
 other people. Keys and controls are in `README.md`;
 [`docs/layer-11f-frontend.md`](docs/layer-11f-frontend.md) §8 has the redefinition mechanism.
+hexwab's GitHub issues #1–#18 were all closed by 2026-09-11. They covered the UX list, build
+portability, memory and target portability, and several deviations each carry a numbered DECISION
+in their layer doc. Fire only fires, and the transfer key opens and closes lifts and consoles
+(layer-7 DECISIONS 13–14). The current build is **Release Candidate #7**.
 
 **The frame budget:** the eight sprite slots cost ~36,000 cycles of the 79,872 in a pass and the
 droid AI another ~17,000, so the loop keeps roughly a third spare. **RAM is the tight one:** main
-RAM is down to **3 B** (`code_end` `&2FFD`, 2026-09-01), bank 4 to **14 B** — the RAM row below
+RAM has **43 B** (`code_end` `&2FD5`) and bank 4 **64 B**, measured 2026-09-11 — the RAM row below
 has the rest, live numbers come from the build output, and the reserves still sellable are in
 [`docs/ram-pass.md`](docs/ram-pass.md). The stack page's `&0100–&017F` (128 B, measured free) is
 the largest contiguous main RAM left.
@@ -102,10 +106,10 @@ still untested**, and so are the items below, which the Master run does not sett
 | Collision box shape | **Agreed 2026-08-18, unbuilt.** `DR_COL_W`/`DR_COL_H` become a generated silhouette profile instead of a rectangle, at box-test cost. [DECISION 1] in [`docs/layer-6-droids-live.md`](docs/layer-6-droids-live.md); `BUGS.md` #7b's bounce tuning waits on it | agreed |
 | Layer 14 leftovers | An eye for any remaining character whose C64 colour merges in MODE 1 (the lift tile was one), and the open question at the end of [`docs/layer-14-visual.md`](docs/layer-14-visual.md): deck 5 is scheme 6 yet carries scheme 0's collision — intended, or slipped? | eye pass |
 | Enemy bullet flicker / explosion multicolour | `efAlt` from bank 5 plus a second per-entry field; effect sprites run the interpreted path (`src/sprfx.asm`) and are one colour. The explosion-multicolour note from KC's list is the same mechanism | deferred (L7) |
-| Briefing exit-load trim | The briefing → game reload is ~1.1 s naive; deferred from 11f | later |
+| Briefing exit-load trim | Moot since no-load step 5 (2026-09-09): the briefing is bank-resident and neither exit reloads anything ([`docs/no-load.md`](docs/no-load.md) §17–§18) | done |
 | Redux adoptions (2), (3), (6) | Parked with their evidence in [`docs/layer-12-balance.md`](docs/layer-12-balance.md): the three-droid-deadlock randomisation (reproduce it here first), lift-adjacent waypoints excluded from starts, and the lift screen colouring completed decks — (6) parked on bank 7 space | parked |
 | Intro droid cards | White background on the C64; ours differs (KC's note) | eye pass |
-| Front-end text | Scroll-text wording update (KC's), and a Beeb credits page | KC |
+| Front-end text | Page 1's controls text was rewritten for the port's two buttons and page 5's credits gained the BBC port on 2026-09-11 (`1d99055`); any further wording is KC's | KC |
 | Blanking amount | KC's standing caveat: the load/seam blanking is aggressive — "may be too many black screens" — and the 2026-09-01 hide-the-drawing pass leaned further in. Watch for it in playtesting | watch |
 | 2 px world scrolling | Parked, Master-only via shadow RAM. Costs +60–80 % on all drawing — [`docs/master-extensions.md`](docs/master-extensions.md) | parked |
 
@@ -113,9 +117,9 @@ still untested**, and so are the items below, which the Master run does not sett
 
 | | |
 |---|---|
-| **RAM** | Measured 2026-09-02 after layer-9 DECISION 20: main RAM **24 B**, bank 4 **11 B**, bank 5 **674 B**, bank 6 **673 B**, bank 7 **25 B**, bank 7 **~100-105 B** (tail + pad), `PARBRF` ~20 B, `PARAFNT` tail 16 B, `PARMAN` well down from 225 B, `PINTRO` **0 B**. **No held reserve frees bank 7** — that parked layer-12 DECISION 6. *(On the `no-load` branch, **step 5 is done and the game makes no filing-system call after boot at all** — measured 2026-09-09: main RAM **108 B**, bank 4 **225**, bank 5 **88**, bank 6 **1,126**, bank 7 **171**; eight disc files, 45,312 bytes. The briefing's text is five ZX0 page streams in the banks, its code is bank-resident, and `PARAFNT` is loaded once in `.start`. See [`docs/no-load.md`](docs/no-load.md) §15-§18.)* The stack page's `&0100-&017F` is 128 measured-free bytes. Live numbers from the build output; spending rules and reserves in [`docs/ram-pass.md`](docs/ram-pass.md) and `CLAUDE.md` |
+| **RAM** | **Measured 2026-09-11 from the build:** main RAM **43 B**, bank 4 **64 B** (the `colourMap` pad is 10), bank 5 **342 B**, bank 6 **258 B**, bank 7 **84 B** plus a **45 B** `plandata` pad, `PARBRF` **66 B**, title overlay **526 B**, `PARAFNT` **16 B**, low overlay 9 / 3 / 0 B, `PINTRO` **0 B**; packed image 46,080 bytes. The game makes no filing-system call after boot. `CLAUDE.md`'s table keeps each region's history. *Earlier:* measured 2026-09-02 after layer-9 DECISION 20: main RAM **24 B**, bank 4 **11 B**, bank 5 **674 B**, bank 6 **673 B**, bank 7 **25 B**, bank 7 **~100-105 B** (tail + pad), `PARBRF` ~20 B, `PARAFNT` tail 16 B, `PARMAN` well down from 225 B, `PINTRO` **0 B**. **No held reserve frees bank 7** — that parked layer-12 DECISION 6. *(On the `no-load` branch, **step 5 is done and the game makes no filing-system call after boot at all** — measured 2026-09-09: main RAM **108 B**, bank 4 **225**, bank 5 **88**, bank 6 **1,126**, bank 7 **171**; eight disc files, 45,312 bytes. The briefing's text is five ZX0 page streams in the banks, its code is bank-resident, and `PARAFNT` is loaded once in `.start`. See [`docs/no-load.md`](docs/no-load.md) §15-§18.)* The stack page's `&0100-&017F` is 128 measured-free bytes. Live numbers from the build output; spending rules and reserves in [`docs/ram-pass.md`](docs/ram-pass.md) and `CLAUDE.md` |
 | **Some debug builds may still fail to assemble** | Pre-RAM-pass, every flag except `DEBUG_INVULN` broke the build on space. KC 2026-08-21: accepted. The pass's headroom may have brought some back — try the flag before assuming. `BUGS.md` #17 |
-| Open defects | `BUGS.md` #2, #3, #7b, #9 and #15 — all old, all wanting retests against builds that have moved under them; #1 is probably moot. **#21 is new (2026-09-03) and is the only one from playtesting**: two black squares flicker on the transfer game's central column, on hardware more than in an emulator, unreproduced here |
+| Open defects | `BUGS.md` #2, #3, #7b, #9 and #15 — all old, all wanting retests against builds that have moved under them; #1 is probably moot. **Three are from playtesting** (index re-read 2026-09-11): **#21** — two black squares flicker on the transfer game's central column, on hardware more than in an emulator, unreproduced here. **#22** — sprite pixels occasionally left on the deck in a firefight, no repro (`DEBUG_TRCHK` was built to test the tranche split for it). **#23** — the target's information screen flashes in the board's palette on entering a transfer; its 3-byte fix now fits in main RAM's 43 B |
 | Transfer presentation differs | Status text on the panel line rather than above the board, numbers standing in for the side-select sprites. Decisions 6–8 in [`docs/layer-10-transfer.md`](docs/layer-10-transfer.md) |
 | Zero-page initial values in the annotation are equates only | Read them from `paradroid_ce.lst`; `tools/verify_annotation.py` is the standing check after any `annotate.py` change (BUGS.md #19 history) |
 
@@ -146,8 +150,11 @@ new.
 
 1. **`&0E00`–`&10FF` and `&0D60`–`&0DEF` are ours, `&0D00`–`&0D5F` and `&0DF0`–`&0DFF` are not.**
    `src/lowcode.asm`, `src/lowcode2.asm` and `src/lowbss.asm` are the three blocks.
-2. **Nothing may be LOADED there.** `PARALOW` is staged at `LOW_STAGE` and copied down by
-   `PageLowIn`, which **must be the last filing-system call**.
+2. **Nothing may be LOADED there.** `PARALOW` is not a disc file: it rides ZX0-packed in bank 6
+   (`lowImg`), `LowResident` puts it at `LOW_STAGE`, and `PageLowIn` copies it down. A
+   filing-system call after `PageLowIn` crashes through the trampled vectors. Nothing makes one
+   now, because every load is in `.start` (no-load step 5), and anything new that loads must
+   keep it that way.
 3. **It is main RAM**, so bank 4 may `JSR` in, and it may read bank 4 wherever `SWRAM_DATA` is
    paged — everywhere in the main loop, but not at boot before `PARADAT` lands and not inside the
    blitter. The same one-way rule `bufcore.asm` states.
@@ -193,7 +200,7 @@ The one-line summaries below are an index; the layer docs hold everything else.
 | 10 | The transfer minigame, all three outcomes | **DONE** [`docs/layer-10-transfer.md`](docs/layer-10-transfer.md) |
 | 11 | Title, game over, boot split, droid screens (11d), sound (11e), front end (11f) | **DONE** — the last two sound items closed 2026-09-01 [`docs/layer-11-sound-title.md`](docs/layer-11-sound-title.md), [`docs/layer-11d-droid-screens.md`](docs/layer-11d-droid-screens.md), [`docs/layer-11e-sound.md`](docs/layer-11e-sound.md), [`docs/layer-11f-frontend.md`](docs/layer-11f-frontend.md) |
 | 12 | **Balance, fidelity and feel** — verify before tuning | **TODO** — the open half of this plan. [`docs/layer-12-balance.md`](docs/layer-12-balance.md) |
-| 13 | Memory and compatibility. 13a (+6,085 B), 13b (**sideways-RAM detection**) and 13d done; **13c real machines is open** | **PART** [`docs/layer-13-ram-pass.md`](docs/layer-13-ram-pass.md), [`docs/layer-13d-space.md`](docs/layer-13d-space.md), [`docs/layer-13-compatibility.md`](docs/layer-13-compatibility.md) |
+| 13 | Memory and compatibility. 13a (+6,085 B), 13b (**sideways-RAM detection**, and issue #18's portability work: a softloaded filing system's RAM bank as the fourth, the NMI claim, every CRTC register after `VDU 22`) and 13d done; **13c real machines is open** | **PART** [`docs/layer-13-ram-pass.md`](docs/layer-13-ram-pass.md), [`docs/layer-13d-space.md`](docs/layer-13d-space.md), [`docs/layer-13-compatibility.md`](docs/layer-13-compatibility.md) |
 | 14 | **The visual pass** — floors, dither, text-screen backgrounds, cleared-deck and lift tile done; palettes and the ALERT lamp signed off 2026-08-31 | **nearly done** — the eye-pass leftovers are in the table above. [`docs/layer-14-visual.md`](docs/layer-14-visual.md) |
 | 15 | **The endgame** — deck clear, ship clear, the next ship, names cycling at the cap | **DONE** [`docs/layer-15-endgame.md`](docs/layer-15-endgame.md) |
 | — | **The RAM recovery pass** — every region bought back room for the final features | **DONE** [`docs/ram-pass.md`](docs/ram-pass.md) |

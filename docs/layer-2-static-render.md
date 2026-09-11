@@ -32,7 +32,10 @@ it can be read. So:
 | `PARA` | code, plus reserved space for the tile map and charset built at runtime |
 | `PARADAT` | C64 char data, colour schemes, tile defs, deck RLE — `*LOAD`ed *after* the mode change |
 
-Current addresses are in the memory budget above; they move as the code grows, so read them from
+> **Since superseded:** `PARADAT` is sideways RAM's data bank, not main RAM, and the mode change
+> is now the last thing boot does, after every load (`CLAUDE.md`, "Confirmed hardware facts").
+
+Current addresses are in [`memory-map.md`](memory-map.md); they move as the code grows, so read them from
 the `beebasm` output rather than from here.
 
 This bites again at every later layer that adds data. The eventual fix is to stop using `VDU 22`

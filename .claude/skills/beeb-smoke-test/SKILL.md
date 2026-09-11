@@ -62,7 +62,8 @@ boot", a screenshot is enough. Everything past that point is verified against th
    worth reading, because it is the cheapest way to catch the wrong build being tested.
    Report what is on screen in one line. If the picture is noise but
    there is reason to think the buffer is right, suspect the MCP capture path before the game
-   (it misrendered Paradroid's three-cycle rupture while the real jsbeeb page was fine); pass
+   (it misrendered Paradroid's three-cycle rupture while the real jsbeeb page was fine, until
+   jsbeeb-mcp 3.4.0 fixed the capture); pass
    `active_only: false` for the whole 1024 x 625 field.
 
 6. **The stale-session trap.** After many boots and keypresses in one session, `boot_disc`

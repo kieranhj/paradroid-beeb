@@ -4,15 +4,15 @@ Every address here comes from a `beebasm -dd -labels` dump of the current build,
 Regenerate it after any change that moves a region:
 
 ```powershell
-./bin/beebasm.exe -i src/main.asm -do paradroid.ssd -boot PARA -dd -labels paradroid.labels
+./bin/beebasm.exe -i src/main.asm -do build/labels.ssd -boot PARA -D RELEASE=0 -dd -labels build/paradroid.labels
 ```
+
+(`-D RELEASE=0` is required — `main.asm` has no default of its own — and the `-do` path is only
+there so the run does not drop loose files in the project root; `CLAUDE.md` §Build has both.)
 
 `PLAN.md` keeps the one-line summary; this file is the detail behind it.
 
-> **Headline figures below were re-verified against the build on 2026-09-09**, on the `no-load` branch after [`no-load.md`](no-load.md) §19 put `drYcol0/1/2` into zero page — main RAM, the zero page, all four banks and the `PARAFNT` block. Rows carrying an older date in their own text are that row's own last measurement and were left alone. The **internal** layout tables are still older snapshots and several are known to be shifted; regenerate with the command above before trusting a mid-bank address.
-> recovery pass** ([`ram-pass.md`](ram-pass.md)). The **internal** layout tables are older
-> snapshots and several are known to be shifted — the bank-4 data table below is marked where it
-> is wrong; regenerate with the command above before trusting a mid-bank address.
+> **Headline figures below were re-verified against the build on 2026-09-11** (HEAD `1d99055`, Release Candidate #7) — main RAM, all four banks and both `ALIGN` pads, `PARBRF`, the title overlay and the `PARAFNT` block. Before that, 2026-09-09, after [`no-load.md`](no-load.md) §19 put `drYcol0/1/2` into zero page. Rows carrying an older date in their own text are that row's own last measurement and were left alone. The **internal** layout tables are still older snapshots and several are known to be shifted — the bank-4 data table below is marked where it is wrong; regenerate with the command above before trusting a mid-bank address.
 
 ## Main RAM
 
@@ -33,10 +33,10 @@ Regenerate it after any change that moves a region:
 | `&0DF0–&0DFF` | 16 B | **The sideways ROMs' private-workspace page bytes. NOT OURS**, and the reason `PageLowIn` copies in two pieces rather than one |
 | `&0E00–&10F6` | 759 B | `lowcode` — `DrawTileCells`, the animated-tile scan and repaint, the alert lamp, the `CollisionType` table, `InfoCall`. Staged through `LOW_STAGE` and copied down by `LowResident` **out of bank 6, not off the disc** (2026-09-09): it lands on DFS's own workspace, which used to make it "after the last `*LOAD`" and now makes it vacuous, because there is no load after boot at all |
 | `&10F7–&10FF` | **9 B free** | (2026-09-09; the 1 B quoted here from 2026-08-25 was stale — the two raw `PAGEBANK`s in this chunk became `JSR Pg*`) |
-| `&1100–&2F87` | 7,816 B | Code (`PARA`), starting below DFS's `PAGE` of `&1900`. The level draw and droid AI are in bank 4; the RAM recovery pass then moved the effect blitter to bank 5 and pulled the `PAGEBANK`/`PNMIRROR` expansions into subroutines. Also carries the one copy of the droid icon data (`droidicon.asm`), read from banks 6 and 7, and — since 2026-08-29 — the single resident ZX0 depacker with `UnpackBankIn` and `BootBanks` beside it |
-| `&2F88–&2F8D` | 6 B | `keyTab` — the six redefinable controls, as INKEY bytes, in `CTL_*` order. **It is no longer the last six bytes of the image** (that line was true until layer-12 [DECISION 6] put `DECK_DONE` and `DeckDoneClear` behind it); what matters about its home was never that it is last but that it is main RAM, resident at every moment a control is tested — see [`layer-11f-frontend.md`](layer-11f-frontend.md) §8a |
-| `&2F8E–&2FA8` | 27 B | `DECK_DONE` (16 B) and `DeckDoneClear`, layer-12 [DECISION 6] |
-| `&2FA9–&2FFF` | **87 B free** | `code_end` is `&2FA9`, measured 2026-09-09 — BUGS.md #24 spent 24, [`no-load.md`](no-load.md) §20 gave 17 back and §21 another 27. **It was `&3000` exactly — 0 B — from `b385cd6` until the `no-load` branch**, which gave it back in three pieces: 14 B when no-load step 4 deleted `loadtitl`'s OSCLI and its string, another 14 when `PARBRF` and `PARALOW` stopped being disc files and took theirs, and 38 from step 6's `BrDepackChain`; §19's `JSR SprSeedYcol` then spent 3. The RAM recovery pass of 2026-08-25 ([`ram-pass.md`](ram-pass.md)) had taken this to 639 B; Layer 13b and Layer 11f's `keyTab` spent all of it. **`ram-pass.md`'s reserve list is what pays for the next thing that needs main RAM** — and [`no-load.md`](no-load.md) §19a is the other list now, ~390 B of code image in absolute operands that zero page would shorten |
+| `&1100–&2FB3` | 7,860 B | Code (`PARA`), starting below DFS's `PAGE` of `&1900`. The level draw and droid AI are in bank 4; the RAM recovery pass then moved the effect blitter to bank 5 and pulled the `PAGEBANK`/`PNMIRROR` expansions into subroutines. Also carries the one copy of the droid icon data (`droidicon.asm`), read from banks 6 and 7, and — since 2026-08-29 — the single resident ZX0 depacker with `UnpackBankIn` and `BootBanks` beside it |
+| `&2FB4–&2FB9` | 6 B | `keyTab` — the six redefinable controls, as INKEY bytes, in `CTL_*` order. **It is no longer the last six bytes of the image** (that line was true until layer-12 [DECISION 6] put `DECK_DONE` and `DeckDoneClear` behind it); what matters about its home was never that it is last but that it is main RAM, resident at every moment a control is tested — see [`layer-11f-frontend.md`](layer-11f-frontend.md) §8a |
+| `&2FBA–&2FD4` | 27 B | `DECK_DONE` (16 B) and `DeckDoneClear`, layer-12 [DECISION 6] |
+| `&2FD5–&2FFF` | **43 B free** | `code_end` is `&2FD5`, measured 2026-09-11 — layer-7 DECISION 14 (issue #12's second round) took the last 3 for `ConsoleTick`'s `JSR ConXfer4`; issue #18's `PARXFER`-last reorder, its NMI claim and #11's pre-clear were paid for in between, and `SetupModeRegs` gave 15 back (`CLAUDE.md`'s table has the chain). It was `&2FA9`, **87 B**, measured 2026-09-09 — BUGS.md #24 spent 24, [`no-load.md`](no-load.md) §20 gave 17 back and §21 another 27. **It was `&3000` exactly — 0 B — from `b385cd6` until the `no-load` branch**, which gave it back in three pieces: 14 B when no-load step 4 deleted `loadtitl`'s OSCLI and its string, another 14 when `PARBRF` and `PARALOW` stopped being disc files and took theirs, and 38 from step 6's `BrDepackChain`; §19's `JSR SprSeedYcol` then spent 3. The RAM recovery pass of 2026-08-25 ([`ram-pass.md`](ram-pass.md)) had taken this to 639 B; Layer 13b and Layer 11f's `keyTab` spent all of it. **`ram-pass.md`'s reserve list is what pays for the next thing that needs main RAM** — and [`no-load.md`](no-load.md) §19a is the other list now, ~390 B of code image in absolute operands that zero page would shorten |
 | `&3000–&367F` | 1,664 B | Layer 9's text font, `PARAFNT` — 104 glyphs × **16 B, 1bpp**, the C64's own bytes, expanded by `FontCell` as it draws. Layer 13a TASK 3. **Loaded once, in `.start`**, since no-load step 5 |
 | `&3680–&36DF` | 96 B | The status box's twelve border cells, same file, also 1bpp |
 | `&36E0–&3CEC` | 1,549 B | `constrings` — the `$C000` string table, **one copy**, read by the console in bank 6 and the droid database in bank 7 alike. Same `PARAFNT` file. Layer 13a TASK 7 |
@@ -67,24 +67,29 @@ Regenerate it after any change that moves a region:
 | `&8000–&BFFF` | 16 K | Sideways bank window — one of the FOUR banks below, never more |
 | `&C000–&FFFF` | 16 K | MOS |
 
-Free main RAM (2026-08-30): **0 B below `&3000`** — `code_end` is `&3000` exactly — 26 in the
+Free main RAM (2026-09-11): **43 B below `&3000`**, 16 in the `PARAFNT` tail, 9 at the top of
+`lowcode`, 3 in `lowcode2`, 0 after `lowbss` — plus the 62 B of zero page and the stack page
+above. Before the `no-load` branch (2026-08-30): **0 B below `&3000`** — `code_end` is `&3000` exactly — 26 in the
 `PARAFNT` tail, 1 at the top of `lowcode`, 6 in `lowcode2`, 8 after `lowbss`: about 40 B in four
 pieces, none of them the one that matters. The 639 B this line quoted after the 2026-08-25
 recovery pass went to Layer 13b's bank probe and Layer 11f's `keyTab`.
-The seam code (`TitleSeq`, `GoTitle`, `UninstallIrq`, `SaveDfsWs`/`RestoreDfsWs`) stays resident
-of necessity, because it pages banks and runs while the MOS owns the machine.
+The seam code (`TitleSeq`, `GoTitle`, `UninstallIrq`) stays resident of necessity, because it
+pages banks and runs while the MOS owns the machine. (`SaveDfsWs`/`RestoreDfsWs` were on that
+list until no-load step 5 deleted them with the loads they protected.)
 
 **The 1,136 free bytes at `&0C90` are gone**, spent on the low overlay, and with them the 64 above
 the panel (`LUTs`) and 112 of the `PARAFNT` tail (`DoScore`). What made that possible is that
 `&0E00–&10FF` is DFS's shared workspace and dead from the last `*LOAD` on — but **nothing may be
-LOADED there**, which is why `PARALOW` is staged at `LOW_STAGE` and copied down, and why it must be
-the last filing-system call in the boot sequence. Do it earlier and the next `*LOAD` hangs in the
-8271 poll with the ROM's variables underneath it.
+LOADED there**, which is why the low overlay is staged at `LOW_STAGE` and copied down. It used to
+be the `PARALOW` disc file and had to be the last filing-system call in the boot sequence — any
+`*LOAD` after it hung in the 8271 poll with the ROM's variables underneath it. Since 2026-09-09
+it is `lowImg` in bank 6, copied down by `LowResident`, and every load is in `.start` before the
+first `PageLowIn`, so the rule still holds and nothing has to obey it.
 
 **Layer 11e's sound driver landed in bank 4, not here** — the IRQ pages the bank for `SndTick`
 (the one sanctioned breach of the bank rule, `CLAUDE.md`), so main RAM paid only the request
-bytes and the shim. Since the RAM recovery pass the reservoir IS the code image's 639 B;
-the further reserves (`sprsplit.asm` to bank 5, SCANSTEP tail folding, `door.asm` to bank 4)
+bytes and the shim. The RAM recovery pass made the code image's 639 B the reservoir, and Layer
+13b and Layer 11f spent it; the further reserves (`sprsplit.asm` to bank 5, SCANSTEP tail folding, `door.asm` to bank 4)
 are costed in [`ram-pass.md`](ram-pass.md) §"Held in reserve".
 
 ### The boot-time staging overlay
@@ -93,10 +98,12 @@ are costed in [`ram-pass.md`](ram-pass.md) §"Held in reserve".
 has the DFS ROM paged in at `&8000` during a filing-system call. So:
 
 All four bank files stage there in turn — since the loader compression they land ZX0-packed at
-`DEPK_STREAM` = `&3200` and unpack straight into the bank, driven by the **`PARDEPK` overlay at
-`&3000`**, which since RAM pass 3a also carries `UnpackBankIn`, the boot's `BootBanks` loop and
-three of the load strings (`loaddepk` and `loadspr` stay in main RAM: the briefing exit OSCLIs
-both). Everything in the overlay runs only while it is resident.
+`DEPK_STREAM` = `&3200` and unpack straight into the bank through the **one resident depacker**,
+`Zx0Unpack` with `UnpackBankIn` and `BootBanks` beside it, in the code image. (Until 2026-08-29
+that was the `PARDEPK` overlay at `&3000`; [`loader-compression.md`](loader-compression.md) has
+why it went.) **`PARXFER` is the exception since issue #18 item 9 (2026-09-10)**: it loads last,
+after `SetupMode` and the font, staged at `XFER_STREAM` = `&4000` because the font is on
+`&3000`.
 
 Everything from `&3000` up through the staged streams is written through during boot — the save
 areas, the tile
@@ -107,8 +114,11 @@ of garbage in the play area.
 `PageDataIn`, never loaded with the code. The tile map, the panel, `CHAR_PTR` and `SPR_MASKTAB` all
 already satisfy it.
 
-Two more files load after the bank staging, in TitleSeq's order: `PARAFNT` straight to `&3000`,
-and `PARALOW` staged on the panel and copied down last. (`PARTITL` was a third until no-load step
+After the first three banks, `.start` runs `SetupMode`, loads `PARAFNT` (ZX0, unpacked in place
+to `&3000` from `FNT_STREAM` = `&3700`) and then `PARXFER`, and that is the last filing-system
+call of the session — **there are no loads after boot** (no-load step 5, 2026-09-09). Before the
+branch two more files loaded in TitleSeq's order: `PARAFNT`, and `PARALOW` staged on the panel and
+copied down last; `PARALOW` is `lowImg` in bank 6 now. (`PARTITL` was a third until no-load step
 4, 2026-09-07: the title's driver still runs at **`&0900`**, in the charset's ground — it moved
 off `&3000` in step 3 so the text font survives the title — but its image is carried in bank 7
 and `TiResident` copies it down, so there is no load.) — see the boot code and `layer-11-sound-title.md` §11c.
@@ -134,7 +144,7 @@ and `TiResident` copies it down, so there is no load.) — see the boot code and
 
 ## SWRAM bank 4 — `PARADAT`
 
-`&8000–&BFCC`, **51 free** (2026-09-09, after [`no-load.md`](no-load.md) §19's `SprSeedYcol` and its nine-byte `drYcol` seed took 20 — assembled AFTER `colours.asm` on purpose, because in front of `colourMap`'s `ALIGN` it would have rolled a page. It was **71** with the branch's tail full: step 6 put briefing page 5's second chunk (154) there and **the `ALIGN` pad is down to 10 bytes**, so there is no free ride left here either. It was 225 earlier on the branch, after 2026-09-07 interned `drSprData`'s duplicate rotor and end rows for +217; before that 8. **Packing this bank is not possible** — everything in it is read during play, so there is nowhere to depack to, and the disc already ZX0s the whole thing.) The pre-branch reading and its history: `&8000–&BFF4`, **11 free** (2026-08-31: layer-12 [DECISION 5]
+`&8000–&BFC0`, **64 free, and the `colourMap` `ALIGN` pad is 10** (2026-09-11: `schemes` `&8406`, `colourMap` `&8500`. Layer-7 DECISION 14 took 102 — `ConXfer4`, `LvTick4`'s transfer arm and two latches; issue #18's `SetupModeRegs` 29 and layer-14 DECISION 11 10 before it, and §21 gave 154 back by taking briefing page 5's second chunk home to bank 6 — see `CLAUDE.md`'s table for the chain). It was `&8000–&BFCC`, **51 free** (2026-09-09, after [`no-load.md`](no-load.md) §19's `SprSeedYcol` and its nine-byte `drYcol` seed took 20 — assembled AFTER `colours.asm` on purpose, because in front of `colourMap`'s `ALIGN` it would have rolled a page. It was **71** with the branch's tail full: step 6 put briefing page 5's second chunk (154) there and **the `ALIGN` pad is down to 10 bytes**, so there is no free ride left here either. It was 225 earlier on the branch, after 2026-09-07 interned `drSprData`'s duplicate rotor and end rows for +217; before that 8. **Packing this bank is not possible** — everything in it is read during play, so there is nowhere to depack to, and the disc already ZX0s the whole thing.) The pre-branch reading and its history: `&8000–&BFF4`, **11 free** (2026-08-31: layer-12 [DECISION 5]
 took ~105 and BUGS #12's `sprSplit` clear 3, out of the 143 that were there. **`colourMap`'s
 `ALIGN` pad is SPENT** — 200 bytes put in front of it cost the bank 259, because past the pad the
 ALIGN rolls a whole page; `consolesel.asm`'s header warns of exactly this and it is now measured.
@@ -248,7 +258,7 @@ available" misread it.
 
 ## SWRAM bank 5 — `PARASPR` (shifts 0 and 1 px)
 
-`&8000–&BEA8`, **344 free** (2026-09-09. **It was 15 B and the tightest region in the machine**; [`no-load.md`](no-load.md) §19 moved `drYcol0/1/2` into zero page, turning 320 `LDY drYcol,X` from `abs,X` into `zp,X` and deleting this bank's copy of the table — **+329 for no cycles at all**. It is **UNFOLDED**: §11m sold the SCANSTEP tail fold back (—613), which it could afford because `sprscan.asm` had just gone home to bank 6 and left 538 behind. Those 613 are still recoverable at 3 cycles a compiled row by putting `0` back in `export_droids.py`'s `FOLD_TAIL` — independent of §19, and no longer the first thing to reach for.) The pre-branch reading: `&8000–&BDA5`, **602 free** (2026-08-25; was 1,033 until the RAM pass spent 431 of it). Two of
+`&8000–&BEAA`, **342 free** (2026-09-11). It was `&8000–&BEA8`, **344 free** (2026-09-09. **It was 15 B and the tightest region in the machine**; [`no-load.md`](no-load.md) §19 moved `drYcol0/1/2` into zero page, turning 320 `LDY drYcol,X` from `abs,X` into `zp,X` and deleting this bank's copy of the table — **+329 for no cycles at all**. It is **UNFOLDED**: §11m sold the SCANSTEP tail fold back (—613), which it could afford because `sprscan.asm` had just gone home to bank 6 and left 538 behind. Those 613 are still recoverable at 3 cycles a compiled row by putting `0` back in `export_droids.py`'s `FOLD_TAIL` — independent of §19, and no longer the first thing to reach for.) The pre-branch reading: `&8000–&BDA5`, **602 free** (2026-08-25; was 1,033 until the RAM pass spent 431 of it). Two of
 the four compiled shifts, Layer 7's effect artwork — 31 bullet and explosion frames, 2,946 B,
 here because the interpreted effect path reads them every row — **and, since RAM pass 2, the
 effect blitter itself** (`src/sprfx.asm`: `SprEfSetup/Box/Skip/Fetch/Draw/Restore`), which only
@@ -256,7 +266,7 @@ ever runs with this bank paged in. **Its header's invariant — no effect blit w
 
 ## SWRAM bank 6 — `PARSPR2` (shifts 2 and 3 px)
 
-`&8000–&BEE2`, **286 free** (2026-09-10: `SprAssignTr`'s rewrite took 53 — see [`raster-timing.md`](raster-timing.md). Before it `&BEAE`, 338 free, 2026-09-09, and still the largest hole in the machine. The window-A budget took the last 63 — `satCapA` and the budget arms in `sprsplit.asm`, [`raster-timing.md`](raster-timing.md) DECISION 2026-09-09 — and [`no-load.md`](no-load.md) §21 took 313 before it, bringing briefing page 5 back whole. It was 714 at the head of that day: §19's `drYcol` move gave **+420** here — 411 sites plus the table, the extra 91 over bank 5 because only a SHIFTED glyph spills into column 2 and this bank carries the 2 px and 3 px shifts. It was 294: also **UNFOLDED** (§11l), then step 6 took `sprscan.asm` back (—538) and gave up briefing page 5 (+313), and step 5 spent 2,005 on `brfImg` and `lowImg` — the two front-end overlays and their copiers, which is what made `PARBRF` and `PARALOW` resident.) The pre-branch reading: `&8000–&BFF8`, **7 free** (2026-08-31: layer-12 [DECISION 5]'s `ConCount`
+`&8000–&BEFE`, **258 free** (2026-09-11: the briefing's page streams `brstream0` and `brstream4`, which live here, grew with `1d99055`'s controls-page text). It was `&8000–&BEE2`, **286 free** (2026-09-10: `SprAssignTr`'s rewrite took 53 — see [`raster-timing.md`](raster-timing.md). Before it `&BEAE`, 338 free, 2026-09-09, and still the largest hole in the machine. The window-A budget took the last 63 — `satCapA` and the budget arms in `sprsplit.asm`, [`raster-timing.md`](raster-timing.md) DECISION 2026-09-09 — and [`no-load.md`](no-load.md) §21 took 313 before it, bringing briefing page 5 back whole. It was 714 at the head of that day: §19's `drYcol` move gave **+420** here — 411 sites plus the table, the extra 91 over bank 5 because only a SHIFTED glyph spills into column 2 and this bank carries the 2 px and 3 px shifts. It was 294: also **UNFOLDED** (§11l), then step 6 took `sprscan.asm` back (—538) and gave up briefing page 5 (+313), and step 5 spent 2,005 on `brfImg` and `lowImg` — the two front-end overlays and their copiers, which is what made `PARBRF` and `PARALOW` resident.) The pre-branch reading: `&8000–&BFF8`, **7 free** (2026-08-31: layer-12 [DECISION 5]'s `ConCount`
 lines took 32 of the 39 that were left; the 114 this line quoted from 2026-08-25 was two
 generations stale. The RAM pass's icon dedup returned 110 — before it 4,
 and the history back through `dfsSave` moving in, `sprsplit.asm` arriving and TASKs 3/6/7 is in
@@ -286,7 +296,7 @@ reads none of the artwork, and the wrap fallback is the only thing that does.
 
 ## SWRAM bank 7 — `PARXFER`
 
-`&8000–&BF7C`, **131 free, plus 33 B of `plandata.asm`'s `ALIGN` pad** (2026-09-09, after BUGS.md #24's `xfpause.asm` took 35 behind that pad and [`no-load.md`](no-load.md) §20 five more of the title overlay; it was **171**). The pad was 208 until no-load step 6 put briefing page 5's first chunk (175) in it for nothing, exactly as `consolesel.asm` does in bank 4 — **quote a bank's pad and tail as a pair, never the tail alone**. It was 759 before the briefing's `brstream1` (604 packed) went in; the branch's packing pass had taken it from 25 to 3,021 (transfer board, lift screen, portrait pool, `poLut`), and steps 3 and 4 then spent 2,262 of that on the title artwork, the high-score screen, the title overlay's image and `TiResident`. The pre-branch reading and the warning that goes with it: `&8000–&BFF8`, **7 B of tail + the `planInk` `ALIGN` pad — ~100-105 B all in, MEASURED
+`&8000–&BFAC` (`xfer_end`), **84 free, plus 45 B of `plandata.asm`'s `ALIGN` pad** (2026-09-11: `planChars` `&AFDB–&B0D3`, `planInk` `&B100`. Issue #16's `HsHold` took 21 from the tail; the pad grew by 27 when `5a5a4c6` shrank `condb.asm`, and in between it had carried layer-9 DECISION 21, issue #6's `goOrder` and layer-11f DECISIONs 18-19 — `CLAUDE.md`'s table has the chain). It was `&8000–&BF7C`, **131 free, plus 33 B of `plandata.asm`'s `ALIGN` pad** (2026-09-09, after BUGS.md #24's `xfpause.asm` took 35 behind that pad and [`no-load.md`](no-load.md) §20 five more of the title overlay; it was **171**). The pad was 208 until no-load step 6 put briefing page 5's first chunk (175) in it for nothing, exactly as `consolesel.asm` does in bank 4 — **quote a bank's pad and tail as a pair, never the tail alone**. It was 759 before the briefing's `brstream1` (604 packed) went in; the branch's packing pass had taken it from 25 to 3,021 (transfer board, lift screen, portrait pool, `poLut`), and steps 3 and 4 then spent 2,262 of that on the title artwork, the high-score screen, the title overlay's image and `TiResident`. The pre-branch reading and the warning that goes with it: `&8000–&BFF8`, **7 B of tail + the `planInk` `ALIGN` pad — ~100-105 B all in, MEASURED
 2026-08-31** by bisecting a `SKIP` in `liftview.asm` (100 assembles, 110 does not). **The
 "~176 B of pad, ~183 B real" this line quoted from 2026-08-25 was stale**, and it cost layer-12
 DECISION 6 a build to find out — quote the measurement, and re-measure rather than trusting this
@@ -316,7 +326,7 @@ always meant "the `PARA` image cannot grow past `&3000`" — never that there wa
 bank can hold code as easily as data, the level draw went to live beside the tile and deck data it
 reads, and `droid.asm` after it. Layers 7–10 then spent the room again, each paying its way in by
 moving something else across. The RAM recovery pass (2026-08-25) is the largest application of
-the same rule — `&3000` is 639 bytes away now, and displacing code into a bank remains the
+the same rule — it put `&3000` 639 bytes away, since spent (43 B on 2026-09-11), and displacing code into a bank remains the
 standing answer when the room runs out again ([`ram-pass.md`](ram-pass.md) §"Held in reserve").
 
 The free regions under the staging overlay cannot hold anything loaded *with the code*: they take
@@ -343,14 +353,13 @@ that makes the bank-4 files safe is in `bufcore.asm`'s header.
 | `sprite.asm` | main RAM | The blitter front end: slot state, the tranche walk, `SprSplitOK`/`SprAssignTr`, the compiled-row dispatch and the wrap fallback |
 | `sprfx.asm` | bank 5 | The effect blitter (RAM pass 2) — only ever runs with `PARASPR` paged in; read its header before touching it |
 | `data/droidicon.asm` | main RAM | The one copy of the droid icon data, read by bank 6 (`console.asm`) and bank 7 (`xfericon.asm`) — RAM pass 3b |
-| `sprsplit.asm` | bank 6 | The tranche decision, reached through `SprSplitOK`'s paging bridge; reads only main RAM and zero page |
-| `sprscan.asm` | bank 6 | The tranche PRESCAN, the geometry half of the split decision, feeding `sprCls` in `lowbss`. It was bank 5's from 2026-09-01 until no-load step 6 sent it back |
+| `sprsplit.asm` | bank 6 | The tranche decision, reached through `SprSplitOK`'s paging bridge; reads only main RAM and zero page. **Also the tranche PRESCAN**, the geometry half feeding `sprCls` in `lowbss` — that was `sprscan.asm`, bank 5's from 2026-09-01 until no-load step 6 sent it back to bank 6, and merged back into this file byte-identically in `e203d50` |
 | `door.asm` | main RAM | Door state, `DoorScan`, the patched tile definitions, `DoorsUpdate`, `DrawDoorTile` |
 | `lift.asm` | main RAM | `LiftFind`, lift mode, stepping a shaft, `LiftPlace` |
 | `screen.asm` | bank 4 | `DrawHalf`, `BuildCharPtrs`, `BandSetRow`, `ColSetup`, `MapChar`, `RedrawAll` |
 | `scroll.asm` | bank 4 | `DrawColumn`, `DrawBandRows`, `CopyCell`, `ScrollAddS`, `DoRedraws` |
 | `level.asm` | bank 4 | Deck decompress (`BuildLevel`), `BuildCharset`, `BuildLUTs`, `SetPalette` |
-| `zx0depack.asm` | bank 4 | `Zx0Unpack` — the ZX0 (v2) decompressor `BuildLevel` tail-calls; format notes in its header, compressor in `tools/zx0.py` |
+| `zx0depack.asm` | main RAM | `Zx0Unpack` — the ZX0 (v2) decompressor, the ONE resident copy since 2026-08-29 (it was bank 4's, plus a second in `PARDEPK`): `BuildLevel` tail-calls it across the bank boundary and `UnpackBankIn` uses it at boot; format notes in its header, compressor in `tools/zx0src/` and `tools/zx0.py` |
 | `droid.asm` | bank 4 | The ship roster, waypoints, `DroidsUpdate`, line of sight, collision, the kill chain, `ConMenu4`, and — since 2026-09-09 — `SprSeedYcol`, which copies `drYcol0/1/2` into `&A0`. **Assembled after `colours.asm` on purpose**, so it does not ride in `colourMap`'s `ALIGN` pad and roll it a page |
 | `panel.asm` | bank 6 | Layer 9's panel text engine and HUD |
 | `console.asm` | bank 6 | The console screen, its strings and icons |

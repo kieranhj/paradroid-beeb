@@ -17,6 +17,7 @@
 - DFS filenames are max 7 chars — the disc file is `PARA`, not `PARADROID`.
 
 > Superseded by Layers 3b–3d. The screen is no longer a 16K MODE 1 frame at `&4000`: it is a 10K
-> circular strip at `&5800` with a panel at `&4800`, driven by a three-cycle rupture. The
+> circular strip at `&5800` with a panel at `&4A00` (`&4800` until Layer 9), driven by a three-cycle rupture. The
 > "RAM reclaim opportunity" noted here was taken — shrinking the displayed area handed back
-> `&3000–&57FF`, which is where the level data and panel now live.
+> `&3000–&57FF`, which is where the font block, sprite save areas, tile map and panel now live
+> ([`memory-map.md`](memory-map.md)).

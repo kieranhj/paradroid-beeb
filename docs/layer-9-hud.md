@@ -297,6 +297,11 @@ the C64, whose panel rows are also untouched by `GotoHires`.
 
 Entry is `DoCharUnder`'s missing arm: character 66, the console tile, plus fire. **L leaves.**
 
+> **Amended (issue #12):** since layer-7 [DECISION 13] (2026-09-10) the console is opened by the
+> TRANSFER key, not fire, and since [DECISION 14] (2026-09-11) TRANSFER also leaves it from the
+> menu or any page (`ConXfer4`, `droid.asm`). Fire inside the console is unchanged — it selects on
+> the menu and goes back to the menu from a page.
+
 ### 6a. The screen is `ConsoleMain`'s, line for line
 
 **Rebuilt 2026-08-16 at KC's request.** `ConsoleMain` (`$2955`) and `ShowRobotType` (`$3149`) draw

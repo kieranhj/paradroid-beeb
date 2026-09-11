@@ -7,6 +7,13 @@ disc and not as a change to the port (§5). Written 2026-08-21 against the Video
 document does not modify any existing file; if the plan is taken up, its decisions move into
 `PLAN.md` and a `docs/layer-N` file in the usual way.
 
+> **2026-09-11: still unbuilt, and parts of it have dated.** The figures and file names below are
+> from 2026-08-21. Since then `PARDEPK` has been deleted, and `PARTITL`, `PARALOW`, `PARBRF` and
+> `PARMAN` have stopped being disc files (`docs/no-load.md`). So §5's file table and §9 question 2
+> name files that no longer exist. The disc is now eight files and 46,080 bytes packed. §3's and
+> §7's RAM figures (639 B main RAM, 51 B bank 4) are also out of date: on 2026-09-11 they are
+> 43 B and 64 B. Redo §7's arithmetic against the build's gauges before taking the plan up.
+
 The short version: **NuLA fixes two of the port's three known display deviations from the C64 —
 the 4-pixel horizontal scroll step and the eight fixed hues — and it fixes them cheaply, in the
 display path, without touching the buffer, the blitter or the tile data.** It does not fix the

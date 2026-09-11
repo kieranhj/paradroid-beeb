@@ -439,6 +439,7 @@ not a lift. On the C64 you have to be standing *on* the platform.
 
 `LiftFind` matched the whole tile — four times the area — and `L` does double duty as the weapon,
 so a quarter of every shot fired anywhere near a lift went into the lift instead.
+(Since layer-7 [DECISION 13], 2026-09-10, L no longer enters lifts at all — the TRANSFER key does.)
 
 The gate added at the top of `LiftFind` requires cell 1 or 2 of the four in **each** axis, which
 is `$2E7B`'s region byte for byte: our `plyCX`/`plyCY` reference cell *is* the C64's `charUnder`

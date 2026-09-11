@@ -25,8 +25,9 @@ change, stronger.
    Copy-Item build build-old -Recurse
    ```
 
-2. **Make the change and build again**, with the same flags. The `-D` symbols the project
-   passes (`RELEASE`, `MUSIC_AKL`, `GFX_CPC`, ...) are in `CLAUDE.md` "Build"; a different flag
+2. **Make the change and build again**, with the same flags. The only `-D` symbol this
+   project passes is `RELEASE` (`CLAUDE.md` "Build"); the `DEBUG_` flags are constants in
+   `main.asm`, and both must match; a different flag
    set is a different binary and the comparison means nothing.
 
 3. **Compare the images.** Identical is the pass and the end.
@@ -40,13 +41,17 @@ change, stronger.
    whole compressed stream, so this check answers "nothing at all changed" and nothing softer.
 
 4. **If they differ only where they should, compare per file.** `!BOOT` carries the build
-   stamp and the debug-flag line, so the image differs there whenever the stamp does. Extract
-   the files that must not have changed (`PARA`, `PARADAT`, `PARASPR`, `PARSPR2`, `PARXFER`,
-   `PARAFNT`, `PARALOW`, `PARMAN`, `PARSWR`) from both catalogues and compare those. There is no
-   extractor checked in; it is a few lines over the DFS catalogue (sectors 0 and 1: names at
-   `&0008`, load/exec/length/start sector at `&0108`, eight bytes a file), and
-   `tools/make_disc.py` already writes that structure, so read it there rather than from a
-   manual. Say in the commit which files were compared.
+   stamp and the debug-flag line, so the image differs there whenever the stamp does.
+   `tools/compare_ssd.py` does the per-file comparison out of the catalogue and masks `!BOOT`'s
+   timestamp (it is what `make check-ps1` uses); exit 0 is the pass:
+
+   ```bash
+   python tools/compare_ssd.py build-old/paradroid.ssd build/paradroid.ssd
+   ```
+
+   The shipped files are `PARA`, `PARADAT`, `PARASPR`, `PARSPR2`, `PARXFER`, `PARAFNT` and
+   `PARSWR` (plus `!BOOT`); `PARALOW`, `PARBRF` and `PARMAN` are not disc files any more.
+   Say in the commit which files were compared.
 
 5. **When addresses legitimately moved - a width change, a data removal, a relocation - diff
    the listing streams instead.** The reducer is `tools/listing_stream.py`; read its header

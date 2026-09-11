@@ -48,6 +48,9 @@ are the sign-off: an item struck through here is struck there.
   and holds it, direction or no direction — the settle delay exists only to disambiguate a single
   button, so a dedicated one skips it. The fire route is untouched.
   [`docs/layer-7-combat.md`](layer-7-combat.md) [DECISION 12]
+  *(2026-09-11: extended since. The transfer key also opens lifts and consoles, so fire only
+  fires (DECISION 13, `ab98b5f`), and it closes them again (DECISION 14, `5a5a4c6`). Both are
+  issue #12.)*
 - ~~Getting into the lift just as the disruptor fires leaves the screen white.~~ **DONE
   2026-08-27** — a modal screen FROZE the burst instead of ending it, so `disrFlash` kept
   overriding the palette; `ml_modalend` ends it now. Confirmed by KC, 2026-08-31.
@@ -69,17 +72,25 @@ are the sign-off: an item struck through here is struck there.
 
 **Front end**
 
-- Update the scroll text wording.
+- Update the scroll text wording. *(2026-09-11: partly done for Release Candidate #7. Page 1's
+  controls text was rewritten for fire and action, and page 5's credits gained the BBC port lines
+  (`1d99055`). Whether that closes the note is for KC to say.)*
 - Add a Beeb page.
 - ~~Why does it need to load after the Paradroid logo?~~ **ANSWERED, and accepted by KC
   2026-08-31.** The title is a disc overlay itself (`PARTITL`), and the manual's text (`PARMAN`,
   ~3.4 K compressed) is fetched only when the title times out, because it lands in bank 5 over the
   blitter and cannot be resident while a game might still start. `BrTimeout` is the load.
+  *(2026-09-11: the question no longer arises. `PARTITL` stopped being a disc file in no-load
+  step 4 (`4212feb`), `PARMAN` went in step 5 (`fbef7f6`), and nothing loads after boot
+  (`0e86f7e`). [`docs/no-load.md`](no-load.md) §17-§18.)*
 - ~~The briefing scroll speed is 2× the C64's — "OK as long as it is smooth on real hw/CRT, check
   the code again".~~ **CHECKED AND FIXED 2026-08-31.** The rate is one scanline a field exactly
   (100 scanlines in 100 fields, measured); the *motion* stalled a field and jumped two at every
   character row, because `BrPaintRow` is 90% of a field and the CRTC park came after it. Parking
   first fixed it. [`docs/layer-11f-frontend.md`](layer-11f-frontend.md) §4e-2
+  *(2026-09-10: the rate is now HALF the C64's, one scanline every other field, with DOWN
+  stepping every field. This was hexwab's readability request, issue #8, approved as layer-11f
+  DECISION 17 (`999f2a7`).)*
 - The top line of the briefing scroller flickers a bit more on real hardware. *(New in the notes
   since 2026-08-26; the same §4e-2 measurement method applies — sample `iline`, not the counters.)*
 - ~~The copyright symbol is missing.~~ **DONE** — it is a `glyph @` record in `briefing.txt`, the

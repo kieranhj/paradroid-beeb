@@ -11,8 +11,8 @@ channels desynchronise into noise. Nothing but a capture catches a misplacement.
 
 **What this project has, and has not.** The SN76489 driver is `src/sound.asm` in bank 4, its
 tables are `src/data/sounddata.asm` and `src/data/sndchat.asm`, and it is ported from the C64's
-effect records rather than playing a music stream - so there is **no `tools/verify_*.py` to hand
-a capture to**, and step 4 below has nothing to run yet. Until one exists, the capture is used
+effect records rather than playing a music stream - so there is **no sound verifier to hand a capture to** (the
+`tools/verify_*.py` that exist check annotation, graphics and briefing streams, not sound), and step 4 below has nothing to run yet. Until one exists, the capture is used
 the way step 6 uses it: as a direct reading of what the chip was told, against what
 `docs/layer-11e-sound.md` and the C64's records say it should have been told. Writing the
 verifier is the better answer if sound data ever moves bank again.

@@ -1,5 +1,12 @@
 # Layer 11f handover — morning report, 2026-08-22 (overnight session)
 
+> **Historical — 2026-09-11.** This file is a snapshot of the 2026-08-22 handover. The layer is
+> done and `docs/layer-11f-frontend.md` is the record. Several of the open rows below were closed
+> later. The ± volume keys were built on 2026-08-26 (`docs/layer-11e-sound.md` §9). F6's exit
+> loads went away altogether, because since no-load step 5 there are no loads after boot and
+> `PARMAN` is gone (`docs/no-load.md` §17-§18). `src/data/` has been committed since 2026-08-27,
+> `briefing.txt` included. The held-L nit is not recorded as checked.
+
 **Read `docs/layer-11f-frontend.md` first** — §4a–§4e are what is built and what was learned.
 This file is the state, what happened overnight, and what is left.
 

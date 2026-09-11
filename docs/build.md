@@ -51,8 +51,9 @@ deliberately: a build that silently ignores a new source is worse than one that 
 ## Three things in the pipeline that are not a DAG, and what was done about each
 
 **The pack loop is a fixpoint.** Two of the things bank 6 carries are assembled code copied down
-to run elsewhere — the `PARBRF` driver at `&0400`, the low overlay at `&0E00` — and beebasm
-cannot compress its own output. `main.asm` `SAVE`s each under an X-name, `pack_overlays.py` reads
+to run elsewhere — the `PARBRF` driver at `&0400`, the low overlay at `&0E00` — and a third,
+`keyredef`, rides in bank 5 as a stream the same way (`XKR`); beebasm cannot compress its own
+output. `main.asm` `SAVE`s each under an X-name, `pack_overlays.py` reads
 them back out, ZX0s them and writes a generated file for the *next* assembly; a stream that
 changes size has moved the bank around under the very block it came from. It settles by
 iterating and says so with exit 10, so it stays a shell loop inside the `$(RAW)` recipe. In the

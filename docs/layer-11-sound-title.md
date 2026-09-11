@@ -4,7 +4,11 @@
 verified in jsbeeb over two consecutive game overs. 11d and 11e are not built.** Scoped with KC
 2026-08-18. Decisions KC might want to revisit are marked **[DECISION]** and collected in §7;
 things deliberately left out are in §8. 2026-08-20 also restored [DECISION 6]: the title is the
-`PARTITL` disc overlay again, not a bank 7 resident — see §11c.
+`PARTITL` disc overlay again, not a bank 7 resident — see §11c. **(2026-09-11: 11d and 11e have
+been built since — [`layer-11d-droid-screens.md`](layer-11d-droid-screens.md),
+[`layer-11e-sound.md`](layer-11e-sound.md) — and the title's image went back into bank 7 in
+no-load step 4: `TiResident` copies the driver to `&0900`, and nothing is loaded after boot
+([`no-load.md`](no-load.md) §18). §11c's load sequence and `SaveDfsWs`/`RestoreDfsWs` are history.)**
 
 The layer's shape came out of reading the listing rather than the plan: the flow this builds is the
 original's own, `Restart0` → `TitleLoop` → `StartGame` → the game → `EndGame` → `TitleLoop`, and
@@ -345,6 +349,9 @@ workspace bytes) are not in the snapshot: nothing of ours ever writes them.
 
 ### 11d — The 001 screen — NOT BUILT
 
+*(Built 2026-08-21 — [`layer-11d-droid-screens.md`](layer-11d-droid-screens.md). What follows is the
+plan as it stood.)*
+
 `NewShipInfo` (`$36B9`) on bank 7's shadow screen: `PrintTokenString` (`$36DB`, the machinery Layer
 10 deferred), `ShowRobotType`, and the runtime-composed rotor-and-digits droid where the C64 draws
 the portrait. **[DECISION 3]**
@@ -353,6 +360,9 @@ the portrait. **[DECISION 3]**
 printer alone is bigger than either. See §9.
 
 ### 11e — Sound — PLANNED, not built
+
+*(Built from 2026-08-21, and §6's encoding verified the same day —
+[`layer-11e-sound.md`](layer-11e-sound.md). What follows is the plan as it stood.)*
 
 **Scoped with KC 2026-08-21 — the spec, the full C64 effect inventory, the SN76489 mapping, the
 four architecture decisions and the staging live in [`layer-11e-sound.md`](layer-11e-sound.md).**

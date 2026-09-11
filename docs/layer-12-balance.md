@@ -1,6 +1,7 @@
 # Layer 12 — Balance, fidelity and feel
 
-**Status: 12b DONE (2026-08-31); 12a, 12c and 12d not started.** `PLAN.md` carries the
+**Status: 12b DONE (2026-08-31); 12a and 12c under way (rows confirmed in 12a, a session log
+in 12c from 2026-09-03); 12d not started.** `PLAN.md` carries the
 one-paragraph summary; this is the detail.
 
 **The six Redux adoptions are all closed**, as the numbered DECISIONS 1-6 below: (4) the
@@ -211,7 +212,8 @@ at what you typed last time.
 of its own, since the bank files ship ZX0-compressed. It does not: compression only affects the
 load, and after `UnpackBankIn` a bank is ordinary RAM. What matters is whether anything reloads
 it, and **nothing reloads bank 7** — `BootBanks` `*LOAD`s `PARXFER` once, and the only later loads
-are `PARASPR` on the briefing exit and `PARAFNT`/`PARALOW`/`PARTITL` at `GoTitle`. That is exactly
+are `PARASPR` on the briefing exit and `PARAFNT`/`PARALOW`/`PARTITL` at `GoTitle` *(2026-09-11: none
+of those later loads exist since no-load step 5, [`no-load.md`](no-load.md) §18)*. That is exactly
 why `hstable.asm` exists and how `hsHigh` already survives between games, so `hsPrev` is three
 more bytes in the same file. `HsEntry` already pages bank 7 for the whole of `HsRun`, so no new
 paging either.

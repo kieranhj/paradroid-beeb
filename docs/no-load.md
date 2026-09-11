@@ -8,6 +8,14 @@ analysis; this file is the working copy, kept current as the branch lands.
 **Read the arena rule below before touching `&4600`.** It is the only invariant on the branch and
 it has already been broken twice.
 
+**STATUS, 2026-09-11: THE GOAL IS MET — no filing-system call after boot since §18
+(`0e86f7e`), and step 5 is complete, so `docs/HANDOVER-step5.md` is history too.** §19-§21 landed
+after it, and the `sprscan.asm` merge §21e deferred is done (`e203d50`). What is left is §18e's
+list, unchanged and none of it about loading: real hardware, the transfer's LOSE path, a
+systematic rotor walk. The branch has since carried issues #3, #5-#12 and #16-#18 and
+Release Candidate #7; take live figures from the build (on 2026-09-11: code image 43 B, banks
+64/342/258/84 + a 45 B `plandata` pad, disc image 46,080 bytes), not from the ledgers below.
+
 **STATUS, 2026-09-09: `docs/HANDOVER-step5.md` IS THE BRIEF FOR THE NEXT SESSION.** §14 is the
 design and the measurements behind it; the handover turns them into staged work with the
 verification recipes and the traps. §12 is the earlier handover and is now history.
@@ -1923,7 +1931,8 @@ SCANSTEP tail fold, which §11l and §11m sold back in both banks: refolding is 
 it. The two are independent and can both be taken.
 
 `docs/memory-map.md`'s per-bank sections predate this branch and were not touched; `CLAUDE.md`'s
-table is the one kept current.
+table is the one kept current. *(2026-09-11: `memory-map.md` was re-measured against the no-load
+build the same day, `56621d6`.)*
 
 ### 19d. Verified, in jsbeeb on the shipping image, `B-DFS1.2`
 
@@ -2095,3 +2104,4 @@ Files gone: `src/data/brstream4b.asm`, `src/xfpause.asm`.
   bank space. hexwab's `INSV` stub would move that ceiling to `&0900` (SS19), and is not taken.
 - **`sprscan.asm` / `sprsplit.asm`** IS a leftover split and both files are in bank 6 again since
   step 6 - but it is worth no bytes either way, so it goes in its own commit as file surgery.
+  *(Done: `e203d50`, byte-identical. `src/sprscan.asm` no longer exists.)*

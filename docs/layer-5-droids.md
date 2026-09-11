@@ -193,7 +193,7 @@ position has not crossed one.
 The oracle procedure is now in `CLAUDE.md` (and `ram-pass.md`): poke **all three** draw call
 sites — the `JSR SprDrawAll` and both `JSR SprDrawTr`s — to `NOP`s so the pool only restores
 (one site was enough when this layer was built, before the tranche split), let it settle, dump `&5800`–`&7FFF`, force a `RedrawAll` with
-SPACE, dump again, compare. Droids moving during the comparison is fine and is the point — the
+CTRL+R (SPACE when this layer was built), dump again, compare. Droids moving during the comparison is fine and is the point — the
 restore has to put back exactly what the draw took, wherever the droid has since walked to.
 
 ## Still open here — all since landed

@@ -1,6 +1,7 @@
 # Layer 13b/13c — Sideways RAM detection, and machine compatibility
 
-**Status: 13b BUILT 2026-08-29. 13c not started.** 13a, the RAM pass, is done and written up
+**Status: 13b BUILT 2026-08-29. 13c under way** — a real Master 128 (2026-09-06) and issue #18's
+portability fixes (2026-09-10), below. 13a, the RAM pass, is done and written up
 separately in [`layer-13-ram-pass.md`](layer-13-ram-pass.md).
 
 **Until Layer 13, RAM was not a constraint worth designing around** — KC's ruling of 2026-08-16:
@@ -63,7 +64,7 @@ Verified: jsbeeb's `B-DFS1.2` has eight RAM banks and picks 4–7; a Master pick
 
 KC, 2026-08-29: "let's not support solidisk for now — just report if detected at boot and warn
 it's unsupported." The game's own writes into sideways RAM — `UnpackBankIn` at boot, `SaveDfsWs`
-at the game-over seam — go through `ROMSEL` alone, so a board needing the latches would pass a
+at the game-over seam (gone since no-load step 5, 2026-09-09) — go through `ROMSEL` alone, so a board needing the latches would pass a
 latched probe and then fail to hold the game. **The second, latched pass runs only when the first
 has already failed to find four banks**, so an ordinary machine never writes the User VIA at all.
 

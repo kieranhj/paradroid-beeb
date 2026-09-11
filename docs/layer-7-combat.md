@@ -142,6 +142,10 @@ countdown when `moveMode` is negative. `moveMode` is `$80` whenever fire is **no
 countdown runs only after a press. **Pressing fire on a lift platform is what opens the deck
 selection, in the original as well as here**, and `lift.asm`'s L-to-enter was right all along.
 
+> **No longer the port's behaviour (2026-09-10):** [DECISION 13] below moved lift and console entry
+> to the TRANSFER key, and [DECISION 14] made TRANSFER close them too. This section stays as the
+> reading of the original.
+
 The gate is indirect because fire does not act directly on anything — it drives a four-state mode
 machine in `DoMoveMode` (`$31B9`), whose strings name it:
 
@@ -740,7 +744,7 @@ A fresh game starts at `$40` (`$1345`) and does not flash. Both are the original
 | | |
 |---|---|
 | **Zero energy** | **Explode and respawn as 001 on waypoint 0**, `BlowInto001` without its modal loop and with `maxEnergy` floored at 7. No game over — Layer 11 owns the screen that would show one. Detail in 7e |
-| **The fire key** | **L does double duty**, shoot and enter a lift — and this is what the original does, through the `moveMode` machine rather than through a tiebreak. `lift.asm`'s trigger is unchanged. Separate buttons stay open as a later option. Detail in 7b |
+| **The fire key** | **L does double duty**, shoot and enter a lift — and this is what the original does, through the `moveMode` machine rather than through a tiebreak. `lift.asm`'s trigger is unchanged. Separate buttons stay open as a later option. Detail in 7b. **Superseded 2026-09-10 by [DECISION 13]**: fire only fires; TRANSFER opens (and, by [DECISION 14], closes) lifts and consoles |
 | **Explosion frames** | **Did not bite.** The decision was fit-what-fits with the length held by an indirection table; measuring found the *bullets* were the expensive half and that bank 5 holds all 31 frames with 1,064 B spare. Nothing cut. Detail in 7c |
 
 **Nothing here is blocked and nothing is left to find out.** The one open question — whether

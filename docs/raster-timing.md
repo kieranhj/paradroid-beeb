@@ -815,6 +815,9 @@ whole. The geometry half (`SprHitsDraw` and its helpers, moved instruction-for-i
 lowbss's last 8 bytes — once per pass; `SprAssignTr` (bank 6) reads the table instead of running
 the test per component member, and the `SprSplitOK` bridge pages bank 5 then bank 6.
 
+*(`src/sprscan.asm` no longer exists: no-load step 6 took it home to bank 6, and `e203d50` folded
+it back into `sprsplit.asm`, byte-identical. `SprScanCls` and `sprCls` are unchanged.)*
+
 ## 2. Early-outs in the prescan
 
 The commonest pass has no buffer writer at all and used to pay ~2,000–3,800 cycles of geometry at
@@ -1076,6 +1079,9 @@ chase they usually do:
    either way), so there is nothing to reclaim by narrowing them.
 
 ## Two levers left, both KC's call — NOT built
+
+*(Both BUILT 2026-09-10, commit `3603f69`: the first as "PassPrep leaves window A" and the second as
+"SprAssignTr made cheaper", the two sections below.)*
 
 - **`SprSplitOK` costs 5,185 cycles inside window A** — 21% of the window, 0.8 of a sprite, and the
   largest thing in it that draws nothing. `SprScanCls` is ~180 of that with no writers; the rest is

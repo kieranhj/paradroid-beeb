@@ -835,6 +835,12 @@ normally (CH0 att 3, CH3 att 6) — the driver takes the chip back cleanly.
 future path that hands the machine back to the MOS has to flush first. There is exactly one such
 seam today (`GoTitle`); `UninstallIrq` has one call site, and that is worth keeping true.
 
+*(2026-09-11: no longer as written. `GoTitle` keeps the rupture up since
+[`no-load.md`](no-load.md) §20, and the flush moved with the teardown to `HsEntry`'s tail in
+`src/title.asm`, still before its `JSR UninstallIrq`. `UninstallIrq` now has two call sites —
+that one and `BrDispatch`'s briefing exit in `src/briefing.asm` — and `PARAFNT` is no longer
+reloaded at the seam; nothing is loaded after boot.)*
+
 ---
 
 ## 12. CTRL+P and CTRL+Q — 2026-08-30

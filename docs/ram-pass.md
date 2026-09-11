@@ -45,14 +45,18 @@ already selected on every entry. **Load-bearing invariant, stated in
 `sprfx.asm`'s header: no effect blit may run while the briefing's `PARMAN`
 occupies bank 5.** True today (the briefing runs its own loop and never
 calls the blitter; both exits reload `PARASPR`), but it is a rule now, not
-a habit.
+a habit. **Vacuous since no-load step 5 (2026-09-09)**: `PARMAN` is gone,
+nothing is loaded over bank 5, and the briefing's resident half lives in it
+beside the effect blitter.
 
 **[DECISION 3a] The boot bank loop lives in `PARDEPK`.** `BootBanks` (the
 four load-and-unpack blocks), `UnpackBankIn` and the `PARADAT`/`PARSPR2`/
 `PARXFER` command strings ride in the overlay they depend on — every caller
 runs with it resident, including the briefing exit, which OSCLIs `loaddepk`
 again before its `PARASPR` reload. `loaddepk` and `loadspr` therefore stay
-in main RAM. 92 B.
+in main RAM. 92 B. **Overtaken 2026-08-29**: `PARDEPK` was deleted and
+`BootBanks`/`UnpackBankIn` moved into the code image beside the one resident
+depacker (`loader-compression.md`); `loaddepk` went with it.
 
 **[DECISION 3b] One droid icon copy, in main RAM.** `droidicon.asm` moved
 from bank 6 into the code image beside `sprite.asm`; `droidicon7.asm`
@@ -139,8 +143,9 @@ stack never descended below `&0180` and the deepest push used at most 128 of the
 *What was NOT exercised, and must be before anything relies on this:* the transfer minigame, the
 lift's deck-selection screen, the game over, and the briefing. **Boot is a separate question** —
 the loader's `*LOAD`s go through the MOS and DFS, which are heavy stack users, and the seed was
-written after boot so that depth is unmeasured. `GoTitle`'s reloads make filing-system calls
-mid-session for the same reason.
+written after boot so that depth is unmeasured. `GoTitle`'s reloads made filing-system calls
+mid-session for the same reason — until no-load step 5 (2026-09-09), since when there are no
+loads after boot at all, so only boot's depth is still in question.
 
 *So what it is safe for today:* state that is (re)initialised after boot and does not have to
 survive a filing-system call — which is most per-game state, including anything cleared at
@@ -165,7 +170,10 @@ seeded and checked, and a comment at the site should say which paths were.
 
 - **`sprsplit.asm` → bank 5** (634 B out of bank 6, zero cycles): one
   `PAGEBANK` constant and the include moves. Its header already certifies
-  it reads nothing bank-resident.
+  it reads nothing bank-resident. **Spent 2026-09-01 in part** — the
+  geometry half went to bank 5 as `sprscan.asm` — **and undone**: no-load
+  step 6 sent `sprscan.asm` back to bank 6, and `e203d50` merged it into
+  `sprsplit.asm` again. The 634 predates all of that; re-cost before using.
 - **SCANSTEP tail folding in `tools/export_droids.py` — SPENT 2026-09-08**,
   as the first move of `docs/no-load.md` §11. The 70 compiled rows per bank
   that ended `SCANSTEP` + `RTS` (14 bytes) end `JMP <tail>` (3) instead, with

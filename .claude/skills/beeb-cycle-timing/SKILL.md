@@ -17,7 +17,7 @@ deterministic, so one sample is exact for that state.
 ## Steps
 
 1. **Take the addresses from the symbol dump, never from memory or an old note.** Main-RAM
-   addresses move on every build. `-do` is there only to stop beebasm dropping its ten loose
+   addresses move on every build. `-do` is there only to stop beebasm dropping its loose
    `SAVE` files in the project root, and `-D RELEASE=0` is not optional - without it assembly
    stops at `DEV` with *Symbol not defined*.
 
@@ -29,9 +29,11 @@ deterministic, so one sample is exact for that state.
 
    You want the `JSR` site (or handler entry) and the instruction after it (the return site).
    **For code in a sideways bank the address is only meaningful while that bank is paged in**,
-   and most of this game is in a bank: bank 4 is the resting state, but `SprDrawAll` and
-   `SprRestoreAll` page 5 and 6 in and out around themselves. An execute breakpoint at a bank-5
-   address will fire on whatever bank 4 holds at that address too, so bracket a bank routine
+   and most of this game is in a bank: the data bank (`SWRAM_DATA`) is the resting state, but `SprDrawAll` and
+   `SprRestoreAll` page the two blitter banks in and out around themselves. The physical bank
+   numbers are probed at boot by `PARSWR` (4-7 on jsbeeb's `B-DFS1.2`, but read `swBank` rather
+   than assuming). An execute breakpoint at a blitter-bank address will fire on whatever the data
+   bank holds at that address too, so bracket a bank routine
    from its main-RAM caller wherever you can.
 
 2. **Snapshot the state once you are in it.** `save_state` returns an ID; `restore_state` puts
@@ -72,8 +74,8 @@ deterministic, so one sample is exact for that state.
    sites at once reliably hung Paradroid's main loop.
 
 7. **Optional: the zero-byte stub, for "where against the raster does this phase end, over
-   many passes"** - which is how this build gets an instrument when the code image has 14 bytes
-   free. It lives in `&0130-&017E`, measured untouched rather than assumed (seed `&A5`, play,
+   many passes"** - which is how this build gets an instrument when the code image has tens of bytes
+   free (43 on 2026-09-11). It lives in `&0130-&017E`, measured untouched rather than assumed (seed `&A5`, play,
    read back; `beeb-bss-bugs`, and `docs/ram-pass.md` lists the paths that measurement did NOT
    exercise). Hand-assemble per site: `JSR <real routine>`, `LDX <state byte>`,
    `INC counter,X`, `RTS`; repoint the `JSR` operand at the stub (two-byte poke, keep the

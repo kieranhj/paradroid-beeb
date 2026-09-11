@@ -32,7 +32,9 @@ freed a safer way: the `dfsSave` snapshot (task 1's DFS-workspace fix) is pure d
 by main-RAM helpers that page a bank around the copy, so it is bank-agnostic — it moved to
 bank 6, shrunk to its minimal 912 bytes (`&0D60–&0DEF` + `&0E00–&10FF`; the NMI page and the ROM
 workspace bytes are never written by us). Bank 5 stays whole for the flicker. **Standing for KC
-to veto.**
+to veto.** (Moot since no-load step 5, 2026-09-09: with no loads after boot, `dfsSave`,
+`SaveDfsWs` and `RestoreDfsWs` were deleted and bank 6 had its 912 B back. Likewise task 1's
+`PARTITL` is not a disc file any more — the title is bank 7's again, copied down by `TiResident`.)
 
 ## 3. ZX0 for the deck maps — and the RLE is gone entirely
 

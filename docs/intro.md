@@ -288,12 +288,14 @@ whole reason generated data is committed (KC, 2026-08-27). A picture change star
 |---|---|---|
 | Sound | none | 3 channels of samples, ~15.6 kHz each, straight at the SN76489's attenuation registers |
 | Timekeeping | `OSBYTE 19` and a busy-wait to the split row | cycle-exact; the whole frame is a hand-scheduled jump chain and the split and the flash ride in its spare cycles |
-| The machine | politely borrowed | taken: `*TAPE`, System VIA interrupts off, zero page and `&0D00` saved and restored |
-| Exit | any key, `RTS` into `!BOOT`'s exec | any key, then it silences the chip, `*DISC`s and chains to `PARA` itself |
+| The machine | politely borrowed | taken: `*TAPE`, System VIA interrupts off, zero page and `&0D00` saved and restored. **Since PORT 8 (2026-09-10) no `*TAPE`**: DFS's `&0E00-&18FF` is kept in the second sideways bank instead ([`layer-13-compatibility.md`](layer-13-compatibility.md)) |
+| Exit | any key, `RTS` into `!BOOT`'s exec | any key, then it silences the chip, `*DISC`s and chains to `PARA` itself. **Since PORT 8, no `*DISC`**: it puts DFS's workspace back and chains |
 | Screen | 1,256 B ZX0, depacked in place | 20,480 B raw — see §8's open items |
 | RAM | `&1900`, ~4K | `&2600-&2AFF` (`&2700` before PORT 7), all of zero page, `&0100-&016F`, `&0400-&09FF`, and a sideways bank |
 
 ### The seven port changes
+
+*(Eight since PORT 8, 2026-09-10 — see `pdloader/README.md`, which is the list kept current.)*
 
 His file is vendored **verbatim** (KC, 2026-08-29) so his next drop is a clean diff; ours are
 marked `\ PORT:` at the site and listed in its header and in `pdloader/README.md`:

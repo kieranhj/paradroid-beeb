@@ -64,6 +64,8 @@ re-authoring.
    - **ESCAPE is made an ordinary key** with `OSBYTE 229, 1` in `GameStartInfo`. Without it the MOS
      raises an escape *condition* on the same press, and the next filing-system call — which is
      `GoTitle`'s own `*LOAD`s, on the way out of the game ESCAPE just ended — fails with Escape.
+     *(2026-09-11: `GoTitle` makes no loads since no-load step 5 — [`no-load.md`](no-load.md)
+     §18 — so that is the reason it was added, not a live hazard.)*
 6. **[DECISION] All four screens, and the wash, take the play area's sixteenth row** (KC,
    2026-08-21), with the ported pages moved down one row onto the C64's own. The full reasoning,
    the single restore point in `ReframeView` and the `t1i3Lo`-is-a-constant economy are in
@@ -253,7 +255,10 @@ tone channels at 15, and on the 999 page CH0 reads `vol=3` with the noise back a
 
 - Verify the two transfer pages in play. The **game-over page is verified** (2026-08-21): ESCAPE →
   explosion → wash → 999 → title → new game → the 001 page, driven in jsbeeb.
-- The deck-clear arm (`RunDroids` `$17DC`): `CPY #1`, the 250+250 bonus, `notInDeck`, and the
-  cleared-deck repaint agreed on 2026-08-21. `dru_done` has none of it yet.
-- `ShowShipClear` and the ship-complete path, deferred by KC on 2026-08-21.
-- `DoHighScore`, which the game-over page now runs into.
+- ~~The deck-clear arm (`RunDroids` `$17DC`): `CPY #1`, the 250+250 bonus, `notInDeck`, and the
+  cleared-deck repaint agreed on 2026-08-21. `dru_done` has none of it yet.~~ **Done** —
+  [`layer-15-endgame.md`](layer-15-endgame.md) and layer-14 DECISION 6.
+- ~~`ShowShipClear` and the ship-complete path, deferred by KC on 2026-08-21.~~ **Done
+  2026-08-24** — [`layer-15-endgame.md`](layer-15-endgame.md).
+- ~~`DoHighScore`, which the game-over page now runs into.~~ **Done 2026-08-21** —
+  [`layer-11f-frontend.md`](layer-11f-frontend.md) §4a.

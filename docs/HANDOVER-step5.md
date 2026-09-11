@@ -12,6 +12,11 @@ loads over bank 5, which three of the streams live in), the budget in §3 was 17
 rather than 67 spare, and the build grew a pack pass because `keyredef` cannot ship packed
 without one.
 
+*(2026-09-11: the figures in the paragraph above are §18c's, from 2026-09-09; today's build has
+43 B of code image, banks 64/342/258/84, eight disc files, 46,080 bytes. §9's question 1 was
+settled by §15, which kept the five pages. Question 2 is still open: no-load.md §14b has the
+296 bytes at `&4220-&4347` unexplained.)*
+
 **Historic, from when stage 1 landed:** It confirms 2B off the table,
 corrects §3's page-4 figure below (435 -> 469), and records a decision that changes the design:
 the pointer tables are NOT carried inside the streams but rebuilt at run time, worth 332 bytes.

@@ -324,7 +324,8 @@ the disc loads above take a different time. Real entropy still arrives with `TiW
 
 **`bootPal` is why it is boot-only.** An assembled `1` in main RAM that `TiBootPal` clears, so the
 game-over path falls straight through and keeps what it inherited. It cannot live in `PARTITL`:
-that overlay is reloaded from disc on every title and would bring the flag back set.
+that overlay is reloaded from disc on every title and would bring the flag back set. *(2026-09-11:
+it is copied fresh from bank 7 by `TiResident` since no-load step 4, which has the same effect.)*
 
 **And it must page bank 4 itself.** Boot's last act before `TitleSeq` is `UnpackBankIn` on
 `SWRAM_XFER`, so `SWRAM_DATA` is *not* the resting state on arrival, and both `SetTextPal` and

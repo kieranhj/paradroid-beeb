@@ -4,6 +4,17 @@
 loading 4 × 16K bank files and copying them up. Layer 13d had already put a
 ZX0 decompressor in the tree; this extends it to the disc files themselves.
 
+> **Where it stands today (measured 2026-09-11, HEAD `1d99055`).** The sections below are dated
+> and later ones overtake earlier ones — `PARDEPK` is gone (2026-08-29), and since no-load step 5
+> (2026-09-09) **there are no loads after boot**: `PARMAN`, the briefing's `PARASPR` reload and
+> `SaveDfsWs`/`RestoreDfsWs`/`dfsSave` are all deleted, and `PARTITL`, `PARBRF` and `PARALOW` are
+> not disc files. The four banks and `PARAFNT` ship ZX0: `PARADAT` 16,320 → 10,824, `PARASPR`
+> 16,042 → 5,421, `PARSPR2` 16,126 → 6,417, `PARXFER` 16,300 → 11,209, `PARAFNT` 3,510 → 1,947
+> (in place, 226 B of margin). The packed image is 46,080 B. `PARXFER` loads last, after the
+> font, at `XFER_STREAM` = `&4000` (issue #18 item 9). The build-time pack pass
+> ([`build.md`](build.md)) adds three streams bank-resident: `XBRF` 958 → 733, `XLOW` 919 → 728,
+> `XKR` 1,014 → 774.
+
 ## What ships
 
 | File | Raw | ZX0 on disc |
@@ -312,7 +323,9 @@ through `mapptr`, immediately before the VDU 22 — 18 bytes of code image
 (`code_end` &2FB8 → &2FCA), ~195,000 cycles, about four fields added to
 boot. MODE 7 is still up while it runs, so the boot text goes a moment
 early (&7C00 is in the range). Nothing else there is live: the banks are
-in, and `PARAFNT` loads after. Re-measured the same way, the stop moved to
+in, and `PARAFNT` loads after. (Since issue #18 item 9, later the same day,
+`PARXFER` loads after too, at `XFER_STREAM` = &4000 — after the clear, so
+the ordering argument is unchanged.) Re-measured the same way, the stop moved to
 the `LDA #22` after the loop: &3200, &5800 and &7C00 read zero, and the
 frames through the MOS's own clear (PC &CC05, &CC4A) show nothing — the
 first one scanned wholly after the loop is plain black.

@@ -774,3 +774,5 @@ no torn top or bottom row.
 > `PARASPR`, because beebasm's image ends mid-track and jsbeeb will not read the last partial one.
 > It reproduces from BASIC with `*LOAD PARASPR`, so it is not the game. Pad a copy to 200K before
 > handing it to the emulator. This cost an hour before it was recognised as an emulator problem.
+> **Corrected 2026-09-01 (KC):** jsbeeb does boot an unpadded image; padding is convention and
+> robustness, not a requirement — see `CLAUDE.md`, "Build".

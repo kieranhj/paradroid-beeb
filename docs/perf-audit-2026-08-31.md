@@ -8,6 +8,15 @@ Commissioned by KC: "still seeing a lot of sprite flickering — full performanc
 two-pass sprite system, prove where the two plots land against the raster, and propose debug
 tooling." Everything below is measured in jsbeeb on the dev build unless marked otherwise.
 
+> **Status, 2026-09-11: this audit is a snapshot, and most of its §9 has been acted on.**
+> Recommendations 1 and 3 landed on 2026-09-01 (`dcdfac4`, `7aa08c4`, `010945f`) and 4 the same
+> day (`d54a730`). 2 was withdrawn as unsound. The ledger is `raster-timing.md` §"The window-B
+> repaint classes" and §"Step 4". The window-A sprite budget followed in `3603f69`. 5 and 6 are
+> not in the tree: `ssd_stale` is still the veto, and the overlap pads are still `SPR_W + 2` /
+> `SPR_H + 8`. §8's `dfsSave` idea is dead because `dfsSave` is gone (`docs/no-load.md` §18b),
+> and `sprscan.asm` is back inside `sprsplit.asm`. The code image has 43 B free, not 4.
+> Whether `DEBUG_DRAW` builds today has not been re-tried.
+
 ## TL;DR
 
 1. **The pass rate is fine.** 25.0 Hz exactly — 50 passes per 100 fields — stationary, scrolling,

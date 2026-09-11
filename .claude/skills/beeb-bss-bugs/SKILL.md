@@ -59,7 +59,8 @@ for the emulator's kindness is to seed the RAM yourself.
    stack-page measurement is exactly this - `&0100-&017F` seeded on 2026-08-31 and still `&A5`
    after play, a deck load, the console and its pages and a whole game over including
    `GoTitle`'s `*LOAD`s, which is the deepest path there is because the MOS and DFS are heavy
-   stack users. **List the paths that were NOT exercised**: that measurement did not cover the
+   stack users. (Those loads are gone since no-load step 5, 2026-09-09 - nothing loads after
+   boot now - so the measurement describes a deeper path than today's game over.) **List the paths that were NOT exercised**: that measurement did not cover the
    transfer game, the lift or the briefing, `docs/ram-pass.md` says so, and anything that
    deepens the call graph invalidates it. A free-space claim without that list is incomplete.
 

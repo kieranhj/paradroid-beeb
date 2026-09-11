@@ -231,7 +231,8 @@ however late we are serviced. VSync restarts it, keeping the stages phase-locked
 Nothing is chained on to the MOS either, so its handler never runs ahead of ours adding latency.
 The cost is the MOS 100 Hz tick, and with it MOS sound. Keyboard still works (OSBYTE `&81` scans
 the matrix directly) and the filing system is only needed before we take over — hence `*LOAD` now
-runs *before* `InstallIrq`.
+runs *before* `InstallIrq`. (The keyboard has since gone direct to the System VIA, not through
+OSBYTE `&81` — `keydown`, [`raster-timing.md`](raster-timing.md).)
 
 Both VIAs have every interrupt source disabled except System VIA CA1 and T1; anything unserviced
 would hold the IRQ line asserted forever. The MOS saves the interrupted A in `&FC` but not X or Y,
@@ -578,7 +579,7 @@ which is where these bugs actually live.
 split scanlines, and the natural reading was that the fix had not worked. It had — the **oracle**
 was being sampled mid-redraw. `RedrawAll` plus its split pass runs longer than the 400,000 cycles
 being allowed to settle, so the dump caught display row 0 rewritten by the main loop but not yet
-repaired by the split pass. Allow 1,500,000 cycles after releasing the redraw key (**R** now; this was written when it was SPACE). Confirmed by breakpointing
+repaired by the split pass. Allow 1,500,000 cycles after releasing the redraw key (**CTRL+R** now; this was written when it was SPACE). Confirmed by breakpointing
 `ra_nosplit` and reading the buffer there: correct at the end of the routine, wrong in the middle.
 
 Vertical scrolling no longer redraws whole rows, so `DrawRow`, `FetchChar` and `SetTilePtr` have

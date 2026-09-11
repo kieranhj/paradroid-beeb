@@ -3,7 +3,9 @@
 > Layer **13a**, the first RAM pass (2026-08-19). The 2026-08-25 **RAM recovery pass** is a
 > different, later exercise — see [`ram-pass.md`](ram-pass.md).
 
-**Status: in progress, started 2026-08-19.** Scoped with KC after the Layer 11 notes recorded that
+**Status: done** (`PLAN.md`'s layer table; started 2026-08-19 — TASKs 1, 2, 3 and 5–8 below,
+and TASK 4's title move landed as Layer 13d task 1, [`layer-13d-space.md`](layer-13d-space.md)).
+Scoped with KC after the Layer 11 notes recorded that
 main RAM had 30 bytes, bank 4 fifteen and bank 6 forty, and that 11c's loop, 11d and 11e were all
 blocked on room rather than on design.
 
@@ -348,6 +350,10 @@ which is what caught the first guess of 83. Nothing calls `FontCell` before `PAR
 > across four routines in two banks buys nothing scarce. Recorded so it need not be re-derived.
 
 ### [TASK 4] The title screen as a transient disc file — ~1,500 bytes of bank 7, and no longer needed
+
+> **Overtaken.** Built the next day anyway, as Layer 13d task 1 (`PARTITL`); and since no-load
+> steps 3–4 (2026-09-07) the title is not a disc file at all — the artwork and the driver's image
+> are bank 7's and `TiResident` copies the driver down to `&0900`.
 
 `titleGlyphs` (576), `titleRLE` (564) and the `Ti*`/`Go*` code sit in bank 7 permanently, even
 though [DECISION 6] already agreed the title should be a separate file loaded on the way in and

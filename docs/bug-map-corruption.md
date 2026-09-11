@@ -110,10 +110,15 @@ the gap below the tile map, so a save-area overrun would now land on it. That re
 true and the `ASSERT` stays, but it is not this bug — the map was never touched.
 
 `DEBUG_MAPGUARD` is `MapGuardSnap` / `MapGuardCheck` at the end of `src/droid.asm`, with its
-snapshot at `MG_COPY = &3C00` and its readout appended to the `DEBUG_ENERGY` line. It is verified in
+snapshot at `MG_COPY = &3C00` (`&4400` today, 2026-09-11) and its readout appended to the `DEBUG_ENERGY` line. It is verified in
 both directions and worth keeping. Its readout format is documented in `src/main.asm` at the flag.
 
 ## 6. Other things still open on this branch
+
+*(As of the fix, 2026-08-16. Since then: the lift/fire tiebreak is gone — fire only fires and the
+transfer key takes lifts and consoles, layer-7 DECISIONS 13 and 14 (issue #12) — and main RAM is
+`code_end` `&2FD5` against `FONT_ADDR` `&3000`, 43 B free on 2026-09-11. `BUGS.md` has #9's
+current status.)*
 
 - **`BUGS.md` #9** — the leftmost 4-pixel column of the view is displaced one character row after
   horizontal scrolling. Reproducible, level-draw side, independent of this.

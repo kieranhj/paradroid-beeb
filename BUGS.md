@@ -29,13 +29,13 @@ sections below are in neither. **The table is the index; read it first.**
 | **14** | [`XfRand` is not a maximal LFSR — its low two bits are always zero](#14-xfrand-is-not-a-maximal-lfsr--its-low-two-bits-are-always-zero--fixed-2026-08-19) | **Fixed** 2026-08-19 |  |
 | **15** | [Incremental draw disagrees with `RedrawAll` beside an animating door](#15-incremental-draw-disagrees-with-redrawall-beside-an-animating-door--2026-08-19-unconfirmed) | **Open, unconfirmed** | did not reproduce in five clean runs. Correlates with poking a modal flag, not with the level draw |
 | **18** | [`HS_STR_ADDR` was `PN_TABS`](#18-hs_str_addr-was-pn_tabs--fixed-2026-08-21) | **Fixed** 2026-08-21 | Layer 11f. Strings landed on the mirrored droid tables; a runaway `DbStr` then smashed bank 7. Root cause proven by write watch. **`font_end` is not the end of the region — `PN_TABS` follows it.** (At the time: 96 B of tables, 8 B gap. Since RAM pass 1 `PN_TABS` is 48 B and the gap ~49 — the lesson stands, the numbers moved) |
-| **17** | [Four debug flags silently push the code image past `&3000`](#17-four-debug-flags-silently-push-the-code-image-past-3000--partly-fixed-2026-08-20) | **Fixed** 2026-08-20, bar one | VSYNC, POS and ENERGY fixed and a `GUARD` added so it can never be silent again. RASTER, DRAW and TIME should fit comfortably since the RAM recovery pass (639 B free); none has been run since — try before trusting. MAPGUARD's 1 K still exceeds bank 4's 51 B |
+| **17** | [Four debug flags silently push the code image past `&3000`](#17-four-debug-flags-silently-push-the-code-image-past-3000--partly-fixed-2026-08-20) | **Fixed** 2026-08-20, bar one | VSYNC, POS and ENERGY fixed and a `GUARD` added so it can never be silent again. RASTER, DRAW and TIME should fit comfortably since the RAM recovery pass (639 B free); none has been run since — try before trusting. **2026-09-11: main RAM is back to 43 B free, so they are unlikely to fit again.** MAPGUARD's 1 K still exceeds bank 4's 64 B (2026-09-11; it was 51) |
 | **16** | [Enemy droids draw a black rotor and a WHITE number](#16-enemy-droids-draw-a-black-rotor-and-a-white-number--fixed-2026-08-19) | **Fixed** 2026-08-19 | the wrap fallback blits digits interpreted and never sees `colPix` |
 | **19** | [`paradroid_ce_annotated.asm` truncated multi-column `.BYTE` lines](#19-paradroid_ce_annotatedasm-truncated-multi-column-byte-lines--fixed-2026-08-24) | **Fixed** 2026-08-24 | 43% of the listing's data was missing AND what survived was misaligned. `annotate.py`'s `get_content`; `tools/verify_annotation.py` is the standing check |
 | **20** | [The player's bullet starves every other collision in the pass](#20-the-players-bullet-starves-every-other-collision-in-the-pass--fixed-2026-09-03) | **Fixed** 2026-09-03 | `DrCollide` scanned from slot 7. The bullet has no `drSlotOwner`, so its pair dead-ended and the whole pass was abandoned. Playtest report #3 |
 | **21** | [Two black squares flicker on the transfer game's central column](#21-two-black-squares-flicker-on-the-transfer-games-central-column--2026-09-03-unreproduced) | **Open, unreproduced** | reported on real hardware, rarely on BeebEm. Two hypotheses, neither tested; the cursor one is a 30-second check |
 | **22** | [Sprite pixels are occasionally left on the deck](#22-sprite-pixels-are-occasionally-left-on-the-deck--2026-09-06-open) | **Open** | reported from play, in a firefight, no repro. The tranche split was the first suspect and is EXONERATED by measurement — `DEBUG_TRCHK` counted zero cross-tranche overlaps through minutes of contrived heavy fire |
-| **23** | [Entering a transfer, the target's information screen flashes in the board's palette](#23-entering-a-transfer-the-targets-information-screen-flashes-in-the-boards-palette--2026-09-07-open) | **Open** | PRE-DATES the no-load branch, proven by diff. The board draw runs with `palPlay` already switched. Fix is 3 bytes, and the code image is not full any more — 43 B free after #24 |
+| **23** | [Entering a transfer, the target's information screen flashes in the board's palette](#23-entering-a-transfer-the-targets-information-screen-flashes-in-the-boards-palette--2026-09-07-open) | **Open** | PRE-DATES the no-load branch, proven by diff. The board draw runs with `palPlay` already switched. Fix is 3 bytes, and the code image is not full any more — 43 B free, measured 2026-09-11 |
 | **24** | [Unpausing inside the transfer game posts "Transfer" over the board's own panel word](#24-unpausing-inside-the-transfer-game-posts-transfer-over-the-boards-own-panel-word--2026-09-07-fixed-2026-09-09) | **Fixed** 2026-09-09, bar a third owner | `DoPause`'s repaint went through `pnTxtTab`, which knows nothing of the words the transfer and the lift view write for themselves. Both repaint their own now (`xfpause.asm`). **Still open for the two information screens in front of the board**, where "Captured" is on the line and `xferActive` is 0 — the entry says why that gate was not widened |
 
 `## Delivered: DEBUG_POS` near the end is not a defect — it is the position bookmark that came out
@@ -161,7 +161,8 @@ Draw first and reveal after, which is the pattern `RedrawAll` already uses — `
 called *after* `XfStart`. `palXfer` is bank 4 data, so bank 7 cannot apply it itself, and the call
 site is main RAM: `JMP PgData` becomes `JSR PgData : JMP XferPal4`. **Three bytes**, and as of
 `b385cd6` the code image is exactly full (`code_end == FONT_ADDR == &3000`). Fold it into whatever
-next reorganises main RAM.
+next reorganises main RAM. *(2026-09-11: it has 43 B free now — `code_end` `&2FD5` — so the three
+bytes can simply be paid.)*
 
 ---
 
@@ -812,7 +813,7 @@ not two rows that happen to render the same.
 `[posY, posY+128)` and `posY = mapYr*8 + line`. Display row 0 scanline *s* therefore holds
 map row `mapYr*8 + s` when `s >= line`, but `mapYr*8 + 128 + s` — character row
 `mapYr+16` — when `s < line`. `LoadDeck` sidesteps this by zeroing `line` and `scrollS`
-before its own `RedrawAll`; the SPACE debug key does not.
+before its own `RedrawAll`; the SPACE debug key (CTRL+R since 2026-08-31) does not.
 
 **Ruled out.**
 

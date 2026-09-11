@@ -65,7 +65,7 @@ number that has no measurement behind it.
    ```
 
    Read the disassembly back before running: a hand-assembled byte wrong by one has mimicked a
-   hang and cost two sessions (`beeb-cycle-timing`, step 6).
+   hang and cost two sessions (`beeb-cycle-timing`, step 7).
 
 5. **Vary the input and probe again.** One reading confirms one setting. The four wrap sizes
    came from all four latch combinations; ANDY's 4K window from a second address the overlay

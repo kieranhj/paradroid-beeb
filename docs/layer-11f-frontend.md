@@ -1,6 +1,10 @@
 # Layer 11f — the front end: briefing scroller, high score, title sound
 
-**Status: PLANNED, nothing built. Written 2026-08-21 from the listing.** This is the rest of
+**Status (2026-09-11): BUILT — F1–F5 and the chatter from 2026-08-21/22 (§4a–§4f), key
+redefinition 2026-08-30 (§8), DECISIONS 16–19 since. The briefing no longer loads anything:
+`PARMAN` and the exit's `PARASPR` reload went in no-load step 5 ([`no-load.md`](no-load.md)
+§17–§18), so §3d's and §4d's load plumbing and DECISIONS 4–6 are history.** The line below is
+the original status. **PLANNED, nothing built. Written 2026-08-21 from the listing.** This is the rest of
 Layer 11 — everything the original does *outside* a game, which Layers 11a–11e left deferred:
 
 - `DoHighScore` (`$E4E5`) — PLAN.md's "the last one"
@@ -61,7 +65,7 @@ Two things bind the three pieces of work together:
 
 **Where it lands here.** Bank 7, beside `GoStart`/`GoTick` and the info screens — the game-over
 seam is already there, and bank 7 survives a `GoTitle` (only `PARAFNT`, `PARTITL` and `PARALOW`
-reload), so the table persists across games. Rows 10 and 22 are C64 play-area rows; the port's
+reload — *2026-09-11: nothing reloads since no-load step 5*), so the table persists across games. Rows 10 and 22 are C64 play-area rows; the port's
 play area starts at C64 row 8, so they are **port rows 2 and 14** of the sixteen — both on
 screen, no re-fit. `PnStr`/`PnGlyph`'s glyph engine and `IsPrint`'s shadow screen already draw
 this kind of text.
@@ -653,6 +657,9 @@ handover claims** (that figure is for `&0C90`, which the MOS's sound workspace t
 3. `brChCnt` is not zeroed — `PARMAN` is reloaded from disc for every briefing and brings it
    assembled at 0. `brChSeed` *is* reseeded, from `fieldCount`, for the opposite reason: the same
    fresh load would otherwise hand every briefing the same byte and the same burble.
+   *(2026-09-11: the premise has gone — bank 5 is resident since no-load step 5 and nothing
+   reloads it, so a second briefing starts `brChCnt` wherever the first left it. Still
+   unzeroed in `src/briefing.asm`, whose comment says the same as this; not yet judged.)*
 
 **No SEI anywhere in it.** The rupture's T1 stages are deadline-driven and this runs every field,
 so masking across an eleven-byte copy was the one thing that must not happen. The three races that
@@ -888,7 +895,7 @@ cursors, ESCAPE, the debug keys) still call it directly with an immediate.
 
 | | |
 |---|---|
-| `keyTab` (6 B) | **the code image**, its last six bytes. It is the only main-RAM region resident at all six of the moments a control is tested. The font block is reloaded at every title seam *and is not resident at all during the first title of a cold boot*, which is exactly where `TiWait` tests fire; `&0400` is `PARBRF`'s at a title and the charset's in a game; the `&5480` scratch is inside the title's own framebuffer; `lowbss` would need seeding before the first key is read, and nothing but the code image exists to seed it. In the image it is initialised by the `*LOAD` that brings `PARA` in, and there is no seeding code at all |
+| `keyTab` (6 B) | **the code image**, its last six bytes. It is the only main-RAM region resident at all six of the moments a control is tested. The font block is reloaded at every title seam *and is not resident at all during the first title of a cold boot*, which is exactly where `TiWait` tests fire; `&0400` is `PARBRF`'s at a title and the charset's in a game; the `&5480` scratch is inside the title's own framebuffer; `lowbss` would need seeding before the first key is read, and nothing but the code image exists to seed it. In the image it is initialised by the `*LOAD` that brings `PARA` in, and there is no seeding code at all. *(2026-09-11: the font is loaded once in `.start` since no-load step 5, so the font-block argument is history; the placement stands.)* |
 | `KeyDownIx` (7 B) | **the `PARAFNT` block**, beside `FontCell` and for the same reason — it must be main RAM because banks 4, 5 and 7 call it, but it need not be the code image. Its callers all run inside a game or on the briefing, when the font block is up |
 
 **`PARTITL` is the exception and reads the table directly** — `LDX keyTab+CTL_FIRE : JSR keydown`,
