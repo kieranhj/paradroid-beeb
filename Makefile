@@ -398,23 +398,33 @@ bin/zx0: tools/zx0src/zx0_main.c tools/zx0src/zx0_compress.c \
 # Launch an emulator on the image. EMU= overrides the search; the order
 # is the one this port is actually checked in - b-em first because it is
 # what build.ps1 -Run uses, then the ones docs/ names for a second
-# opinion. jsbeeb takes a path on its command line the same way.
+# opinion. With none installed it falls back to jsbeeb in the browser,
+# which needs nothing but the python the build already uses.
+#
+# EVERY LINE NAMES ITS MACHINE AND AUTOBOOTS (hexwab, issue #3). An
+# emulator's default is whatever its user ran last, or a model B with no
+# sideways RAM, and neither will run this. Each asks for a Master, which
+# has the four banks: b-em's -m10 is a preset NUMBER from the user's own
+# b-em.cfg, so it is the Master on a stock config and could be anything
+# on an edited one - EMU=... with your own flags is the way round that.
+# b2's -b autoboots but no flag picks its machine; mame is not told to
+# autoboot. The jsbeeb URL is built by tools/run_jsbeeb.py.
 run: $(SSD)
 	@emu="$(EMU)"; \
 	if [ -z "$$emu" ]; then \
-	    for c in b-em b2 beebjit jsbeeb mame; do \
+	    for c in b-em b2 beebjit mame; do \
 	        if command -v $$c > /dev/null 2>&1; then emu=$$c; break; fi; \
 	    done; \
 	fi; \
-	if [ -z "$$emu" ]; then \
-	    echo "no emulator found - install one or say EMU=/path/to/it" >&2; \
-	    echo "tried: b-em b2 beebjit jsbeeb mame" >&2; exit 1; \
-	fi; \
+	if [ -z "$$emu" ]; then emu=jsbeeb; fi; \
 	echo "  $$emu $(SSD)"; \
 	case $$emu in \
-	    *b-em*)  exec $$emu -m3 $(SSD) ;; \
-	    *beebjit*) exec $$emu -0 $(SSD) ;; \
-	    *) exec $$emu $(SSD) ;; \
+	    jsbeeb)    exec $(PYTHON) tools/run_jsbeeb.py $(SSD) ;; \
+	    *b-em*)    exec $$emu -m10 -autoboot -disc $(SSD) ;; \
+	    *beebjit*) exec $$emu -master -autoboot -0 $(SSD) ;; \
+	    *mame*)    exec $$emu bbcm -flop1 $(SSD) ;; \
+	    *b2*)      exec $$emu -b -0 $(SSD) ;; \
+	    *)         exec $$emu $(SSD) ;; \
 	esac
 
 # Prove this Makefile and build.ps1 agree. compare_ssd.py works per file

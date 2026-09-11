@@ -128,4 +128,6 @@ if ($Release) { "RELEASE build: intro on, every DEBUG_ flag off" }
 "       $padded   padded, for jsbeeb"
 "       $listing   assembly listing"
 
-if ($Run) { & $bem -m3 $ssd }
+# -m10 is the Master 128 on a stock b-em.cfg, which has the four sideways
+# RAM banks; -m3 was a B with a standard ROM setup. hexwab, issue #3.
+if ($Run) { & $bem -m10 -autoboot -disc $ssd }

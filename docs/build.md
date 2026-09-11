@@ -14,11 +14,27 @@ one thing two builds of an unchanged tree are meant to differ in. Measured 2026-
 make                 debug build -> build/paradroid.ssd
 make -j4             the same, four compressors at once
 make release         intro on, every DEBUG_ flag off
-make run             build, then launch an emulator (EMU= to choose)
+make run             build, then launch an emulator (EMU= to choose; jsbeeb in the browser if none)
 make data            regenerate src/data/ from paradroid_ce.lst
 make world           data, then all
 make help            every target
 ```
+
+**Plain `make` stays the dev build and stays build-only** (KC, 2026-09-11, on hexwab's
+suggestion that it be release or `run`). The verification procedures in `CLAUDE.md` and the skills
+assume a dev build's debug keys.
+
+**Every `make run` line names a Master and autoboots** (hexwab, issue #3, 2026-09-11). An
+emulator's default machine is whatever its user last ran, or a model B with no sideways RAM, and
+neither will run this. So: b-em `-m10 -autoboot -disc`; beebjit `-master -autoboot -0`; b2 `-b -0`,
+which autoboots but has no flag for the machine; `mame bbcm -flop1`, not told to autoboot. With no
+emulator installed it opens jsbeeb in the browser (`tools/run_jsbeeb.py`: the disc zipped and
+base64'd into the URL's fragment, which is never sent to the server). `build.ps1 -Run` uses the
+same b-em line; it was `-m3`, which on a stock `b-em.cfg` is a B with a standard ROM setup. **A b-em
+preset is a number in the user's own `b-em.cfg`**, so `-m10` is the Master only on a stock config.
+The b-em here (`42f6597`, Windows) did not autoboot from its command line at all, with or without
+`-autoboot -disc`, so the b-em lines are hexwab's and are not verified on it. `EMU=` with your own
+flags gets round both.
 
 ## What the Makefile assumes
 
