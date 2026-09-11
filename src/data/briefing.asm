@@ -715,146 +715,146 @@
 .brRow_0_27
   EQUB &FF
 .brRow_0_28
-  \ "Control is as follows:"
+  \ "Use keyboard to move  your robot."
   EQUB 3
-  EQUB 13, 77, 76, 82, 80, 77, 74, 0, 71, 81, 0, 63
-  EQUB 81, 0, 68, 77, 74, 74, 77, 85, 81, 99
+  EQUB 31, 81, 67, 0, 73, 67, 87, 64, 77, 63, 80, 66
+  EQUB 0, 82, 77, 0, 75, 77, 84, 67, 0, 0, 87, 77
+  EQUB 83, 80, 0, 80, 77, 64, 77, 82, 89
   EQUB &FE
   EQUB &FF
 .brRow_0_29
   EQUB &FF
 .brRow_0_30
+  \ "Press  fire  to shoot  your  laser."
+  EQUB 2
+  EQUB 26, 80, 67, 81, 81, 0, 0, 68, 71, 80, 67, 0
+  EQUB 0, 82, 77, 0, 81, 70, 77, 77, 82, 0, 0, 87
+  EQUB 77, 83, 80, 0, 0, 74, 63, 81, 67, 80, 89
+  EQUB &FE
   EQUB &FF
 .brRow_0_31
-  \ "Use keyboard to move your robot."
-  EQUB 2
-  EQUB 31, 81, 67, 0, 73, 67, 87, 64, 77, 63, 80, 66
-  EQUB 0, 82, 77, 0, 75, 77, 84, 67, 0, 87, 77, 83
-  EQUB 80, 0, 80, 77, 64, 77, 82, 89
-  EQUB &FE
   EQUB &FF
 .brRow_0_32
+  \ "Hold  fire whilst  stationary,  or"
+  EQUB 2
+  EQUB 18, 77, 74, 66, 0, 0, 68, 71, 80, 67, 0, 85
+  EQUB 70, 71, 74, 81, 82, 0, 0, 81, 82, 63, 82, 71
+  EQUB 77, 76, 63, 80, 87, 104, 0, 0, 77, 80
+  EQUB &FE
   EQUB &FF
 .brRow_0_33
-  \ "Press fire to shoot your laser."
-  EQUB 2
-  EQUB 26, 80, 67, 81, 81, 0, 68, 71, 80, 67, 0, 82
-  EQUB 77, 0, 81, 70, 77, 77, 82, 0, 87, 77, 83, 80
-  EQUB 0, 74, 63, 81, 67, 80, 89
-  EQUB &FE
   EQUB &FF
 .brRow_0_34
+  \ "press action, to put your robot into"
+  EQUB 2
+  EQUB 78, 80, 67, 81, 81, 0, 63, 65, 82, 71, 77, 76
+  EQUB 104, 0, 82, 77, 0, 78, 83, 82, 0, 87, 77, 83
+  EQUB 80, 0, 80, 77, 64, 77, 82, 0, 71, 76, 82, 77
+  EQUB &FE
   EQUB &FF
 .brRow_0_35
-  \ "Hold fire whilst stationary, or"
-  EQUB 2
-  EQUB 18, 77, 74, 66, 0, 68, 71, 80, 67, 0, 85, 70
-  EQUB 71, 74, 81, 82, 0, 81, 82, 63, 82, 71, 77, 76
-  EQUB 63, 80, 87, 104, 0, 77, 80
-  EQUB &FE
   EQUB &FF
 .brRow_0_36
-  EQUB &FF
-.brRow_0_37
-  \ "press transfer, to prepare for"
-  EQUB 2
-  EQUB 78, 80, 67, 81, 81, 0, 82, 80, 63, 76, 81, 68
-  EQUB 67, 80, 104, 0, 82, 77, 0, 78, 80, 67, 78, 63
-  EQUB 80, 67, 0, 68, 77, 80
-  EQUB &FE
-  EQUB &FF
-.brRow_0_38
-  EQUB &FF
-.brRow_0_39
-  \ "transfer mode. Make contact with"
+  \ "transfer mode.  Make contact with"
   EQUB 2
   EQUB 82, 80, 63, 76, 81, 68, 67, 80, 0, 75, 77, 66
-  EQUB 67, 89, 0, 23, 63, 73, 67, 0, 65, 77, 76, 82
-  EQUB 63, 65, 82, 0, 85, 71, 82, 70
+  EQUB 67, 89, 0, 0, 23, 63, 73, 67, 0, 65, 77, 76
+  EQUB 82, 63, 65, 82, 0, 85, 71, 82, 70
   EQUB &FE
+  EQUB &FF
+.brRow_0_37
+  EQUB &FF
+.brRow_0_38
+  \ "another   robot  to   initiate   it."
+  EQUB 2
+  EQUB 63, 76, 77, 82, 70, 67, 80, 0, 0, 0, 80, 77
+  EQUB 64, 77, 82, 0, 0, 82, 77, 0, 0, 0, 71, 76
+  EQUB 71, 82, 71, 63, 82, 67, 0, 0, 0, 71, 82, 89
+  EQUB &FE
+  EQUB &FF
+.brRow_0_39
   EQUB &FF
 .brRow_0_40
+  \ "Press  action  to  use  a  lift  or"
+  EQUB 2
+  EQUB 26, 80, 67, 81, 81, 0, 0, 63, 65, 82, 71, 77
+  EQUB 76, 0, 0, 82, 77, 0, 0, 83, 81, 67, 0, 0
+  EQUB 63, 0, 0, 74, 71, 68, 82, 0, 0, 77, 80
+  EQUB &FE
   EQUB &FF
 .brRow_0_41
-  \ "another robot to initiate it."
-  EQUB 2
-  EQUB 63, 76, 77, 82, 70, 67, 80, 0, 80, 77, 64, 77
-  EQUB 82, 0, 82, 77, 0, 71, 76, 71, 82, 71, 63, 82
-  EQUB 67, 0, 71, 82, 89
-  EQUB &FE
   EQUB &FF
 .brRow_0_42
+  \ "console,  and again to leave it."
+  EQUB 2
+  EQUB 65, 77, 76, 81, 77, 74, 67, 104, 0, 0, 63, 76
+  EQUB 66, 0, 63, 69, 63, 71, 76, 0, 82, 77, 0, 74
+  EQUB 67, 63, 84, 67, 0, 71, 82, 89
+  EQUB &FE
   EQUB &FF
 .brRow_0_43
-  \ "Press transfer to use a lift or"
-  EQUB 2
-  EQUB 26, 80, 67, 81, 81, 0, 82, 80, 63, 76, 81, 68
-  EQUB 67, 80, 0, 82, 77, 0, 83, 81, 67, 0, 63, 0
-  EQUB 74, 71, 68, 82, 0, 77, 80
-  EQUB &FE
   EQUB &FF
 .brRow_0_44
   EQUB &FF
 .brRow_0_45
-  \ "console, and again to leave it."
-  EQUB 2
-  EQUB 65, 77, 76, 81, 77, 74, 67, 104, 0, 63, 76, 66
-  EQUB 0, 63, 69, 63, 71, 76, 0, 82, 77, 0, 74, 67
-  EQUB 63, 84, 67, 0, 71, 82, 89
-  EQUB &FE
-  EQUB &FF
-.brRow_0_46
   \ "Default keys:"
   EQUB 4
   EQUB 14, 67, 68, 63, 83, 74, 82, 0, 73, 67, 87, 81
   EQUB 99
   EQUB &FE
   EQUB &FF
+.brRow_0_46
+  EQUB &FF
 .brRow_0_47
-  EQUB &FF
-.brRow_0_48
-  EQUB &FF
-.brRow_0_49
   \ "Left:        Z"
   EQUB 10
   EQUB 22, 67, 68, 82, 99, 0, 0, 0, 0, 0, 0, 0
   EQUB 0, 36
   EQUB &FE
   EQUB &FF
-.brRow_0_50
+.brRow_0_48
   EQUB &FF
-.brRow_0_51
+.brRow_0_49
   \ "Right:       X"
   EQUB 10
   EQUB 28, 71, 69, 70, 82, 99, 0, 0, 0, 0, 0, 0
   EQUB 0, 34
   EQUB &FE
   EQUB &FF
-.brRow_0_52
+.brRow_0_50
   EQUB &FF
-.brRow_0_53
+.brRow_0_51
   \ "Up:          K"
   EQUB 10
   EQUB 31, 78, 99, 0, 0, 0, 0, 0, 0, 0, 0, 0
   EQUB 0, 21
   EQUB &FE
   EQUB &FF
-.brRow_0_54
+.brRow_0_52
   EQUB &FF
-.brRow_0_55
+.brRow_0_53
   \ "Down:       M"
   EQUB 10
   EQUB 14, 77, 85, 76, 99, 0, 0, 0, 0, 0, 0, 0
   EQUB 23
   EQUB &FE
   EQUB &FF
-.brRow_0_56
+.brRow_0_54
   EQUB &FF
-.brRow_0_57
+.brRow_0_55
   \ "Fire:        L"
   EQUB 10
   EQUB 16, 71, 80, 67, 99, 0, 0, 0, 0, 0, 0, 0
   EQUB 0, 22
+  EQUB &FE
+  EQUB &FF
+.brRow_0_56
+  EQUB &FF
+.brRow_0_57
+  \ "Action:      SPACE"
+  EQUB 10
+  EQUB 11, 65, 82, 71, 77, 76, 99, 0, 0, 0, 0, 0
+  EQUB 0, 29, 26, 11, 13, 15
   EQUB &FE
   EQUB &FF
 .brRow_1_1
@@ -1797,7 +1797,7 @@
   EQUB &FF
 .brRow_4_37
   \ "Paradroid-90 music by"
-  EQUB 11
+  EQUB 6
   EQUB 26, 63, 80, 63, 66, 80, 77, 71, 66, 98, 10, 1
   EQUB 0, 75, 83, 81, 71, 65, 0, 64, 87
   EQUB &FE
@@ -1806,7 +1806,7 @@
   EQUB &FF
 .brRow_4_39
   \ "Jason Page."
-  EQUB 16
+  EQUB 12
   EQUB 20, 63, 81, 77, 76, 0, 26, 63, 69, 67, 89
   EQUB &FE
   EQUB &FF
@@ -1814,7 +1814,7 @@
   EQUB &FF
 .brRow_4_41
   \ "Converted to the BBC by"
-  EQUB 11
+  EQUB 6
   EQUB 13, 77, 76, 84, 67, 80, 82, 67, 66, 0, 82, 77
   EQUB 0, 82, 70, 67, 0, 12, 12, 13, 0, 64, 87
   EQUB &FE
@@ -1823,7 +1823,7 @@
   EQUB &FF
 .brRow_4_43
   \ "scarybeasts."
-  EQUB 16
+  EQUB 12
   EQUB 81, 65, 63, 80, 87, 64, 67, 63, 81, 82, 81, 89
   EQUB &FE
   EQUB &FF
@@ -1835,7 +1835,7 @@
   EQUB &FF
 .brRow_4_47
   \ "Paradroid programmed by"
-  EQUB 11
+  EQUB 6
   EQUB 26, 63, 80, 63, 66, 80, 77, 71, 66, 0, 78, 80
   EQUB 77, 69, 80, 63, 75, 75, 67, 66, 0, 64, 87
   EQUB &FE
@@ -1844,7 +1844,7 @@
   EQUB &FF
 .brRow_4_49
   \ "Andrew Braybrook."
-  EQUB 14
+  EQUB 10
   EQUB 11, 76, 66, 80, 67, 85, 0, 12, 80, 63, 87, 64
   EQUB 80, 77, 77, 73, 89
   EQUB &FE
@@ -1852,19 +1852,19 @@
 .brRow_4_50
   EQUB &FF
 .brRow_4_51
-  \ "Sound advice by"
-  EQUB 16
-  EQUB 29, 77, 83, 76, 66, 0, 63, 66, 84, 71, 65, 67
-  EQUB 0, 64, 87
+  \ "BBC port by Kieran."
+  EQUB 6
+  EQUB 12, 12, 13, 0, 78, 77, 80, 82, 0, 64, 87, 0
+  EQUB 21, 71, 67, 80, 63, 76, 89
   EQUB &FE
   EQUB &FF
 .brRow_4_52
   EQUB &FF
 .brRow_4_53
-  \ "Steve Turner."
-  EQUB 16
-  EQUB 29, 82, 67, 84, 67, 0, 30, 83, 80, 76, 67, 80
-  EQUB 89
+  \ "Additional code Hexwab."
+  EQUB 6
+  EQUB 11, 66, 66, 71, 82, 71, 77, 76, 63, 74, 0, 65
+  EQUB 77, 66, 67, 0, 18, 67, 86, 85, 63, 64, 89
   EQUB &FE
   EQUB &FF
 .brRow_4_54
@@ -1873,7 +1873,7 @@
   EQUB &FF
 .brRow_4_56
   \ "Press fire to play"
-  EQUB 13
+  EQUB 10
   EQUB 26, 80, 67, 81, 81, 0, 68, 71, 80, 67, 0, 82
   EQUB 77, 0, 78, 74, 63, 87
   EQUB &FE

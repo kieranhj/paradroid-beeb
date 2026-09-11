@@ -35,21 +35,21 @@ page 1
 21  1 |Clear  the freighter  of robots by
 23  0 |destroying them with twin  lasers
 25  0 |or by transferring control to them.
-28  1 |Control is as follows:
-31  0 |Use keyboard to move your robot.
-33  0 |Press fire to shoot your laser.
-35  0 |Hold fire whilst stationary, or
-37  0 |press transfer, to prepare for
-39  0 |transfer mode. Make contact with
-41  0 |another robot to initiate it.
-43  0 |Press transfer to use a lift or
-45  0 |console, and again to leave it.
-46  2 |Default keys:
-49  8 |Left:        Z
-51  8 |Right:       X
-53  8 |Up:          K
-55  8 |Down:       M
-57  8 |Fire:        L
+28  1 |Use keyboard to move  your robot.
+30  0 |Press  fire  to shoot  your  laser.
+32  0 |Hold  fire whilst  stationary,  or
+34  0 |press action, to put your robot into
+36  0 |transfer mode.  Make contact with
+38  0 |another   robot  to   initiate   it.
+40  0 |Press  action  to  use  a  lift  or
+42  0 |console,  and again to leave it.
+45  2 |Default keys:
+47  8 |Left:        Z
+49  8 |Right:       X
+51  8 |Up:          K
+53  8 |Down:       M
+55  8 |Fire:        L
+57  8 |Action:      SPACE
 
 page 2
  1  1 |A fleet  of  Robo-Freighters  on
@@ -151,15 +151,15 @@ label loscore
 25 4  |Quit game:    Escape
 29 2  |During briefing only:
 32 4  |Redefine keys: Ctrl-R
-37 9  |Paradroid-90 music by
-39 14 |Jason Page.
-41 9  |Converted to the BBC by
-43 14 |scarybeasts.
-47 9  |Paradroid programmed by
-49 12 |Andrew Braybrook.
-51 14 |Sound advice by
-53 14 |Steve Turner.
-56 11 |Press fire to play
+37 4  |Paradroid-90 music by
+39 10 |Jason Page.
+41 4  |Converted to the BBC by
+43 10 |scarybeasts.
+47 4  |Paradroid programmed by
+49 8  |Andrew Braybrook.
+51 4  |BBC port by Kieran.
+53 4  |Additional code Hexwab.
+56 8  |Press fire to play
 
 # The bitmaps of the characters the shared font has not got, from
 # the C64's $7000 text font. The renderer plots these from brExtra.
