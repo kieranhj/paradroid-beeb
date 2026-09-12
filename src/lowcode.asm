@@ -507,7 +507,7 @@
   STA (bcDst2),Y
   DEY
   BPL blc_row
-  JMP DitherChar                \ and its RTS. Layer 14's floor dither is a
+  JMP DitherWall                \ and its RTS. Layer 14's floor dither is a
                                 \ pass over the FINISHED charset, so a
                                 \ character rebuilt during play has to take
                                 \ it too or this one cell goes solid against

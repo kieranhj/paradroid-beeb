@@ -265,9 +265,10 @@ DECK_CLEAR_PHYS = 4             \ BBC physical 4 is blue: the floor of a
   BEQ bc_dither
   LDA #0                        \ not black — leave this deck's floor solid
 .bc_dither
-  STA dcMask
-  ASL A                         \ &05 -> &0A, the odd scanline's pixels 0 and
-  STA dcMask+1                  \ 2; and 0 -> 0, so "off" needs no second path
+  STA dcBase                    \ &05, or 0 for a deck that stays solid. The
+                                \ dcMask PAIR is per CHARACTER now (KC,
+                                \ 2026-09-12): DitherWall and DitherFloor
+                                \ below build it from this
 
   LDA #LO(SPR_SAVE) : STA bcSrc \ the bitmaps, unpacked above
   LDA #HI(SPR_SAVE) : STA bcSrc+1
@@ -287,6 +288,7 @@ DECK_CLEAR_PHYS = 4             \ BBC physical 4 is blue: the floor of a
   LSR A : LSR A : LSR A : LSR A
 .bc_sloteven
   AND #&0F
+  STA bcSlot                    \ kept for the dither: slot 0 or 1 is FLOOR
   CMP #REC_LEN                  \ a few characters carry a slot beyond the
   BCS bc_slot_oob               \ 12-byte record — the C64 reads past the end
   CLC : ADC bcRecOfs            \ of clr0_top_d020 into adjacent variables, so
@@ -342,10 +344,19 @@ ASSERT NUM_CHARS = 137          \ the set ALERT_IDX0 was measured against
   SBC #ALERT_IDX0
   CMP #4
   BCC bc_nodither               \ 52-55: the lettering, left undithered
-  JSR DitherChar                \ Layer 14's floor dither, over the 16 bytes
-                                \ just written. Here rather than in a pass of
-                                \ its own because bcDst already walks the
-                                \ charset a character at a time.
+\ QUARTER ON THE FLOOR, 2x2 ON EVERYTHING ELSE (KC, 2026-09-12, from the
+\ tools/dither_lab.py gallery: "quarter floor, rest 2x2"). The class is
+\ the character's own COLOUR SLOT, which the loop has just read: slots 0
+\ and 1 are the open deck and the grid pattern drawn on it, everything
+\ else is a structure — its light/dark border, the area INSIDE that
+\ border ($D8, empty but the wall's), and the dimple.
+  LDA bcSlot
+  CMP #2
+  BCC bc_floor                  \ slot 0 or 1
+  JSR DitherWall                \ Layer 14's floor dither, over the 16 bytes
+  JMP bc_nodither               \ just written. Here rather than in a pass of
+.bc_floor                       \ its own because bcDst already walks the
+  JSR DitherFloor               \ charset a character at a time.
 .bc_nodither
   CLC
   LDA bcSrc    : ADC #8  : STA bcSrc
@@ -407,6 +418,32 @@ ASSERT NUM_CHARS = 137          \ the set ALERT_IDX0 was measured against
 \
 \ ~5 ms across a deck load. Nothing in the main loop pays anything.
 \ ============================================================
+\ ---- the two classes, KC 2026-09-12 -------------------------
+\ The mask PAIR is per character now, built from dcBase (&05, or 0 on a
+\ deck that keeps its floor solid, so both entries stay no-ops there).
+\
+\   DitherWall   &05 / &0A — the 2x2 checker, as shipped since Layer 14
+\   DitherFloor  0   / &0A — HALF of that: odd scanlines only, so the
+\                  open deck reads lighter than the structures on it
+\
+\ Anything rebuilding a character during play must come through one of
+\ these rather than DitherChar, which now expects dcMask already set:
+\ BuildLampChar (lowcode.asm) takes DitherWall, its cell being slot 14.
+.DitherWall
+  LDA dcBase
+  STA dcMask
+  ASL A                         \ &05 -> &0A, and 0 -> 0
+  STA dcMask+1
+  JMP DitherChar
+
+.DitherFloor
+  LDA #0
+  STA dcMask                    \ even scanlines untouched: quarter density
+  LDA dcBase
+  ASL A
+  STA dcMask+1
+  \ falls into DitherChar
+
 .DitherChar
   LDY #15
 .dc_byte
@@ -499,6 +536,8 @@ ASSERT NUM_CHARS = 137          \ the set ALERT_IDX0 was measured against
 .bcF       EQUB 0
 .bcFH      EQUB 0
 .bcFL      EQUB 0
+.dcBase    EQUB 0               \ &05, or 0 on a deck that keeps a solid floor
+.bcSlot    EQUB 0               \ the character's colour slot: 0-1 is FLOOR
 .dcMask    EQUB 0, 0            \ DitherCharset's shade masks, by scanline
                                 \ parity. Both ZERO on a deck that keeps a
                                 \ solid floor, which makes the pass a no-op.
