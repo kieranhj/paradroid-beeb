@@ -79,7 +79,7 @@ SND_NOISE_SHIFT = 4
   EQUB &83,&FF,&FF,&FF,&07,&02  \ 11: pulse, AD=00 SR=F9 hold=2
   EQUB &83,&33,&FF,&99,&FF,&30  \ 12: triangle, AD=80 SR=F0 hold=48
   EQUB &83,&FF,&40,&FF,&02,&10  \ 13: triangle, AD=33 SR=FC hold=16
-  EQUB &00,&55,&20,&99,&01,&80  \ 14: triangle, AD=55 SR=CD hold=128
+  EQUB &00,&55,&20,&77,&01,&80  \ 14: triangle, AD=55 SR=CD hold=128
 
 \ N = sndFreq[(F<<s)>>8 - 128] >> (8-s), s = shifts to normalise
 \ F into [$8000,$FFFF]; noise voices shift SND_NOISE_SHIFT more.

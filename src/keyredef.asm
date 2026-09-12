@@ -313,67 +313,10 @@ KR_SFX_NO   = &1A               \ effect 26: collision bump
   LDA #LO(bmKrBlank)
   LDY #HI(bmKrBlank)
   JSR BmKrPut
-  LDX bmKrCur                   \ the INKEY byte back to a key number,
-  LDA keyTab,X                  \ which is what the name table indexes
-  EOR #&FF
-  TAX
-  JSR BmKrChar
-  CMP #33                       \ >= 33: it prints as itself. 33, not
-  BCS bks_one                   \ 32 — code 32 is Backslash's name and
-                                \ no entry is ASCII space (the space
-                                \ KEY is name 11), so the boundary
-                                \ moved up one for a tenth name
-  CMP #11
-  BCS bks_named                 \ 11 and up: a name from the list
-
-  CLC                           \ 1-10 are f0-f9: 'f' and the digit
-  ADC #'0'-1
-  TAY
-  LDA #'f'
-  STA bmKrBuf
-  STY bmKrBuf+1
-  LDA #0
-  STA bmKrBuf+2
-  BEQ bks_buf                   \ always
-
-.bks_one
-  STA bmKrBuf
-  LDA #0
-  STA bmKrBuf+1
-.bks_buf
-  LDA #LO(bmKrBuf)
-  LDY #HI(bmKrBuf)
-  JMP BmKrPut                   \ its RTS
-
-\ 11 and up: walk the packed name list to the one wanted
-.bks_named
-  SEC
-  SBC #11
-  TAX
-  LDA #LO(bmKrNames)
-  STA bmp
-  LDA #HI(bmKrNames)
-  STA bmp+1
-.bkn_next
-  CPX #0
-  BEQ BmKrStr                   \ arrived — and its RTS
-  LDY #0
-.bkn_scan
-  LDA (bmp),Y
-  BEQ bkn_end
-  INY
-  BNE bkn_scan
-.bkn_end
-  INY                           \ past the terminator
-  TYA
-  CLC
-  ADC bmp
-  STA bmp
-  BCC bkn_nc
-  INC bmp+1
-.bkn_nc
-  DEX
-  JMP bkn_next
+  LDX bmKrCur                   \ BmKrNameCtl leaves bmp on a
+  JSR BmKrNameCtl               \ zero-terminated ASCII name — bank 5,
+  JMP BmKrStr                   \ briefman.asm, because the briefing
+                                \ needs it while THIS screen is packed
 
 \ bmKrRow = the row of control bmKrCur
 .BmKrRowCur
@@ -435,135 +378,6 @@ KR_SFX_NO   = &1A               \ effect 26: collision bump
 .bmks_x
   RTS
 
-\ ============================================================
-\ BmKrAscii — A = ASCII, out = glyph index
-\ ============================================================
-\ PnAscii, transcribed. Bank 6 owns the original and only one bank is
-\ visible at a time; this is the same duplication DbGlyph is. Anything
-\ unmapped comes out as a space rather than as a wild index.
-.BmKrAscii
-  CMP #'a'
-  BCC bka_upper
-  CMP #'z'+1
-  BCS bka_bad
-  SEC : SBC #'a'
-  CLC : ADC #PN_LOWER_A
-  RTS
-.bka_upper
-  CMP #'A'
-  BCC bka_digit
-  CMP #'Z'+1
-  BCS bka_bad
-  SEC : SBC #'A'
-  CLC : ADC #PN_UPPER_A
-  RTS
-.bka_digit
-  CMP #'0'
-  BCC bka_punct
-  CMP #'9'+1
-  BCS bka_punct
-  SEC : SBC #'0'
-  CLC : ADC #PN_DIGIT0
-  RTS
-.bka_punct
-  CMP #'.'
-  BNE bka_dash
-  LDA #PN_DOT
-  RTS
-.bka_dash
-  CMP #'-'
-  BNE bka_colon
-  LDA #PN_DASH
-  RTS
-.bka_colon
-  CMP #':'
-  BNE bka_bad
-  LDA #PN_COLON
-  RTS
-.bka_bad
-  LDA #PN_SPACE
-  RTS
-
-\ ============================================================
-\ bmKeyChar — internal key number &10-&7F -> how to name it
-\ ============================================================
-\ THE MATRIX, ROW BY ROW. An entry is either a printable ASCII code
-\ (>= 33, printed as itself), 1-10 for f0-f9, 11 and up for a name in
-\ bmKrNames, or 0 for "this key cannot be bound".
-\
-\ ZERO NOW MARKS ONLY THE HOLES: columns 10-15 do not exist in the
-\ matrix at all. The nine punctuation keys — ^ _ [ ] @ ; , / \ — were
-\ zeros until 2026-09-01, refused because the shared glyph set cannot
-\ DRAW them; KC ruled that too many ('/' is a common fire button), so
-\ they carry spelled-out names from bmKrNames instead, exactly as
-\ Space and Return always have. Every physical key &10-&7F is
-\ bindable now; SHIFT (internal 0) is bindable through BmKrChar's
-\ special case, and the only refusals left are ESCAPE (the game's
-\ self-destruct, and this screen's own cancel) and CTRL (never
-\ scanned — it gates the pause, the mute, the volume and the debug
-\ keys). [11f DECISION 15, revised]
-\
-\ THE LAYOUT IS CONFIRMED BY OUR OWN CONSTANTS, not recalled: KEY_Z,
-\ KEY_X, KEY_K, KEY_M, KEY_L, KEY_SPACE, KEY_P, KEY_Q, KEY_R, KEY_C,
-\ KEY_W, KEY_LBRK, KEY_RBRK, KEY_UP, KEY_DOWN and KEY_ESCAPE all EOR
-\ &FF to exactly the positions below.
-.bmKeyChar
-  EQUB 'Q', '3', '4', '5', 5, '8', 8, '-', 24, 21  \ &10: Q 3 4 5 f4 8 f7 - ^ LEFT
-  EQUB 0, 0, 0, 0, 0, 0                            \ columns 10-15: no key
-  EQUB 1, 'W', 'E', 'T', '7', 'I', '9', '0', 25, 20 \ &20: f0 W E T 7 I 9 0 _ DOWN
-  EQUB 0, 0, 0, 0, 0, 0
-  EQUB '1', '2', 'D', 'R', '6', 'U', 'O', 'P', 26, 19 \ &30: 1 2 D R 6 U O P [ UP
-  EQUB 0, 0, 0, 0, 0, 0
-  EQUB 17, 'A', 'X', 'F', 'Y', 'J', 'K', 28, ':', 12  \ &40: CAPS A X F Y J K @ : RETURN
-  EQUB 0, 0, 0, 0, 0, 0
-  EQUB 18, 'S', 'C', 'G', 'H', 'N', 'L', 29, 27, 13   \ &50: SHFTLK S C G H N L ; ] DELETE
-  EQUB 0, 0, 0, 0, 0, 0
-  EQUB 15, 'Z', 11, 'V', 'B', 'M', 30, '.', 31, 14    \ &60: TAB Z SPACE V B M , . / COPY
-  EQUB 0, 0, 0, 0, 0, 0
-  EQUB 16, 2, 3, 4, 6, 7, 9, 10, 32, 22               \ &70: ESC f1 f2 f3 f5 f6 f8 f9 \ RIGHT
-  EQUB 0, 0, 0, 0, 0, 0
-
-\ ---- the one key below the table's floor --------------------
-\ X = internal number -> A = the char code, Z set on unbindable.
-\ SHIFT is internal 0 and the table starts at &10, so the two callers
-\ (the accept test and BmKrShow) come through here rather than index
-\ &10 below the label.
-.BmKrChar
-  CPX #0
-  BNE bkc_tab
-  LDA #23                       \ SHIFT: its name
-  RTS
-.bkc_tab
-  LDA bmKeyChar-&10,X
-  RTS
-
-\ Codes 11 up, in order, each terminated. ESCAPE's entry is here for
-\ completeness only — bkr_wait catches it before the table is read.
-.bmKrNames
-  EQUS "Space"   : EQUB 0        \ 11
-  EQUS "Return"  : EQUB 0        \ 12
-  EQUS "Delete"  : EQUB 0        \ 13
-  EQUS "Copy"    : EQUB 0        \ 14
-  EQUS "Tab"     : EQUB 0        \ 15
-  EQUS "Escape"  : EQUB 0        \ 16
-  EQUS "Caps"    : EQUB 0        \ 17
-  EQUS "Shiftlk" : EQUB 0        \ 18
-  EQUS "Up"      : EQUB 0        \ 19
-  EQUS "Down"    : EQUB 0        \ 20
-  EQUS "Left"    : EQUB 0        \ 21
-  EQUS "Right"   : EQUB 0        \ 22
-  EQUS "Shift"   : EQUB 0        \ 23 — BmKrChar's, not the table's
-  EQUS "Caret"   : EQUB 0        \ 24: ^
-  EQUS "Underline" : EQUB 0      \ 25: _
-  EQUS "LBracket" : EQUB 0       \ 26: [
-  EQUS "RBracket" : EQUB 0       \ 27: ]
-  EQUS "At"      : EQUB 0        \ 28: @
-  EQUS "Semicolon" : EQUB 0      \ 29: ;
-  EQUS "Comma"   : EQUB 0        \ 30: ,
-  EQUS "Slash"   : EQUB 0        \ 31: /
-  EQUS "Backslash" : EQUB 0      \ 32: \ — and the ASCII boundary is
-                                 \ 33 for it, see BmKrShow
-
 \ ---- the six, in CTL_* order -------------------------------
 .bmKrLabels
   EQUW bmKrLbLeft
@@ -592,4 +406,3 @@ KR_SFX_NO   = &1A               \ effect 26: collision bump
 .bmKrN     EQUB 0               \ BmKrScan's counter
 .bmKrRow   EQUB 0               \ the text cursor
 .bmKrCol   EQUB 0
-.bmKrBuf   SKIP 3               \ a one- or two-character name

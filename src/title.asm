@@ -324,30 +324,33 @@ ASSERT TITLE_R7 >= TITLE_ROWS   \ VSync must fall after the last row shown
   LDA #0
   STA tiLo
   STA tiHi
-  LDA #2                        \ TWO 16-bit wraps to the timeout — see
-  STA tiPage                    \ the note at the wrap below
 .tiw_loop
   LDX keyTab+CTL_FIRE
   JSR keydown
-  BEQ tiw_done                  \ Z set: fire is down
-  LDX keyTab+CTL_XFER           \ TRANSFER starts the game too (KC,
-  JSR keydown                   \ 2026-09-01, 11f DECISION 16) — the
-  BEQ tiw_done                  \ two thumbs a player rests on
+  BEQ tiw_done                  \ Z set: fire is down — straight to the
+                                \ game, $2907's own behaviour
+  LDX keyTab+CTL_XFER           \ TRANSFER ASKS FOR THE BRIEFING (KC,
+  JSR keydown                   \ 2026-09-12, issue #20 — [DECISION 20])
+  BEQ tiw_brief                 \ rather than starting the game too
   INC tiLo
   BNE tiw_loop
   INC tiHi
   BNE tiw_vol
-  DEC tiPage                    \ the 16-bit wrap — TWICE is the
-  BNE tiw_vol                   \ timeout, 131,072 turns. MEASURED
+                                \ ONE 16-bit wrap, 65,536 turns. MEASURED
                                 \ 2026-09-01 at 11,992 turns/s (167
                                 \ cycles a turn with both keydowns —
                                 \ the cycle table above was optimistic
-                                \ even before the TRANSFER test), so
-                                \ one wrap is 5.5 s and this is 10.9 s:
-                                \ KC called ~3 s far too short and
-                                \ asked for at least double. The seed
-                                \ still reads tiLo EOR tiHi
-  JMP tiw_time
+                                \ even before the TRANSFER test), so the
+                                \ timeout is 5.5 s. It was two laps and
+                                \ 10.9 s from 2026-09-01, when KC called
+                                \ ~3 s far too short; hexwab's issue #20
+                                \ says the other end of that is a title
+                                \ that drags, and TRANSFER now skips it
+                                \ outright, so one lap it is — which is
+                                \ also the order of the C64's own 256
+                                \ frames (5.1 s). The seed still reads
+                                \ tiLo EOR tiHi
+  JMP tiw_brief
 .tiw_vol
 \ THE VOLUME KEYS, and this is the awkward one of VolKeys' three call
 \ sites. There is no sound at the title — GoTitle silenced the chip and
@@ -394,13 +397,20 @@ ASSERT TITLE_R7 >= TITLE_ROWS   \ VSync must fall after the last row shown
   BNE tiw_loop                  \ 11,992 turns/s that is 11.7 Hz,
   JSR VolKeys                   \ which is the target the table above
   JMP tiw_loop                  \ aims at
-.tiw_time
+.tiw_brief
 \ Layer 11f: the 16-bit wrap is the timeout, and the timeout is the
-\ briefing — $291B's own arrangement. BrTimeout fetches PARMAN into
-\ bank 5, arms brFlag for BrDispatch, and RTSes: the return address on
-\ the stack is TiShow's caller, so it lands at TitleSeq's ts_loads
-\ exactly as the RTS below would. It must be a JMP taken BEFORE this
-\ overlay is overwritten — PARMAN's stream lands on top of it.
+\ briefing — $291B's own arrangement. BrTimeout arms brFlag for
+\ BrDispatch and RTSes: the return address on the stack is TiShow's
+\ caller, so it lands at TitleSeq's ts_loads exactly as the RTS below
+\ would.
+\ TRANSFER COMES HERE TOO (issue #20, [DECISION 20]). The dwell is
+\ worth having on this path for the same reason it is on the other —
+\ a player who asks for the briefing has left the title up for an
+\ unpredictable time, and the briefing itself ends in a game — where
+\ the timeout's own arrival is at a fixed count and seeds nothing.
+  LDA tiLo
+  EOR tiHi
+  STA overRnd0
   JMP BrTimeout
 .tiw_done
   LDA tiLo                      \ hand the dwell out for the seed
@@ -426,7 +436,6 @@ ASSERT TITLE_R7 >= TITLE_ROWS   \ VSync must fall after the last row shown
 .tiRun  EQUB 0
 .tiLo   EQUB 0
 .tiHi   EQUB 0
-.tiPage EQUB 0                  \ which of the two 16-bit laps this is
 
 \ ============================================================
 \ HsEntry — TitleSeq's door

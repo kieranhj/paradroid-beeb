@@ -24,6 +24,17 @@
 # The hiscore/loscore labels mark the lines the driver patches from
 # the live table in bank 7, so their text here is only the default
 # (Braybrook's own joke entries). Keep their shape if you edit them.
+#
+# The key0-key5 labels are the same idea for the six controls, in
+# keyTab's own order - left, right, up, down, fire, transfer. The
+# driver writes each one's CURRENT binding over the record at every
+# depack of the page (issue #20: a briefing that names the defaults is
+# no use to a player whose predecessor pressed Ctrl-R). The text here
+# is therefore only what the build's own defaults happen to be. The
+# tool PADS a keyN record to 9 characters with spaces, so do not pad
+# it by hand - trailing spaces do not survive an editor. Nine is what
+# the longest name in keyredef.asm's bmKrNames needs; a name may be up
+# to ten CELLS wide, which is what column 22 leaves room for.
 
 page 1
  1 12 |HEWSON
@@ -43,13 +54,25 @@ page 1
 38  0 |another   robot  to   initiate   it.
 40  0 |Press  action  to  use  a  lift  or
 42  0 |console,  and again to leave it.
-45  2 |Default keys:
-47  8 |Left:        Z
-49  8 |Right:       X
-51  8 |Up:          K
-53  8 |Down:       M
-55  8 |Fire:        L
-57  8 |Action:      SPACE
+45  2 |Your keys:
+47  8 |Left:
+label key0
+47 22 |Z
+49  8 |Right:
+label key1
+49 22 |X
+51  8 |Up:
+label key2
+51 22 |K
+53  8 |Down:
+label key3
+53 22 |M
+55  8 |Fire:
+label key4
+55 22 |L
+57  8 |Action:
+label key5
+57 22 |Space
 
 page 2
  1  1 |A fleet  of  Robo-Freighters  on

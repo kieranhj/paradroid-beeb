@@ -61,6 +61,7 @@ back to ASCII and diffs it against the input, so a mapping slip cannot
 survive.
 """
 
+import re
 import sys
 from pathlib import Path
 
@@ -141,6 +142,18 @@ PN_M_RIGHT, PN_W_RIGHT = 100, 101
 
 WIDE = set('ABCDEFGHJKLMNOPQRSTUVWXYZmw')   # capitals minus I, plus m and w
 
+# The six live key fields on page 1. A record labelled key0..key5 is
+# padded HERE to KEY_FIELD characters with spaces, so that briefing.txt
+# never has to carry trailing whitespace an editor would eat, and so
+# that the run-time patch (BmPatchKeys, src/briefman.asm) writes a
+# fixed number of glyph bytes into a record of known length whatever
+# the build's defaults happen to be. Nine is the longest name in
+# keyredef.asm's bmKrNames ("Underline", "Backslash"); the width check
+# below then guards the CELL width, which is ten for those two because
+# only the first character of either is wide.
+KEY_FIELD = 9
+KEY_LABEL = re.compile(r'key[0-5]$')
+
 
 def to_glyph(ch, extras):
     if ch == ' ':
@@ -194,6 +207,13 @@ def parse(path):
             row, col = (int(t) for t in head.split())
         except ValueError:
             raise SystemExit('briefing.txt:%d: want ROW COL |text' % n)
+        if label and KEY_LABEL.match(label):
+            if len(text) > KEY_FIELD:
+                raise SystemExit(
+                    'briefing.txt:%d: a %s record is %d characters, past the '
+                    '%d the key field holds' % (n, label, len(text),
+                                                KEY_FIELD))
+            text = text.ljust(KEY_FIELD)
         rec = (col, text, label, n)
         label = None
         pages.setdefault(page, {}).setdefault(row, []).append(rec)
@@ -389,16 +409,36 @@ def main():
     con.append(bs + " The largest page's row lists, unpacked, for the arena ASSERT.")
     con.append('BR_PAGE_MAX  = %d' % max(len(r) for r in raws))
     con.append('')
+    # The labelled records, in two families: the score pair BmPatch
+    # writes and the six key fields BmPatchKeys writes. Each family must
+    # sit on ONE page, because the page is the only thing that exists at
+    # the moment the patch runs - BmRowScan tests brPage against these.
+    keys = {k: v for k, v in scores.items() if KEY_LABEL.match(k)}
+    scores = {k: v for k, v in scores.items() if k not in keys}
+
+    def family(names, what):
+        pp = {names[k][0] for k in names}
+        if len(pp) != 1:
+            raise SystemExit('the %s records are not on one page' % what)
+        return pp.pop()
+
     con.append(bs + ' The two score records BmPatch writes, as addresses in the')
     con.append(bs + ' depacked page - and the page they are on, which is the only')
     con.append(bs + ' one that may be patched.')
     for name in sorted(scores):
-        p, addr = scores[name]
-        con.append('BR_%-9s = &%04X' % (name.upper(), addr))
-    con.append('BR_SCORE_PAGE = %d' % scores[sorted(scores)[0]][0])
-    for name in sorted(scores):
-        if scores[name][0] != scores[sorted(scores)[0]][0]:
-            raise SystemExit('the score records are not on one page')
+        con.append('BR_%-9s = &%04X' % (name.upper(), scores[name][1]))
+    con.append('BR_SCORE_PAGE = %d' % family(scores, 'score'))
+    con.append('')
+    con.append(bs + " The six key fields BmPatchKeys writes, in keyTab's order,")
+    con.append(bs + ' as addresses in the depacked page. Each is KEY_FIELD glyph')
+    con.append(bs + ' bytes past its own column byte - the tool pads the record')
+    con.append(bs + ' so the length is fixed whatever the defaults are.')
+    for name in sorted(keys):
+        con.append('BR_%-9s = &%04X' % (name.upper(), keys[name][1]))
+    con.append('BR_KEY_PAGE  = %d' % family(keys, 'key'))
+    con.append('BR_KEY_FIELD = %d' % KEY_FIELD)
+    if sorted(keys) != ['key%d' % i for i in range(6)]:
+        raise SystemExit('want exactly key0..key5, got %s' % sorted(keys))
 
     OUT_CONST.write_text(chr(10).join(con) + chr(10))
 

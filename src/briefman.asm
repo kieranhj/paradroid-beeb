@@ -463,10 +463,293 @@ BR_PO_SPAN = 12 * UNIT_BYTES    \ one row's slice of the rectangle
 \ BrFerryScores.
   LDA brPage
   CMP #BR_SCORE_PAGE
+  BNE bmrs_nosc
+  JSR BmPatch
+
+\ ...and the six key fields, on the page that carries THEM — issue
+\ #20, and the same argument: the record is the arena's and only
+\ lives as long as its page. BmPatchKeys reads keyTab, which is the
+\ code image's and outlives everything.
+.bmrs_nosc
+  LDA brPage
+  CMP #BR_KEY_PAGE
   BNE bmrs_x
-  JMP BmPatch
+  JMP BmPatchKeys
 .bmrs_x
   RTS
+
+
+\ ============================================================
+\ THE KEY NAMES — shared by CTRL+R and the briefing's page 1
+\ ============================================================
+\ ALL OF THIS WAS keyredef.asm's UNTIL 2026-09-12 (issue #20). It has
+\ to be HERE, resident in the bank, because the redefine screen is a
+\ ZX0 stream that depacks over BR_RECS — so while a briefing page is
+\ up the screen does not exist, and BmPatchKeys below needs to name a
+\ key with the page in front of it. The redefine screen calls in from
+\ main RAM with this bank paged, which is what it already did for
+\ BrChar and brExtra; nothing here pages anything.
+\ ============================================================
+\ BmKrAscii — A = ASCII, out = glyph index
+\ ============================================================
+\ PnAscii, transcribed. Bank 6 owns the original and only one bank is
+\ visible at a time; this is the same duplication DbGlyph is. Anything
+\ unmapped comes out as a space rather than as a wild index.
+.BmKrAscii
+  CMP #'a'
+  BCC bka_upper
+  CMP #'z'+1
+  BCS bka_bad
+  SEC : SBC #'a'
+  CLC : ADC #PN_LOWER_A
+  RTS
+.bka_upper
+  CMP #'A'
+  BCC bka_digit
+  CMP #'Z'+1
+  BCS bka_bad
+  SEC : SBC #'A'
+  CLC : ADC #PN_UPPER_A
+  RTS
+.bka_digit
+  CMP #'0'
+  BCC bka_punct
+  CMP #'9'+1
+  BCS bka_punct
+  SEC : SBC #'0'
+  CLC : ADC #PN_DIGIT0
+  RTS
+.bka_punct
+  CMP #'.'
+  BNE bka_dash
+  LDA #PN_DOT
+  RTS
+.bka_dash
+  CMP #'-'
+  BNE bka_colon
+  LDA #PN_DASH
+  RTS
+.bka_colon
+  CMP #':'
+  BNE bka_bad
+  LDA #PN_COLON
+  RTS
+.bka_bad
+  LDA #PN_SPACE
+  RTS
+
+\ ============================================================
+\ bmKeyChar — internal key number &10-&7F -> how to name it
+\ ============================================================
+\ THE MATRIX, ROW BY ROW. An entry is either a printable ASCII code
+\ (>= 33, printed as itself), 1-10 for f0-f9, 11 and up for a name in
+\ bmKrNames, or 0 for "this key cannot be bound".
+\
+\ ZERO NOW MARKS ONLY THE HOLES: columns 10-15 do not exist in the
+\ matrix at all. The nine punctuation keys — ^ _ [ ] @ ; , / \ — were
+\ zeros until 2026-09-01, refused because the shared glyph set cannot
+\ DRAW them; KC ruled that too many ('/' is a common fire button), so
+\ they carry spelled-out names from bmKrNames instead, exactly as
+\ Space and Return always have. Every physical key &10-&7F is
+\ bindable now; SHIFT (internal 0) is bindable through BmKrChar's
+\ special case, and the only refusals left are ESCAPE (the game's
+\ self-destruct, and this screen's own cancel) and CTRL (never
+\ scanned — it gates the pause, the mute, the volume and the debug
+\ keys). [11f DECISION 15, revised]
+\
+\ THE LAYOUT IS CONFIRMED BY OUR OWN CONSTANTS, not recalled: KEY_Z,
+\ KEY_X, KEY_K, KEY_M, KEY_L, KEY_SPACE, KEY_P, KEY_Q, KEY_R, KEY_C,
+\ KEY_W, KEY_LBRK, KEY_RBRK, KEY_UP, KEY_DOWN and KEY_ESCAPE all EOR
+\ &FF to exactly the positions below.
+.bmKeyChar
+  EQUB 'Q', '3', '4', '5', 5, '8', 8, '-', 24, 21  \ &10: Q 3 4 5 f4 8 f7 - ^ LEFT
+  EQUB 0, 0, 0, 0, 0, 0                            \ columns 10-15: no key
+  EQUB 1, 'W', 'E', 'T', '7', 'I', '9', '0', 25, 20 \ &20: f0 W E T 7 I 9 0 _ DOWN
+  EQUB 0, 0, 0, 0, 0, 0
+  EQUB '1', '2', 'D', 'R', '6', 'U', 'O', 'P', 26, 19 \ &30: 1 2 D R 6 U O P [ UP
+  EQUB 0, 0, 0, 0, 0, 0
+  EQUB 17, 'A', 'X', 'F', 'Y', 'J', 'K', 28, ':', 12  \ &40: CAPS A X F Y J K @ : RETURN
+  EQUB 0, 0, 0, 0, 0, 0
+  EQUB 18, 'S', 'C', 'G', 'H', 'N', 'L', 29, 27, 13   \ &50: SHFTLK S C G H N L ; ] DELETE
+  EQUB 0, 0, 0, 0, 0, 0
+  EQUB 15, 'Z', 11, 'V', 'B', 'M', 30, '.', 31, 14    \ &60: TAB Z SPACE V B M , . / COPY
+  EQUB 0, 0, 0, 0, 0, 0
+  EQUB 16, 2, 3, 4, 6, 7, 9, 10, 32, 22               \ &70: ESC f1 f2 f3 f5 f6 f8 f9 \ RIGHT
+  EQUB 0, 0, 0, 0, 0, 0
+
+\ ---- the one key below the table's floor --------------------
+\ X = internal number -> A = the char code, Z set on unbindable.
+\ SHIFT is internal 0 and the table starts at &10, so the two callers
+\ (the accept test and BmKrShow) come through here rather than index
+\ &10 below the label.
+.BmKrChar
+  CPX #0
+  BNE bkc_tab
+  LDA #23                       \ SHIFT: its name
+  RTS
+.bkc_tab
+  LDA bmKeyChar-&10,X
+  RTS
+
+\ Codes 11 up, in order, each terminated. ESCAPE's entry is here for
+\ completeness only — bkr_wait catches it before the table is read.
+.bmKrNames
+  EQUS "Space"   : EQUB 0        \ 11
+  EQUS "Return"  : EQUB 0        \ 12
+  EQUS "Delete"  : EQUB 0        \ 13
+  EQUS "Copy"    : EQUB 0        \ 14
+  EQUS "Tab"     : EQUB 0        \ 15
+  EQUS "Escape"  : EQUB 0        \ 16
+  EQUS "Caps"    : EQUB 0        \ 17
+  EQUS "Shiftlk" : EQUB 0        \ 18
+  EQUS "Up"      : EQUB 0        \ 19
+  EQUS "Down"    : EQUB 0        \ 20
+  EQUS "Left"    : EQUB 0        \ 21
+  EQUS "Right"   : EQUB 0        \ 22
+  EQUS "Shift"   : EQUB 0        \ 23 — BmKrChar's, not the table's
+  EQUS "Caret"   : EQUB 0        \ 24: ^
+  EQUS "Underline" : EQUB 0      \ 25: _
+  EQUS "LBracket" : EQUB 0       \ 26: [
+  EQUS "RBracket" : EQUB 0       \ 27: ]
+  EQUS "At"      : EQUB 0        \ 28: @
+  EQUS "Semicolon" : EQUB 0      \ 29: ;
+  EQUS "Comma"   : EQUB 0        \ 30: ,
+  EQUS "Slash"   : EQUB 0        \ 31: /
+  EQUS "Backslash" : EQUB 0      \ 32: \ — and the ASCII boundary is
+                                 \ 33 for it, see BmKrShow
+
+\ ============================================================
+\ BmKrNameCtl — X = a control index, out = bmp on its key's name
+\ ============================================================
+\ Was the middle of BmKrShow. Both readers want the same three cases
+\ and one of them cannot see that screen's code, so the dispatch is
+\ here and BmKrShow is three instructions.
+\ The answer is a zero-terminated ASCII string, either bmKrBuf (a
+\ one-character name, or f0-f9 built into it) or a pointer into
+\ bmKrNames.
+.BmKrNameCtl
+  LDA keyTab,X                  \ the INKEY byte back to a key number,
+  EOR #&FF                      \ which is what the name table indexes
+  TAX
+  JSR BmKrChar
+  CMP #33                       \ >= 33: it prints as itself. 33, not
+  BCS bks_one                   \ 32 — code 32 is Backslash's name and
+                                \ no entry is ASCII space (the space
+                                \ KEY is name 11), so the boundary
+                                \ moved up one for a tenth name
+  CMP #11
+  BCS bks_named                 \ 11 and up: a name from the list
+
+  CLC                           \ 1-10 are f0-f9: 'f' and the digit
+  ADC #'0'-1
+  TAY
+  LDA #'f'
+  STA bmKrBuf
+  STY bmKrBuf+1
+  LDA #0
+  STA bmKrBuf+2
+  BEQ bks_buf                   \ always
+
+.bks_one
+  STA bmKrBuf
+  LDA #0
+  STA bmKrBuf+1
+.bks_buf
+  LDA #LO(bmKrBuf) : STA bmp
+  LDA #HI(bmKrBuf) : STA bmp+1
+  RTS
+
+\ 11 and up: walk the packed name list to the one wanted
+.bks_named
+  SEC
+  SBC #11
+  TAX
+  LDA #LO(bmKrNames)
+  STA bmp
+  LDA #HI(bmKrNames)
+  STA bmp+1
+.bkn_next
+  CPX #0
+  BEQ bkn_x                     \ arrived
+  LDY #0
+.bkn_scan
+  LDA (bmp),Y
+  BEQ bkn_end
+  INY
+  BNE bkn_scan
+.bkn_end
+  INY                           \ past the terminator
+  TYA
+  CLC
+  ADC bmp
+  STA bmp
+  BCC bkn_nc
+  INC bmp+1
+.bkn_nc
+  DEX
+  JMP bkn_next
+.bkn_x
+  RTS
+
+.bmKrBuf   SKIP 3               \ a one- or two-character name
+
+\ ============================================================
+\ BmPatchKeys — the live bindings into page 1's six key fields
+\ ============================================================
+\ BmPatch's argument, for the keys instead of the scores: the record
+\ only exists while its page is depacked, so the write happens on
+\ every depack of BR_KEY_PAGE, from BmRowScan. The briefing named the
+\ ASSEMBLED defaults until 2026-09-12 — hexwab, issue #20: "the
+\ briefing screen should show the current keys not the default keys
+\ (that's no use to anyone! what if the player before them changed
+\ them?)". [11f DECISION 21]
+\ EACH FIELD IS BR_KEY_FIELD GLYPH BYTES and the tool guarantees it by
+\ padding the record (tools/make_briefing.py, KEY_FIELD), so this
+\ writes a fixed count and never has to know what the source said.
+\ The six records are NOT a fixed stride apart — the labels on the
+\ same rows vary in length — so their addresses come from the table
+\ below, which briefconst.asm generates the constants for.
+\ bmKp IS swSrc, FontCell's own source pointer: nothing is being drawn
+\ at depack time, and bmp is taken by the name walk.
+bmKp = swSrc
+
+.BmPatchKeys
+  LDX #CTL_COUNT-1
+.bpk_ctl
+  STX brT2                      \ the control, kept across the name walk
+  LDA bmKeyRecLo,X : STA bmKp
+  LDA bmKeyRecHi,X : STA bmKp+1
+  JSR BmKrNameCtl               \ X is still the control; bmp = the name
+  LDY #0
+.bpk_char
+  LDA (bmp),Y
+  BEQ bpk_pad                   \ the terminator: spaces to the end
+  JSR BmKrAscii
+  STA (bmKp),Y
+  INY
+  CPY #BR_KEY_FIELD
+  BCC bpk_char
+  BCS bpk_next                  \ always
+.bpk_pad
+  LDA #PN_SPACE
+.bpk_fill
+  STA (bmKp),Y
+  INY
+  CPY #BR_KEY_FIELD
+  BCC bpk_fill
+.bpk_next
+  LDX brT2
+  DEX
+  BPL bpk_ctl
+  RTS
+
+\ Past each record's own column byte, in CTL_* order.
+.bmKeyRecLo
+  EQUB LO(BR_KEY0+1), LO(BR_KEY1+1), LO(BR_KEY2+1)
+  EQUB LO(BR_KEY3+1), LO(BR_KEY4+1), LO(BR_KEY5+1)
+.bmKeyRecHi
+  EQUB HI(BR_KEY0+1), HI(BR_KEY1+1), HI(BR_KEY2+1)
+  EQUB HI(BR_KEY3+1), HI(BR_KEY4+1), HI(BR_KEY5+1)
 
 \ ============================================================
 \ BmKrDepack — the redefine screen into the arena

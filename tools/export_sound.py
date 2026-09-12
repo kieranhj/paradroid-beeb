@@ -255,7 +255,20 @@ MUTE_SUBFLOOR = {2, 3}
 # so the zipper now sits WITH the bass bed instead of 6 dB over it.
 # Its attack ramp is untouched. The three blips share one clone, so one
 # entry each keeps the assert below happy.
-FX_LEVEL = {16: 9, 29: 9, 30: 9, 31: 9}
+#
+# fx29/30/31 AGAIN, 2026-09-12, on hexwab's issue #20: "maybe the
+# briefing volume should be reduced relative to the in-game noises?".
+# Nibble 7, another 4 dB down. WHAT COULD NOT MOVE WITH IT, and this is
+# the whole constraint: the bed under the blips is fx16, and fx16 IS
+# the in-game lift - the record is shared, so dropping the bed drops a
+# game sound, which is the opposite of what was asked. Nibble 6 was
+# also tried on fx16 once and reverted by KC as too far. So the blips
+# now sit 4 dB BELOW the bed rather than level with it, which is a
+# deliberate break with the 2026-08-28 alignment above and not an
+# oversight. AN EARED VALUE IS OWED HERE: 7 is one conservative step,
+# chosen so the zipper stops dominating without vanishing under the
+# bass. [11f DECISION 22]
+FX_LEVEL = {16: 9, 29: 7, 30: 7, 31: 7}
 
 # SID envelope rate tables, ms for the full 0->peak / peak->0 ramp
 ATTACK_MS = [2, 8, 16, 24, 38, 56, 68, 80, 100, 250, 500, 800,

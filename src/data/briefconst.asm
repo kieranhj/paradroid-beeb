@@ -27,3 +27,16 @@ BR_PAGE_MAX  = 967
 BR_HISCORE   = &458C
 BR_LOSCORE   = &45BD
 BR_SCORE_PAGE = 4
+
+\ The six key fields BmPatchKeys writes, in keyTab's order,
+\ as addresses in the depacked page. Each is KEY_FIELD glyph
+\ bytes past its own column byte - the tool pads the record
+\ so the length is fixed whatever the defaults are.
+BR_KEY0      = &47A4
+BR_KEY1      = &47B9
+BR_KEY2      = &47CB
+BR_KEY3      = &47DF
+BR_KEY4      = &47F3
+BR_KEY5      = &4809
+BR_KEY_PAGE  = 0
+BR_KEY_FIELD = 9

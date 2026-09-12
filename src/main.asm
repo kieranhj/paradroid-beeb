@@ -729,7 +729,7 @@ TITLE_LIMIT = LOWBSS_ADDR       \ &0C90 — 912 bytes, and lowbss above it
 \ bank block needs the size long before the overlay is assembled, and
 \ beebasm resolves constants in file order. If the ASSERT fires, put the
 \ number it names here.
-TITL_BYTES = 386
+TITL_BYTES = 384
 ASSERT TITL_BYTES > 256         \ TiResident copies one whole page and
 ASSERT TITL_BYTES < 512         \ then a tail; both must be non-empty
 

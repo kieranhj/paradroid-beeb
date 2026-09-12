@@ -797,64 +797,87 @@
 .brRow_0_44
   EQUB &FF
 .brRow_0_45
-  \ "Default keys:"
+  \ "Your keys:"
   EQUB 4
-  EQUB 14, 67, 68, 63, 83, 74, 82, 0, 73, 67, 87, 81
-  EQUB 99
+  EQUB 35, 77, 83, 80, 0, 73, 67, 87, 81, 99
   EQUB &FE
   EQUB &FF
 .brRow_0_46
   EQUB &FF
 .brRow_0_47
-  \ "Left:        Z"
+  \ "Left:"
   EQUB 10
-  EQUB 22, 67, 68, 82, 99, 0, 0, 0, 0, 0, 0, 0
-  EQUB 0, 36
+  EQUB 22, 67, 68, 82, 99
+  EQUB &FE
+.br_key0
+  \ "Z        "
+  EQUB 24
+  EQUB 36, 0, 0, 0, 0, 0, 0, 0, 0
   EQUB &FE
   EQUB &FF
 .brRow_0_48
   EQUB &FF
 .brRow_0_49
-  \ "Right:       X"
+  \ "Right:"
   EQUB 10
-  EQUB 28, 71, 69, 70, 82, 99, 0, 0, 0, 0, 0, 0
-  EQUB 0, 34
+  EQUB 28, 71, 69, 70, 82, 99
+  EQUB &FE
+.br_key1
+  \ "X        "
+  EQUB 24
+  EQUB 34, 0, 0, 0, 0, 0, 0, 0, 0
   EQUB &FE
   EQUB &FF
 .brRow_0_50
   EQUB &FF
 .brRow_0_51
-  \ "Up:          K"
+  \ "Up:"
   EQUB 10
-  EQUB 31, 78, 99, 0, 0, 0, 0, 0, 0, 0, 0, 0
-  EQUB 0, 21
+  EQUB 31, 78, 99
+  EQUB &FE
+.br_key2
+  \ "K        "
+  EQUB 24
+  EQUB 21, 0, 0, 0, 0, 0, 0, 0, 0
   EQUB &FE
   EQUB &FF
 .brRow_0_52
   EQUB &FF
 .brRow_0_53
-  \ "Down:       M"
+  \ "Down:"
   EQUB 10
-  EQUB 14, 77, 85, 76, 99, 0, 0, 0, 0, 0, 0, 0
-  EQUB 23
+  EQUB 14, 77, 85, 76, 99
+  EQUB &FE
+.br_key3
+  \ "M        "
+  EQUB 24
+  EQUB 23, 0, 0, 0, 0, 0, 0, 0, 0
   EQUB &FE
   EQUB &FF
 .brRow_0_54
   EQUB &FF
 .brRow_0_55
-  \ "Fire:        L"
+  \ "Fire:"
   EQUB 10
-  EQUB 16, 71, 80, 67, 99, 0, 0, 0, 0, 0, 0, 0
-  EQUB 0, 22
+  EQUB 16, 71, 80, 67, 99
+  EQUB &FE
+.br_key4
+  \ "L        "
+  EQUB 24
+  EQUB 22, 0, 0, 0, 0, 0, 0, 0, 0
   EQUB &FE
   EQUB &FF
 .brRow_0_56
   EQUB &FF
 .brRow_0_57
-  \ "Action:      SPACE"
+  \ "Action:"
   EQUB 10
-  EQUB 11, 65, 82, 71, 77, 76, 99, 0, 0, 0, 0, 0
-  EQUB 0, 29, 26, 11, 13, 15
+  EQUB 11, 65, 82, 71, 77, 76, 99
+  EQUB &FE
+.br_key5
+  \ "Space    "
+  EQUB 24
+  EQUB 29, 78, 63, 65, 67, 0, 0, 0, 0
   EQUB &FE
   EQUB &FF
 .brRow_1_1

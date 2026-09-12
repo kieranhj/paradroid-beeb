@@ -1026,6 +1026,91 @@ typing K, L, M: at `HsHold`'s first instruction `hsIni` read K L M and slot 2's 
 buffer held the M; from there to the title's `TiWait` took **2,568,685 cycles, 1.28 s** (the hold
 plus filing the initials and painting the title), and `hsHiIni` was filed as `0A 0B 0C`.
 
+**[DECISION 20]** **TRANSFER at the title asks for the briefing, and the timeout is one lap
+again** (KC, 2026-09-12; issue #20, hexwab). The complaint is the whole of it: *"Title screen is
+displayed for a long time. Inexperienced players will see it drag on, assume they have to press a
+key and have no idea what to do or what the controls are once the game starts immediately.
+Experienced players will be impatient to reach the briefing screen so that they can press ctrl+R
+to set their preferred keys."* Both halves of that came from the same trap — the only two things
+`TiWait` read, FIRE and TRANSFER, **both started the game and skipped the briefing**, so the one
+thing a confused player does was exactly what denied them the controls, and the only route to the
+briefing was to sit out the timeout.
+
+FIRE keeps `$2907`'s behaviour and starts the game. TRANSFER now branches to `tiw_brief`, which is
+the timeout's own exit: the dwell into `overRnd0` and `JMP BrTimeout`. [DECISION 16] gave TRANSFER
+to the title because it is the second thumb; this takes it back for a different job, and the 001
+page and the briefing's own exits are untouched — fire or transfer still starts the game from
+there. **The dwell is now seeded on this path too**, which the timeout's never was and never could
+be: a timeout arrives at a fixed count, so `tiLo EOR tiHi` is a constant there, while a player who
+asks for the briefing has left the title up for an unpredictable time and the briefing ends in a
+game.
+
+**And the timeout is back to ONE 16-bit lap**: `tiPage` and its two-lap count are gone, so 65,536
+turns at the measured 11,992 turns/s = **5.5 s**, where [DECISION 16] left it at 10.9. That is the
+order of the C64's own 256 frames (5.1 s), and what makes it safe to shorten now is that nobody
+has to wait it out any more. **The title overlay: 2 bytes**, `TITL_BYTES` 386 → 384 (528 free of
+the 912).
+
+**WHAT THIS DOES NOT DO, and it is the open end of it: nothing on the title screen SAYS so.** The
+title's thirty-six glyphs are block letters and two bordered panels — there is no text alphabet in
+them — so a prompt would have to come from `textfont` through `FontCell`, which is resident at
+title time since no-load step 3 but is a piece of work rather than a line. Until then TRANSFER is
+undiscoverable and the timeout is what a new player finds. Flagged to KC at the time.
+
+**[DECISION 21]** **The briefing names the keys that are actually bound** (KC, 2026-09-12; issue
+#20). hexwab: *"the briefing screen should show the current keys not the default keys (that's no
+use to anyone! what if the player before them changed them?)"* — and he is right; page 1 carried
+`Z X K M L SPACE` as literal text whatever CTRL+R had just done.
+
+The mechanism is [DECISION 7]'s, for the keys instead of the scores: the record only exists while
+its page is depacked, so `BmRowScan` calls `BmPatchKeys` on every depack of `BR_KEY_PAGE` exactly
+as it calls `BmPatch` on `BR_SCORE_PAGE`. Each key line in `briefing.txt` is **two records now** —
+the label at column 8 and the name at column 22, the column the hand-tuned spacing already put it
+at — so the patch writes a fixed field at a known offset and the cell alignment is the record's
+own rather than a count of spaces. `make_briefing.py` pads a record labelled `key0`..`key5` to
+`KEY_FIELD` = 9 characters (trailing spaces do not survive an editor, so the tool owns them) and
+emits `BR_KEY0`..`BR_KEY5`, `BR_KEY_PAGE` and `BR_KEY_FIELD` into `briefconst.asm`. Nine is the
+longest name in `bmKrNames`; the widest of those is ten CELLS, which is what column 22 leaves room
+for. The heading became "Your keys:".
+
+**WHAT COST SOMETHING, and it is the whole reason this was not three instructions: the redefine
+screen is a ZX0 stream that depacks OVER `BR_RECS`.** Its name machinery — `BmKrAscii`, `BmKeyChar`,
+`BmKrChar`, `bmKrNames`, `bmKrBuf` — therefore does not exist while a briefing page is up, and sits
+in the very arena the key records live in. All of it moved to `briefman.asm`, resident in bank 5,
+with the three-case dispatch factored out of `BmKrShow` as **`BmKrNameCtl`** (control index in, a
+zero-terminated ASCII name in `bmp` out). `BmKrShow` is three instructions now and calls in from
+main RAM with bank 5 paged, which is what it already did for `BrChar` and `brExtra`. **Bank 5: 194
+bytes**, `spr_end` `&BEAA` → `&BF6C` (342 free → 148) — `XKR` shrank 1,014 → 591 raw and 774 → 462
+packed, which paid back most of the 423 that moved.
+
+**Verified in jsbeeb**, both halves, on the shipping image: at a fresh briefing `BR_KEY0` (&47A4)
+read `18 24 00 ...` — column 24 (22 + the 2-cell margin), glyph 36 = `Z`, eight spaces — and
+`BR_KEY5` `18 1D 4E 3F 41 43 00 00 00 00` = `Space`. Then CTRL+R, all six rebound to **A S D F
+RETURN SLASH**, and after `BrPagePaint` put the page back: `BR_KEY0` `18 0B` = `A`, `BR_KEY4`
+`18 1C 43 52 53 50 4C` = `Return` and `BR_KEY5` `18 1D 4A 3F 51 46` = `Slash`, each repadded to
+nine. Scrolled into view the block renders with the labels and names in the columns they were in
+before the split.
+
+**[DECISION 22]** **The chatter blips drop another 4 dB** (KC, 2026-09-12; issue #20). hexwab:
+*"maybe the briefing volume should be reduced relative to the in-game noises?"*. `FX_LEVEL` 29/30/31
+go 9 → 7, one byte of `sndInstTab` (instrument 14 is the clone §8e gave the blips for exactly this
+purpose, and the exporter asserts nothing else shares it).
+
+**WHAT COULD NOT MOVE WITH THEM, and it is the constraint that makes this a decision rather than a
+tweak: the bed under the blips is fx16, and fx16 IS the in-game lift** — one record, shared — so
+dropping the bed would drop a game sound, which is the opposite of what was asked. Nibble 6 was
+also tried on fx16 once and reverted by KC as too far (§8e). So the blips now sit **4 dB below**
+the bed rather than level with it, which is a deliberate break with the 2026-08-28 alignment and
+not an oversight. **7 is one conservative step and is OWED AN EAR** — it was chosen so the zipper
+stops dominating without vanishing under the bass, and it has not been listened to on hardware.
+
+**AND THE FOURTH PART OF #20 WAS DECLINED BY KC**: *"Maybe include the supplementary keys straight
+after the movement keys? (people would expect all the keys to be described together)"*. Pause, mute,
+volume and quit stay on page 5. Moving them would have meant tightening page 1's logo and credits
+block to free about twelve canvas rows, and KC chose to leave the split. The ctrl+Q half of that
+complaint — *"having to wait way too long to find out that it's ctrl+Q to silence that infernal
+noise"* — is answered by [DECISION 22] instead.
+
 ### 8d. Verified in jsbeeb, 2026-08-30
 
 Boot, title timeout, CTRL+R, then: LEFT <- A, a duplicate A refused with "Already used",
