@@ -373,19 +373,24 @@ IS_BLANK = &FF                  \ IsEntry's third door, and not a screen
   STA poLastType                \ page's rectangle back again
   JSR PoDraw
 
-  LDA #0
-  STA dbLine
+\ BY BUFFER ROW, NOT BY LINE (issue #19, 2026-09-11). These two share
+\ their rows with the high-score screen they are drawn over — row 1 is
+\ "Great Score"/"Lowest Score of the Day!", row 13 the prompt — so the
+\ game over REPLACES that text. They were lines 0 and DB_LINE_LAST,
+\ which WERE rows 1 and 13 until layer-9 DECISION 22 moved every line
+\ to an even row; that left both texts on screen at once, which is what
+\ hexwab saw. DbAtRow puts them back where the C64 has them.
   LDA #IS_OVER_COL1
   STA dbCol
-  JSR DbAt
+  LDA #IS_OVER_ROW1
+  JSR DbAtRow
   LDA #LO(isTxtTrans) : LDY #HI(isTxtTrans)
   JSR DbStr
 
-  LDA #DB_LINE_LAST
-  STA dbLine
   LDA #IS_OVER_COL2
   STA dbCol
-  JSR DbAt
+  LDA #IS_OVER_ROW2
+  JSR DbAtRow
   LDA #LO(isTxtTerm) : LDY #HI(isTxtTerm)
   JSR DbStr
   JMP IsArm
@@ -535,6 +540,10 @@ IS_TOK_SHIP0 = 104              \ $36CA's own constant
 \ ---- EndGame's two strings ($6E30, $6E3F) -------------------
 IS_OVER_COL1 = 13               \ their prntX, unchanged
 IS_OVER_COL2 = 14
+IS_OVER_ROW1 = 1                \ their prntY 10 and 22 as buffer rows,
+IS_OVER_ROW2 = 13               \ and the high-score screen's own two
+ASSERT IS_OVER_ROW1 == HS_ROW_TOP
+ASSERT IS_OVER_ROW2 == HS_ROW_BOT
 
 .isTxtTrans                     \ "Transmission"
   EQUB DB_UC+19, DB_LC+17, DB_LC+0, DB_LC+13, DB_LC+18, DB_LC+12

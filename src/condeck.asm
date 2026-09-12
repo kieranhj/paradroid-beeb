@@ -195,6 +195,23 @@
   LDA xgd+1
   STA cdDst2+1
 
+\ THE BLANK CELL IS 16 ZEROES, whatever its ink (hexwab, issue #19 —
+\ the second win of that pass). Code 0 is the blank character and its
+\ eight source bytes are all zero, so every nibble is 0 and every
+\ LUTs[ink * 16 + 0] entry is 0 too: the ink cannot change the answer.
+\ 226 of deck 4's 640 cells are blank, and far more on a sparse deck.
+  LDA lvChar
+  BNE cd7_glyph
+  TAY                           \ A is 0: sixteen stores and done
+  LDY #7
+.cd7_blank
+  STA (xgd),Y
+  STA (cdDst2),Y
+  DEY
+  BPL cd7_blank
+  RTS
+
+.cd7_glyph
   LDY lvChar                    \ the ink, 0-3: its table is 16 entries in
   LDA (xdest2),Y
   ASL A : ASL A : ASL A : ASL A

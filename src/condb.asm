@@ -250,10 +250,22 @@ DB_IMG_UNIT = 4
   STA dbPrevD
 .db_p1_notDn
 
+\ ONLY WHEN THE DROID CHANGES (hexwab, issue #19: the browser repainted
+\ the portrait and the name every pass, and again on the way back from
+\ a page). The C64 redraws both every pass — its portrait is sprites
+\ and its name is one ShowRobotType — but ours repaints ~1K through a
+\ mask and redraws glyphs, and it SHOWS. poLastType is DbImage's own
+\ guard: equal means the picture on screen is this droid's, so the name
+\ beside it is too. A clear invalidates it (DbClear sets &FF), which is
+\ what makes entry and a return to the browser draw both again.
+  LDA dbType
+  CMP poLastType
+  BEQ db_p1_drawn
   JSR DbImage                   \ BuildIntroSprites' place in the order
+  JSR DbName                    \ ShowRobotType
+.db_p1_drawn
   LDA #DB_CNT_FIRST             \ $2D1F: the stat counter, rewound
   STA dbStatN
-  JSR DbName                    \ ShowRobotType
 
   JSR DbKeys                    \ $2D27: forward starts the pages. Left
   BEQ db_p1_x                   \ does nothing here: the browser is the
@@ -462,9 +474,9 @@ DB_DESC_MAX = &38 - &10         \ sub_0_2DCD's own bound, rebased to 0
   STA dbPage
   RTS
 .db_bk_browse
-  JSR DbClear                   \ the stats go; page 1 redraws the image
-  LDA #1                        \ and the name itself, every pass
-  STA dbPage
+  JSR DbClearText               \ the stats go, the portrait and the name
+  LDA #1                        \ stay: the droid has not changed, so page
+  STA dbPage                    \ 1 leaves them alone too (issue #19)
   RTS
 
 \ ---- a screen's start, on the way forward --------------------
@@ -943,6 +955,22 @@ DB_HIST = 8
   LDX dbLine
   LDA dbLineLo,X : STA pnDst
   LDA dbLineHi,X : STA pnDst+1
+  JMP DbAtCol                   \ PAST the entry below: without this DbAt
+                                \ fell into DbAtRow and every caller's
+                                \ pnDst was overwritten from hsRowLo,Y
+                                \ with whatever A held (issue #19)
+\ ---- and the same from a BUFFER ROW, for the game over -------
+\ IsOverDraw wants the C64's rows 10 and 22 — buffer rows 1 and 13 —
+\ which its two strings share with the high-score screen underneath
+\ them. They were lines 0 and DB_LINE_LAST of the table above until
+\ DECISION 22 moved every line to an EVEN row, so odd rows are not
+\ reachable through it any more; hsRowLo/Hi (highscore.asm, this bank)
+\ has all sixteen. Enter with the row in A.
+.DbAtRow
+  TAY
+  LDA hsRowLo,Y : STA pnDst
+  LDA hsRowHi,Y : STA pnDst+1
+.DbAtCol
   LDA dbCol                     \ col * 16
   ASL A : ASL A : ASL A : ASL A
   STA dbTmp

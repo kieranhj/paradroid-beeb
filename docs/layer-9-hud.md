@@ -1149,3 +1149,55 @@ same 44,492,913, so the player's position — and its marker cell — is in the 
 The transfer minigame's screens share `xgd` too and were not opened this session; no path leaves
 state in them. **Win 2 of that pass — a blank-cell fast path, ~226 of deck 4's 640 cells — is still
 available** and is worth relatively more of what remains, at ~12 bytes.
+
+## Issue #19, second round: the browser, the game-over rows, and a fall-through I wrote
+
+**hexwab, 2026-09-11**, on the DECISION 22 build. Three things, one of them a regression of mine.
+
+**1. The browser repainted the portrait and the name on every pass**, and again on the way back
+from a page — "don't redraw the title at all at the console, and don't redraw the icon when
+navigating the db". The C64 redraws both every pass (its portrait is sprites and its name one
+`ShowRobotType`), but ours repaints ~1K through a mask and redraws glyphs, and it shows. `DbPage1`
+now draws them only when `dbType` differs from `poLastType` — `DbImage`'s own guard, and if the
+picture on screen is this droid's then the name beside it is too — and `DbBack`'s return to the
+browser calls `DbClearText`, so neither is touched by a page-back. A full `DbClear` still
+invalidates the guard, which is what makes entry from the console main screen draw both.
+
+**2. "Transmission"/"Terminated" showed over "Lowest Score of the Day!" — MY REGRESSION.**
+`IsOverDraw` put the game over's two strings on the shared line table's line 0 and
+`DB_LINE_LAST`, which **were** buffer rows 1 and 13 — the high-score screen's own two rows, so the
+game over REPLACED that text. DECISION 22 moved every line to an EVEN row, so they landed on rows
+0 and 14 and both texts stood on screen at once. `DbAtRow` (in `condb.asm`, beside `DbAt`)
+positions from a buffer row through `hsRowLo/Hi`, and `IsOverDraw` uses `IS_OVER_ROW1` = 1 and
+`IS_OVER_ROW2` = 13, with `ASSERT`s tying both to `HS_ROW_TOP`/`HS_ROW_BOT` so the two screens
+cannot drift apart silently again.
+
+**3. The deck plan's blank-cell fast path** (the second win of the `LUTs` pass, which hexwab asked
+for): `lvChar` = 0 stores sixteen zero bytes and returns. Exact, not an approximation — code 0's
+eight source bytes are all zero, so every nibble is 0 and `LUTs[ink * 16 + 0]` is 0 whatever the
+ink. 226 of deck 4's 640 cells are blank, and far more on a sparse deck.
+
+**AND THE MISTAKE, because it is the useful part of this entry.** `DbAtRow` was inserted between
+`DbAt`'s body and its column arithmetic **with nothing to stop `DbAt` falling into it**. Every
+existing caller then had its `pnDst` overwritten from `hsRowLo,Y` indexed by whatever A held, so
+`DbStr` wrote glyphs into arbitrary memory: the game reached the briefing and crashed to BASIC on
+leaving it. It assembles perfectly — only running it finds it. `DbAt` now ends `JMP DbAtCol`
+(confirmed in the listing: `.DbAt` ends `4C D8 9C` and `.DbAtRow` starts at `&9CCD`).
+
+**Cost:** bank 7's `plandata` pad 41 -> **29**; `xfer_end` and the code image unmoved.
+
+**Verified in jsbeeb, 2026-09-12** — and this list is deliberately split, because the session's
+verification agent hit its rate limit part way and the rest was done by hand:
+
+| | |
+|---|---|
+| the crash | **gone**: title -> briefing -> SPACE -> play, deck drawn and the panel reading "Mobile". This is the exact path that crashed before the `JMP DbAtCol` |
+| the game over over the high-score screen | **fixed**: the entry screen is clean — "Lowest Score of the Day!" intact on row 1, "Please enter your initials" on row 13, and rows 0 and 14 (where the buggy build stranded the game-over text) **empty** at the columns those strings use |
+| the browser guard | **from the listing, not driven**: `DbPage1` compares `dbType` with `poLastType` and branches past BOTH `DbImage` and `DbName`; `db_bk_browse` calls `DbClearText` (`&9DD7`), not `DbClear` (`&9D96`) |
+| the blank fast path | **from the listing, not driven**: `cd7_blank` stores A = 0 to `(xgd),Y` and `(cdDst2),Y` for Y = 7..0 |
+
+**NOT re-measured, and wanting a pass when there is budget:** the deck plan's new timing (the
+LUTs build was 429,013 cycles; the blank path should take most of what is left on a sparse deck),
+the plan's buffer against the `a3689c2` oracle with the fast path in, the browser's behaviour
+driven through a real console, and the game-over PAGE itself (rows 1 and 13 while it is up, rather
+than the high-score screen that follows it).
