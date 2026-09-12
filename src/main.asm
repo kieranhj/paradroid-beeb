@@ -1471,11 +1471,11 @@ drYcol0  = &A0                  \ 0, 16, 32                        (3)
 drYcol1  = &A3                  \ 8, 24, 40                        (3)
 drYcol2  = &A6                  \ 16, 32, 48                       (3)
 
-\ The deck plan's cell renderer, from the same spare half of the zero
-\ page (issue #19). Bank 7, written before read on every cell, and
-\ nothing needs them to survive anything.
-cdDst2   = &A9                  \ the cell's right half, 8 bytes on  (2)
-cdLut    = &AB                  \ the ink's LUTs table, logical * 16 (1)
+\ The deck plan's cell renderer had two of these at &A9-&AB until
+\ 2026-09-12. THE SECOND HALF OF THE ZERO PAGE IS NOT ALL OURS: &A0-&A7
+\ is the NMI's, which we claim at boot, but &A8-&AF is the OS's own
+\ scratch and &B0-&CF the filing system's. They are in condeck.asm now,
+\ borrowed from this map's own pointers — see there, and issue #19.
 
 \ BuildCharset borrows zero page from routines that have finished.
 bcSrc    = src

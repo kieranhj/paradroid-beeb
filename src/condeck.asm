@@ -60,6 +60,26 @@
 \ unclipped store past the row's end into the next row's colour RAM. We
 \ skip the marker instead of reproducing the overwrite.
 
+\ ---- zero page, borrowed, as xfer.asm borrows it ------------
+\ NOT &A9-&AB, WHICH IS WHERE THESE STARTED (issue #19, hexwab's hang at
+\ this very screen on Opus DDOS 3.45). The second half of the zero page
+\ is not all ours: &A0-&A7 belongs to the NMI, which the game claims at
+\ boot, but &A8-&AF is the OS's own scratch and &B0-&CF the filing
+\ system's. A pointer parked there is one third-party filing system away
+\ from being changed under us between the STA that builds it and the
+\ STA (cdDst2),Y that uses it — which writes sixteen bytes wherever it
+\ then points.
+\
+\ These two are the level draw's own pointers instead, on exactly the
+\ rationale xfer.asm's header gives for the same set: the deck, the
+\ level draw and the sprites are all suspended while a console page is
+\ up, every one of them is re-derived by its owner before its next use,
+\ the plan draws in one uninterrupted pass, and the IRQ touches none of
+\ them. mapptr in particular is dead the moment BuildLevel returns, and
+\ BuildLevel runs immediately before this page (ct_trydeck, main.asm).
+cdDst2 = mapptr                 \ the cell's right half, 8 bytes on  (2)
+cdLut  = tdp                    \ the ink's LUTs table, logical * 16 (1)
+
 .ConDeck7
   LDA #LO(tilemap) : STA xsrc   \ THE TILE MAP ITSELF, main RAM: since
   LDA #HI(tilemap) : STA xsrc+1 \ Layer 13d the level RLE no longer
