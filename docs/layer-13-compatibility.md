@@ -406,3 +406,84 @@ after burying it. hexwab's broader warning belongs here too: *"We don't even kno
 filing system workspace only extends as far as `&1900`. It could be higher for other filing
 systems."* Reading OSHWM at boot and refusing loudly, the way `PARSWR` refuses too few banks, is
 the obvious guard and has not been built.
+
+## [DECISION 5] Spending the reclaimed zero page (#18)
+
+DECISION 4 made the second half of the zero page ours. This is what was put in it, why those
+things and not others, and how far the claim has actually been measured.
+
+**The rule that decides everything: `abs` → `zp` saves ONE BYTE PER REFERENCE always, and ONE
+CYCLE only when the reference is not indexed** — `abs,X` and `zp,X` are both 4 cycles. So scalars
+pay and arrays do not. Every absolute-mode data reference in the build was counted per operand and
+attributed to the bank of the code making it; `drIdx` is 45 references in one byte (45:1) where
+`drEnergy` is 51 references in fourteen (3.6:1). Three tiers were taken, in descending value,
+one commit each:
+
+| tier | what | zp | bought |
+|---|---|---|---|
+| 1 | the hot scalars — `sndFx1/2`, `joyYDir`, `numDoors`, `moveMode`, `drIdx`, `drCount`, `snCvH`, `snTm2`, `score` | 13 B | main RAM +70, bank 4 +104, PARAFNT +16 |
+| 2 | bank 7's twelve — the transfer game, the droid database, the lift view, the portrait pool | 12 B | bank 7 **+231, nearly all of it in the `ALIGN` pad** |
+| 3 | the panel printer — `pnTmp`, `pnCol` | 2 B | bank 6 +43 |
+
+**405 bytes across five regions for 27 of zero page**, measured against `main` after the
+branch was rebased off `dither` on 2026-09-13 — the earlier figures in the tier commits were
+taken on the pre-`#20` base and are superseded by these. Main RAM went 39 → **100 B** and
+bank 4 64 → **129 B**, which are the two that had been blocking work; bank 6 260 → 303,
+bank 7 86 → 90 with its pad 5 → 236, bank 5 148 → 149.
+
+**Tier 2's saving is nearly invisible in the tail, and that is the lesson.** `plandata.asm`'s
+`ALIGN` absorbs anything assembled in front of it, so of Tier 2's 235 bytes the tail shows only
+4: `planChars` went `&AFFF` → `&AF18` and the pad grew **5 → 236**. Quoting the tail alone would have reported the
+change as worthless. CLAUDE.md's standing rule — quote a bank's pad and tail as a pair — is why
+this was caught, and this is now its worked example.
+
+**`ZpSeed` is the mechanism, and it is `SprSeedYcol` grown up.** Zero page is not loadable and is
+not assumed to survive the front end, so every `EQUB` initial value these variables carried in the
+code image is re-established at run time. The seeded variables are one contiguous run from
+`drYcol0`, so a tier costs the seed table one byte per variable and no new code — `LDX #8` became
+`#17`, `#29`, `#31`. `moveMode`'s `MM_MOBILE` is the only non-zero seed, which is why it is a table
+and not a fill. **The seed table is bank 4's**, so every future tier is paid for there.
+
+**`score` is at `&CC`, deliberately clear of the run.** It was `SKIP 4`, never an `EQUB`, so
+`CombatInit` has always been its only initialiser. `ZpSeed` runs once per route into play and the
+briefing's fire exit is one of those routes — seeding `score` there would be a silent wipe. Tier 1
+parked it at `&B2` and had to stop the run short to step over it; Tier 2 moved it above the run so
+the run can keep growing.
+
+### `&D0-&E6` is free, and it was measured rather than argued
+
+**KC, 2026-09-13:** the MOS's VDU driver workspace should be fine if the game owns IRQ and issues
+no VDU command. `OSBYTE 140` does **not** free it — it is the VDU driver's, not the filing
+system's — so the claim needed a measurement of its own rather than an inference from DECISION 4.
+
+Seeded all 23 bytes with `&A5` and read back after the deepest path the game has: title → briefing
+→ play; movement, firing and scrolling; a `CTRL+]` deck change (charset rebuild and full redraw);
+ESCAPE → death sequence → game over; the high-score entry with initials typed; and back to the
+title and briefing, which includes `GoTitle`'s `OSBYTE &0F`. **All 23 bytes came back untouched**,
+and the same dump shows `&E7` upward carrying live, changing OS data — so the measurement also
+confirms the boundary is where CLAUDE.md has always said it is.
+
+    00D0  A5 A5 A5 A5 A5 A5 A5 A5 A5 A5 A5 A5 A5 A5 A5 A5
+    00E0  A5 A5 A5 A5 A5 A5 A5 01 00 00 00 00 00 00 00 13
+                              ^^ &E7 up, still the OS's
+
+Two caveats worth carrying: this is Acorn DFS 1.2 with no other ROM claiming vectors, and the boot
+`VDU 22` happens before `ZpSeed`, so anything placed here is only safe because it is seeded on
+every route into play.
+
+**The budget is therefore 35 proven free bytes** — `&C0-&CB` (12) and `&D0-&E6` (23).
+
+### What was NOT done, and why
+
+**Tier 4, the arrays, was costed and rejected**: `sprActive` 8 bytes for 37 references (4.6:1),
+`drEnergy` 14 for 51, `drType` 14 for 49, `doorState` 7 for 17, `drSpdX` 14 for 16 (≈1:1). They are
+indexed, so they buy bytes without cycles, and 35 bytes will not hold the useful ones anyway. The
+case also weakened as the tiers landed: nothing is short of room now. **Do not re-litigate this
+without a region that is actually tight again.**
+
+**Two of Tier 2's screens were never driven** — the transfer minigame board (`xfTmp2`, `xfColTmp`,
+`xfPlyColor`, `xfPlyY`, `xfColV`, `xfTime`) and the lift side view (`lvPos`, `lvRow`). The droid
+database page was reached and is correct, which covers `dbType`, `dbCol`, `dbCap` and `poB`. The
+residual risk is low — all twelve were `EQUB 0` and are seeded to 0, and references are by NAME, so
+the addresses coinciding across banks in the analysis was an artefact of the scan and never of the
+code — but those two screens should be played before this merges.
