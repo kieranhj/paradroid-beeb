@@ -1522,6 +1522,14 @@ poB        = &BB
 lvRow      = &BC
 dbCap      = &BD
 
+\ ---- TIER 3: bank 6's two, &BE-&BF (2026-09-13) ---------------
+\ The panel's printer. Only two are worth taking — nothing else in
+\ bank 6 reaches ten references — and bank 6 is the ONE region with
+\ room (263 B), so this is the smallest of the three tiers by value
+\ and was done last for that reason. 33 refs, both plain, 2 bytes.
+pnTmp      = &BE                \ 19 refs
+pnCol      = &BF                \ 14 refs
+
 \ AND score IS DELIBERATELY NOT SEEDED, WHICH IS WHY IT IS UP HERE and
 \ not in the middle of the run. It was SKIP 4, never an EQUB, so
 \ CombatInit ($1345, droid.asm) has always been its only initialiser and

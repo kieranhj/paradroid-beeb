@@ -435,11 +435,9 @@ ENDIF
 \ pnSrc and pnDst are not here: they are swSrc and swDst — see the top.
 .pnStrLo  EQUB 0
 .pnStrHi  EQUB 0
-.pnCol    EQUB 0
 .pnMask   EQUB PN_INK_TEXT      \ the ink, ANDed into every glyph byte
 .pnStep   EQUB 0
 .pnCount  EQUB 0
-.pnTmp    EQUB 0
 .pnTmpW   EQUW 0                \ ConClear's row base
 
 \ ============================================================

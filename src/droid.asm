@@ -3730,8 +3730,8 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
 \
 \ IT WAS SprSeedYcol AND NINE BYTES until 2026-09-13, when OSBYTE 140
 \ made the rest of the second half of the zero page legitimately ours
-\ (hexwab, issue #18) and the tiers moved up there. THIRTY bytes now —
-\ drYcol0-2, Tier 1's scalars and Tier 2's — one run, same loop, and
+\ (hexwab, issue #18) and the tiers moved up there. THIRTY-TWO bytes now —
+\ drYcol0-2 and all three tiers' scalars — one run, same loop, and
 \ the seed table below is still the only thing that grows. That is why
 \ every tier MUST stay contiguous with drYcol above and in this order,
 \ and why the ASSERT at the table's tail names the last symbol.
@@ -3741,7 +3741,7 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
 \ CombatInit is its initialiser and this routine runs on the briefing's
 \ fire exit too, so seeding it would silently wipe the score.
 .ZpSeed
-  LDX #29
+  LDX #31
 .ssy_l
   LDA sprYcolSeed,X
   STA drYcol0,X
@@ -3781,4 +3781,7 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
   EQUB 0                        \ poB                &BB
   EQUB 0                        \ lvRow              &BC
   EQUB 0                        \ dbCap              &BD
-ASSERT dbCap - drYcol0 = 29     \ the loop count above
+\ ---- and Tier 3's, bank 6's panel printer ----
+  EQUB 0                        \ pnTmp              &BE
+  EQUB 0                        \ pnCol              &BF
+ASSERT pnCol - drYcol0 = 31     \ the loop count above
