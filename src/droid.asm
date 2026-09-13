@@ -2680,7 +2680,8 @@ ENDIF
 
 .drSlotOwner SKIP SPR_SLOTS     \ droid index holding each sprite slot, 0 free
 
-.drCount     EQUB 0             \ high-water mark; 1 means the deck is clear
+\ drCount is ZERO PAGE (&AF) since 2026-09-13 - high-water mark; 1
+\ means the deck is clear. See the &A9 block in main.asm.
 .deckClear   EQUB 0             \ and THIS says the floor should be blue:
                                 \ set by the compaction, cleared at the
                                 \ top of LoadDeck. Layer-14 DECISION 6
@@ -2688,7 +2689,6 @@ ENDIF
                                 \ one thing the port needs it for: the
                                 \ main loop sees it, opens the ship-clear
                                 \ screen and clears it. Layer-15 DECISION 4
-.drIdx       EQUB 0
 .drDst       EQUB 0
 .drTick      EQUB 0
 .drCX        EQUB 0
@@ -3716,19 +3716,30 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
 .conPrevD   EQUB 0              \ prevLU/LD the lift's
 
 \ ============================================================
-\ SprSeedYcol — the digit-column table, into zero page
+\ ZpSeed — everything &A0-&B1, into zero page
 \ ============================================================
-\ drYcol0/1/2 are &A0-&A8 and zero page is not loadable, so the nine
-\ bytes are seeded here — from bank 4, because this bank is the resting
-\ state and ts_loads has it paged in at the point it calls this.
+\ Zero page is not loadable, so anything living there has to be seeded
+\ at run time. This does it — from bank 4, because this bank is the
+\ resting state and ts_loads has it paged in at the point it calls this.
 \
 \ ONCE PER ROUTE INTO PLAY, not once at boot: the title, the high-score
 \ entry and the briefing all give the machine back to the MOS, and
 \ nothing in the second half of the zero page is assumed to survive
 \ that. See the &A0 block in main.asm for what is and is not claimed.
 \ Called from ts_loads beside SprBuildMask, which is every route in.
-.SprSeedYcol
-  LDX #8
+\
+\ IT WAS SprSeedYcol AND NINE BYTES until 2026-09-13, when OSBYTE 140
+\ made the rest of the second half of the zero page legitimately ours
+\ (hexwab, issue #18) and Tier 1's scalars moved up there. Eighteen
+\ bytes now, one run, same loop — the seed table below is the only
+\ thing that grew, which is why the new scalars MUST stay contiguous
+\ with drYcol above and in this order.
+\
+\ score IS NOT HERE ON PURPOSE. It is &B2-&B5, one byte past the run,
+\ because CombatInit is its initialiser and this routine runs on the
+\ briefing's fire exit too — seeding it would silently wipe the score.
+.ZpSeed
+  LDX #17
 .ssy_l
   LDA sprYcolSeed,X
   STA drYcol0,X
@@ -3740,6 +3751,19 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
 \ Column 2 is the shifted glyph's SPILL and is not optional; the digit
 \ block in sprite.asm has the derivation.
 .sprYcolSeed
-  EQUB  0, 16, 32               \ drYcol0
-  EQUB  8, 24, 40               \ drYcol1
-  EQUB 16, 32, 48               \ drYcol2
+  EQUB  0, 16, 32               \ drYcol0            &A0
+  EQUB  8, 24, 40               \ drYcol1            &A3
+  EQUB 16, 32, 48               \ drYcol2            &A6
+\ ---- and Tier 1's scalars, in the order main.asm declares them ----
+  EQUB 0                        \ sndFx1             &A9
+  EQUB 0                        \ sndFx2             &AA
+  EQUB 0                        \ joyYDir            &AB
+  EQUB 0                        \ numDoors           &AC
+  EQUB MM_MOBILE                \ moveMode           &AD — the one
+                                \ that is not zero, and the reason
+                                \ this is a table and not a fill
+  EQUB 0                        \ drIdx              &AE
+  EQUB 0                        \ drCount            &AF
+  EQUB 0                        \ snCvH              &B0
+  EQUB 0                        \ snTm2              &B1
+ASSERT snTm2 - drYcol0 = 17     \ the loop count above

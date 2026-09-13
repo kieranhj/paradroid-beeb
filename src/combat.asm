@@ -937,7 +937,9 @@ ENDIF
 .alertLvl   EQUB 0              \ the C64's Alert; the level is bits 6-7
 .scoreAdd   EQUB 0              \ points banked below the BCD threshold
 .scoreSub   EQUB 0              \ and the same again for debits
-.score      SKIP 4              \ 4-byte BCD, most significant first
+\ score is ZERO PAGE (&B2) since 2026-09-13 - 4-byte BCD, most
+\ significant first. CombatInit above is its only initialiser and
+\ always was; it is deliberately NOT in ZpSeed. See main.asm.
 
 \ ---- Layer 7d: the fire button and the player's bullet -----
 .plyDying   EQUB 0              \ non-zero while the death explosion runs on
@@ -950,7 +952,6 @@ ENDIF
 .overDone   EQUB 0              \ bank 7 -> the shim: the cloud has gone out
 .overRnd0   EQUB 0              \ the pass's two random bytes, drawn from
 .overRnd1   EQUB 0              \ DrRandom before bank 7 is paged in
-.moveMode   EQUB MM_MOBILE
 .mmDelay    EQUB MM_DELAY
 .fireDown   EQUB 0              \ TRUE means pressed — see DoMoveMode
 .fireEaten  EQUB 0              \ this press belonged to the lift

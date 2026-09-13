@@ -402,7 +402,6 @@ DOOR_SLOTS = 7                  \ the C64's cap, and it compacts on close
 .doorRow    SKIP DOOR_SLOTS     \ tile row, 0-15
 .doorState  SKIP DOOR_SLOTS
 .doorDirty  SKIP DOOR_SLOTS     \ needs repainting this pass
-.numDoors   EQUB 0
 .doorTileRow EQUB 0             \ the tile row the caller is drawing
 .dtOfs      EQUB 0              \ added to the patched base by DoorTdp
 .dtCol      EQUB 0

@@ -91,12 +91,10 @@ ENDIF
 
 \ ---- scratch (IRQ-only, so safe as absolutes) ---------------
 .snCvL     EQUB 0               \ SndConv in/out: frequency in, period out
-.snCvH     EQUB 0
 .snCvNz    EQUB 0               \ nonzero = noise scaling (>>4 more)
 .snWrD     EQUB 0               \ SndWrOpen's DDRA/ORA saves
 .snWrO     EQUB 0
 .snTmp     EQUB 0
-.snTm2     EQUB 0
 
 \ ============================================================
 \ SndTick — one 50 Hz update.  The IRQ shim has paged us in.

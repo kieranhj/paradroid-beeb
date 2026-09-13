@@ -822,8 +822,9 @@ CON_STR_ADDR  = PN_FRAME_ADDR + PN_FRAME_BYTES
 \ here for the reason FONT_BYTES is, and ASSERTed against the real one
 \ where it is assembled — if it grows, this is the number to bump.
 FONTCODE_ADDR  = CON_STR_ADDR + CON_STR_BYTES
-FONTCODE_BYTES = 201            \ FontCell, its table, DoScore and
-                                \ KeyDownIx
+FONTCODE_BYTES = 185            \ FontCell, its table, DoScore and
+                                \ KeyDownIx. 201 until 2026-09-13: score
+                                \ went to zero page and DoScore lost 16
 
 
 PN_TABS     = FONTCODE_ADDR + FONTCODE_BYTES
@@ -1465,11 +1466,45 @@ mcTmp    = &8F
 \ `LDY drYcolN,X` in the compiled glyphs from abs,X into zp,X: the same
 \ four cycles, one byte less. -320 B in bank 5 and -411 B in bank 6,
 \ the two tightest banks in the machine, for no cycles at all.
-\ THE NINE MUST STAY CONTIGUOUS AND IN THIS ORDER - SprSeedYcol copies
-\ them as one run.
+\ THE NINE MUST STAY CONTIGUOUS AND IN THIS ORDER, and so must the
+\ Tier 1 block below them - ZpSeed copies &A0-&B1 as one run.
 drYcol0  = &A0                  \ 0, 16, 32                        (3)
 drYcol1  = &A3                  \ 8, 24, 40                        (3)
 drYcol2  = &A6                  \ 16, 32, 48                       (3)
+
+\ ---- TIER 1: the hot scalars, &A9-&B5 (2026-09-13) -----------
+\ Measured, not guessed: every ABSOLUTE data reference in the build was
+\ counted per operand and attributed to the bank of the code making it.
+\ abs -> zp saves ONE BYTE PER REFERENCE always, and one cycle only when
+\ the reference is not indexed — abs,X and zp,X are both 4 cycles — so
+\ SCALARS pay and arrays do not. These nine plus score are the whole of
+\ the top of that list for the two regions that are actually tight.
+\
+\   sndFx1/2   47 refs   drIdx     45   score    51   joyYDir  18
+\   snCvH+Tm2  26        numDoors  15   moveMode 14   drCount  10
+\
+\ THE FIRST NINE ARE SEEDED AND MUST STAY CONTIGUOUS WITH drYcol ABOVE:
+\ ZpSeed copies &A0-&B1 as one run, so this block is an extension of
+\ sprYcolSeed's table and nothing else. Zero page is not loadable and
+\ does not survive the front end, so every EQUB initial value these had
+\ in the code image has to be re-established there instead.
+sndFx1   = &A9                  \ was EQUB 0                       (1)
+sndFx2   = &AA                  \ was EQUB 0                       (1)
+joyYDir  = &AB                  \ was EQUB 0                       (1)
+numDoors = &AC                  \ was EQUB 0                       (1)
+moveMode = &AD                  \ was EQUB MM_MOBILE — THE ONE     (1)
+                                \ NON-ZERO SEED; see sprYcolSeed
+drIdx    = &AE                  \ was EQUB 0                       (1)
+drCount  = &AF                  \ was EQUB 0                       (1)
+snCvH    = &B0                  \ was EQUB 0                       (1)
+snTm2    = &B1                  \ was EQUB 0                       (1)
+
+\ AND score IS DELIBERATELY NOT SEEDED. It was SKIP 4, never an EQUB, so
+\ CombatInit ($1345, droid.asm) has always been its only initialiser and
+\ still is. Seeding it would be a BUG: ZpSeed runs once per route into
+\ play, the briefing's fire exit is one of those routes, and zeroing the
+\ score there would be a silent wipe. Keep it out of the run above.
+score    = &B2                  \ was SKIP 4, 4-byte BCD           (4)
 
 \ THE SECOND HALF OF THE ZERO PAGE IS OURS, AND THE REASON MATTERS.
 \ The deck plan's cell renderer had two variables at &A9-&AB until
@@ -2919,10 +2954,11 @@ ENDIF                           \ other close: no band may outlive a pass
 
   JSR BuildCharPtrs             \ needs the data bank in, and the staging
                                 \ copy finished — it reaches past &5500
-  JSR SprSeedYcol               \ drYcol0-2 into &A0: nine bytes of the
-                                \ zero page that the front end is assumed
-                                \ to have trampled. Bank 4 is up, which
-                                \ is what it needs - see droid.asm
+  JSR ZpSeed                    \ &A0-&B1: drYcol0-2 and Tier 1's scalars,
+                                \ eighteen bytes of the zero page that the
+                                \ front end is assumed to have trampled.
+                                \ Bank 4 is up, which is what it needs -
+                                \ see droid.asm
   JSR SprBuildMask              \ the title's framebuffer sat on the mask
                                 \ table too
 
@@ -3902,8 +3938,6 @@ ENDIF
 \ the same trick the C64 plays with $91/$92. Values are the C64's:
 \ effect 1-31, bit 7 = uninterruptible; sndState 0 silent, $12 =
 \ initialise game FX (drops to 2); sndVolume 0-15, 15 = full.
-.sndFx1    EQUB 0
-.sndFx2    EQUB 0
 .sndState  EQUB 0
 .sndVolume EQUB 15
 \ VolKeys' own two bytes, here beside the one they steer. NOT zero
