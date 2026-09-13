@@ -1889,8 +1889,15 @@ bank code separately. The candidates, in order of what they are worth:
 | `sound.asm` | its header's "NO ZERO PAGE ANYWHERE IN THIS FILE" is the one place the shortage changed a DESIGN rather than a byte count: ~63 bytes of state, 140 references, in a tick measured at 475/1,161 cycles against window A's 2,959 |
 | `panel.asm`, `xfer.asm` | nine borrowed pointers between them, held safe by comment (`pnSrc`/`pnDst` on `swSrc`/`swDst`; the transfer's seven on `bufp`, `chp`, `src`, `tdp`, `mapptr`, `psrc`, `svp`) |
 
-Only the first is built. The rest are recorded here so the next squeeze does not have to count
-them again.
+Only the first was built at the time. **The second line has since been SPENT** — the
+zero-page tiers of 2026-09-13 (layer-13 DECISION 5) took the main-RAM scalars and the
+bank-4, bank-6 and bank-7 ones with them, 27 bytes of zero page for 405 bytes across five
+regions. `sound.asm`'s design note and the borrowed pointers in `panel.asm`/`xfer.asm`
+are still unclaimed, and 35 bytes of zero page remain (`&C0-&CB` and the measured-free
+`&D0-&E6`). **What DECISION 5 costed and rejected is the array half of this list** —
+`sprActive`, `drEnergy`, `drType` and the rest are indexed, so they buy bytes and no
+cycles, at 2-4.6:1 against the scalars' 12-45:1. Do not re-count them without a region
+that is actually tight again.
 
 ### 19b. `drYcol0/1/2` - 749 bytes across the two tightest banks, for no cycles
 
@@ -1912,6 +1919,12 @@ and the two per-bank copies are gone with the ASSERTs that tied them together.
 Zero page is not loadable, so the table is seeded at run time - `SprSeedYcol`, four instructions
 and nine bytes in bank 4, called from `ts_loads` beside `SprBuildMask`. **Once per route into
 play, not once at boot**, for §19's front-end reason.
+
+> **`SprSeedYcol` IS CALLED `ZpSeed` NOW** (2026-09-13, layer-13 DECISION 5). Same four
+> instructions and the same single call site; the seed table grew from nine bytes to
+> thirty-two as the zero-page tiers landed behind `drYcol0/1/2`, and the loop count is
+> `ASSERT`ed against the last symbol in it. Everything §19 says about WHY it exists and why
+> it runs once per route into play is unchanged.
 
 The exporter emits the identical instruction stream; the diff on both generated files is six
 deleted lines and nothing else.

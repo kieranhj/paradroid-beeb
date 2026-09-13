@@ -614,8 +614,6 @@
 
 \ ---- state --------------------------------------------------
 .lvShown  EQUB 0                \ the deck currently lit on the view
-.lvPos    EQUB 0                \ LvDrawPacked's grid column / a col temp
-.lvRow    EQUB 0
 .lvChar   EQUB 0
 .lvLen    EQUB 0
 .lvCol0   EQUB 0

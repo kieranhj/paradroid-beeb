@@ -179,11 +179,12 @@ call. 52 references moved with it, across `docs/`, `.claude/skills/`, `build.ps1
 
 **The DFS names inside the image are untouched and must stay uppercase**: `PARA`, `PARADAT`,
 `PARASPR`, `PARSPR2`, `PARXFER`, `PARAFNT`, `PARSWR`, `PINTRO` and `!BOOT` are catalogue entries,
-and `!BOOT` does `*RUN PARA` — on a dev build. **A RELEASE build's `!BOOT` is a 6502 stub
-instead** (`main.asm`, `BOOT_RUN`), `*RUN` at disc option 2, which needs no language ROM; the
-builds pass `-opt 2` under `RELEASE` and `-opt 3` otherwise (`BOOTOPT` in the Makefile, `$bootOpt`
-in `build.ps1`), and `make_disc.py` carries the option through and knows both `!BOOT` shapes when
-it wires `PINTRO` in. The `.bin`/`.zx0` intermediates keep their uppercase stems for the
+and **`!BOOT` is a 6502 stub on every build** (`main.asm`), `*RUN` at disc option 2, which needs
+no language ROM. It was RELEASE-only until 2026-09-13, when the dev build's `*EXEC` text `!BOOT`
+was found to be incompatible with `.start`'s `OSBYTE 140`: `*EXEC` writes into the DFS workspace
+the game runs in (`&1100-&1900`). Both builds now pass `-opt 2` (`BOOTOPT` in the Makefile,
+`$bootOpt` in `build.ps1`), `make_disc.py` carries the option through, and there is one `!BOOT`
+shape for it to know when it wires `PINTRO` in. The `.bin`/`.zx0` intermediates keep their uppercase stems for the
 same reason — each is named after the DFS file it came out of — with a lowercase extension.
 
 The next image published to the Bitshifters wip folder will therefore have a different name from

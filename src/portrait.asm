@@ -400,7 +400,6 @@ PO_DSTMID = BUF_BASE + PO_UNIT_MID * UNIT_BYTES
                                 \ &FF for none. PoDraw clears it; see
                                 \ PoImgPtr for why that is enough
 .poX      EQUB 0
-.poB      EQUB 0
 .poE      EQUB 0
 .poMir3   EQUB 0, 0, 0
 .poMirBuf SKIP 64

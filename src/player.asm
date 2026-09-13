@@ -840,7 +840,6 @@ PLY_REFY = 63                   \ from the view's top edge, sprite top + 13
 \ disturb. Promote any of them when the next thing that needs them
 \ arrives, not before.
 .joyXDir   EQUB 0
-.joyYDir   EQUB 0
 .oldPosY   EQUW 0
 .oldMapYr  EQUB 0
 .posXf     EQUB 0               \ sub-pixel fraction of the position

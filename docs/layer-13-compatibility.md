@@ -281,20 +281,27 @@ What his MAME runs showed, read from MAME's own board source rather than assumed
 - **Watford DDFS 1.53** died at `*RUN PARA` in b-em (`-m19`); KC has tested it in b2, where it
   runs.
 
-## [DECISION 3] The release disc boots by `*RUN`, not `*EXEC` (issue #18 item 4)
+## [DECISION 3] Every disc boots by `*RUN`, not `*EXEC` (issue #18 item 4)
 
 **KC, 2026-09-11**, following `beeb-port-kit`'s `lib/boot_stamp.6502` (`BOOT_RUN`), whose own
 RELEASE builds boot this way. An `*EXEC` `!BOOT` is typed at a LANGUAGE: on a B with no BASIC it
 stops at "Language?", and under `*CONFIGURE LANG 11` it is typed into Edit. hexwab raised both, and
 suggested `*OPT 4,2` with a `BRK` abort.
 
-**RELEASE only.** The dev build keeps its `*EXEC` text `!BOOT`: it is the readable record of which
-`DEBUG_` flags are on, and the file a debugging session edits by hand. So there are two shapes, and
-**the disc option must match the shape** — `-opt 2` for the stub, `-opt 3` for the text. `build.ps1`
-(`$bootOpt`) and the `Makefile` (`BOOTOPT`, set on the `release` target's own recursion, since
-POSIX make has no conditionals) pass it, and `make_disc.py` carries the raw image's option through.
+**It was RELEASE only, and is not any more (2026-09-13).** The dev build kept its `*EXEC` text
+`!BOOT` as the readable record of which `DEBUG_` flags are on — until `OSBYTE 140` was added to
+`.start` (DECISION 4 below) and the dev disc hung dead. **The game runs inside DFS's workspace:**
+`&1100-&1900` is the random-access file buffer area, and living there works only because `*LOAD`
+and `*RUN` never touch it. `*EXEC` does, and so does closing an exec file — so an `*EXEC` boot
+cannot coexist with shutting the filing system down. Both discs are the stub now and both pass
+`-opt 2`: `build.ps1` (`$bootOpt`) and the `Makefile` (`BOOTOPT`) set it unconditionally, and
+`make_disc.py` carries the raw image's option through.
 
-**The stub**, `main.asm`'s `!BOOT` block under `BOOT_RUN`: print the stamp lines through OSASCI
+**The dev build loses nothing.** The stamp it used to `*TYPE` from `INFO` the stub prints itself,
+from the same `BuildStamp` macro, `DEBUG_` line and all — and `INFO` is still a disc file, so
+`*TYPE INFO` still answers at any prompt.
+
+**The stub**, `main.asm`'s `!BOOT` block: print the stamp lines through OSASCI
 (the same lines, without the `REM `s — `BOOT_PFX` is `""` or `"REM "`), `JSR OSCLI` "RUN PARSWR",
 then `JMP OSCLI` "RUN PARA", which never returns. **It is assembled at `&0900`, not `&7E00`**: this
 one RUNS, and `&7E00` is MODE 7's screen, so the stamp would scroll over the code printing it.
@@ -343,3 +350,157 @@ is under the head when the boot reads it. Nine disc files now.
 **Verified in jsbeeb, 2026-09-11:** `*TYPE INFO` works on DFS 1.20 — the dev disc printed
 `PARADROID by ANDREW BRAYBROOK` ... `DEBUG: XFERWIN DECK KILL REDRAW` from the file, then probed
 and ran the game.
+
+## [DECISION 4] `OSBYTE 140` when the last load is done (issue #18)
+
+**hexwab, 2026-09-13**, correcting this port. There are two problems and they have two different
+answers, and until now the port gave the loader's answer to the game.
+
+- **A loader** still needs to load, so it cannot shut the filing system down. It borrows the
+  workspace, and the price is that it must **own the machine**: claim the NMI
+  (`OSBYTE 143,12,255`, plus `RTI` at `&0D00`) and let no OS code whatever run, because regaining
+  control is the only way the filing system can discover the theft.
+- **A game that has finished loading** asks the filing system to go away. `OSBYTE 140` — what
+  `*TAPE` ends up calling, without the OSCLI in the middle — has it detach every hook it holds and
+  tell whatever hardware it was driving to stop raising NMIs. Only then is the workspace ours:
+  `&B0-&CF` in the zero page, and `&0E00` up to OSHWM, where the low overlay lives.
+
+The port is the second case and was behaving as the first **while making OS calls anyway** —
+`OSBYTE 229` per game start, `OSBYTE &0F` at the game over, `OSBYTE 19` at every rupture align, all
+after `PageLowIn` has buried the workspace. A filing system is *entitled* to hook those calls and
+to find its workspace intact when it does. Acorn's DFS does not, which is the only reason this ever
+ran; hexwab's Opus 1770 with DDOS 3.45 hung at the deck plan, and `044b42c` blamed the memory map
+when the fault was the missing call. (That change stands — the deck plan's pointers cost nothing
+where they are now — but its reasoning does not, and the note in `main.asm` is corrected.)
+
+**Where it goes, and why it is the only place it can go.** In `.start`, immediately after the
+`PARXFER` load — the last load on any path since no-load step 5 — and before the `OSBYTE 143` that
+was already there. Every `JSR OSCLI` in the build is in `.start`, `BootBanks` or the `!BOOT` stub,
+and the first byte of filing-system workspace to go is `PageLowIn`'s, inside `ts_loads`, which
+`TitleSeq` reaches afterwards. **Nothing may ever load again**, which no-load had already paid for;
+an ADFS version would have to move this call, not delete it.
+
+**The NMI claim stays.** `OSBYTE 140` has the filing system stand its NMI hardware down, so what is
+left is a *stray* NMI — noise, not an intentional interrupt. Eight bytes against an unrecoverable
+jump through a page of stale 6502; hexwab calls it belt-and-braces rather than redundant.
+
+**IT COST A HUNG MACHINE, AND THE CAUSE IS WORTH KNOWING.** `OSBYTE 140` on the dev disc hung dead:
+boot reached `*RUN PARA` and went black, and jsbeeb found the CPU inside the DNFS ROM at `&ACB1`
+with `ROMSEL` 14. **The game runs inside DFS's workspace.** `&1100-&1900` is the random-access file
+buffer area, and loading there works only because `*LOAD` — and `*RUN`, which is `*LOAD` plus a
+jump — never touches it. `*EXEC` does, and **so does closing an exec file**, which is an implicit
+`*EXEC`: a first attempt put `OSBYTE 119` in front to close the file politely and hung identically,
+because the close is itself a write into the region it was trying to make safe. The dev disc's
+`*EXEC !BOOT` therefore had DFS scribble over the instructions executing the call. DECISION 3 above
+is the fix: both discs boot by `*RUN` now.
+
+**Verified in jsbeeb, 2026-09-13** (B/DFS 1.2). Release disc: `*RUN !BOOT`, intro, title. Dev disc,
+SHIFT+BREAK autoboot: stamp with its `DEBUG:` line, probe, title, briefing, play. `&A9-&CF` seeded
+with `&A5` in play and read back untouched after 800 frames. Without the call the title draws at
+frame 745; with it and an `*EXEC` boot it never appears at all.
+
+**Still open, and not part of this change:** `&0D9F` is the MOS's *extended vector table*, which
+`lowcode2` lands on. That is not the filing system's — it is the route any sideways ROM takes when
+it claims a vector — so `OSBYTE 140` does not make it ours, and the port makes three `OSBYTE` calls
+after burying it. hexwab's broader warning belongs here too: *"We don't even know in advance that
+filing system workspace only extends as far as `&1900`. It could be higher for other filing
+systems."* Reading OSHWM at boot and refusing loudly, the way `PARSWR` refuses too few banks, is
+the obvious guard and has not been built.
+
+## [DECISION 5] Spending the reclaimed zero page (#18)
+
+DECISION 4 made the second half of the zero page ours. This is what was put in it, why those
+things and not others, and how far the claim has actually been measured.
+
+**The rule that decides everything: `abs` → `zp` saves ONE BYTE PER REFERENCE always, and ONE
+CYCLE only when the reference is not indexed** — `abs,X` and `zp,X` are both 4 cycles. So scalars
+pay and arrays do not. Every absolute-mode data reference in the build was counted per operand and
+attributed to the bank of the code making it; `drIdx` is 45 references in one byte (45:1) where
+`drEnergy` is 51 references in fourteen (3.6:1). Three tiers were taken, in descending value,
+one commit each:
+
+| tier | what | zp | bought |
+|---|---|---|---|
+| 1 | the hot scalars — `sndFx1/2`, `joyYDir`, `numDoors`, `moveMode`, `drIdx`, `drCount`, `snCvH`, `snTm2`, `score` | 13 B | main RAM +70, bank 4 +104, PARAFNT +16 |
+| 2 | bank 7's twelve — the transfer game, the droid database, the lift view, the portrait pool | 12 B | bank 7 **+231, nearly all of it in the `ALIGN` pad** |
+| 3 | the panel printer — `pnTmp`, `pnCol` | 2 B | bank 6 +43 |
+
+**405 bytes across five regions for 27 of zero page**, measured against `main` after the
+branch was rebased off `dither` on 2026-09-13 — the earlier figures in the tier commits were
+taken on the pre-`#20` base and are superseded by these. Main RAM went 39 → **100 B** and
+bank 4 64 → **129 B**, which are the two that had been blocking work; bank 6 260 → 303,
+bank 7 86 → 90 with its pad 5 → 236, bank 5 148 → 149.
+
+**Tier 2's saving is nearly invisible in the tail, and that is the lesson.** `plandata.asm`'s
+`ALIGN` absorbs anything assembled in front of it, so of Tier 2's 235 bytes the tail shows only
+4: `planChars` went `&AFFF` → `&AF18` and the pad grew **5 → 236**. Quoting the tail alone would have reported the
+change as worthless. CLAUDE.md's standing rule — quote a bank's pad and tail as a pair — is why
+this was caught, and this is now its worked example.
+
+**`ZpSeed` is the mechanism, and it is `SprSeedYcol` grown up.** Zero page is not loadable and is
+not assumed to survive the front end, so every `EQUB` initial value these variables carried in the
+code image is re-established at run time. The seeded variables are one contiguous run from
+`drYcol0`, so a tier costs the seed table one byte per variable and no new code — `LDX #8` became
+`#17`, `#29`, `#31`. `moveMode`'s `MM_MOBILE` is the only non-zero seed, which is why it is a table
+and not a fill. **The seed table is bank 4's**, so every future tier is paid for there.
+
+**`score` is at `&CC`, clear of the run, and is zeroed once at boot.** Tier 1 parked it at `&B2`
+and had to stop the run short to step over it; Tier 2 moved it above the run so the run can keep
+growing. It is not seeded by `ZpSeed` because that would tie it to `HsEntry` still running
+*before* `ts_loads` inside `TitleSeq`, and a reordering would wipe the score out from under the
+high-score entry.
+
+> **IT SHIPPED BROKEN FOR ONE COMMIT, AND THE REASONING IS THE LESSON.** Tier 1's note claimed
+> `CombatInit` had "always been its only initialiser" because `score` was `SKIP 4` rather than an
+> `EQUB`. That is wrong: **`SKIP` inside a `SAVE`d block emits zeros into the disc file**, so
+> `score` was *loaded* as zero and stayed zero from boot until `CombatInit`. The panel draws it on
+> the title and the briefing, both of which come long before any `CombatInit`. Zero page is not
+> loaded, and `&CC-&CF` sits inside `&B0-&CF`, which is **DFS's own zero-page workspace** — so
+> after the boot loads it holds DFS's leftovers. KC saw **24001300** in the briefing panel
+> (2026-09-13); the bytes read `24 00 13 00`. Fixed by zeroing it in `.start` beside `OSBYTE 140`,
+> nine bytes, which reproduces exactly what loading the image used to do.
+>
+> **The rest of the moved variables were then audited for the same fault and are clean.** The
+> exposure window is `OSBYTE 140` to the first `ZpSeed`, and `InfoCall` and `FillPanel` both run
+> inside it. Read breakpoints on `sndFx1`, `moveMode`, `dbCap`, `pnTmp` and `pnCol` across that
+> window all lost the race to `ZpSeed`'s execute breakpoint — nothing reads a seeded byte before it
+> is seeded. `InstallIrq` is the last call in `ts_loads`, well after `ZpSeed`, so the sound tick
+> cannot read `sndFx1/2`, `snCvH` or `snTm2` early either.
+
+### `&D0-&E6` is free, and it was measured rather than argued
+
+**KC, 2026-09-13:** the MOS's VDU driver workspace should be fine if the game owns IRQ and issues
+no VDU command. `OSBYTE 140` does **not** free it — it is the VDU driver's, not the filing
+system's — so the claim needed a measurement of its own rather than an inference from DECISION 4.
+
+Seeded all 23 bytes with `&A5` and read back after the deepest path the game has: title → briefing
+→ play; movement, firing and scrolling; a `CTRL+]` deck change (charset rebuild and full redraw);
+ESCAPE → death sequence → game over; the high-score entry with initials typed; and back to the
+title and briefing, which includes `GoTitle`'s `OSBYTE &0F`. **All 23 bytes came back untouched**,
+and the same dump shows `&E7` upward carrying live, changing OS data — so the measurement also
+confirms the boundary is where CLAUDE.md has always said it is.
+
+    00D0  A5 A5 A5 A5 A5 A5 A5 A5 A5 A5 A5 A5 A5 A5 A5 A5
+    00E0  A5 A5 A5 A5 A5 A5 A5 01 00 00 00 00 00 00 00 13
+                              ^^ &E7 up, still the OS's
+
+Two caveats worth carrying: this is Acorn DFS 1.2 with no other ROM claiming vectors, and the boot
+`VDU 22` happens before `ZpSeed`, so anything placed here is only safe because it is seeded on
+every route into play.
+
+**The budget is therefore 35 proven free bytes** — `&C0-&CB` (12) and `&D0-&E6` (23).
+
+### What was NOT done, and why
+
+**Tier 4, the arrays, was costed and rejected**: `sprActive` 8 bytes for 37 references (4.6:1),
+`drEnergy` 14 for 51, `drType` 14 for 49, `doorState` 7 for 17, `drSpdX` 14 for 16 (≈1:1). They are
+indexed, so they buy bytes without cycles, and 35 bytes will not hold the useful ones anyway. The
+case also weakened as the tiers landed: nothing is short of room now. **Do not re-litigate this
+without a region that is actually tight again.**
+
+**Two of Tier 2's screens were never driven** — the transfer minigame board (`xfTmp2`, `xfColTmp`,
+`xfPlyColor`, `xfPlyY`, `xfColV`, `xfTime`) and the lift side view (`lvPos`, `lvRow`). The droid
+database page was reached and is correct, which covers `dbType`, `dbCol`, `dbCap` and `poB`. The
+residual risk is low — all twelve were `EQUB 0` and are seeded to 0, and references are by NAME, so
+the addresses coinciding across banks in the analysis was an artefact of the scan and never of the
+code — but those two screens should be played before this merges.

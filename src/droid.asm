@@ -2680,7 +2680,8 @@ ENDIF
 
 .drSlotOwner SKIP SPR_SLOTS     \ droid index holding each sprite slot, 0 free
 
-.drCount     EQUB 0             \ high-water mark; 1 means the deck is clear
+\ drCount is ZERO PAGE (&AF) since 2026-09-13 - high-water mark; 1
+\ means the deck is clear. See the &A9 block in main.asm.
 .deckClear   EQUB 0             \ and THIS says the floor should be blue:
                                 \ set by the compaction, cleared at the
                                 \ top of LoadDeck. Layer-14 DECISION 6
@@ -2688,7 +2689,6 @@ ENDIF
                                 \ one thing the port needs it for: the
                                 \ main loop sees it, opens the ship-clear
                                 \ screen and clears it. Layer-15 DECISION 4
-.drIdx       EQUB 0
 .drDst       EQUB 0
 .drTick      EQUB 0
 .drCX        EQUB 0
@@ -3716,19 +3716,33 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
 .conPrevD   EQUB 0              \ prevLU/LD the lift's
 
 \ ============================================================
-\ SprSeedYcol — the digit-column table, into zero page
+\ ZpSeed — everything &A0-&B1, into zero page
 \ ============================================================
-\ drYcol0/1/2 are &A0-&A8 and zero page is not loadable, so the nine
-\ bytes are seeded here — from bank 4, because this bank is the resting
-\ state and ts_loads has it paged in at the point it calls this.
+\ Zero page is not loadable, so anything living there has to be seeded
+\ at run time. This does it — from bank 4, because this bank is the
+\ resting state and ts_loads has it paged in at the point it calls this.
 \
 \ ONCE PER ROUTE INTO PLAY, not once at boot: the title, the high-score
 \ entry and the briefing all give the machine back to the MOS, and
 \ nothing in the second half of the zero page is assumed to survive
 \ that. See the &A0 block in main.asm for what is and is not claimed.
 \ Called from ts_loads beside SprBuildMask, which is every route in.
-.SprSeedYcol
-  LDX #8
+\
+\ IT WAS SprSeedYcol AND NINE BYTES until 2026-09-13, when OSBYTE 140
+\ made the rest of the second half of the zero page legitimately ours
+\ (hexwab, issue #18) and the tiers moved up there. THIRTY-TWO bytes now —
+\ drYcol0-2 and all three tiers' scalars — one run, same loop, and
+\ the seed table below is still the only thing that grows. That is why
+\ every tier MUST stay contiguous with drYcol above and in this order,
+\ and why the ASSERT at the table's tail names the last symbol.
+\
+\ score IS NOT HERE ON PURPOSE, and it is at &CC — clear ABOVE the run,
+\ not in the middle of it — precisely so the run can keep growing. It is
+\ zeroed once at BOOT instead, in .start: seeding it here would tie it to
+\ HsEntry still running before ts_loads inside TitleSeq, and a reordering
+\ would wipe the score under the high-score entry.
+.ZpSeed
+  LDX #31
 .ssy_l
   LDA sprYcolSeed,X
   STA drYcol0,X
@@ -3740,6 +3754,35 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
 \ Column 2 is the shifted glyph's SPILL and is not optional; the digit
 \ block in sprite.asm has the derivation.
 .sprYcolSeed
-  EQUB  0, 16, 32               \ drYcol0
-  EQUB  8, 24, 40               \ drYcol1
-  EQUB 16, 32, 48               \ drYcol2
+  EQUB  0, 16, 32               \ drYcol0            &A0
+  EQUB  8, 24, 40               \ drYcol1            &A3
+  EQUB 16, 32, 48               \ drYcol2            &A6
+\ ---- and Tier 1's scalars, in the order main.asm declares them ----
+  EQUB 0                        \ sndFx1             &A9
+  EQUB 0                        \ sndFx2             &AA
+  EQUB 0                        \ joyYDir            &AB
+  EQUB 0                        \ numDoors           &AC
+  EQUB MM_MOBILE                \ moveMode           &AD — the one
+                                \ that is not zero, and the reason
+                                \ this is a table and not a fill
+  EQUB 0                        \ drIdx              &AE
+  EQUB 0                        \ drCount            &AF
+  EQUB 0                        \ snCvH              &B0
+  EQUB 0                        \ snTm2              &B1
+\ ---- and Tier 2's, bank 7's, all of them plain EQUB 0 ----
+  EQUB 0                        \ xfTmp2             &B2
+  EQUB 0                        \ xfColTmp           &B3
+  EQUB 0                        \ dbType             &B4
+  EQUB 0                        \ xfPlyColor         &B5
+  EQUB 0                        \ dbCol              &B6
+  EQUB 0                        \ lvPos              &B7
+  EQUB 0                        \ xfPlyY             &B8
+  EQUB 0                        \ xfColV             &B9
+  EQUB 0                        \ xfTime             &BA
+  EQUB 0                        \ poB                &BB
+  EQUB 0                        \ lvRow              &BC
+  EQUB 0                        \ dbCap              &BD
+\ ---- and Tier 3's, bank 6's panel printer ----
+  EQUB 0                        \ pnTmp              &BE
+  EQUB 0                        \ pnCol              &BF
+ASSERT pnCol - drYcol0 = 31     \ the loop count above
