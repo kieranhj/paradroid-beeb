@@ -13,8 +13,9 @@ if ($Release) { $Intro = $true }
 # passed on EVERY build, and a bare beebasm invocation has to pass it too -
 # the symbol dump in CLAUDE.md does. main.asm's DEV is what the flags read.
 $relDef = if ($Release) { 'RELEASE=1' } else { 'RELEASE=0' }
-# 2 = *RUN !BOOT (the RELEASE stub), 3 = *EXEC !BOOT (the dev text file)
-$bootOpt = if ($Release) { 2 } else { 3 }
+# Every disc boots by *RUN !BOOT (the 6502 stub main.asm assembles) -- see
+# the !BOOT note further down, and .start's OSBYTE 140.
+$bootOpt = 2
 # The interpreter and the two binaries are overridable, so that the
 # Makefile (issue #3) can hand this script the same tools it is using and
 # `make check-ps1` can prove the two builds agree. Unset, everything is
@@ -67,12 +68,13 @@ if ((Test-Path $palJson) -and (Test-Path $palAsm)) {
 # progress and success messages go to STDERR and are left alone: redirecting
 # those in PowerShell wraps each line in an ErrorRecord and trips
 # $ErrorActionPreference even though the assembly succeeded. See CLAUDE.md.
-# THE DISC OPTION FOLLOWS THE !BOOT SHAPE (issue #18 item 4): -opt 3
-# *EXECs the text !BOOT a dev build assembles, -opt 2 *RUNs the 6502
-# stub a RELEASE build assembles instead (main.asm, BOOT_RUN), which
-# needs no language ROM. main.asm assembles its own !BOOT either way
-# (with the build timestamp) rather than using -boot, and make_disc.py
-# carries the raw image's option through to the disc it writes.
+# THE DISC OPTION FOLLOWS THE !BOOT SHAPE (issue #18 item 4), and there
+# is only one shape now: -opt 2 *RUNs the 6502 stub main.asm assembles,
+# which needs no language ROM. The dev build's text !BOOT and its -opt 3
+# went on 2026-09-13 -- an *EXEC boot cannot coexist with the OSBYTE 140
+# in .start, because *EXEC writes into the DFS workspace the game runs
+# in. main.asm assembles its own !BOOT (with the build timestamp) rather
+# than using -boot, and make_disc.py carries the option through.
 #
 # THE PACK LOOP. beebasm cannot compress its own output, and two of the
 # things bank 6 carries are assembled code copied down to run elsewhere -

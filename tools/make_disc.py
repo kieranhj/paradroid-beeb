@@ -364,20 +364,18 @@ def main():
             at += 1
         if len(files) > 31:
             raise SystemExit(f"{len(files)} files - a DFS catalogue holds 31")
-        # TWO !BOOT SHAPES (issue #18 item 4). A dev build's is the *EXEC
-        # text file and gains a line; a RELEASE build's is the 6502 stub
-        # (main.asm, BOOT_RUN), which OSCLIs one command after the probe,
-        # so the NAME is rewritten instead -- PINTRO chains to PARA itself.
+        # ONE !BOOT SHAPE since 2026-09-13 (issue #18): the 6502 stub
+        # main.asm assembles for every build, which OSCLIs one command
+        # after the probe, so the NAME is rewritten rather than a line
+        # added -- PINTRO chains to PARA itself. The dev build's *EXEC
+        # text file is gone: *EXEC writes into the DFS workspace the game
+        # runs in, so it cannot coexist with .start's OSBYTE 140.
         boot = files["!BOOT"]["data"]
-        if b"*RUN PARA\r" in boot:
-            files["!BOOT"]["data"] = boot.replace(
-                b"*RUN PARA\r", b"*RUN PINTRO\r*RUN PARA\r", 1)
-        elif b"RUN PARA\r" in boot:
-            files["!BOOT"]["data"] = boot.replace(
-                b"RUN PARA\r", b"RUN PINTRO\r", 1)
-        else:
-            raise SystemExit("!BOOT has neither '*RUN PARA' nor the stub's "
-                             "'RUN PARA' - cannot wire PINTRO")
+        if b"RUN PARA\r" not in boot:
+            raise SystemExit("!BOOT lacks the stub's 'RUN PARA' "
+                             "- cannot wire PINTRO")
+        files["!BOOT"]["data"] = boot.replace(
+            b"RUN PARA\r", b"RUN PINTRO\r", 1)
         print(f"make_disc: INTRO build - PINTRO + {len(intro_files) - 1} data "
               "files wired into !BOOT")
 

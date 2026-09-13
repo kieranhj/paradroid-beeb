@@ -68,12 +68,12 @@ PACK     = $(BUILD)/pack
 RELEASE  ?= 0
 INTRO    ?= 0
 # The disc's *OPT 4 value, and it MUST follow the !BOOT shape main.asm
-# assembles (issue #18 item 4): 3 *EXECs the dev build's text !BOOT, 2
-# *RUNs the 6502 stub a RELEASE build assembles instead, which needs no
-# language ROM. build.ps1 does the same; make_disc.py carries it through.
-# It is set on the `release` target's own recursion, not with an ifeq:
-# POSIX make has no conditionals and this Makefile uses none.
-BOOTOPT  ?= 3
+# assembles (issue #18 item 4). There is one shape now: 2 *RUNs the 6502
+# stub, which needs no language ROM. The dev build's text !BOOT and its
+# 3 went on 2026-09-13 -- an *EXEC boot cannot coexist with the OSBYTE
+# 140 in .start, because *EXEC writes into the DFS workspace the game
+# runs in. build.ps1 does the same; make_disc.py carries it through.
+BOOTOPT  ?= 2
 INTRO_DEP =
 INTRO_ARG =
 
@@ -167,7 +167,7 @@ all:
 debug: all
 
 release:
-	@$(MAKE) RELEASE=1 INTRO=1 BOOTOPT=2 \
+	@$(MAKE) RELEASE=1 INTRO=1 \
 	    INTRO_DEP=$(INTRO_RAW) INTRO_ARG="--intro $(INTRO_RAW)" all
 	@echo "RELEASE build: intro on, every DEBUG_ flag off"
 

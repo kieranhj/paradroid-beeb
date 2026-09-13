@@ -1471,11 +1471,17 @@ drYcol0  = &A0                  \ 0, 16, 32                        (3)
 drYcol1  = &A3                  \ 8, 24, 40                        (3)
 drYcol2  = &A6                  \ 16, 32, 48                       (3)
 
-\ The deck plan's cell renderer had two of these at &A9-&AB until
-\ 2026-09-12. THE SECOND HALF OF THE ZERO PAGE IS NOT ALL OURS: &A0-&A7
-\ is the NMI's, which we claim at boot, but &A8-&AF is the OS's own
-\ scratch and &B0-&CF the filing system's. They are in condeck.asm now,
-\ borrowed from this map's own pointers — see there, and issue #19.
+\ THE SECOND HALF OF THE ZERO PAGE IS OURS, AND THE REASON MATTERS.
+\ The deck plan's cell renderer had two variables at &A9-&AB until
+\ 2026-09-12, when they were moved out on the grounds that &A8-&AF is
+\ the OS's scratch and &B0-&CF the filing system's. THAT REASONING WAS
+\ WRONG (hexwab, issue #18): it is ours — but only because .start now
+\ calls OSBYTE 140, which has the filing system detach and hand its
+\ workspace over. Without that call it is NOT ours, which is exactly
+\ why hexwab's Opus 1770 with DDOS 3.45 hung at the deck plan and
+\ Acorn's DFS never did. The move itself stands: those two are in
+\ condeck.asm now, borrowed from this map's own pointers, and cost
+\ nothing there. See layer-13 DECISION 4, and issue #19.
 
 \ BuildCharset borrows zero page from routines that have finished.
 bcSrc    = src
@@ -1592,15 +1598,74 @@ ORG &1100
   LDY #HI(d_loadxfer)
   JSR OSCLI
 
-\ ---- and the NMI is ours, now that the last load is done ----
-\ hexwab, issue #18. Nothing after this line makes a filing-system call,
-\ so nothing needs an NMI -- but &0D00 was simply left as the disc
-\ system's handler, and one stray NMI through it with the machine in
-\ this state is unrecoverable. Service call 12 (OSBYTE 143) asks the
-\ filing system to hand the NMI over, which is the polite way: it can
-\ claim it back if anything ever loads again (an ADFS version, say),
-\ where *TAPE would have closed that door. Then an RTI at &0D00, so an
-\ NMI costs a few cycles and nothing else. Econet is what this breaks.
+\ ---- THE FILING SYSTEM SHUTS DOWN HERE, AND THIS IS THE CONTRACT ----
+\ hexwab, issue #18, correcting this port: OSBYTE 140 is not optional
+\ and never was. There are two problems and they have two different
+\ answers, and until now we gave the LOADER's answer to the GAME.
+\
+\   A LOADER still needs to load, so it cannot shut the filing system
+\   down. It borrows the workspace instead, and the price is that it
+\   must OWN THE MACHINE: claim the NMI (OSBYTE 143 below) and let no
+\   OS code whatever run, because the only way the filing system can
+\   discover the theft is by regaining control.
+\
+\   A GAME that has finished loading asks the filing system to GO AWAY.
+\   OSBYTE 140 -- what *TAPE ends up calling, without the OSCLI in the
+\   middle -- has it detach every hook it holds and tell whatever
+\   hardware it was driving to stop raising NMIs. Only after that is
+\   the workspace ours: &B0-&CF in the zero page, and &0E00 up to
+\   OSHWM, which is where the low overlay lives.
+\
+\ WE ARE THE SECOND CASE and were behaving as the first while making OS
+\ calls anyway -- OSBYTE 229 per game start, OSBYTE &0F at the game
+\ over, OSBYTE 19 at every rupture align, all of them after PageLowIn
+\ has buried the workspace. A filing system is ENTITLED to hook the
+\ calls we make and to find its workspace intact when it does. Acorn's
+\ DFS does not, which is the only reason this ran; hexwab's Opus 1770
+\ with DDOS 3.45 hung at the deck plan, and 044b42c blamed the memory
+\ map when the fault was this missing call. (That fix stands -- the
+\ plan's pointers cost nothing where they are now -- but its reasoning
+\ does not.)
+\
+\ THE PRECONDITION IS THAT THE WORKSPACE IS STILL UNTOUCHED, and it is:
+\ the load above is the last one on any path (no-load step 5), every
+\ JSR OSCLI in the build is in .start, BootBanks or the !BOOT stub, and
+\ the first byte of the workspace to go is PageLowIn's, inside
+\ ts_loads, which TitleSeq below reaches. So this is the only line it
+\ can go on.
+\
+\ AND NOTHING MAY EVER LOAD AGAIN. That is the whole of what OSBYTE 140
+\ costs us, and no-load has already paid it. An ADFS version would have
+\ to move this call, not delete it.
+\
+\ ---- AND NO BOOT MAY USE *EXEC, WHICH IS WHY !BOOT IS *RUN ----
+\ hexwab, issue #18, and it cost a hung machine to learn: THIS CODE IS
+\ RUNNING INSIDE DFS's WORKSPACE. &1100-&1900 is the random-access file
+\ buffer area, and loading here works only because *LOAD -- and *RUN,
+\ which is *LOAD plus a jump -- never touches it. *EXEC DOES. So does
+\ closing an exec file, which is an implicit *EXEC: the first attempt at
+\ this put an OSBYTE 119 in front to close the file politely and hung in
+\ exactly the same way, because the close is itself a write into the
+\ region it was trying to make safe.
+\
+\ OSBYTE 140 with an exec file open therefore has DFS scribble over the
+\ instructions executing it. Measured: with the dev disc's old
+\ *EXEC !BOOT, boot reached *RUN PARA and went black, and jsbeeb found
+\ the CPU inside the DNFS ROM at &ACB1 -- the title draws at frame 745
+\ without this call and never appears with it. Both discs boot by *RUN
+\ now (make_disc.py, *OPT 4,2 either way), so there is no exec file to
+\ close on any path and this is safe.
+  LDA #140 : LDX #0 : LDY #0 : JSR OSBYTE
+
+\ ---- and the NMI, which is belt and braces now --------------
+\ OSBYTE 140 has already had the filing system stand its NMI hardware
+\ down, so what is left to guard against is a STRAY one -- electrical
+\ noise, not an intentional interrupt. Service call 12 (OSBYTE 143)
+\ takes the vector and an RTI at &0D00 makes an NMI cost a few cycles
+\ and nothing else. Kept rather than dropped because it is eight bytes
+\ against an unrecoverable jump through a page of stale 6502, and
+\ hexwab calls it belt-and-braces rather than redundant. Econet is
+\ what this breaks.
   LDA #143 : LDX #12 : LDY #&FF : JSR OSBYTE
   LDA #&40 : STA &0D00          \ RTI
 
@@ -5055,26 +5120,33 @@ IF RELEASE
 ASSERT DEBUG_ANY = 0
 ENDIF
 
-\ ---- *RUN or *EXEC: the release disc boots without a language ------
+\ ---- EVERY DISC BOOTS BY *RUN, AND THAT IS NOT A PREFERENCE --------
 \ KC 2026-09-11, issue #18 item 4, following beeb-port-kit's
 \ lib/boot_stamp.6502 (BOOT_RUN) — the kit's own RELEASE builds boot
 \ this way. An *EXEC !BOOT is typed at a LANGUAGE: on a B with no BASIC
 \ it stops at "Language?", and under *CONFIGURE LANG 11 it is typed
 \ into Edit. A *RUN !BOOT needs none, and prints without the REMs.
 \
-\ RELEASE ONLY, and the dev build keeps *EXEC on purpose: its !BOOT is
-\ the readable record of which DEBUG_ flags are on, and it is the file
-\ a debugging session edits by hand.
+\ IT WAS RELEASE-ONLY UNTIL 2026-09-13, when the dev disc's *EXEC was
+\ found to be incompatible with the OSBYTE 140 in .start — see there.
+\ THE GAME RUNS INSIDE DFS's WORKSPACE: &1100-&1900 is the random-access
+\ file buffer area, and living there works only because *LOAD and *RUN
+\ never touch it. *EXEC does, and so does closing an exec file. So an
+\ *EXEC boot cannot coexist with shutting the filing system down, and
+\ shutting it down is what makes the workspace ours in the first place
+\ (hexwab, issue #18). Both discs are the stub now, and the dev build
+\ loses nothing: the stamp it used to *TYPE from INFO it prints itself,
+\ from the same macro, DEBUG_ flags and all — and INFO is still a disc
+\ file, so *TYPE INFO still answers at any prompt.
 \
-\ THE DISC OPTION MUST MATCH: *OPT 4,2 for the stub, 4,3 for the text.
-\ build.ps1 and the Makefile pass -opt 2 under RELEASE and 3 otherwise,
-\ and make_disc.py carries the raw image's option through.
+\ THE DISC OPTION MUST MATCH: *OPT 4,2 for the stub. build.ps1 and the
+\ Makefile pass -opt 2 on every build, and make_disc.py carries the raw
+\ image's option through.
 \
 \ &0900, NOT &7E00: this one RUNS, and &7E00 is MODE 7's screen — the
 \ stamp would scroll over the code printing it. &0900 is clear at boot
 \ (the title overlay lands there later, from bank 7) and PARSWR at
 \ &1900 and PARA at &1100 are both clear of it.
-BOOT_RUN = RELEASE
 BT_OSASCI = &FFE3               \ OSWRCH, but 13 comes out as CR AND LF.
                                 \ Its own name: swram.asm defines OSASCI
                                 \ and beebasm refuses a symbol twice
@@ -5151,7 +5223,6 @@ BuildStamp
 .info_end
 SAVE "INFO", info_start, info_end
 
-IF BOOT_RUN
 CLEAR &0900, &0A00
 ORG &0900
 .boot_start
@@ -5171,15 +5242,6 @@ ORG &0900
   JMP OSCLI                     \ the game: it never comes back
 .bt_text
 BuildStamp
-ELSE
-CLEAR &7E00, &7F00
-ORG &7E00
-.boot_start
-EQUS "*BASIC", 13
-EQUS "CLS", 13
-EQUS "*TYPE INFO", 13           \ the same text, from the file
-ENDIF
-IF BOOT_RUN
 EQUB 0                          \ ends the stamp the loop above prints
 .bt_cmd1
 EQUS "RUN PARSWR", 13           \ the bank detector; it RTSes back to the
@@ -5189,17 +5251,6 @@ EQUS "RUN PARSWR", 13           \ the bank detector; it RTSes back to the
 EQUS "RUN PARA", 13             \ LAST, and make_disc.py rewrites the name
                                 \ to PINTRO on an --intro build: the intro
                                 \ chains to PARA itself
-ELSE
-EQUS "*RUN PARSWR", 13          \ the bank detector; it RTSes back to
-                                \ BASIC and this file feeds the next
-                                \ line, unless it found too few banks
-                                \ and closed the EXEC behind itself
-EQUS "*RUN PARA", 13
-ENDIF
 .boot_end
-IF BOOT_RUN
 SAVE "!BOOT", boot_start, boot_end, boot_start
 ASSERT boot_end <= &0A00
-ELSE
-SAVE "!BOOT", boot_start, boot_end
-ENDIF
