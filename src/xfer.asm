@@ -2266,10 +2266,8 @@ XF_UCR = PN_WIDE_OFS            \ +XF_UCR, and both bytes ride in the
 \ ============================================================
 \ state
 \ ============================================================
-.xfPlyY      EQUB 0             \ xfer_PlyY — the cursor row, 0 = none
 .xfCpuY      EQUB 0
 .xfYWant     EQUB 0             \ the CPU's target row
-.xfPlyColor  EQUB 0             \ the side vars swap EVERY half-turn:
 .xfCpuColor  EQUB 0             \ "Ply" means "the side moving now"
 .xfPlyWire   EQUB 0
 .xfCpuWire   EQUB 0
@@ -2283,7 +2281,6 @@ XF_UCR = PN_WIDE_OFS            \ +XF_UCR, and both bytes ride in the
 .xfLeftColor EQUB 0             \ the HUMAN's colour — see FinishTransfer1
 .xfWinSide   EQUB 0
 .xfWinColor  EQUB 0
-.xfTime      EQUB 0             \ BCD, select and play both
 .xfGrace     EQUB 0             \ byte_0_89: iterations after time out
 .xfNotInDeck EQUB 0
 .xfPlyLevel  EQUB 0
@@ -2296,8 +2293,6 @@ XF_UCR = PN_WIDE_OFS            \ +XF_UCR, and both bytes ride in the
 .xfPhase     EQUB 0
 .xfEndCtr    EQUB 0
 .xfTmp1      EQUB 0
-.xfTmp2      EQUB 0
-.xfColTmp    EQUB 0             \ the C64 parks this in xfer_cpuSpriteX
 .xfCurIdx    EQUB 0
 .xfSprCol    EQUB 0             \ Colorize4 parks the colour here
 .xfRptDir    EQUB 0             \ the repeat filter's held direction...
@@ -2310,7 +2305,6 @@ XF_UCR = PN_WIDE_OFS            \ +XF_UCR, and both bytes ride in the
 .xfOffH      EQUB 0
 .xfChar      EQUB 0
 .xfPen       EQUB 0
-.xfColV      EQUB 0
 .xfRArow     EQUB 0
 .xfRAcol     EQUB 0
 .xfTxtCol    EQUB 0

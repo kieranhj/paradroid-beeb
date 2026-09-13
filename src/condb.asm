@@ -1201,13 +1201,10 @@ ASSERT DB_IMG_ROW + 11 <= PLAY_ROWS      \ the 84-scanline portrait: rows 3-13
 \ conDbReq is in MAIN RAM with the console's other bridge bytes, because
 \ ConsoleTick reads it with this bank paged out. Everything else is read
 \ and written here alone.
-.dbType    EQUB 0               \ the C64's dType, 0 to pmType
 .dbPage    EQUB 0               \ dInfoPage
 .dbStatN   EQUB 0               \ sub_0_2DA0+1, 13 to 23
 .dbDescIx  EQUB 0               \ loc_0_2DE8+1, rebased to 0
 .dbLine    EQUB 0               \ prntY, as a text line
-.dbCol     EQUB 0               \ prntX
-.dbCap     EQUB 0               \ byte_0_248: capitalise the next word
 .dbWidth   EQUB 0
 .dbIx      EQUB 0
 .dbInk     EQUB DB_INK          \ DbGlyph's ink: the page's white, or the

@@ -1499,12 +1499,38 @@ drCount  = &AF                  \ was EQUB 0                       (1)
 snCvH    = &B0                  \ was EQUB 0                       (1)
 snTm2    = &B1                  \ was EQUB 0                       (1)
 
-\ AND score IS DELIBERATELY NOT SEEDED. It was SKIP 4, never an EQUB, so
+\ ---- TIER 2: bank 7's scalars, &B2-&BD (2026-09-13) ----------
+\ The transfer game, the droid database, the lift view and the portrait
+\ pool. Same measurement, same rule — all twelve are plain (never
+\ indexed) reads, so each reference saves a byte AND a cycle, and all
+\ twelve were EQUB 0, so seeding them to zero restores exactly the
+\ value the code image used to load.
+\
+\   xfTmp2 30  xfColTmp 25  dbType 20  xfPlyColor 19  dbCol  15
+\   lvPos  15  xfPlyY   14  xfColV 13  xfTime     13  poB    12
+\   lvRow  12  dbCap    11                        199 refs, 12 bytes
+xfTmp2     = &B2
+xfColTmp   = &B3
+dbType     = &B4
+xfPlyColor = &B5
+dbCol      = &B6
+lvPos      = &B7
+xfPlyY     = &B8
+xfColV     = &B9
+xfTime     = &BA
+poB        = &BB
+lvRow      = &BC
+dbCap      = &BD
+
+\ AND score IS DELIBERATELY NOT SEEDED, WHICH IS WHY IT IS UP HERE and
+\ not in the middle of the run. It was SKIP 4, never an EQUB, so
 \ CombatInit ($1345, droid.asm) has always been its only initialiser and
 \ still is. Seeding it would be a BUG: ZpSeed runs once per route into
 \ play, the briefing's fire exit is one of those routes, and zeroing the
-\ score there would be a silent wipe. Keep it out of the run above.
-score    = &B2                  \ was SKIP 4, 4-byte BCD           (4)
+\ score there would be a silent wipe. It sat at &B2 when Tier 1 landed;
+\ Tier 2 moved it clear so the SEEDED RUN STAYS CONTIGUOUS and can grow
+\ without ever having to step over it.
+score      = &CC                \ was SKIP 4, 4-byte BCD           (4)
 
 \ THE SECOND HALF OF THE ZERO PAGE IS OURS, AND THE REASON MATTERS.
 \ The deck plan's cell renderer had two variables at &A9-&AB until

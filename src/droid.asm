@@ -3730,16 +3730,18 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
 \
 \ IT WAS SprSeedYcol AND NINE BYTES until 2026-09-13, when OSBYTE 140
 \ made the rest of the second half of the zero page legitimately ours
-\ (hexwab, issue #18) and Tier 1's scalars moved up there. Eighteen
-\ bytes now, one run, same loop — the seed table below is the only
-\ thing that grew, which is why the new scalars MUST stay contiguous
-\ with drYcol above and in this order.
+\ (hexwab, issue #18) and the tiers moved up there. THIRTY bytes now —
+\ drYcol0-2, Tier 1's scalars and Tier 2's — one run, same loop, and
+\ the seed table below is still the only thing that grows. That is why
+\ every tier MUST stay contiguous with drYcol above and in this order,
+\ and why the ASSERT at the table's tail names the last symbol.
 \
-\ score IS NOT HERE ON PURPOSE. It is &B2-&B5, one byte past the run,
-\ because CombatInit is its initialiser and this routine runs on the
-\ briefing's fire exit too — seeding it would silently wipe the score.
+\ score IS NOT HERE ON PURPOSE, and it is at &CC — clear ABOVE the run,
+\ not in the middle of it — precisely so the run can keep growing.
+\ CombatInit is its initialiser and this routine runs on the briefing's
+\ fire exit too, so seeding it would silently wipe the score.
 .ZpSeed
-  LDX #17
+  LDX #29
 .ssy_l
   LDA sprYcolSeed,X
   STA drYcol0,X
@@ -3766,4 +3768,17 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
   EQUB 0                        \ drCount            &AF
   EQUB 0                        \ snCvH              &B0
   EQUB 0                        \ snTm2              &B1
-ASSERT snTm2 - drYcol0 = 17     \ the loop count above
+\ ---- and Tier 2's, bank 7's, all of them plain EQUB 0 ----
+  EQUB 0                        \ xfTmp2             &B2
+  EQUB 0                        \ xfColTmp           &B3
+  EQUB 0                        \ dbType             &B4
+  EQUB 0                        \ xfPlyColor         &B5
+  EQUB 0                        \ dbCol              &B6
+  EQUB 0                        \ lvPos              &B7
+  EQUB 0                        \ xfPlyY             &B8
+  EQUB 0                        \ xfColV             &B9
+  EQUB 0                        \ xfTime             &BA
+  EQUB 0                        \ poB                &BB
+  EQUB 0                        \ lvRow              &BC
+  EQUB 0                        \ dbCap              &BD
+ASSERT dbCap - drYcol0 = 29     \ the loop count above
