@@ -3737,9 +3737,10 @@ LV_PHYS_SHAFT = 5               \ magenta — logical 3, the lit deck's fill
 \ and why the ASSERT at the table's tail names the last symbol.
 \
 \ score IS NOT HERE ON PURPOSE, and it is at &CC — clear ABOVE the run,
-\ not in the middle of it — precisely so the run can keep growing.
-\ CombatInit is its initialiser and this routine runs on the briefing's
-\ fire exit too, so seeding it would silently wipe the score.
+\ not in the middle of it — precisely so the run can keep growing. It is
+\ zeroed once at BOOT instead, in .start: seeding it here would tie it to
+\ HsEntry still running before ts_loads inside TitleSeq, and a reordering
+\ would wipe the score under the high-score entry.
 .ZpSeed
   LDX #31
 .ssy_l

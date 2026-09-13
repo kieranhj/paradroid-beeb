@@ -1530,14 +1530,19 @@ dbCap      = &BD
 pnTmp      = &BE                \ 19 refs
 pnCol      = &BF                \ 14 refs
 
-\ AND score IS DELIBERATELY NOT SEEDED, WHICH IS WHY IT IS UP HERE and
-\ not in the middle of the run. It was SKIP 4, never an EQUB, so
-\ CombatInit ($1345, droid.asm) has always been its only initialiser and
-\ still is. Seeding it would be a BUG: ZpSeed runs once per route into
-\ play, the briefing's fire exit is one of those routes, and zeroing the
-\ score there would be a silent wipe. It sat at &B2 when Tier 1 landed;
-\ Tier 2 moved it clear so the SEEDED RUN STAYS CONTIGUOUS and can grow
-\ without ever having to step over it.
+\ AND score IS NOT IN ZpSeed'S RUN, WHICH IS WHY IT IS UP HERE. Seeding
+\ it there would tie it to HsEntry still running BEFORE ts_loads inside
+\ TitleSeq, and a reordering would wipe the score under the high-score
+\ entry. It is zeroed ONCE at boot instead, in .start beside OSBYTE 140.
+\
+\ IT DOES NEED THAT ZEROING, and the Tier 1 note here said otherwise and
+\ was WRONG: `SKIP 4` inside a SAVEd block emits zeros into the disc
+\ file, so score used to be LOADED as zero and the panel drew 0 on the
+\ title and the briefing, both of which precede any CombatInit. Zero page
+\ is not loaded and &CC-&CF is inside DFS's own zero-page workspace, so
+\ without the boot zeroing the briefing showed 24001300 (KC, 2026-09-13).
+\ It sat at &B2 when Tier 1 landed; Tier 2 moved it clear so the SEEDED
+\ RUN STAYS CONTIGUOUS and can grow without ever stepping over it.
 score      = &CC                \ was SKIP 4, 4-byte BCD           (4)
 
 \ THE SECOND HALF OF THE ZERO PAGE IS OURS, AND THE REASON MATTERS.
@@ -1725,6 +1730,32 @@ ORG &1100
 \ now (make_disc.py, *OPT 4,2 either way), so there is no exec file to
 \ close on any path and this is safe.
   LDA #140 : LDX #0 : LDY #0 : JSR OSBYTE
+
+\ ---- and score is zeroed ONCE, here, for the briefing -------
+\ KC saw 24001300 in the panel on the briefing, 2026-09-13, and it was
+\ this: &CC-&CF is inside &B0-&CF, which is DFS's ZERO PAGE WORKSPACE,
+\ so at this point it holds whatever the boot loads left there. The
+\ OSBYTE 140 above is what makes the bytes ours; it does not clean them.
+\
+\ WHY THIS IS NEEDED AT ALL, since the Tier 1 note claimed it was not:
+\ score was `SKIP 4` in the CODE IMAGE, and SKIP inside a SAVEd block
+\ emits zeros into the disc file. So it was LOADED as zero and stayed
+\ zero from boot until CombatInit, and the panel drew 0 on the title and
+\ the briefing, both of which come long before any CombatInit. Zero page
+\ is not loaded, so that free initialisation is gone and has to be done.
+\
+\ ONCE, AT BOOT, AND DELIBERATELY NOT IN ZpSeed. ZpSeed runs on every
+\ route into play, and GoTitle reaches TitleSeq -- so putting score in
+\ that run would make it depend on HsEntry still being ordered BEFORE
+\ ts_loads, and a future reordering would silently wipe the score out
+\ from under the high-score entry. Here there is no ordering to break:
+\ it reproduces exactly what loading the image used to do.
+  LDA #0
+  LDX #3
+.st_zscore
+  STA score,X
+  DEX
+  BPL st_zscore
 
 \ ---- and the NMI, which is belt and braces now --------------
 \ OSBYTE 140 has already had the filing system stand its NMI hardware

@@ -444,11 +444,28 @@ code image is re-established at run time. The seeded variables are one contiguou
 `#17`, `#29`, `#31`. `moveMode`'s `MM_MOBILE` is the only non-zero seed, which is why it is a table
 and not a fill. **The seed table is bank 4's**, so every future tier is paid for there.
 
-**`score` is at `&CC`, deliberately clear of the run.** It was `SKIP 4`, never an `EQUB`, so
-`CombatInit` has always been its only initialiser. `ZpSeed` runs once per route into play and the
-briefing's fire exit is one of those routes — seeding `score` there would be a silent wipe. Tier 1
-parked it at `&B2` and had to stop the run short to step over it; Tier 2 moved it above the run so
-the run can keep growing.
+**`score` is at `&CC`, clear of the run, and is zeroed once at boot.** Tier 1 parked it at `&B2`
+and had to stop the run short to step over it; Tier 2 moved it above the run so the run can keep
+growing. It is not seeded by `ZpSeed` because that would tie it to `HsEntry` still running
+*before* `ts_loads` inside `TitleSeq`, and a reordering would wipe the score out from under the
+high-score entry.
+
+> **IT SHIPPED BROKEN FOR ONE COMMIT, AND THE REASONING IS THE LESSON.** Tier 1's note claimed
+> `CombatInit` had "always been its only initialiser" because `score` was `SKIP 4` rather than an
+> `EQUB`. That is wrong: **`SKIP` inside a `SAVE`d block emits zeros into the disc file**, so
+> `score` was *loaded* as zero and stayed zero from boot until `CombatInit`. The panel draws it on
+> the title and the briefing, both of which come long before any `CombatInit`. Zero page is not
+> loaded, and `&CC-&CF` sits inside `&B0-&CF`, which is **DFS's own zero-page workspace** — so
+> after the boot loads it holds DFS's leftovers. KC saw **24001300** in the briefing panel
+> (2026-09-13); the bytes read `24 00 13 00`. Fixed by zeroing it in `.start` beside `OSBYTE 140`,
+> nine bytes, which reproduces exactly what loading the image used to do.
+>
+> **The rest of the moved variables were then audited for the same fault and are clean.** The
+> exposure window is `OSBYTE 140` to the first `ZpSeed`, and `InfoCall` and `FillPanel` both run
+> inside it. Read breakpoints on `sndFx1`, `moveMode`, `dbCap`, `pnTmp` and `pnCol` across that
+> window all lost the race to `ZpSeed`'s execute breakpoint — nothing reads a seeded byte before it
+> is seeded. `InstallIrq` is the last call in `ts_loads`, well after `ZpSeed`, so the sound tick
+> cannot read `sndFx1/2`, `snCvH` or `snTm2` early either.
 
 ### `&D0-&E6` is free, and it was measured rather than argued
 
