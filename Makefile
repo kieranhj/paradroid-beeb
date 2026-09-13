@@ -448,18 +448,25 @@ check-ps1: $(SSD)
 	@py=`$(PYTHON) -c "import sys; print(sys.executable)" | tr -d "\r"`; PYTHON="$$py" BEEBASM="$(BEEBASM)" ZX0="$(ZX0)" powershell.exe -NoProfile -ExecutionPolicy Bypass -File build.ps1
 	$(PYTHON) tools/compare_ssd.py $(BUILD)/make.ssd $(SSD)
 
+# THE PACK LOOP'S GENERATED INCLUDES GO HERE, not in distclean (issue #18,
+# 2026-09-13). They are gitignored build output that SURVIVES A BRANCH
+# SWITCH, and the first assembly reads them - so a stale one can overflow a
+# bank and stop the build BEFORE pack_overlays runs, which is the one thing
+# the loop cannot repair by itself. hexwab hit exactly that going 044b42c ->
+# 2fa5213: `ASSERT spr_end <= SWRAM_BASE + &4000`, and `make clean` did not
+# help because this rule did not remove them. `make` puts them back.
 clean:
 	rm -rf $(BUILD)
 	rm -f PARA PARADAT PARASPR PARSPR2 PARXFER PARAFNT PARSWR \
 	      XBRF XLOW XKR XREC
+	rm -f src/data/brfimg.asm src/data/lowimg.asm src/data/krimg.asm
 
-# Also the pack loop's generated includes, which `make` puts back. It does
+# distclean keeps the rule below for anything that is NOT the includes. It does
 # NOT remove bin/zx0: the compressor is not this build's output, it is a
 # tool someone put there, and on Windows `rm -f bin/zx0` deletes
 # bin/zx0.exe - MSYS resolves the suffix - which is how the first version
 # of this rule ate the compressor and broke the next build.
 distclean: clean
-	rm -f src/data/brfimg.asm src/data/lowimg.asm src/data/krimg.asm
 
 help:
 	@echo "Paradroid (BBC Model B) - targets:"

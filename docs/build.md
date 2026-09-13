@@ -65,6 +65,41 @@ on disc.
 **Adding a file to `src/` means adding it to `ASM` in the Makefile.** There is no wildcard,
 deliberately: a build that silently ignores a new source is worse than one that has to be told.
 
+## The pack loop's includes are `clean`'s, and why that matters
+
+`src/data/brfimg.asm`, `lowimg.asm` and `krimg.asm` are the pack loop's output — ZX0 streams of
+blocks that `beebasm` cannot compress for itself. They are **gitignored**, they **differ between a
+DEV build and a `-Release` one**, and — the part that bites — they **survive a branch switch**.
+
+The loop is: assemble → `pack_overlays.py` → if a stream changed, assemble again. `--ensure` only
+creates the three files **when they are missing**; it never checks whether the ones already there
+belong to this tree. So the first assembly reads whatever is on disc.
+
+**That is fine right up until a stale stream is the wrong size and overflows a bank.** Then
+assembly stops, and because it stops *before* `pack_overlays` runs, the loop never gets the chance
+to regenerate the very file that is breaking it. It is the one state the loop cannot climb out of.
+
+    src/main.asm:5139: error: Assertion failed.
+    ASSERT spr_end  <= SWRAM_BASE + &4000
+
+hexwab hit that going `044b42c` → `2fa5213` (issue #18) — #20 had changed `keyredef`, so his
+`krimg.asm` was ~161 bytes wrong for bank 5. **`make clean` did not help**, because the includes
+were removed only by `distclean`. Both were true of `build.ps1` too, which had no clean target at
+all.
+
+Fixed on 2026-09-13, in both pipelines:
+
+| | |
+|---|---|
+| `make clean` | now removes the three includes (they left `distclean`) |
+| `./build.ps1 -Clean` | new, and does the same — plus `build/` and the loose SAVE files |
+| first failed pass | `build.ps1` prints the likely cause and the fix rather than just the beebasm error |
+
+**A build that COMPLETES has converged and cannot have shipped a stale overlay.** If the stale
+stream still fits, the assembly succeeds, `pack_overlays` regenerates the streams from that
+assembly's own output, sees they differ, and exits 10 for another pass. Only the *failing* case is
+dangerous, and only because it is confusing.
+
 ## Three things in the pipeline that are not a DAG, and what was done about each
 
 **The pack loop is a fixpoint.** Two of the things bank 6 carries are assembled code copied down

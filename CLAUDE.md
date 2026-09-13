@@ -131,7 +131,20 @@ as a name, and reports the matrix key that moved, which measures a key number in
 .\build.ps1 -Intro    # + scarybeasts' loading intro (pdloader/, docs/intro.md §8)
 .\build.ps1 -Release  # THE BUILD FOR OTHER PEOPLE: -Intro, every DEBUG_ flag off,
                       #   and a *RUN !BOOT (disc option 2) instead of an *EXEC one
+.\build.ps1 -Clean    # build/, the loose SAVE files AND the pack loop includes
 ```
+
+**IF THE BUILD DIES ON A BANK-OVERFLOW `ASSERT` JUST AFTER YOU CHANGED BRANCH, THE PACK LOOP
+INCLUDES ARE STALE — run `./build.ps1 -Clean` (or `make clean`).** `src/data/brfimg.asm`,
+`lowimg.asm` and `krimg.asm` are gitignored build output, so they SURVIVE A BRANCH SWITCH, and the
+FIRST assembly of the loop reads them. A stale one built for a different tree can be the wrong size
+and overflow a bank — **and that is the one failure the loop cannot repair by itself**, because
+assembly stops before `pack_overlays` ever runs to regenerate them. hexwab hit exactly this going
+`044b42c` → `2fa5213` (issue #18): `ASSERT spr_end <= SWRAM_BASE + &4000`, and `make clean` did not
+help because the includes used to be removed only by `distclean`. They are `clean`'s now, in both
+pipelines, and `build.ps1` says so on the first failed pass. **A build that COMPLETES has
+converged** — if the stale stream still fits, `pack_overlays` regenerates it, sees the difference
+and exits 10 for another pass, so a successful build can never ship a stale overlay.
 
 **THERE IS A SECOND IMPLEMENTATION OF THE SAME PIPELINE AND BOTH MUST BE KEPT IN STEP.** The
 `Makefile` (hexwab's issue #3, 2026-09-09) builds the project on any POSIX system - `make`,

@@ -4,9 +4,24 @@
 # into !BOOT behind PARSWR; the default build carries no trace of it.
 # -Release is the build for other people: -Intro, plus every DEBUG_ flag
 # forced off. It is the only build a player should ever see.
-param([switch]$Run, [switch]$Intro, [switch]$Release)
+# -Clean removes build/, the loose SAVE files AND THE PACK LOOP'S THREE
+# GENERATED INCLUDES. That last part is the point: they are gitignored
+# build output that SURVIVES A BRANCH SWITCH, and a stale one can make the
+# build fail in a way the loop cannot repair - see the catch below.
+param([switch]$Run, [switch]$Intro, [switch]$Release, [switch]$Clean)
 
 $ErrorActionPreference = 'Stop'
+$root = $PSScriptRoot          # restated at line ~39; -Clean below needs it early
+if ($Clean) {
+    Remove-Item -Recurse -Force (Join-Path $root 'build') -ErrorAction SilentlyContinue
+    foreach ($f in @('PARA','PARADAT','PARASPR','PARSPR2','PARXFER','PARAFNT','PARSWR',
+                     'XBRF','XLOW','XKR','XREC',
+                     'src/data/brfimg.asm','src/data/lowimg.asm','src/data/krimg.asm')) {
+        Remove-Item -Force (Join-Path $root $f) -ErrorAction SilentlyContinue
+    }
+    Write-Host 'Cleaned build/, the loose SAVE files and the pack loop includes'
+    if (-not ($Run -or $Intro -or $Release)) { exit 0 }
+}
 if ($Release) { $Intro = $true }
 # RELEASE is a command-line symbol because beebasm has no IFDEF and refuses a
 # symbol defined twice, so main.asm cannot carry a default of its own. It is
@@ -91,7 +106,22 @@ $packed = $false
 for ($pass = 1; $pass -le 4; $pass++) {
     & $beebasm -i (Join-Path $root 'src\main.asm') -do $raw -opt $bootOpt -title PARADROID -D $relDef -v |
         Out-File -FilePath $listing -Encoding utf8
-    if ($LASTEXITCODE -ne 0) { throw "beebasm failed ($LASTEXITCODE)" }
+    if ($LASTEXITCODE -ne 0) {
+        # A STALE PACK INCLUDE LOOKS EXACTLY LIKE THIS, and the loop cannot
+        # repair it: brfimg/lowimg/krimg are gitignored, survive a branch
+        # switch, and are read by the FIRST assembly - so if a stale one
+        # overflows a bank, assembly stops before pack_overlays ever runs.
+        # hexwab hit this on 2fa5213 from a 044b42c tree (issue #18).
+        if ($pass -eq 1 -and (Test-Path (Join-Path $root 'src\data\krimg.asm'))) {
+            Write-Host ""
+            Write-Host "beebasm failed on the FIRST pack-loop pass." -ForegroundColor Yellow
+            Write-Host "If that was a bank-overflow ASSERT and you have just changed branch," -ForegroundColor Yellow
+            Write-Host "the pack loop includes are stale. Run:  ./build.ps1 -Clean" -ForegroundColor Yellow
+            Write-Host "(make users: make distclean, or make clean once #18 lands)" -ForegroundColor Yellow
+            Write-Host ""
+        }
+        throw "beebasm failed ($LASTEXITCODE)"
+    }
 
     & $python (Join-Path $root 'tools\pack_overlays.py') $raw
     $rc = $LASTEXITCODE
