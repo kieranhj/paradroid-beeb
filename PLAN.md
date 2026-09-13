@@ -39,7 +39,7 @@ other people. Keys and controls are in `README.md`;
 hexwab's GitHub issues #1–#18 were all closed by 2026-09-11. They covered the UX list, build
 portability, memory and target portability, and several deviations each carry a numbered DECISION
 in their layer doc. Fire only fires, and the transfer key opens and closes lifts and consoles
-(layer-7 DECISIONS 13–14). The current build is **Release Candidate #7**.
+(layer-7 DECISIONS 13–14). The current build is **Release v1.0**.
 
 **The frame budget:** the eight sprite slots cost ~36,000 cycles of the 79,872 in a pass and the
 droid AI another ~17,000, so the loop keeps roughly a third spare. **RAM was the tight one, and is much less so since 2026-09-13:** main
