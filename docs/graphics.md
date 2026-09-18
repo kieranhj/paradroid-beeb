@@ -172,8 +172,16 @@ tables and IRQ handler code from `$6EC0` onwards, so only `$6800-$6EBF` is chara
 C64 hardware sprites are 24×21. Hires is 1 bit per pixel (63 bytes + 1 pad = 64 per sprite);
 multicolour encodes pixel pairs, giving 12×21 logical pixels in 4 colours.
 
-**The game sprites are multicolour.** The multicolour renderings show coherent droid shapes; the
-hires renderings look fragmented.
+**The game sprites are HIRES** — 1 bit per pixel, 63 bytes + 1 pad each, 24×21 pixels that map 1:1
+onto MODE 1. KC, 2026-09-18.
+
+> **CORRECTED 2026-09-18 (KC).** This said *"The game sprites are multicolour. The multicolour
+> renderings show coherent droid shapes; the hires renderings look fragmented."* That was a reading
+> of how a ripped render looked, not a measurement, and it was wrong. It had stood long enough to be
+> taken as fact and repeated in [`decisions.md`](decisions.md)'s "Why MODE 1" (corrected the same
+> day) and in a draft of the public write-up. **Do not state a colour format from how a rip looks.**
+> The deck went the same way — three wrong models over a month, settled by a screenshot of the real
+> game in [Layer 1](layer-1-graphics-pipeline.md).
 
 ### Sprite regions
 

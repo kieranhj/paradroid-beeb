@@ -70,26 +70,41 @@ future was `hardware.asm`'s SN76489 encoding, now recorded — still unverified 
 
 ### Why MODE 1
 
-**Both the tiles and the sprites are C64 multicolour** — 2-screen-pixel-wide logical pixels, four
-colours. MODE 1 is also four colours at 320 pixels across, so one C64 multicolour pixel is exactly
-two MODE 1 pixels:
+**Both the tiles and the sprites are C64 HIRES** — 1 bit per pixel, eight pixels to a character
+row, two colours a cell (the cell's own foreground from colour RAM, the background from the global
+`$D021`). MODE 1 is 320 pixels across and so is the C64, so **a C64 pixel is a MODE 1 pixel** and
+everything converts 1:1 with no scaling and no redrawing:
 
-| | C64 | MODE 1 |
+| | C64 hires | MODE 1 |
 |---|---|---|
-| Map character | 4 MC px = 8 screen px | 8 px, 1:1 |
+| Pixel | 1 bit, 2 colours a cell | 1 of 4 logical colours, **1:1** |
+| Map character | 8×8 px | 8×8 px, 1:1 |
 | Tile (4×4 chars) | 32×32 px | 32×32 px, 1:1 |
-| Multicolour pixel | 2 screen px | exactly 2 px |
-| Colours per cell | 4 | 4 |
-| Display | 320×200 | 320×200 |
+| Hardware sprite | 24×21 px | 24×21 px, 1:1 |
+| Display | 320×200 | 320×200 (256 available) |
+
+**The cost is colour, and it is the only cost.** The C64 gives every cell its own foreground out of
+a 12-slot per-deck palette; MODE 1's four logical colours are global across the screen. That looks
+expensive and is not: counted over the tiles a deck actually PLACES, weighted by how often it
+places them, **every deck wants the background plus three colours**, and the fourth-most-used
+appears 2 to 40 times against the third's hundreds or thousands. Nothing is merged.
+[Layer 1](layer-1-graphics-pipeline.md) has the counting and the fixed roles the four slots were
+given — including that logical 1 is black on all sixteen decks.
 
 Consequence: tiles, sprites, title screen and transfer board all convert **mechanically** from the
-ripped C64 data. No artwork is redrawn, and the colour count is exact rather than merely adequate.
+ripped C64 data. No artwork is redrawn.
 
 MODE 2 was rejected: 8 colours the game does not need, in exchange for redrawing every tile at half
 width and breaking the 32×32 tile aspect ratio.
 
-> An earlier version of this section described the map as 1bpp hires and the 4-colour budget as
-> "tight". Both were wrong — see [Layer 1](layer-1-graphics-pipeline.md).
+> **CORRECTED 2026-09-18 (KC).** This section claimed *"both the tiles and the sprites are C64
+> multicolour"* and derived MODE 1 from one multicolour pixel being exactly two MODE 1 pixels. The
+> claim and the derivation were both wrong. The deck is hires — settled 2026-08-18 in
+> [Layer 1](layer-1-graphics-pipeline.md), after three successive wrong models — and **the sprites
+> are hires too**, correcting [`graphics.md`](graphics.md) §3 the same day. The note that used to
+> sit here, saying an earlier version had described the map as 1bpp hires and that this "was wrong",
+> had it exactly backwards and is deleted. **The decision itself is unaffected**: the 1:1 pixel
+> mapping still holds and MODE 1 is still right. Only the reason for it changes.
 
 ### No licence file, and why
 
