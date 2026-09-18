@@ -13,29 +13,29 @@ sections below are in neither. **The table is the index; read it first.**
 
 | | Defect | Status | |
 |---|---|---|---|
-| **1** | [`RedrawAll`'s split-row repair has no effect — the oracle disagrees at `line != 0`](#1-redrawalls-split-row-repair-has-no-effect--the-debug-oracle-is-wrong) | **Probably moot** | the split row it describes no longer exists; kept until its own tests are re-run |
-| **2** | [Blank scanlines at the top of the window after stopping against a wall](#2-blank-scanlines-inside-the-visible-window-after-stopping-against-a-wall) | **Open** | the view retreats a pixel after the band is computed. Wants retesting |
-| **3** | [Top line wrong for one frame when stopping after moving up at speed](#3-top-line-wrong-for-one-frame-when-stopping-after-moving-up-at-full-speed) | **Open** | never instrumented. Retest against the 2026-08-14 wrap fix first |
+| **1** | [`RedrawAll`'s split-row repair has no effect — the oracle disagrees at `line != 0`](#1-redrawalls-split-row-repair-has-no-effect--the-debug-oracle-is-wrong--closed-2026-09-18) | **Closed** 2026-09-18 | obsolete: the split row no longer exists and v1.0 shipped on `RedrawAll` as the oracle |
+| **2** | [Blank scanlines at the top of the window after stopping against a wall](#2-blank-scanlines-inside-the-visible-window-after-stopping-against-a-wall--closed-2026-09-18) | **Closed** 2026-09-18 | obsolete: never instrumented, pipeline rewritten under it, not seen before v1.0 |
+| **3** | [Top line wrong for one frame when stopping after moving up at speed](#3-top-line-wrong-for-one-frame-when-stopping-after-moving-up-at-full-speed--closed-2026-09-18) | **Closed** 2026-09-18 | obsolete, same ruling as #2 |
 | **4** | [The player can spawn inside a wall and is then stuck](#4-the-player-can-spawn-inside-a-wall-and-is-then-stuck--fixed-2026-08-15) | **Fixed** 2026-08-15 | waypoint-0 spawn; `CentreOnDeck` deleted |
 | **5** | [Player sprite's lower part missing at a doorway](#5-player-sprites-lower-part-missing-at-a-doorway--fixed-2026-08-14) | **Fixed** 2026-08-14 | the interpreted row fell into the walking tail |
 | **6** | [The rotor restore leaves pixels behind, at both shifts](#6-the-rotor-restore-leaves-pixels-behind-at-both-shifts--fixed-2026-08-14-same-cause-as-5) | **Fixed** 2026-08-14 | same cause as #5 |
-| **7** | [Droids lock together (7a); the player's bounce is heavy (7b)](#7-droids-can-lock-together-and-the-players-bounce-is-heavy--7a-fixed-2026-08-18) | **7a fixed** 2026-08-18, **7b open** | 7a was a missing debounce. What is left is the box SHAPE and the feel |
+| **7** | [Droids lock together (7a); the player's bounce is heavy (7b)](#7-droids-can-lock-together-and-the-players-bounce-is-heavy--7a-fixed-2026-08-18) | **7a fixed** 2026-08-18, **7b closed** 2026-09-18 | 7a was a missing debounce. 7b closed as obsolete: our bounce is already gentler than the C64's and the feel was not raised again before v1.0 |
 | **8** | [Droids from the last deck survive into the next one](#8-droids-from-the-last-deck-survive-into-the-next-one--fixed-2026-08-15) | **Fixed** 2026-08-15 |  |
 | **9** | [One 4-pixel column is wrong down most of the strip after horizontal scrolling](#9-one-4-pixel-column-is-wrong-down-most-of-the-strip-after-horizontal-scrolling--2026-08-15) | **Open** | 58-62 bytes of 10,240, all in CRTC unit 0. Sprites ruled out; it is in the incremental column draw |
 | **10** | [The level is corrupted when a droid's shot kills you](#10-the-level-is-corrupted-when-a-droids-shot-kills-you--fixed-2026-08-16) | **Fixed** 2026-08-16 | a teleport broke `COPYCHAR`'s parity rule |
 | **11** | [Enemy lasers crawl, and the player can walk through them](#11-enemy-lasers-crawl-and-the-player-can-walk-through-them--fixed-2026-08-16) | **Fixed** 2026-08-16 | a direction was being read as a distance |
 | **12** | [Lasers on screen when a console opens stay drawn over the console text](#12-lasers-on-screen-when-a-console-is-activated-stay-there-and-corrupt-the-console-text--fixed-2026-08-31) | **Fixed** 2026-08-31 | NOT a missing teardown: the console opens mid-pass, above tranche B, which redraws over it. `ConMenuInit4` clears `sprSplit`. Repro needs a BULLET — a droid beside the player merges into its component and never reaches tranche B |
-| **13** | [The ALERT sign's lamp is dead; it should track the alert level](#13-the-alert-signs-lamp-is-dead--it-should-track-the-alert-level--2026-08-17) | **Fixed** 2026-08-20 | one character rebuilt when `Alert` crosses a threshold, and the sign repainted. The ramp is four *states*, not four colours — [DECISION 11] in `docs/layer-7-combat.md`, **not yet ratified** |
+| **13** | [The ALERT sign's lamp is dead; it should track the alert level](#13-the-alert-signs-lamp-is-dead--it-should-track-the-alert-level--fixed-2026-08-20) | **Fixed** 2026-08-20 | one character rebuilt when `Alert` crosses a threshold, and the sign repainted. The ramp is four *states*, not four colours — [DECISION 11] in `docs/layer-7-combat.md`, **not yet ratified** |
 | **14** | [`XfRand` is not a maximal LFSR — its low two bits are always zero](#14-xfrand-is-not-a-maximal-lfsr--its-low-two-bits-are-always-zero--fixed-2026-08-19) | **Fixed** 2026-08-19 |  |
-| **15** | [Incremental draw disagrees with `RedrawAll` beside an animating door](#15-incremental-draw-disagrees-with-redrawall-beside-an-animating-door--2026-08-19-unconfirmed) | **Open, unconfirmed** | did not reproduce in five clean runs. Correlates with poking a modal flag, not with the level draw |
+| **15** | [Incremental draw disagrees with `RedrawAll` beside an animating door](#15-incremental-draw-disagrees-with-redrawall-beside-an-animating-door--closed-as-stale-2026-09-18) | **Closed as stale** 2026-09-18 | never reproduced; doors under droids are a known *legitimate* oracle diff. The entry names what would reopen it |
 | **18** | [`HS_STR_ADDR` was `PN_TABS`](#18-hs_str_addr-was-pn_tabs--fixed-2026-08-21) | **Fixed** 2026-08-21 | Layer 11f. Strings landed on the mirrored droid tables; a runaway `DbStr` then smashed bank 7. Root cause proven by write watch. **`font_end` is not the end of the region — `PN_TABS` follows it.** (At the time: 96 B of tables, 8 B gap. Since RAM pass 1 `PN_TABS` is 48 B and the gap ~49 — the lesson stands, the numbers moved) |
 | **17** | [Four debug flags silently push the code image past `&3000`](#17-four-debug-flags-silently-push-the-code-image-past-3000--partly-fixed-2026-08-20) | **Fixed** 2026-08-20, bar one | VSYNC, POS and ENERGY fixed and a `GUARD` added so it can never be silent again. RASTER, DRAW and TIME should fit comfortably since the RAM recovery pass (639 B free); none has been run since — try before trusting. **2026-09-11: main RAM is back to 43 B free, so they are unlikely to fit again.** MAPGUARD's 1 K still exceeds bank 4's 64 B (2026-09-11; it was 51) |
 | **16** | [Enemy droids draw a black rotor and a WHITE number](#16-enemy-droids-draw-a-black-rotor-and-a-white-number--fixed-2026-08-19) | **Fixed** 2026-08-19 | the wrap fallback blits digits interpreted and never sees `colPix` |
 | **19** | [`paradroid_ce_annotated.asm` truncated multi-column `.BYTE` lines](#19-paradroid_ce_annotatedasm-truncated-multi-column-byte-lines--fixed-2026-08-24) | **Fixed** 2026-08-24 | 43% of the listing's data was missing AND what survived was misaligned. `annotate.py`'s `get_content`; `tools/verify_annotation.py` is the standing check |
 | **20** | [The player's bullet starves every other collision in the pass](#20-the-players-bullet-starves-every-other-collision-in-the-pass--fixed-2026-09-03) | **Fixed** 2026-09-03 | `DrCollide` scanned from slot 7. The bullet has no `drSlotOwner`, so its pair dead-ended and the whole pass was abandoned. Playtest report #3 |
-| **21** | [Two black squares flicker on the transfer game's central column](#21-two-black-squares-flicker-on-the-transfer-games-central-column--2026-09-03-unreproduced) | **Open, unreproduced** | reported on real hardware, rarely on BeebEm. Two hypotheses, neither tested; the cursor one is a 30-second check |
+| **21** | [Two black squares flicker on the transfer game's central column](#21-two-black-squares-flicker-on-the-transfer-games-central-column--diagnosed-downgraded-to-polish-2026-09-18) | **Polish** — diagnosed 2026-09-18 | KC: plot timing against the raster (Hypothesis 1). Not fixed; the fix is window work and is not worth it |
 | **22** | [Sprite pixels are occasionally left on the deck](#22-sprite-pixels-are-occasionally-left-on-the-deck--2026-09-06-open) | **Open** | reported from play, in a firefight, no repro. The tranche split was the first suspect and is EXONERATED by measurement — `DEBUG_TRCHK` counted zero cross-tranche overlaps through minutes of contrived heavy fire |
-| **23** | [Entering a transfer, the target's information screen flashes in the board's palette](#23-entering-a-transfer-the-targets-information-screen-flashes-in-the-boards-palette--2026-09-07-open) | **Open** | PRE-DATES the no-load branch, proven by diff. The board draw runs with `palPlay` already switched. Fix is 3 bytes, and the code image is not full any more — 43 B free, measured 2026-09-11 |
+| **23** | [Entering a transfer, the target's information screen flashes in the board's palette](#23-entering-a-transfer-the-targets-information-screen-flashes-in-the-boards-palette--2026-09-07-open-at-polish-severity) | **Polish** — open, fix deliberately withheld | PRE-DATES the no-load branch, proven by diff. The board draw runs with `palPlay` already switched. Fix is 3 bytes and would fit; KC 2026-09-18: not noticed in play, not worth republishing v1.0 for |
 | **24** | [Unpausing inside the transfer game posts "Transfer" over the board's own panel word](#24-unpausing-inside-the-transfer-game-posts-transfer-over-the-boards-own-panel-word--2026-09-07-fixed-2026-09-09) | **Fixed** 2026-09-09, bar a third owner | `DoPause`'s repaint went through `pnTxtTab`, which knows nothing of the words the transfer and the lift view write for themselves. Both repaint their own now (`xfpause.asm`). **Still open for the two information screens in front of the board**, where "Captured" is on the line and `xferActive` is 0 — the entry says why that gate was not widened |
 
 `## Delivered: DEBUG_POS` near the end is not a defect — it is the position bookmark that came out
@@ -130,7 +130,13 @@ before it. Not a teardown — nothing was lost, the wrong word was positively wr
 
 ---
 
-## 23. Entering a transfer, the target's information screen flashes in the board's palette — 2026-09-07, open
+## 23. Entering a transfer, the target's information screen flashes in the board's palette — 2026-09-07, open at polish severity
+
+> **KC, 2026-09-18: not noticed when playing through, and the fix is deliberately NOT being
+> applied.** The cause below is understood and the fix is 3 bytes, which main RAM can now afford —
+> but v1.0 is released and a 3-byte change to the transfer entry path is not worth rebuilding and
+> republishing the disc for a flash nobody sees in play. Left open with the diagnosis intact so
+> that whoever next opens this path can take it for free.
 
 Reported by KC, 2026-09-07, while testing the no-load branch: *"when going into the transfer game,
 we get to see both droids then the second droid appears in the transfer screen palette just
@@ -569,6 +575,14 @@ the buffer: 58–62 of 10240 bytes differ**, depending on where you stop.
 **It is all in CRTC unit 0 — the leftmost 4-pixel column of the view** — and it runs down almost
 every one of the 16 rows. Nothing else in the buffer is touched.
 
+> **KC, 2026-09-18: never seen in play.** Asked directly whether this had ever been noticed, the
+> answer was no — through development, playtesting and a full v1.0 playthrough. That is consistent
+> rather than contradictory: 58-62 bytes of 10,240 in the leftmost 4-pixel column, at the very edge
+> of the view, is below the threshold of anything the eye catches in a scrolling game. **It stays
+> open at that severity**, and it is worth keeping for what it demonstrates as much as for the
+> defect — a wrong column that the screenshot, the emulator and the player all passed, and only a
+> byte-for-byte diff against `RedrawAll` ever saw.
+
 ### The column is displaced DOWN by one character row
 
 Rendering unit 0 against `RedrawAll`, scrolling left, `scrollS = $0218`, `line = 4`:
@@ -747,7 +761,14 @@ less likely to clear the overlap. Shrinking the box is the cheapest experiment.
 more than one pair a pass; clearing `drCollHit` when the pair *changes* rather than only when the
 screen is clear.
 
-### 7b. The player's bounce is aggressive
+### 7b. The player's bounce is aggressive — **CLOSED 2026-09-18**
+
+> **CLOSED as obsolete, KC 2026-09-18.** The analysis below stands and is worth keeping — our
+> bounce is already gentler than the C64's, and the suspect is the 4-pixel camera rather than the
+> speed — but the feel was not raised again through the playthroughs that led to v1.0. The
+> collision-box silhouette this was waiting on ([DECISION 1] in
+> `docs/layer-6-droids-live.md`) stays a nice-to-have from the Redux list, not a fix owed to this
+> entry.
 
 **Severity:** polish, gameplay feel.
 
@@ -773,7 +794,12 @@ does, so a bounce inherits whatever sub-pixel remainder the player had.
 
 ---
 
-## 1. `RedrawAll`'s split-row repair has no effect — the debug oracle is wrong
+## 1. `RedrawAll`'s split-row repair has no effect — the debug oracle is wrong — **CLOSED 2026-09-18**
+
+> **CLOSED as obsolete, KC 2026-09-18.** The split row this describes has not existed since
+> 2026-08-13, `RedrawAll` has served as the oracle for every buffer diff taken since, and v1.0
+> shipped on it. The entry's own tests were never re-run and now cannot be — the code they
+> targeted is gone. Kept for what it ruled out.
 
 > **Probably moot as of 2026-08-13, not fixed.** The band now draws whole character rows, so no
 > display row aliases two map rows, and both repair passes — `RedrawAll`'s and `DrawColumn`'s —
@@ -841,7 +867,12 @@ were the workaround and worked well.
 
 ---
 
-## 2. Blank scanlines inside the visible window after stopping against a wall
+## 2. Blank scanlines inside the visible window after stopping against a wall — **CLOSED 2026-09-18**
+
+> **CLOSED as obsolete, KC 2026-09-18.** Found 2026-08-10, never instrumented, and every part of
+> the movement and draw pipeline it describes has been rewritten under it since — the wrap fix,
+> the band rewrite, the tranche split and `PassPrep` among them. Not observed in the playthroughs
+> that preceded v1.0. Anything seen from here is a fresh defect with fresh evidence, not this one.
 
 **Severity:** visible, small.
 
@@ -915,7 +946,11 @@ because the rest of this section is the evidence as it was gathered.
 
 ---
 
-## 3. Top line wrong for one frame when stopping after moving up at full speed
+## 3. Top line wrong for one frame when stopping after moving up at full speed — **CLOSED 2026-09-18**
+
+> **CLOSED as obsolete, KC 2026-09-18.** Same ruling as #2 and for the same reason: reported from
+> play on 2026-08-10, never instrumented, and the movement and draw pipeline has been rewritten
+> under it several times since. Not observed in the playthroughs that preceded v1.0.
 
 **Severity:** visible, transient.
 
@@ -1097,7 +1132,16 @@ If you would rather read RAM directly: `deck` &8B, `plyX` &2B, `posX` &27, `posY
 > &4600, which Layer 11 [DECISION 1] moved to make room for the title's framebuffer. The dump is
 > one command, in `CLAUDE.md` under "Symbol addresses come from".
 
-## 15. Incremental draw disagrees with `RedrawAll` beside an animating door — **2026-08-19, unconfirmed**
+## 15. Incremental draw disagrees with `RedrawAll` beside an animating door — **CLOSED as stale 2026-09-18**
+
+> **CLOSED as stale, KC 2026-09-18** ("sounds stale" — a softer ruling than #1, #2, #3 and #7b, so
+> the reopening condition is written out). It never reproduced in five clean runs, it was never
+> shown to predate the change it was found on, and doors animating under droids are a known source
+> of *legitimate* oracle diffs — which is now documented in the recipe itself
+> (`docs/ram-pass.md` §"The oracle recipe changed"), and was not when this was logged.
+> **Reopen only on a buffer diff beside an animating door that survives the current recipe** — all
+> three draw call sites NOPed, player at REST, the view settled — because that is the thing this
+> entry could never produce.
 
 Found during Layer 13a's RAM pass, while running the buffer oracle after moving the row/unit offset
 tables (`docs/layer-13-ram-pass.md`, TASK 6). **Not yet reproduced, and not yet shown to predate
@@ -1315,7 +1359,15 @@ sprite is a separate, deliberate judgement (see `DrCollide`'s header) and was le
 
 ---
 
-## 21. Two black squares flicker on the transfer game's central column — **2026-09-03, UNREPRODUCED**
+## 21. Two black squares flicker on the transfer game's central column — **DIAGNOSED, downgraded to polish 2026-09-18**
+
+> **KC, 2026-09-18: this is plot timing against the raster — Hypothesis 1 below — and it is a
+> polish item, not a defect.** The board's live screen writes race the beam, which is why it shows
+> on real hardware and only rarely in an emulator, why it is fixed to one location, and why it
+> looks like sprite flicker without being sprites. Hypothesis 2 (the cursor) is not the cause and
+> need not be tested. **Not fixed, and not planned for a point release**: the fix is to move those
+> writes into a window, which is the same class of work as the tranche split and is not worth it
+> for two squares on one column. Left open at polish severity so the diagnosis is not lost.
 
 Reported by playtester Sydney, 2026-09-03: *"Occasionally in the transfer game the
 yellow/black/magenta square at the top of the central column will have two square black artifacts

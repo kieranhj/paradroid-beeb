@@ -65,8 +65,12 @@ fixed. [`docs/layer-12-balance.md`](docs/layer-12-balance.md). 12b (the Redux ad
 2026-08-31; still open:
 
 - **12a — the fidelity audit against the listing**: constants, tables and behaviour, routine by
-  routine.
-- **12c — playtesting against the isolated dials** (`PLY_ITER_FRAMES` and friends).
+  routine. **KC 2026-09-18: fidelity is evidently good in practice** — the release has been played
+  through and the sound in particular has drawn compliments — so this is a completeness exercise,
+  not a suspicion. Not a release blocker.
+- ~~**12c — playtesting against the isolated dials**~~ — **CLOSED, KC 2026-09-18: not necessary.**
+  The dials (`PLY_ITER_FRAMES` and friends) stay isolated and documented for anyone who wants to
+  turn them; the shipped values play well.
 - **12d — performance**: the droid worst case has never been measured — 8 slots (~36,000) +
   droids (~17,000) + full-diagonal level draw (19,172) is ~72,000 of 79,872 before the rest of
   the loop. It wants a rig on a deck with a long open corridor; `docs/raster-timing.md` Step 3
@@ -80,6 +84,10 @@ fixed. [`docs/layer-12-balance.md`](docs/layer-12-balance.md). 12b (the Redux ad
   (133 cycles in, was 6,720) and the budget went to 3/2/0 — `docs/raster-timing.md`, "PassPrep
   leaves window A". The second is done too: `SprAssignTr` is 25-58% cheaper (8 live slots: 4,931 -> 3,707 mean,
   9,606 -> 5,442 worst), proven output-identical over 20,000 random states in py65.
+  **STILL REAL, KC 2026-09-18: the shipped build drops below 25 Hz occasionally in play.** That is
+  the first report of it from the release rather than from a rig, and it is the one Layer 12 item
+  that is genuinely open. Unmeasured: which scenario, and whether it is the droid worst case above
+  or something else. A `beeb-frame-drops` run on a deck with a long open corridor is the next step.
 
 ### Layer 13c — the machines people actually have
 
@@ -94,26 +102,36 @@ still untested**, and so are the items below, which the Master run does not sett
   after a game over. Candidates: switch on a field boundary, order the writes so the frame stays
   legal at every step, blank across the change. Mind the R5/R6/R7 write-window rules in
   `CLAUDE.md`; nothing measured yet. *(The one 13c item that is code work, not just a check.)*
-- `FRAME_DROP_ROWS` = 3 was chosen against emulators; a real television crops differently. One
-  constant in `main.asm`; the title follows it.
+- ~~`FRAME_DROP_ROWS` = 3 was chosen against emulators; a real television crops differently.~~
+  **CLOSED, KC 2026-09-18: 3 is right on real hardware.** The value was calibrated by eye in an
+  emulator and the concern was that a real television crops differently; it does not, at this
+  value. One constant in `main.asm`, and the title still follows it by `TiCRTC`'s own arithmetic —
+  do not move it without reading [`docs/layer-3-scroll.md`](docs/layer-3-scroll.md)'s R7 trap,
+  which is live at any `FRAME_DROP_ROWS` above zero.
 - The briefing scroller's top line flickers more on real hardware (KC) — §4e-2's measurement
   method applies: sample `iline`, not the counters.
 - Five keys held can phantom a sixth on the diode-less matrix. Debug keys are CTRL-gated now,
   but a phantom landing on a *control* is untested.
-- 8 decks draw ALERT in multicolour — faithful to the C64, worth an eye on a CRT.
+
+> **A sixth item was removed from this list on 2026-09-18: "8 decks draw ALERT in multicolour —
+> faithful to the C64, worth an eye on a CRT."** KC: not true. It was never measured and no
+> evidence for it was ever recorded here. The ALERT lamp is four *states*, not four colours —
+> [DECISION 11] in [`docs/layer-7-combat.md`](docs/layer-7-combat.md) — and that decision stands.
+> Noted rather than deleted silently, because the claim survived in this list unchallenged for
+> weeks and looked like a finding.
 
 ### Features and polish, all small
 
 | | | |
 |---|---|---|
-| Collision box shape | **Agreed 2026-08-18, unbuilt.** `DR_COL_W`/`DR_COL_H` become a generated silhouette profile instead of a rectangle, at box-test cost. [DECISION 1] in [`docs/layer-6-droids-live.md`](docs/layer-6-droids-live.md); `BUGS.md` #7b's bounce tuning waits on it | agreed |
+| Collision box shape | **Agreed 2026-08-18, unbuilt.** `DR_COL_W`/`DR_COL_H` become a generated silhouette profile instead of a rectangle, at box-test cost. [DECISION 1] in [`docs/layer-6-droids-live.md`](docs/layer-6-droids-live.md). **Reclassified by KC 2026-09-18: a nice-to-have from the Redux list, not a fix owed to anything** — `BUGS.md` #7b no longer waits on it, having been closed as obsolete | nice-to-have |
 | Layer 14 leftovers | An eye for any remaining character whose C64 colour merges in MODE 1 (the lift tile was one), and the open question at the end of [`docs/layer-14-visual.md`](docs/layer-14-visual.md): deck 5 is scheme 6 yet carries scheme 0's collision — intended, or slipped? | eye pass |
 | Enemy bullet flicker / explosion multicolour | `efAlt` from bank 5 plus a second per-entry field; effect sprites run the interpreted path (`src/sprfx.asm`) and are one colour. The explosion-multicolour note from KC's list is the same mechanism | deferred (L7) |
 | Briefing exit-load trim | Moot since no-load step 5 (2026-09-09): the briefing is bank-resident and neither exit reloads anything ([`docs/no-load.md`](docs/no-load.md) §17–§18) | done |
 | Redux adoptions (2), (3), (6) | Parked with their evidence in [`docs/layer-12-balance.md`](docs/layer-12-balance.md): the three-droid-deadlock randomisation (reproduce it here first), lift-adjacent waypoints excluded from starts, and the lift screen colouring completed decks — (6) parked on bank 7 space | parked |
 | Intro droid cards | White background on the C64; ours differs (KC's note) | eye pass |
 | Front-end text | Page 1's controls text was rewritten for the port's two buttons and page 5's credits gained the BBC port on 2026-09-11 (`1d99055`); any further wording is KC's | KC |
-| Blanking amount | KC's standing caveat: the load/seam blanking is aggressive — "may be too many black screens" — and the 2026-09-01 hide-the-drawing pass leaned further in. Watch for it in playtesting | watch |
+| Blanking amount | **CLOSED, KC 2026-09-18: fine as shipped.** The standing caveat was that the load/seam blanking is aggressive — "may be too many black screens" — and that the 2026-09-01 hide-the-drawing pass leaned further in. Played through; it reads as intended | done |
 | 2 px world scrolling | Parked, Master-only via shadow RAM. Costs +60–80 % on all drawing — [`docs/master-extensions.md`](docs/master-extensions.md) | parked |
 
 ### Open hazards and things undecided
@@ -122,7 +140,7 @@ still untested**, and so are the items below, which the Master run does not sett
 |---|---|
 | **RAM** | **Measured 2026-09-13 from the build on branch `zp-reclaim`, after issue #18’s zero-page tiers:** main RAM **100 B**, bank 4 **129 B** (the `colourMap` pad is still 10), bank 5 **149 B**, bank 6 **303 B**, bank 7 **90 B** plus a **236 B** `plandata` pad (spend past it and the next byte costs 256 — and Tier 2 is the worked example: of its 235 bytes the tail showed four), `PARBRF` **67 B**, title overlay **528 B**, `PARAFNT` **32 B**, low overlay 9 / 3 / 0 B, `PINTRO` **0 B**; packed image 46,592 bytes. 35 bytes of zero page remain (`&C0-&CB`, and `&D0-&E6` measured free). The game makes no filing-system call after boot. `CLAUDE.md`'s table keeps each region's history. *Earlier:* measured 2026-09-02 after layer-9 DECISION 20: main RAM **24 B**, bank 4 **11 B**, bank 5 **674 B**, bank 6 **673 B**, bank 7 **25 B**, bank 7 **~100-105 B** (tail + pad), `PARBRF` ~20 B, `PARAFNT` tail 16 B, `PARMAN` well down from 225 B, `PINTRO` **0 B**. **No held reserve frees bank 7** — that parked layer-12 DECISION 6. *(On the `no-load` branch, **step 5 is done and the game makes no filing-system call after boot at all** — measured 2026-09-09: main RAM **108 B**, bank 4 **225**, bank 5 **88**, bank 6 **1,126**, bank 7 **171**; eight disc files, 45,312 bytes. The briefing's text is five ZX0 page streams in the banks, its code is bank-resident, and `PARAFNT` is loaded once in `.start`. See [`docs/no-load.md`](docs/no-load.md) §15-§18.)* The stack page's `&0100-&017F` is 128 measured-free bytes. Live numbers from the build output; spending rules and reserves in [`docs/ram-pass.md`](docs/ram-pass.md) and `CLAUDE.md` |
 | **Some debug builds may still fail to assemble** | Pre-RAM-pass, every flag except `DEBUG_INVULN` broke the build on space. KC 2026-08-21: accepted. The pass's headroom may have brought some back — try the flag before assuming. `BUGS.md` #17 |
-| Open defects | `BUGS.md` #2, #3, #7b, #9 and #15 — all old, all wanting retests against builds that have moved under them; #1 is probably moot. **Three are from playtesting** (index re-read 2026-09-11): **#21** — two black squares flicker on the transfer game's central column, on hardware more than in an emulator, unreproduced here. **#22** — sprite pixels occasionally left on the deck in a firefight, no repro (`DEBUG_TRCHK` was built to test the tranche split for it). **#23** — the target's information screen flashes in the board's palette on entering a transfer; its 3-byte fix now fits in main RAM's 43 B |
+| Open defects | **Re-ruled by KC 2026-09-18, after v1.0 shipped and was played through. #1, #2, #3, #7b and #15 are CLOSED** — all were old, none was ever instrumented, and the pipeline was rewritten under each of them several times; #15's entry names the one observation that would reopen it. **What is left is one defect and two polish items.** The defect: **#22** — sprite pixels occasionally left on the deck in a firefight, no repro, and the tranche split is EXONERATED by measurement (`DEBUG_TRCHK` counted zero cross-tranche overlaps through minutes of contrived heavy fire), so the cause is still unknown. Polish: **#21**, the transfer board's two flickering squares, diagnosed as plot timing against the raster and not worth the window work to fix; **#23**, the information screen's palette flash on entering a transfer, a 3-byte fix deliberately withheld rather than republish the disc. **#9** stands apart — 58-62 wrong bytes of 10,240 found by the buffer oracle, never visible in play |
 | Transfer presentation differs | Status text on the panel line rather than above the board, numbers standing in for the side-select sprites. Decisions 6–8 in [`docs/layer-10-transfer.md`](docs/layer-10-transfer.md) |
 | Zero-page initial values in the annotation are equates only | Read them from `paradroid_ce.lst`; `tools/verify_annotation.py` is the standing check after any `annotate.py` change (BUGS.md #19 history) |
 
