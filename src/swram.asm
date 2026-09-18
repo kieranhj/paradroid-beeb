@@ -44,6 +44,26 @@
 \      for a spare one we probe and hand back. `STY ROMSEL` before the
 \      read is the fix.
 \
+\   3. IT THROWS OUT THE BANKS THAT ARE NOT RAM BEFORE IT WRITES THE
+\      DISTINCT VALUES (issue #22, 2026-09-18). BeebEm does not discard
+\      a write to a bank that is not RAM: RomWriteThrough() redirects it
+\      into the LOWEST-NUMBERED writable bank. That is real behaviour for
+\      a one-bank Watford or ATPL board, whose RAM write-enable is not
+\      gated by ROMSEL - but BeebEm applies it with four decoded RAM
+\      banks too, and then stage 2's writes to the EMPTY sockets above
+\      the RAM all land in the lowest RAM bank, the last of them after
+\      that bank's own value was written. Stage 3 finds it holding
+\      something else and does not count it: BeebEm's default Model B
+\      (RAM in 4-7, empty in 8-13) reported 5 6 7. So stage 1b writes
+\      each candidate's value and reads it straight back, one bank at a
+\      time, and drops whatever fails. Nothing that is not RAM is
+\      written after that, so the redirect never fires during stages 2
+\      and 3. It has to be a SEPARATE PASS - a read-back inside stage 2
+\      passes, because the bank is corrupted by a write that comes
+\      later - and the collateral damage stage 1b itself does lands in
+\      the lowest RAM bank, which stage 2 then writes properly and
+\      stage 3 restores from the original saved in stage 1.
+\      jsbeeb and b2 drop the write on the floor and never saw this.
 \ SOLIDISK IS DETECTED AND REFUSED, not supported (KC, 2026-08-29): the
 \ game's own writes into sideways RAM — UnpackBankIn's, at boot —
 \ go through ROMSEL alone, so a board that needs
@@ -279,6 +299,27 @@ ORG SWR_ADDR
 .sp_nb_next
   DEY
   BPL sp_nb
+
+\ ---- stage 1b: drop the candidates that are not RAM ----------
+\ One bank at a time, written and read straight back, so a board that
+\ redirects the write somewhere else cannot hide it — see the header,
+\ item 3. The value is distinct from this bank's own content by stage
+\ 1's construction, so a ROM or an empty socket always fails.
+  LDX #0
+.sp_rw
+  LDA swCand,X
+  BNE sp_rw_next
+  JSR SwrSelW
+  LDA swUnique,X
+  STA TSTADDR
+  CMP TSTADDR
+  BEQ sp_rw_next
+  LDA #&FF                      \ not RAM: not a candidate any more
+  STA swCand,X
+.sp_rw_next
+  INX
+  CPX #16
+  BNE sp_rw
 
 \ ---- stage 2: write every probe, COUNTING UP ----------------
 \ Up rather than down because a Solidisk board indexes with three bits:

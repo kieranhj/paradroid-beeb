@@ -433,7 +433,11 @@ nothing includes them now. `docs/intro.md` §8.
 
 **`PARSWR` is a disc file (one of nine, with `INFO`) and the FIRST thing `!BOOT` runs** — the sideways RAM
 detector (`src/swram.asm`, Layer 13b). It probes all sixteen banks, takes the highest four, and
-leaves them at `SWR_HAND = &0A00` for `.start` to copy into `swBank`. **With exactly three clean
+leaves them at `SWR_HAND = &0A00` for `.start` to copy into `swBank`. **A candidate has to pass a
+write-and-read-back on its own before the distinct-value pass writes anything** (stage 1b, issue
+#22, 2026-09-18): BeebEm redirects a write aimed at a bank that is not RAM into the lowest
+writable bank, so the writes aimed at the empty sockets above the RAM were landing on bank 4 and
+it reported `5 6 7`. **With exactly three clean
 banks it takes a RAM bank holding a ROM image as the fourth, `SWRAM_XFER`** (issue #18 item 9,
 2026-09-10: ZMMFS lives in one) — which is why **`PARXFER` is the last load**, after the font, at
 `XFER_STREAM = &4000`, and `.start` zeroes that bank's ROM-table byte before unpacking into it; on a machine it will not

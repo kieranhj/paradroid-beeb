@@ -172,6 +172,70 @@ bytes can simply be paid.)*
 
 ---
 
+## 22. `PARSWR` misses the lowest sideways RAM bank on BeebEm — 2026-09-18, **FIXED 2026-09-18**
+
+Reported by chrisn on Stardot, [issue #22](https://github.com/kieranhj/paradroid-beeb/issues/22):
+*"BeebEm's default config has banks 4-7 enabled as SWR, but Paradroid only detects banks 5, 6 and
+7. Similar happens if I enable banks 0-3 (or other sequences) ... Enabling banks A-D works fine
+though."* Master 128 mode was fine, and so are jsbeeb and b2.
+
+### The cause: BeebEm redirects a write it cannot honour
+
+`Src/BeebMem.cpp`, `BeebWriteMem` and `RomWriteThrough` (BeebEm 4.19): a write to `&8000-&BFFF`
+with a bank selected that is **not** RAM is not discarded — `RomWriteThrough` walks the banks from
+0 and puts the byte in the **first writable one**. It arrived in BeebEm 4.12: *"Added write through
+to the first RAM bank when writing to ROM address range (&8000-&BFFF)."*
+
+`SwrProbe`'s stage 0 makes every bank whose MOS ROM-type byte is zero a candidate, which includes
+**empty sockets**. Stage 2 writes the sixteen distinct probe values counting up. On BeebEm's
+default Model B configuration (BASIC 15, DNFS 14, EMPTY 13-8, RAM 7-4, EMPTY 3-0):
+
+* banks 0-3, not writable, redirect into bank 4 — harmless, bank 4 has not been written yet;
+* banks 4-7 land properly;
+* banks 8-13, not writable, redirect into bank 4 **again**, so it ends up holding bank 13's value.
+
+Stage 3 reads back top down, bank 4 does not match its own value, and it is not counted.
+
+It accounts for the whole report, which is why it was believed before it was measured. Banks 0-3 as
+RAM: the empties at 8-13 are still above them, so bank 0 goes. Banks A-D: the only banks above are
+E and F, which hold ROMs and are never candidates, so every stray write lands in bank A *before*
+bank A's own and nothing is lost. Master 128: its low banks carry ROMs, so there are no empty
+candidates above the RAM. Exile: it probes one bank at a time and reads back immediately.
+
+### The fix — stage 1b, a separate pass
+
+`SwrProbe` now walks the candidates before stage 2, writing each bank's probe value and reading it
+straight back, and drops whatever fails out of `swCand`. Nothing that is not RAM is written after
+that, so the redirect never fires during stages 2 and 3. **It has to be a separate pass** — a
+read-back inside stage 2 passes, because bank 4 is corrupted by a write that comes later — and the
+collateral damage stage 1b itself does lands in the lowest RAM bank, which stage 2 then writes
+properly and stage 3 restores from the original saved in stage 1. Aliasing detection is untouched:
+both halves of an alias pair are writable and pass the filter one at a time. Layer-13 DECISION 4.
+
+### Measured in BeebEm 4.19, Model B, before and after
+
+`*RUN PARSWR` on its own, so the report stays on screen, on three ROM configurations:
+
+| Banks as RAM | Before | After |
+|---|---|---|
+| 4-7 (BeebEm default) | `found: 7 6 5` → refused | `found: 7 6 5 4`, `Using banks: 4 5 6 7` |
+| 0-3 | `found: 3 2 1` → refused | `found: 3 2 1 0`, `Using banks: 0 1 2 3` |
+| A-D | (already correct) | `found: D C B A`, `Using banks: A B C D` |
+
+and the shipping disc autoboots to the briefing on BeebEm's default configuration, which it could
+not do before.
+
+### Is BeebEm wrong?
+
+Write-through is real: the single-bank Watford and ATPL Sidewise boards do not gate the RAM's write
+enable on `ROMSEL`, and take `*LOAD ROM 8000` with no bank selection at all. For such a board
+BeebEm's model is the right one. It is wrong for four independently decoded RAM banks, where no
+real board takes a write aimed at an empty socket and puts it in bank 4 — a decoded board discards
+it, and a write-through board would have taken the writes aimed at the *other* RAM banks too, which
+BeebEm does not do. The port does not depend on the answer either way now.
+
+---
+
 ## 17. Four debug flags silently push the code image past `&3000` — **PARTLY FIXED 2026-08-20**
 
 Reported by KC: *"the DEBUG_VSYNC flag no longer works correctly — the player sprite gets corrupted

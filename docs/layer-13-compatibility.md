@@ -75,6 +75,30 @@ assembled defaults, so it behaves exactly as the port did before this existed. T
 write no magic, so a refused machine cannot leave a half-written handover behind either (verified:
 `&0A00` reads `FF` after both).
 
+### [DECISION 4] Stage 1b — the banks that are not RAM go before the distinct values land
+
+KC, 2026-09-18, on issue #22 (chrisn, Stardot). **BeebEm does not discard a write to a bank that is
+not RAM**: `RomWriteThrough` puts it in the lowest-numbered writable bank, which is real behaviour
+for a single-bank Watford or ATPL board and wrong for four decoded ones. Stage 2 writes every
+candidate — and candidates include **empty sockets**, which have no ROM type either — so on
+BeebEm's default Model B the writes aimed at the empty banks 8-13 all landed in bank 4, the last of
+them after bank 4's own value, and stage 3 did not count it. The report was `5 6 7` and the game
+refused to start.
+
+**The extra pass is stage 1b**: each candidate written and read straight back, one bank at a time,
+and anything that fails dropped from `swCand`. Nothing that is not RAM is written after it, so the
+redirect never fires during stages 2 and 3.
+
+**It cannot be folded into stage 2**, and that was the first thing tried on paper: a read-back
+there passes, because the bank is corrupted by a write that comes *later* in the same loop. What
+stage 1b itself scribbles into the lowest RAM bank is harmless — stage 2 writes that bank properly
+afterwards and stage 3 restores the original stage 1 saved. Aliasing detection is untouched, since
+both halves of an alias pair are writable and pass the filter individually.
+
+Measured in BeebEm 4.19 before and after, on all three of chrisn's configurations, plus a full
+autoboot; the table is in [`../BUGS.md`](../BUGS.md) #22. **The cost is 30 bytes of `PARSWR`** —
+833 -> 863 on disc, read off the two catalogues — against its own `&400`, which it is nowhere near.
+
 ### The handover: five bytes at `&0A00`
 
 Magic `&A5`, then DATA, SPR, SPR2, XFER. The printer buffer, chosen because it has to survive three
