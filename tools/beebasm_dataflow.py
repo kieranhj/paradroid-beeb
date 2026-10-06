@@ -23,10 +23,10 @@ tools/dataflow_config.py names the listing (LISTING) and the source folders
 
 The analyses are Eben Upton's (github.com/ebenupton/beebgame, MIT), vendored
 unmodified and hash-checked in beeb-port-kit (template/tools/dataflow), and run
-through the kit's tools/analyse.py, which adds two in-memory fixes (Windows
-paths; a range run cut short is marked unsound). Nothing of them is copied
-into the project: $BEEB_PORT_KIT, else ../beeb-port-kit, is where they are
-read from. $DATAFLOW_BUDGET raises the range analysis's step limit.
+through the kit's tools/analyse.py. Nothing of them is copied into the
+project: $BEEB_PORT_KIT, else ../beeb-port-kit, is where they are read from.
+$DATAFLOW_BUDGET sets the range analysis's step limit (upstream's
+RANGES_BUDGET, 3,000,000 a run); a run that hits it says it is NOT sound.
 
 WHAT THIS ADDS. The analyses read only ld65's debug file. The kit writes one
 from a Baron build (baron_dbg.py); this writes one from a BEEBASM listing,
