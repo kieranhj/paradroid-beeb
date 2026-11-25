@@ -82,7 +82,7 @@ an operand's VALUE by design (a constant changed 8 → 4 diffs clean), so compar
 byte for byte first and reach for the stream only when the addresses were MEANT to move.
 
 **The verification procedures are skills, in `.claude/skills/beeb-*`.** They came from
-`C:\Users\khcon\OneDrive\BEEB\Repos\beeb-port-kit` — KC's kit distilled from this port and
+`D:\beeb\mine\beeb-port-kit` — KC's kit distilled from this port and
 Edge Grinder — and were adapted to this project on 2026-09-08: `beeb-smoke-test`,
 `beeb-buffer-oracle`, `beeb-cycle-timing`, `beeb-frame-drops`, `beeb-identical-build`,
 `beeb-measure-fact`, `beeb-key-numbers`, `beeb-sound-verify`, `beeb-bss-bugs`,
@@ -530,7 +530,7 @@ Both worked around locally; extending the shared set is the better fix and moves
   forced debug redraw was wrong on the split row when `line != 0`; the split row no longer exists,
   so `RedrawAll` is a valid oracle at any scroll position — but read the entry's own caveat
 - `ANNOTATION.md` — analysis of the C64 original: memory map, subroutines, hardware, data tables
-- `C:\Users\khcon\OneDrive\BEEB\Projects\llm-beeb-wiki` — BBC hardware knowledge base; consult for
+- `D:\beeb\mine\llm-beeb-wiki` — BBC hardware knowledge base; consult for
   hardware queries rather than parsing a PDF of the Advanced User Guide
 - `paradroid_ce.lst` — raw C64 disassembly in the project root (committed since 2026-09-09, KC on issue #3). The
   `_ce` suffix predates this project; the listing is original/CE lineage, so it is not misleading.
