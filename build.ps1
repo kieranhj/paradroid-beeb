@@ -47,7 +47,7 @@ $listing = Join-Path $build 'paradroid.lst'
 # -Run's emulator: $env:EMU, as the Makefile's EMU= - a b-em, since -Run
 # passes b-em's flags. Unset, it is the one on KC's machine.
 $bem     = if ($env:EMU) { $env:EMU }
-           else { 'D:\tools\beeb\B-Em\b-em-42f6597-w64\b-em.exe' }
+           else { 'D:\tools\beeb\B-Em\b-em.exe' }
 
 if (-not (Test-Path $build)) { New-Item -ItemType Directory -Path $build | Out-Null }
 
