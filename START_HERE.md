@@ -24,7 +24,7 @@ A faithful port of Andrew Braybrook's Paradroid (C64, 1985) to the BBC Micro Mod
 - Tools: `bin\beebasm.exe`, `bin\zx0.exe`, Python 3.
 
 ## Local changes
-- `build.ps1`: b-em path changed from OneDrive to D:\tools\beeb\B-Em\b-em-42f6597-w64 (2026-11-22 tidy, uncommitted).
+- `build.ps1`: b-em path is `D:\tools\beeb\B-Em\b-em.exe`, the local stardot/b-em build (changed 2026-11-25, uncommitted).
 - One git stash (`stash@{0}`, Layer 10 transfer score sweep, needs ~26 B of main RAM); the same is pushed as branch `stash/layer10-xfer-repeat-2026-08-25`.
 - Stale OneDrive paths remain in `CLAUDE.md`, `.claude/skills/*`, `annotate.py` and `tools/rip_*.py` (the C64 originals' location `OneDrive\Projects\Paradroid`, which did not move).
 
