@@ -72,7 +72,7 @@ param(
     [Parameter(Mandatory)] [string] $Prg,
     [Parameter(Mandatory)] [string] $Out,
     [int]    $Seconds = 30,
-    [string] $Vice    = 'C:\Users\khcon\OneDrive\Retro\Commodore\WinVICE-3.1-x64\x64sc.exe'
+    [string] $Vice    = 'D:\tools\commodore\WinVICE-3.1-x64\x64sc.exe'
 )
 
 $ErrorActionPreference = 'Stop'
